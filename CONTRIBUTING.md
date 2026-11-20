@@ -2,37 +2,41 @@
 
 ## Checking a change
 
-`just check` runs everything that continuous integration runs; the README
-says what that is and what it needs. A change is ready when it passes.
+`just check` runs the full CI verification suite; see [README.md](README.md)
+for what it checks and which tools it requires. Make sure it passes before
+considering a change ready.
 
-After a change to `crates/unisono-core`, `just translate` writes the Lean
-translation again, and the proofs in `lean/Unisono` have to pass against it.
+Whenever you modify `crates/unisono-core`, run `just translate` to regenerate
+the Lean translation and verify that all proofs in `lean/Unisono` still pass.
 
-Continuous integration also holds the dependencies against `deny.toml`: known
-vulnerabilities, licences, and where a dependency comes from. `just
-dependencies` runs the same where `cargo-deny` is installed.
+CI also checks dependencies against `deny.toml` for known security advisories,
+allowed licences, and approved sources. If `cargo-deny` is installed locally,
+run `just dependencies` to execute the same check.
 
-## What a change needs
+## Requirements
 
-- **The core stays in the Rust that translates**, and nothing in it can
-  panic: `docs/core-rust.md`.
-- **A test names what it would catch.** Its expected values come from the
-  specification or an independent calculation, not from what the code printed.
-  Where a test holds a number against a bound, a second test with a seeded
-  fault shows that the bound can fail.
-- **A statement about behaviour is proved or tested, and the documents say
-  which.** `docs/model.md` marks what is stated in Lean and what is not.
-- **What runs on real-time threads** allocates nothing, takes no lock and
-  does not enter the kernel: `docs/realtime.md`.
-- **Documents follow the code.** A change to the protocol changes
-  `docs/protocol.md` in the same commit.
+- **Keep `unisono-core` translatable and panic-free.** Follow the Rust subset
+  and rules documented in `docs/core-rust.md`.
+- **Write falsifiable tests.** Name each test after the failure it catches, and
+  derive expected values from the specification or an independent calculation
+  rather than copying program output. When a test asserts a quantitative bound,
+  pair it with a fault-injection test demonstrating that the bound can fail.
+- **Back behavioural claims with proofs or tests.** Keep `docs/model.md`
+  explicit about which claims are proved in Lean and which are not.
+- **Keep real-time paths lock-free and allocation-free.** Code running on
+  real-time threads must not allocate, lock, or enter the kernel; see
+  `docs/realtime.md`.
+- **Keep documentation in sync with code.** Update `docs/protocol.md` in the
+  same commit as any wire-format change.
 
 ## Commits
 
-A commit message says what the commit contains and why, in full sentences. A
-commit that passes `just check` on its own is easier to review and to revert.
+Write commit messages in full sentences explaining what changed and why. Keep
+each commit passing `just check` on its own so changes are straightforward to
+review and revert.
 
 ## Licence
 
-unisono is under the Mozilla Public License 2.0. A contribution is made under
-the same licence, and every source file starts with its notice.
+unisono is licensed under the Mozilla Public License 2.0. All contributions
+are submitted under the same licence, and every source file must begin with
+the MPL-2.0 header.

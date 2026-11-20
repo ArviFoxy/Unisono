@@ -2,23 +2,26 @@
 
 ## Reporting a vulnerability
 
-Report it in private, through "Report a vulnerability" under the Security tab
-of the repository on GitHub. Please do not open a public issue for it.
+Report security issues privately using "Report a vulnerability" under the
+Security tab on GitHub. Please do not open a public issue.
 
 unisono is in early development and has no releases yet, so there are no
-supported versions to list. A report is answered for the current `main`.
+supported version branches to list. Reports are evaluated against the current
+`main` branch.
 
-## What unisono defends against
+## Threat model
 
-A datagram can hold anything. Reading one must never crash a sender or a
-receiver, read or write memory out of bounds, or leave a receiver in a state
-it does not recover from. For the core this is proved: its functions return
-for every input and every state, and a receiver follows the packets that keep
-arriving from any state it is in (`docs/model.md`, `lean/Unisono`). A way to
-break this is a vulnerability.
+Incoming datagrams are untrusted and may contain arbitrary bytes. Parsing or
+handling a datagram must never crash a sender or receiver, access memory out of
+bounds, or leave a receiver wedged in an unrecoverable state. For
+`unisono-core`, these properties are formally proved in Lean (`docs/model.md`,
+`lean/Unisono`): every core function terminates without panicking on all inputs
+and states, and a receiver always recovers to follow a continuing stream. Any
+input that violates these guarantees is a security vulnerability.
 
-## What it does not defend against
+## Out of scope
 
-Packets are not authenticated and not encrypted. Whoever can send datagrams
-to a receiver can make it play something, and whoever can read the network
-can hear the stream. unisono is made for a network whose hosts are trusted.
+Packets are neither authenticated nor encrypted. Any host able to send
+datagrams to a receiver can inject audio, and any host able to observe the
+network can listen to the stream. unisono is designed for networks whose hosts
+are trusted.

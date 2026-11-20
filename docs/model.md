@@ -152,7 +152,8 @@ $\ell(n) + e_r(n)$, plus what section 6.1 says the sender adds.
 Frame $n$ arrives at receiver $r$ with a **delivery delay** $D_r(n)$ after its
 capture: everything from capture to the frame lying in the receiver's buffer.
 The receiver has to hand a frame to its device a **lead** $\Lambda_r$ before it
-is due: a cycle of the device and what the device buffers. The **margin** is
+is due: a cycle of the device, what the device buffers, and the resampler's
+lookahead. The **margin** is
 $m_r(n) = \ell(n) + e_r(n) - D_r(n) - \Lambda_r$. A frame with negative margin
 is **missed**: it is due before it is there, and the receiver conceals it. A
 **gap** is a run of missed frames longer than concealment covers.
@@ -185,14 +186,17 @@ The cost per second, for a stream with $N$ receivers, is
 
 $$w_{\mathrm{lat}}\,\bar\ell
 \;+\; w_{\mathrm{tgt}}\,(\bar\ell - L_0)^2
-\;+\; \frac{1}{N}\sum_{r}\Bigl[\,w_{\mathrm{sync}}\,e_r^2
+\;+\; \sum_{r}\Bigl[\,w_{\mathrm{sync}}\,e_r^2
 \;+\; w_{\mathrm{rough}}\,\dot u_r^2
 \;+\; w_{\mathrm{gap}}\cdot(\text{gaps per second})
 \;+\; w_{\mathrm{miss}}\cdot(\text{fraction of frames missed})\Bigr],$$
 
 subject to $|u_r| \le u_{\max}$. Here $\bar\ell$ is the level, $L_0$ a target
 latency, $e_r$ the timing error of receiver $r$ against the common schedule,
-and $u_r$ the amount by which receiver $r$ plays fast (section 6.4).
+and $u_r$ the amount by which receiver $r$ plays fast (section 6.4). Summing
+the per-receiver terms rather than averaging by $1/N$ ensures that adding
+quiet wired receivers does not dilute the gap cost of a wireless receiver in
+the same group.
 
 The weights, $L_0$ and $u_{\max}$ are parameters of a stream; no value of them
 is built in. A large $w_{\mathrm{tgt}}$ holds the latency at $L_0$, which suits
@@ -337,8 +341,13 @@ the schedule on the calm wired link, within twelve on the busy one and within
 and a half and 25. The estimate of the delay is what the difference comes
 from. It errs high, by the queueing of the best report in the memory, and it
 estimates a constant, which a longer memory than that of the clocks would
-serve better. *That is not built.* A path that is slower one way shifts the
-receiver by half the difference, as section 2.5 says, and a test shows it.
+serve better. *That is not built.* Sending 20 full-sized padded reports per
+second per receiver also carries non-trivial airtime cost on shared Wi-Fi
+links; the current 20 Hz rate is kept for now until a simulated Wi-Fi
+environment tests whether contention or airtime stalls require switching to a
+short startup burst followed by a lower-rate, longer-memory path estimator. A
+path that is slower one way shifts the receiver by half the difference, as
+section 2.5 says, and a test shows it.
 
 **Devices.** Device reports carry two-sided timing error, so a device's line is
 fitted by least squares. The core (`unisono_core::device::Device<W>`) fits an
@@ -444,8 +453,8 @@ $\kappa = 4$ per second.
 
 **Large errors.** At a start and after a pause the error can be far larger
 than the bound on the rate removes quickly. Slewing at the largest rate left,
-$u$, takes $|e|/u$, and costs $w_{\mathrm{sync}}\,|e|^3 / (3 u N)$ for one
-receiver. Jumping costs that receiver one gap, $w_{\mathrm{gap}}/N$, or nothing
+$u$, takes $|e|/u$, and costs $w_{\mathrm{sync}}\,|e|^3 / (3 u)$ for one
+receiver. Jumping costs that receiver one gap, $w_{\mathrm{gap}}$, or nothing
 when it is silent. It jumps when the first exceeds the second. An error that
 all receivers share is no error of synchronization, and is not answered by each
 receiver for itself: the sender moves the level.
@@ -462,7 +471,7 @@ for the fraction of frames it misses, when its margin above its baseline and
 lead is $\mu$. A level held at $\ell$ costs
 
 $$J(\ell) \;=\; w_{\mathrm{lat}}\,\ell + w_{\mathrm{tgt}}\,(\ell - L_0)^2
-+ \frac1N\sum_r \Bigl[w_{\mathrm{gap}}\,\Gamma_r(\ell - B_r - \Lambda_r)
++ \sum_r \Bigl[w_{\mathrm{gap}}\,\Gamma_r(\ell - B_r - \Lambda_r)
 + w_{\mathrm{miss}}\,\Phi_r(\ell - B_r - \Lambda_r)\Bigr].$$
 
 The level is one number and $J$ is minimized over a line, so no convexity is
