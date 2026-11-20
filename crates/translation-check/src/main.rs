@@ -550,10 +550,13 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
 
 /// Runs of operations on a sender. Each operation is four numbers. 0, a
 /// number of frames, a capture time and a drift: the header of the next
-/// packet, of which the index, the flags, the stamped index and the stamped
-/// departure are the results. 1, a timeline, an index and a departure: a
-/// departure is taken in. 2 and a timeline: a restart. After every operation
-/// the timeline and the index of the next frame follow.
+/// packet, of which the index, the flags, the stamped index, the stamped
+/// departure, the capture time, the drift, the level and the level slope are
+/// the results. 1, a timeline, an index and a departure: a departure is taken
+/// in. 2 and a timeline: a restart. 3, a level and a slope: sets the level
+/// ramp. 4, a stream, a sequence and an arrival: answers a report, giving 1
+/// and the echo fields, or 0 and zeros. After every operation the timeline,
+/// the index of the next frame and the current level follow.
 fn sender_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(6);
     for _ in 0..200 {
@@ -571,7 +574,7 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
         let mut results: Vec<i128> = Vec::new();
         write!(out, "sender {first} {operations}")?;
         for _ in 0..operations {
-            match sequence.next() % 6 {
+            match sequence.next() % 8 {
                 0 => {
                     let timeline = sequence.next() % 8;
                     write!(out, " 2 {timeline} 0 0")?;
@@ -583,6 +586,36 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
                     let departure = sequence.signed();
                     write!(out, " 1 {timeline} {index} {departure}")?;
                     sender.departed(timeline, index, departure);
+                }
+                3 => {
+                    let level = sequence.signed() % 1_000_000_000_000;
+                    // The cast keeps the low bits of a random number.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let slope = (sequence.signed() % 2_000_000_000) as i32;
+                    write!(out, " 3 {level} {slope} 0")?;
+                    sender.level(level, slope);
+                }
+                4 => {
+                    let stream = u16::try_from(1 + sequence.next() % 2).unwrap_or(1);
+                    let number = sequence.next();
+                    let arrival = sequence.signed();
+                    let report = packet::Report {
+                        stream,
+                        timeline: sender.timeline(),
+                        receiver: 42,
+                        sequence: number,
+                    };
+                    write!(out, " 4 {stream} {number} {arrival}")?;
+                    match sender.answer(&report, arrival) {
+                        Some(echo) => results.extend([
+                            1,
+                            i128::from(echo.stream),
+                            i128::from(echo.receiver),
+                            i128::from(echo.sequence),
+                            i128::from(echo.arrival),
+                        ]),
+                        None => results.extend([0, 0, 0, 0, 0]),
+                    }
                 }
                 _ => {
                     let frames = u16::try_from(sequence.next() % 300).unwrap_or(0);
@@ -599,11 +632,14 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
                         i128::from(header.stamped_departure),
                         i128::from(header.capture),
                         i128::from(header.drift),
+                        i128::from(header.level),
+                        i128::from(header.level_slope),
                     ]);
                 }
             }
             results.push(i128::from(sender.timeline()));
             results.push(i128::from(sender.next()));
+            results.push(i128::from(sender.current_level()));
         }
         writeln!(out, " -> {}", join(&results))?;
     }

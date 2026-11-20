@@ -93,6 +93,10 @@ theorem I64.cast_I128_val (x : I64) : (IScalar.cast .I128 x).val = x.val := by
   simp only [IScalar.cast_val_eq]
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> scalar_tac
 
+theorem I32.cast_I128_val (x : I32) : (IScalar.cast .I128 x).val = x.val := by
+  simp only [IScalar.cast_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> scalar_tac
+
 theorem U32.hcast_I128_val (x : U32) : (UScalar.hcast .I128 x).val = x.val := by
   simp only [UScalar.hcast_val_eq]
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp
@@ -301,6 +305,21 @@ theorem U64.saturating_add_val (x y : U64) :
   rw [this]
   have : UScalar.max UScalarTy.U64 = U64.max := by scalar_tac
   rw [this]
+
+/-- A saturating subtraction of 64-bit unsigned numbers is natural subtraction,
+stopping at zero. -/
+theorem U64.saturating_sub_val (x y : U64) :
+    (core.num.U64.saturating_sub x y).val = x.val - y.val := by
+  have hx := x.bv.isLt
+  simp only [core.num.U64.saturating_sub, UScalar.saturating_sub, UScalar.val] at *
+  rw [BitVec.toNat_ofNat, Nat.zero_max]
+  apply Nat.mod_eq_of_lt
+  omega
+
+@[step]
+theorem U64.saturating_sub_step (x y : U64) :
+    lift (core.num.U64.saturating_sub x y) ⦃ r => r = core.num.U64.saturating_sub x y ⦄ := by
+  simp [lift]
 
 @[step]
 theorem I64.saturating_sub_step (x y : I64) :

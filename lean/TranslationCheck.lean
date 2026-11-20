@@ -246,7 +246,8 @@ def senderStep (state : sender.Sender × List Int) (operation : List Int) :
       let out ← sender.Sender.packet s (unsigned .U16 frames) (signed .I64 capture)
         (signed .I32 drift)
       pure (out.2, ([out.1.index.val, out.1.flags.val, out.1.stamped_index.val,
-        out.1.stamped_departure.val, out.1.capture.val, out.1.drift.val] : List Int))
+        out.1.stamped_departure.val, out.1.capture.val, out.1.drift.val,
+        out.1.level.val, out.1.level_slope.val] : List Int))
     | [1, timeline, index, departure] => do
       let s1 ← sender.Sender.departed s (unsigned .U64 timeline) (unsigned .U64 index)
         (signed .I64 departure)
@@ -254,10 +255,24 @@ def senderStep (state : sender.Sender × List Int) (operation : List Int) :
     | [2, timeline, _, _] => do
       let s1 ← sender.Sender.restart s (unsigned .U64 timeline)
       pure (s1, [])
+    | [3, level, slope, _] => do
+      let s1 ← sender.Sender.level s (signed .I64 level) (signed .I32 slope)
+      pure (s1, [])
+    | [4, stream, number, arrival] => do
+      let tl ← sender.Sender.impl.timeline s
+      let report : packet.Report :=
+        { stream := unsigned .U16 stream, timeline := tl,
+          receiver := 42#u64, sequence := unsigned .U64 number }
+      let echoed ← sender.Sender.answer s report (signed .I64 arrival)
+      let numbers : List Int := match echoed with
+        | some e => [1, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val]
+        | none => [0, 0, 0, 0, 0]
+      pure (s, numbers)
     | _ => pure (s, [-2]) : Result (sender.Sender × List Int))
   let timeline ← sender.Sender.impl.timeline s1
   let next ← sender.Sender.impl.next s1
-  pure (s1, state.2 ++ results ++ ([timeline.val, next.val] : List Int))
+  let level ← sender.Sender.current_level s1
+  pure (s1, state.2 ++ results ++ ([timeline.val, next.val, level.val] : List Int))
 
 def runSender (first : Int) (operations : List (List Int)) : Result (List Int) := do
   let settings : sender.Settings :=

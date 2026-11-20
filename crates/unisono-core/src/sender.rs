@@ -5,6 +5,7 @@
 //! The sender of a stream: which index the next frame has, and what the
 //! header of the next packet says.
 
+use crate::fixed::{div_floor, saturate};
 use crate::packet::{Audio, Echo, FLAG_STAMPED, Format, Report};
 
 /// What stays the same in every packet of a stream until the sender changes
@@ -36,9 +37,11 @@ pub struct Sender {
     timeline: u64,
     /// The index of the next frame.
     next: u64,
-    /// The latency that every receiver holds, in nanoseconds, and how it
+    /// The frame index at which the latency equals `level_base`.
+    level_index: u64,
+    /// The latency held at `level_index`, in nanoseconds, and how it
     /// changes, in nanoseconds per second of stream.
-    level: i64,
+    level_base: i64,
     level_slope: i32,
     /// Whether the departure of a packet of this timeline is known.
     stamped: bool,
@@ -56,7 +59,8 @@ impl Sender {
             settings,
             timeline,
             next: 0,
-            level,
+            level_index: 0,
+            level_base: level,
             level_slope: 0,
             stamped: false,
             stamped_index: 0,
@@ -76,11 +80,26 @@ impl Sender {
         self.next
     }
 
-    /// Sets the latency that every receiver holds from the next packet on,
+    /// The latency held for the next frame, in nanoseconds, advancing
+    /// `level_base` along `level_slope` from `level_index` to `next`.
+    #[must_use]
+    pub fn current_level(&self) -> i64 {
+        let elapsed = self.next.saturating_sub(self.level_index);
+        // At most 2^64 times 2^31: no wrapping.
+        let delta = div_floor(
+            (elapsed as i128).wrapping_mul(self.level_slope as i128),
+            self.settings.rate as i64,
+        );
+        // `|level_base| <= 2^63` and `|delta| <= 2^95`: no wrapping.
+        saturate((self.level_base as i128).wrapping_add(delta))
+    }
+
+    /// Sets the latency that every receiver holds starting at the next frame,
     /// in nanoseconds, and how it changes, in nanoseconds per second of
     /// stream.
     pub fn level(&mut self, level: i64, slope: i32) {
-        self.level = level;
+        self.level_index = self.next;
+        self.level_base = level;
         self.level_slope = slope;
     }
 
@@ -90,6 +109,7 @@ impl Sender {
     /// the packet before without a break.
     pub fn packet(&mut self, frames: u16, capture: i64, drift: i32) -> Audio {
         let index = self.next;
+        let level = self.current_level();
         self.next = self.next.saturating_add(frames as u64);
         Audio {
             stream: self.settings.stream,
@@ -101,7 +121,7 @@ impl Sender {
             frames,
             channels: self.settings.channels,
             format: self.settings.format,
-            level: self.level,
+            level,
             level_slope: self.level_slope,
             span: self.settings.span,
             window: self.settings.window,
@@ -148,9 +168,12 @@ impl Sender {
     /// of the timeline before if that is larger, so that receivers follow it
     /// at once.
     pub fn restart(&mut self, timeline: u64) {
+        let level = self.current_level();
         let after = self.timeline.saturating_add(1);
         self.timeline = if timeline > after { timeline } else { after };
         self.next = 0;
+        self.level_index = 0;
+        self.level_base = level;
         self.stamped = false;
     }
 }
@@ -223,11 +246,65 @@ mod tests {
     }
 
     #[test]
-    fn the_level_of_later_packets_is_the_one_set_last() {
+    fn the_level_of_later_packets_advances_along_its_slope() {
+        let mut s = sender();
+        s.level(30_000_000, 1_000_000);
+        let first = s.packet(240, 0, 0);
+        let second = s.packet(240, 5_000_000, 0);
+        let third = s.packet(240, 10_000_000, 0);
+        assert_eq!((first.level, first.level_slope), (30_000_000, 1_000_000));
+        assert_eq!((second.level, second.level_slope), (30_005_000, 1_000_000));
+        assert_eq!((third.level, third.level_slope), (30_010_000, 1_000_000));
+        // Over a full second (200 packets of 240 frames) there is no cumulative
+        // rounding drift even for slopes that do not divide the sample rate.
+        let mut s = sender();
+        s.level(20_000_000, -100_000);
+        for _ in 0..200 {
+            s.packet(240, 0, 0);
+        }
+        assert_eq!(s.current_level(), 19_900_000);
+        // A restart keeps the ramped level rather than snapping back.
+        s.restart(200);
+        let after = s.packet(240, 0, 0);
+        assert_eq!((after.level, after.level_slope), (19_900_000, -100_000));
+        let next = s.packet(240, 5_000_000, 0);
+        assert_eq!(next.level, 19_899_500);
+    }
+
+    #[test]
+    fn consecutive_ramped_packets_agree_on_the_schedule() {
+        use crate::timing::{Schedule, distance, due};
         let mut sender = sender();
-        sender.level(30_000_000, 40);
-        let header = sender.packet(240, 0, 0);
-        assert_eq!((header.level, header.level_slope), (30_000_000, 40));
+        sender.level(20_000_000, 500_000);
+        let a = sender.packet(240, 1_000_000_000, 0);
+        let b = sender.packet(240, 1_005_000_000, 0);
+        let sa = Schedule {
+            index: a.index,
+            capture: a.capture,
+            rate: a.rate,
+            drift: a.drift,
+            level: a.level,
+            level_slope: a.level_slope,
+        };
+        let sb = Schedule {
+            index: b.index,
+            capture: b.capture,
+            rate: b.rate,
+            drift: b.drift,
+            level: b.level,
+            level_slope: b.level_slope,
+        };
+        // At any time during the ramp, both packets compute the same due
+        // position to within one unit of 2^-32 frame.
+        for offset in [25_000_000i64, 30_000_000, 100_000_000] {
+            let t = 1_000_000_000 + offset;
+            let pa = due(&sa, t).expect("in timeline");
+            let pb = due(&sb, t).expect("in timeline");
+            assert!(
+                distance(pa, pb).abs() <= 1,
+                "offset {offset}: pa={pa:?}, pb={pb:?}"
+            );
+        }
     }
 
     #[test]

@@ -266,7 +266,7 @@ structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   back : relation.Estimator M
 
 /-- [unisono_core::sender::Settings]
-    Source: 'crates/unisono-core/src/sender.rs', lines 14:0-28:1
+    Source: 'crates/unisono-core/src/sender.rs', lines 15:0-29:1
     Visibility: public -/
 structure sender.Settings where
   stream : Std.U16
@@ -277,13 +277,14 @@ structure sender.Settings where
   window : Std.U32
 
 /-- [unisono_core::sender::Sender]
-    Source: 'crates/unisono-core/src/sender.rs', lines 33:0-48:1
+    Source: 'crates/unisono-core/src/sender.rs', lines 34:0-51:1
     Visibility: public -/
 structure sender.Sender where
   settings : sender.Settings
   timeline : Std.U64
   next : Std.U64
-  level : Std.I64
+  level_index : Std.U64
+  level_base : Std.I64
   level_slope : Std.I32
   stamped : Bool
   stamped_index : Std.U64

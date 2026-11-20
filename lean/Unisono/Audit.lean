@@ -187,9 +187,25 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Receiver.new_spec
 
+/-- info: 'Unisono.Sender.current_level_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.current_level_spec
+
+/-- info: 'Unisono.Sender.levelAt_eq_floor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.levelAt_eq_floor
+
+/-- info: 'Unisono.Sender.level_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.level_spec
+
 /-- info: 'Unisono.Sender.packet_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Sender.packet_spec
+
+/-- info: 'Unisono.Sender.packet_ramp_consistent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.packet_ramp_consistent
 
 /-- info: 'Unisono.Sender.departed_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

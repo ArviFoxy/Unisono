@@ -4654,14 +4654,14 @@ def relation.Estimator.impl.kept
   ok self.len
 
 /-- [unisono_core::sender::{impl core::clone::Clone for unisono_core::sender::Settings}::clone]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:9-12:14
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:9-13:14
     Visibility: public -/
 def sender.Settings.Insts.CoreCloneClone.clone
   (self : sender.Settings) : Result sender.Settings := do
   ok self
 
 /-- Trait implementation: [unisono_core::sender::{impl core::clone::Clone for unisono_core::sender::Settings}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:9-12:14 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:9-13:14 -/
 @[reducible]
 def sender.Settings.Insts.CoreCloneClone : core.clone.Clone sender.Settings
   := {
@@ -4669,7 +4669,7 @@ def sender.Settings.Insts.CoreCloneClone : core.clone.Clone sender.Settings
 }
 
 /-- Trait implementation: [unisono_core::sender::{impl core::marker::Copy for unisono_core::sender::Settings}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:16-12:20 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:16-13:20 -/
 @[reducible]
 def sender.Settings.Insts.CoreMarkerCopy : core.marker.Copy sender.Settings
   := {
@@ -4677,14 +4677,14 @@ def sender.Settings.Insts.CoreMarkerCopy : core.marker.Copy sender.Settings
 }
 
 /-- Trait implementation: [unisono_core::sender::{impl core::marker::StructuralPartialEq for unisono_core::sender::Settings}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:22-12:31 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:22-13:31 -/
 @[reducible]
 def sender.Settings.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq sender.Settings := {
 }
 
 /-- [unisono_core::sender::{impl core::cmp::PartialEq<unisono_core::sender::Settings> for unisono_core::sender::Settings}::eq]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:22-12:31
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:22-13:31
     Visibility: public -/
 def sender.Settings.Insts.CoreCmpPartialEqSettings.eq
   (self : sender.Settings) (other : sender.Settings) : Result Bool := do
@@ -4707,7 +4707,7 @@ def sender.Settings.Insts.CoreCmpPartialEqSettings.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::sender::{impl core::cmp::PartialEq<unisono_core::sender::Settings> for unisono_core::sender::Settings}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:22-12:31 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:22-13:31 -/
 @[reducible]
 def sender.Settings.Insts.CoreCmpPartialEqSettings : core.cmp.PartialEq
   sender.Settings sender.Settings := {
@@ -4715,14 +4715,14 @@ def sender.Settings.Insts.CoreCmpPartialEqSettings : core.cmp.PartialEq
 }
 
 /-- [unisono_core::sender::{impl core::cmp::Eq for unisono_core::sender::Settings}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:33-12:35
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:33-13:35
     Visibility: public -/
 def sender.Settings.Insts.CoreCmpEq.assert_fields_are_eq
   (self : sender.Settings) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::sender::{impl core::cmp::Eq for unisono_core::sender::Settings}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 12:33-12:35 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 13:33-13:35 -/
 @[reducible]
 def sender.Settings.Insts.CoreCmpEq : core.cmp.Eq sender.Settings := {
   partialEqInst := sender.Settings.Insts.CoreCmpPartialEqSettings
@@ -4730,28 +4730,28 @@ def sender.Settings.Insts.CoreCmpEq : core.cmp.Eq sender.Settings := {
 }
 
 /-- [unisono_core::sender::{impl core::clone::Clone for unisono_core::sender::Sender}::clone]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 31:9-31:14
+    Source: 'crates/unisono-core/src/sender.rs', lines 32:9-32:14
     Visibility: public -/
 def sender.Sender.Insts.CoreCloneClone.clone
   (self : sender.Sender) : Result sender.Sender := do
   ok self
 
 /-- Trait implementation: [unisono_core::sender::{impl core::clone::Clone for unisono_core::sender::Sender}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 31:9-31:14 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 32:9-32:14 -/
 @[reducible]
 def sender.Sender.Insts.CoreCloneClone : core.clone.Clone sender.Sender := {
   clone := sender.Sender.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::sender::{impl core::marker::Copy for unisono_core::sender::Sender}]
-    Source: 'crates/unisono-core/src/sender.rs', lines 31:16-31:20 -/
+    Source: 'crates/unisono-core/src/sender.rs', lines 32:16-32:20 -/
 @[reducible]
 def sender.Sender.Insts.CoreMarkerCopy : core.marker.Copy sender.Sender := {
   cloneInst := sender.Sender.Insts.CoreCloneClone
 }
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::new]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 54:4-65:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 57:4-69:5
     Visibility: public -/
 def sender.Sender.new
   (settings : sender.Settings) (timeline : Std.U64) (level : Std.I64) :
@@ -4762,7 +4762,8 @@ def sender.Sender.new
       settings,
       timeline,
       next := 0#u64,
-      level,
+      level_index := 0#u64,
+      level_base := level,
       level_slope := 0#i32,
       stamped := false,
       stamped_index := 0#u64,
@@ -4770,34 +4771,54 @@ def sender.Sender.new
     }
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::timeline]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 69:4-71:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 73:4-75:5
     Visibility: public -/
 def sender.Sender.impl.timeline (self : sender.Sender) : Result Std.U64 := do
   ok self.timeline
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::next]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 75:4-77:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 79:4-81:5
     Visibility: public -/
 def sender.Sender.impl.next (self : sender.Sender) : Result Std.U64 := do
   ok self.next
 
-/-- [unisono_core::sender::{unisono_core::sender::Sender}::level]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 82:4-85:5
+/-- [unisono_core::sender::{unisono_core::sender::Sender}::current_level]:
+    Source: 'crates/unisono-core/src/sender.rs', lines 86:4-95:5
     Visibility: public -/
-def sender.Sender.impl.level
+def sender.Sender.current_level (self : sender.Sender) : Result Std.I64 := do
+  let elapsed ← lift (core.num.U64.saturating_sub self.next self.level_index)
+  let i ← lift (UScalar.hcast .I128 elapsed)
+  let i1 ← lift (IScalar.cast .I128 self.level_slope)
+  let i2 ← lift (core.num.I128.wrapping_mul i i1)
+  let i3 ← lift (UScalar.hcast .I64 self.settings.rate)
+  let delta ← fixed.div_floor i2 i3
+  let i4 ← lift (IScalar.cast .I128 self.level_base)
+  let i5 ← lift (core.num.I128.wrapping_add i4 delta)
+  fixed.saturate i5
+
+/-- [unisono_core::sender::{unisono_core::sender::Sender}::level]:
+    Source: 'crates/unisono-core/src/sender.rs', lines 100:4-104:5
+    Visibility: public -/
+def sender.Sender.level
   (self : sender.Sender) (level : Std.I64) (slope : Std.I32) :
   Result sender.Sender
   := do
-  ok { self with level, level_slope := slope }
+  ok
+    {
+      self
+        with
+        level_index := self.next, level_base := level, level_slope := slope
+    }
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::packet]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 91:4-113:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 110:4-133:5
     Visibility: public -/
 def sender.Sender.packet
   (self : sender.Sender) (frames : Std.U16) (capture : Std.I64)
   (drift : Std.I32) :
   Result (packet.Audio × sender.Sender)
   := do
+  let level ← sender.Sender.current_level self
   let i ← lift (UScalar.cast .U64 frames)
   let i1 ← lift (core.num.U64.saturating_add self.next i)
   if self.stamped
@@ -4813,7 +4834,7 @@ def sender.Sender.packet
          frames,
          channels := self.settings.channels,
          format := self.settings.format,
-         level := self.level,
+         level,
          level_slope := self.level_slope,
          span := self.settings.span,
          window := self.settings.window,
@@ -4834,7 +4855,7 @@ def sender.Sender.packet
          frames,
          channels := self.settings.channels,
          format := self.settings.format,
-         level := self.level,
+         level,
          level_slope := self.level_slope,
          span := self.settings.span,
          window := self.settings.window,
@@ -4845,7 +4866,7 @@ def sender.Sender.packet
        }, { self with next := i1 })
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::departed]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 119:4-129:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 139:4-149:5
     Visibility: public -/
 def sender.Sender.departed
   (self : sender.Sender) (timeline : Std.U64) (index : Std.U64)
@@ -4877,7 +4898,7 @@ def sender.Sender.departed
           }
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::answer]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 134:4-144:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 154:4-164:5
     Visibility: public -/
 def sender.Sender.answer
   (self : sender.Sender) (report : packet.Report) (arrival : Std.I64) :
@@ -4895,14 +4916,35 @@ def sender.Sender.answer
       })
 
 /-- [unisono_core::sender::{unisono_core::sender::Sender}::restart]:
-    Source: 'crates/unisono-core/src/sender.rs', lines 150:4-155:5
+    Source: 'crates/unisono-core/src/sender.rs', lines 170:4-178:5
     Visibility: public -/
 def sender.Sender.restart
   (self : sender.Sender) (timeline : Std.U64) : Result sender.Sender := do
+  let level ← sender.Sender.current_level self
   let after ← lift (core.num.U64.saturating_add self.timeline 1#u64)
   if timeline > after
-  then ok { self with timeline, next := 0#u64, stamped := false }
-  else ok { self with timeline := after, next := 0#u64, stamped := false }
+  then
+    ok
+      {
+        self
+          with
+          timeline,
+          next := 0#u64,
+          level_index := 0#u64,
+          level_base := level,
+          stamped := false
+      }
+  else
+    ok
+      {
+        self
+          with
+          timeline := after,
+          next := 0#u64,
+          level_index := 0#u64,
+          level_base := level,
+          stamped := false
+      }
 
 /-- [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Position}::clone]:
     Source: 'crates/unisono-core/src/timing.rs', lines 20:9-20:14
