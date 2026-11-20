@@ -1,7 +1,6 @@
 # unisono
 
-unisono carries uncompressed audio between hosts so that several loudspeakers
-play it in synchrony, at the lowest latency the hosts and the network allow.
+unisono streams uncompressed audio over IP to multiple receivers and synchronizes playback. It delivers lowest possible latency that a link allows (whether wired or WiFi) and maximum reliability. It is formally verified and uses stochastic optimal control to deliver best possible synchronization.
 
 **Status: early development. Nothing here can be used yet.**
 
