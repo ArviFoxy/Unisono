@@ -336,3 +336,96 @@ fn two_receivers_on_clocks_of_their_own_play_together() {
     }
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn a_poor_link_and_a_receiver_that_starts_again() {
+    let directory = std::env::temp_dir().join(format!("unisono-poor-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a directory");
+    let record = |name: &str| directory.join(name).to_string_lossy().into_owned();
+    let clock = Clock {
+        offset: 5_000_000_000,
+        skew: 15_000,
+    };
+    // A link that loses one datagram in fifty, holds each up to 2 ms more
+    // than its 1 ms, and holds one in fifty back by 5 ms more, so that later
+    // ones overtake it.
+    let poor = Impairment {
+        delay: 1_000_000,
+        jitter: 2_000_000,
+        loss: 0.02,
+        reordering: 0.02,
+        held_back: 5_000_000,
+        ..Impairment::NONE
+    };
+    let clean = Impairment {
+        delay: 1_000_000,
+        ..Impairment::NONE
+    };
+    let (poor_at, clean_at) = (free(), free());
+    let proxies = [
+        Proxy::start(poor_at, poor, clean, 21).expect("a proxy"),
+        Proxy::start(clean_at, clean, clean, 22).expect("a proxy"),
+    ];
+    let to: Vec<SocketAddr> = proxies.iter().map(Proxy::near).collect();
+    let own = Clock { offset: 0, skew: 0 };
+
+    // The first receiver runs the whole time behind the poor link; the
+    // second stops after four seconds and another starts in its place.
+    let steady = receiver(poor_at, clock, 40_000, 1_000_000, 11, &record("steady.raw"));
+    let early = receiver(clean_at, clock, -30_000, 1_000_000, 4, &record("early.raw"));
+    let (sender, start) = sender(&to, own, 0, 10);
+    let early_out = finish(early);
+    let late = receiver(clean_at, clock, -30_000, 1_000_000, 6, &record("late.raw"));
+    let sent = finish(sender);
+    let steady_out = finish(steady);
+    let late_out = finish(late);
+    assert!(sent.contains("restarts 0"), "{sent}");
+    assert!(early_out.contains("dropped 0"), "{early_out}");
+
+    let capture = Capture::new(own, start, 0);
+    #[allow(clippy::cast_precision_loss)]
+    let began = own.host(start as f64);
+
+    // Behind the poor link frames are lost and concealed, and the frames
+    // that play from the stream play on time.
+    let concealed: u64 = steady_out
+        .split_whitespace()
+        .skip_while(|word| *word != "concealed")
+        .nth(1)
+        .and_then(|count| count.parse().ok())
+        .unwrap_or(0);
+    assert!(concealed > 2_000, "{steady_out}");
+    let played = read_record(&record("steady.raw"));
+    let steady_errors = errors(&played, clock, &capture, began + 3e9, began + 9e9);
+    let on_time: Vec<f64> = steady_errors
+        .iter()
+        .copied()
+        .filter(|e| e.abs() < 1e-3)
+        .collect();
+    assert!(
+        on_time.len() > 250_000,
+        "{} frames on time; {steady_out}",
+        on_time.len()
+    );
+    let (low, high) = spread(&on_time, 0.02);
+    assert!(
+        low > -150e-6 && high < 150e-6,
+        "from {low} to {high}; {steady_out}"
+    );
+
+    // The receiver that started again plays on time two seconds after its
+    // start, which is six seconds into the stream.
+    let played = read_record(&record("late.raw"));
+    let errors = errors(&played, clock, &capture, began + 6.5e9, began + 9.5e9);
+    assert!(
+        errors.len() > 120_000,
+        "{} frames; {late_out}",
+        errors.len()
+    );
+    let (low, high) = spread(&errors, 0.02);
+    assert!(
+        low > -150e-6 && high < 150e-6,
+        "from {low} to {high}; {late_out}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
