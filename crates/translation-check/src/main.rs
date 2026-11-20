@@ -13,7 +13,7 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{fixed, packet, relation};
+use unisono_core::{fixed, packet, presence, relation};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -292,6 +292,53 @@ fn packet_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Runs of operations on a stretch of 192 indices. Each operation is three
+/// numbers: 0, a first index and a number of frames, to mark; 1, an index
+/// and 0, to advance; 2, an index and 0, to ask whether it is held; 3, an
+/// index and a limit, to count the frames held from it on. The results follow
+/// `->`: four counts for a mark, the start of the stretch for an advance, 0
+/// or 1 for a question, the count for a run.
+fn presence_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(4);
+    for _ in 0..200 {
+        let mut presence = presence::Presence::<3>::new();
+        let operations = 1 + sequence.next() % 30;
+        let mut results: Vec<i128> = Vec::new();
+        write!(out, "presence {operations}")?;
+        let mut near = sequence.next() % 500;
+        for _ in 0..operations {
+            let index = (near + sequence.next() % 260).saturating_sub(40);
+            let amount = u32::try_from(sequence.next() % 50).unwrap_or(0);
+            match sequence.next() % 4 {
+                0 => {
+                    let marked = presence.mark(index, amount);
+                    write!(out, " 0 {index} {amount}")?;
+                    results.extend(
+                        [marked.stored, marked.duplicate, marked.late, marked.early]
+                            .map(i128::from),
+                    );
+                }
+                1 => {
+                    presence.advance(index);
+                    near = near.max(index);
+                    write!(out, " 1 {index} 0")?;
+                    results.push(i128::from(presence.base()));
+                }
+                2 => {
+                    write!(out, " 2 {index} 0")?;
+                    results.push(i128::from(presence.held(index)));
+                }
+                _ => {
+                    write!(out, " 3 {index} {amount}")?;
+                    results.push(i128::from(presence.run(index, amount)));
+                }
+            }
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -299,5 +346,6 @@ fn main() -> io::Result<()> {
     div_floor_cases(&mut out)?;
     relation_cases(&mut out)?;
     packet_cases(&mut out)?;
+    presence_cases(&mut out)?;
     out.flush()
 }

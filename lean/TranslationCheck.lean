@@ -100,6 +100,34 @@ def runWrite (f : List Int) : Result (List Int) := do
     | none => pure [-1]
   | _ => pure [-2]
 
+/-- Applies operations, each three numbers, to a stretch of 192 indices, and
+collects their results; see `presence_cases` in the Rust program. -/
+def presenceStep (state : presence.Presence 3#usize × List Int) (operation : Int × Int × Int) :
+    Result (presence.Presence 3#usize × List Int) := do
+  let p := state.1
+  let results := state.2
+  let a := operation.2.1
+  let b := operation.2.2
+  if operation.1 = 0 then
+    let marked ← presence.Presence.mark p (unsigned .U64 a) (unsigned .U32 b)
+    pure (marked.2, results ++ ([marked.1.stored.val, marked.1.duplicate.val,
+      marked.1.late.val, marked.1.early.val] : List Int))
+  else if operation.1 = 1 then
+    let p1 ← presence.Presence.advance p (unsigned .U64 a)
+    let base ← presence.Presence.impl.base p1
+    pure (p1, results ++ ([base.val] : List Int))
+  else if operation.1 = 2 then
+    let held ← presence.Presence.held p (unsigned .U64 a)
+    pure (p, results ++ [if held then 1 else 0])
+  else
+    let count ← presence.Presence.run p (unsigned .U64 a) (unsigned .U32 b)
+    pure (p, results ++ ([count.val] : List Int))
+
+def runPresence (operations : List (Int × Int × Int)) : Result (List Int) := do
+  let start ← presence.Presence.new 3#usize
+  let final ← operations.foldlM presenceStep (start, [])
+  pure final.2
+
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
@@ -115,6 +143,12 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       if packets.length = count then result (runRelation span limit packets) id
       else .error "the number of packets is not the stated one"
     | none => .error "packets are not triples"
+  | "presence", count :: rest =>
+    match triples rest with
+    | some operations =>
+      if operations.length = count then result (runPresence operations) id
+      else .error "the number of operations is not the stated one"
+    | none => .error "operations are not triples"
   | "parse_audio", bytes => result (runParse bytes) id
   | "write_audio", fields => result (runWrite fields) id
   | _, _ => .error s!"no function {function} with {args.length} arguments"

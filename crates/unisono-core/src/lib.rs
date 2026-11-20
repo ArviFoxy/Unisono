@@ -40,4 +40,5 @@ extern crate std;
 
 pub mod fixed;
 pub mod packet;
+pub mod presence;
 pub mod relation;
