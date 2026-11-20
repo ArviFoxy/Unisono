@@ -10,8 +10,8 @@ is known, and what is not known.
 that are called on real-time threads into one library, links them with
 everything they reach and nothing else, and inspects the machine code. The
 functions are those that take in a packet, plan a cycle, take and skip frames,
-make and take in reports, fit the line of a device, and read and write
-packets. The check fails unless:
+make and take in reports, take in a report of a device and ask its line for a
+time or for the start and length of a cycle, and read and write packets. The check fails unless:
 
 - **the code needs nothing from outside but the functions that copy and fill
   memory.** It therefore calls no allocator, takes no lock, and calls no
@@ -20,7 +20,11 @@ packets. The check fails unless:
 - **it contains none of the machinery of a panic,** so no path through it can
   panic. This is the same fact that the theorems in `lean/Unisono` state about
   the translation of each function: it returns for every state and every
-  argument;
+  argument. The library's handler of a panic calls a function that is
+  defined nowhere, so a path to a panic that the compiler keeps leaves a
+  reference that cannot be resolved, and the check sees it by name. On every
+  run the check also builds a function that does panic and fails unless that
+  reference appears: the check is seen to catch what it is for;
 - **the sources of the core have no trait object and no pointer to a
   function,** so every call is to a function the compiler knows, and the code
   that was inspected is all the code these functions can run.
