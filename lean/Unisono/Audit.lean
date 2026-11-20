@@ -483,3 +483,27 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Relation.observe_in_order' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Relation.observe_in_order
+
+/-- info: 'Unisono.Player.position_units_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.position_units_total
+
+/-- info: 'Unisono.Player.position_from_units_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.position_from_units_total
+
+/-- info: 'Unisono.Player.step_units_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.step_units_total
+
+/-- info: 'Unisono.Player.step_new_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.step_new_total
+
+/-- info: 'Unisono.Player.position_advance_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.position_advance_total
+
+/-- info: 'Unisono.Player.step_from_parts_per_billion_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.step_from_parts_per_billion_total

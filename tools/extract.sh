@@ -22,6 +22,15 @@ if [ ! -x "$aeneas/bin/aeneas" ] || [ ! -x "$aeneas/charon/bin/charon" ]; then
     exit 1
 fi
 
+# Every function of the core is translated. Only what a type derives may
+# depend on whether the crate is being translated.
+hidden="$(grep -rn 'cfg(not(translating))' "$root/crates/unisono-core/src" | grep -v 'cfg_attr(not(translating), derive(' || true)"
+if [ -n "$hidden" ]; then
+    echo "the core has code that the translation would not see:" >&2
+    echo "$hidden" >&2
+    exit 1
+fi
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

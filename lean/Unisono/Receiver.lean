@@ -242,26 +242,27 @@ theorem adopts_spec (r : receiver.Receiver N M K) (timeline : Std.U64) (t : Std.
     simp [AdoptsAt, hf]
 
 /-- Taking up the timeline of a packet: the receiver follows it, holds
-nothing, clears any candidate, and has its playhead at the packet's first frame.
-When restarting on the same sender clock, the clock and return estimators,
-departure records, and path delay are preserved; on a different clock they are
-reset. -/
+nothing, has no other timeline waiting, and has its playhead at the packet's
+first frame. The delay of the path stays as it is. When the timeline is on
+the clock of the one before, the estimates of that clock and the departures
+of reports stay; on another clock they are dropped. -/
 @[step]
 theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.adopt r h ⦃ r' =>
       r'.stream = r.stream ∧ r'.following = true ∧ r'.timeline = h.timeline
       ∧ r'.clock_id = h.clock ∧ r'.has_candidate = false
       ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh ∧ r'.silence = r.silence ∧ r'.limit = r.limit
+      ∧ r'.path = r.path
       ∧ r'.presence.base = h.index ∧ (∀ j, ¬ Held r'.presence j)
       ∧ (r.following = true → h.clock = r.clock_id →
-          r'.path = r.path ∧ r'.departures = r.departures
+          r'.departures = r.departures
           ∧ r'.back.kept = r.back.kept ∧ r'.back.len = r.back.len ∧ r'.back.line = r.back.line
           ∧ r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
           ∧ (r.clock.lowest = none →
               r'.clock.kept = r.clock.kept ∧ r'.clock.len = r.clock.len
               ∧ r'.clock.line = r.clock.line))
       ∧ (r.following = true → h.clock ≠ r.clock_id →
-          r'.path = 0#i64 ∧ r'.clock.len.val = 0 ∧ r'.clock.line = none
+          r'.clock.len.val = 0 ∧ r'.clock.line = none
           ∧ r'.back.len.val = 0 ∧ r'.back.line = none) ⦄ := by
   unfold receiver.Receiver.adopt
   split
@@ -727,7 +728,7 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
     split
     · rename_i hyes
       have hA : Adopts r h.timeline t := hiff.mp hyes
-      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, _, _⟩
+      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, cpath, c10, c11, _, _⟩
       step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15⟩
       refine ⟨d3.trans c1, d10.trans c8, d11.trans c9,
         fun hne => absurd hsame_s' hne,

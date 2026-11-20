@@ -251,10 +251,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     }
 
     /// Begins to follow the timeline of `header`, with nothing held. When the
-    /// new timeline shares the sender clock identifier of the previous one
-    /// (for instance after a capture-device restart on the same host), the
-    /// clock and path estimates are preserved and only the forward window
-    /// numbering is reset.
+    /// timeline is on the clock of the one before, as after a restart of
+    /// the sender's capture, the estimates of that clock stay and only the
+    /// numbering of their windows starts again. On another clock they are
+    /// dropped. The delay of the path stays in both cases.
     fn adopt(&mut self, header: &Audio) {
         let was_following = self.following;
         let same_clock = was_following && header.clock == self.clock_id;
@@ -271,9 +271,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             self.clock.reset_window();
             self.back.remember(span_of(header));
         } else {
-            if was_following {
-                self.path = 0;
-            }
+            // The delay of the path is not a matter of the sender's clock:
+            // it stays, until reports to this sender are answered.
             self.clock = Estimator::new(span_of(header), self.limit);
             self.departures = Arrivals::new();
             self.back = Estimator::new(span_of(header), self.limit);
@@ -988,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn same_clock_restart_keeps_clock_and_path_while_different_clock_resets_them() {
+    fn a_timeline_on_the_same_clock_keeps_the_estimate_and_any_timeline_keeps_the_path() {
         let offset = 5_000_000i64;
         let mut receiver: Receiver<4, 8, 4> = receiver();
         stream(&mut receiver, offset, 0, 60);
@@ -1007,8 +1006,9 @@ mod tests {
         assert_eq!(line_after.eval(500_000_000), line_before.eval(500_000_000));
         assert_eq!(receiver.delay(), 100_000);
 
-        // Sender reboot (clock == 2): two packets confirm timeline 11 and
-        // reset both clock and path estimates.
+        // Another clock (clock == 2): the second packet of timeline 11 drops
+        // the estimate of the clock. The delay of the path stays, because it
+        // does not depend on the sender's clock.
         let mut r0 = header(11, 0, 480);
         r0.clock = 2;
         let mut r1 = header(11, 480, 480);
@@ -1016,7 +1016,7 @@ mod tests {
         assert!(receiver.packet(&r0, offset + 800_000_000).ignored);
         assert!(receiver.packet(&r1, offset + 810_000_000).adopted);
         assert_eq!(receiver.clock(), None);
-        assert_eq!(receiver.delay(), 0);
+        assert_eq!(receiver.delay(), 100_000);
     }
 
     #[test]

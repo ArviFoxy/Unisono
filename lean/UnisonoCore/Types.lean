@@ -134,7 +134,7 @@ structure player.Regulation where
   jump : Std.U32
 
 /-- [unisono_core::timing::Step]
-    Source: 'crates/unisono-core/src/timing.rs', lines 93:0-95:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 102:0-104:1
     Visibility: public -/
 structure timing.Step where
   offset : Std.I64
@@ -218,7 +218,7 @@ structure receiver.Settings where
   regulation : player.Regulation
 
 /-- [unisono_core::timing::Schedule]
-    Source: 'crates/unisono-core/src/timing.rs', lines 170:0-184:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 191:0-205:1
     Visibility: public -/
 structure timing.Schedule where
   index : Std.U64

@@ -414,6 +414,22 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
     result (timing.advance
       { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
       (unsigned .U32 frames) (signed .I64 step)) (fun r => [r.frame.val, r.fraction.val])
+  | "position_units", [frame, fraction] =>
+    result (do
+      let units ← timing.Position.units
+        { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
+      timing.Position.from_units units) (fun r => [r.frame.val, r.fraction.val])
+  | "step_advance", [frame, fraction, offset, frames] =>
+    result (do
+      let step ← timing.Step.clamped (signed .I64 offset)
+      timing.Position.advance
+        { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
+        step (unsigned .U64 frames))
+      (fun r => match r with
+        | some p => [1, p.frame.val, p.fraction.val]
+        | none => [0, 0, 0])
+  | "step_parts", [parts] =>
+    result (timing.Step.from_parts_per_billion (signed .I64 parts)) (fun r => [r.offset.val])
   | "player", gain :: limit :: jump :: count :: rest =>
     match groups 6 rest with
     | some cycles =>

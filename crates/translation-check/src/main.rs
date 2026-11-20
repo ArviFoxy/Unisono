@@ -783,6 +783,55 @@ fn timing_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Positions and steps as counts of units of 2^-64 frame: a position taken
+/// apart and put together, a position moved on by a number of steps, and the
+/// step for a number of parts per billion.
+fn unit_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(11);
+    let boundaries = boundary_values();
+    for _ in 0..600 {
+        let from = timing::Position {
+            frame: sequence.next() >> (sequence.next() % 64),
+            fraction: sequence.next(),
+        };
+        let again = timing::Position::from_units(from.units());
+        writeln!(
+            out,
+            "position_units {} {} -> {} {}",
+            from.frame, from.fraction, again.frame, again.fraction
+        )?;
+        let place = usize::try_from(sequence.next()).unwrap_or(0) % boundaries.len();
+        let step = if sequence.next().is_multiple_of(4) {
+            boundaries[place]
+        } else {
+            sequence.signed() >> (sequence.next() % 64)
+        };
+        let many = sequence.next() >> (sequence.next() % 64);
+        let stepped = from.advance(timing::Step::clamped(step), many);
+        writeln!(
+            out,
+            "step_advance {} {} {step} {many} -> {}",
+            from.frame,
+            from.fraction,
+            match stepped {
+                Some(position) => format!("1 {} {}", position.frame, position.fraction),
+                None => "0 0 0".to_string(),
+            }
+        )?;
+        let parts = if sequence.next().is_multiple_of(2) {
+            sequence.signed() % 10_000_000
+        } else {
+            boundaries[place]
+        };
+        writeln!(
+            out,
+            "step_parts {parts} -> {}",
+            timing::Step::from_parts_per_billion(parts).offset()
+        )?;
+    }
+    Ok(())
+}
+
 /// Runs of cycles through a regulator. Each cycle is six numbers: the frame
 /// and fraction of the position due at its start, the same for its end, the
 /// number of frames and the duration. The results of each are the plan's
@@ -1049,6 +1098,7 @@ fn main() -> io::Result<()> {
     receiver_cases(&mut out)?;
     sender_cases(&mut out)?;
     timing_cases(&mut out)?;
+    unit_cases(&mut out)?;
     player_cases(&mut out)?;
     report_cases(&mut out)?;
     device_cases(&mut out)?;

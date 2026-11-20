@@ -27,7 +27,9 @@ pub struct Position {
     pub fraction: u64,
 }
 
-#[cfg(not(translating))]
+/// One frame in units of 2^-64 frame: 2^64.
+const FRAME: i128 = 18_446_744_073_709_551_616;
+
 impl Position {
     /// The position `fraction * 2^-64` frames beyond the frame `frame`.
     #[must_use]
@@ -56,7 +58,10 @@ impl Position {
     /// The position as a count of units of 2^-64 frame.
     #[must_use]
     pub const fn units(self) -> u128 {
-        ((self.frame as u128) << 64) | self.fraction as u128
+        // 64 bits moved up by 64, and 64 bits below them: no wrapping.
+        (self.frame as u128)
+            .wrapping_shl(64)
+            .wrapping_add(self.fraction as u128)
     }
 
     /// The position that is `units` units of 2^-64 frame from frame 0.
@@ -64,7 +69,7 @@ impl Position {
     #[allow(clippy::cast_possible_truncation)] // the two halves are taken apart on purpose
     pub const fn from_units(units: u128) -> Position {
         Position {
-            frame: (units >> 64) as u64,
+            frame: units.wrapping_shr(64) as u64,
             fraction: units as u64,
         }
     }
@@ -74,8 +79,12 @@ impl Position {
     /// `None` when it lies beyond the largest position.
     #[must_use]
     pub fn advance(self, step: Step, frames: u64) -> Option<Position> {
-        let distance = step.units().checked_mul(u128::from(frames))?;
-        let units = self.units().checked_add(distance)?;
+        let Some(distance) = step.units().checked_mul(frames as u128) else {
+            return None;
+        };
+        let Some(units) = self.units().checked_add(distance) else {
+            return None;
+        };
         Some(Position::from_units(units))
     }
 }
@@ -138,25 +147,37 @@ impl Step {
     /// The step that is `parts` parts per billion more than one frame,
     /// rounded to the nearest unit and brought to the nearest permitted
     /// offset.
-    #[cfg(not(translating))]
     #[must_use]
     pub fn from_parts_per_billion(parts: i64) -> Step {
-        const HALF_BILLION: i128 = 500_000_000;
-        // Beyond this the result is clamped anyway, and the product below
-        // stays far from the range of its type.
-        let parts = i128::from(parts.clamp(-4_000_000, 4_000_000));
-        let offset = div_floor(parts.wrapping_shl(64).wrapping_add(HALF_BILLION), BILLION);
+        // Beyond four in a thousand the result is brought back anyway, and
+        // the product below stays far from the range of its type.
+        let parts = if parts > 4_000_000 {
+            4_000_000
+        } else if parts < -4_000_000 {
+            -4_000_000
+        } else {
+            parts
+        };
+        let offset = div_floor(
+            (parts as i128)
+                .wrapping_mul(FRAME)
+                .wrapping_add(HALF_BILLION),
+            BILLION,
+        );
         Step::clamped(saturate(offset))
     }
 
     /// The whole step in units of 2^-64 frame.
-    #[cfg(not(translating))]
     #[must_use]
+    #[allow(clippy::cast_sign_loss)] // the sum is positive
     pub const fn units(self) -> u128 {
         // The offset is far smaller than one frame, so the sum is positive.
-        (1i128.wrapping_shl(64).wrapping_add(self.offset as i128)).cast_unsigned()
+        FRAME.wrapping_add(self.offset as i128) as u128
     }
 }
+
+/// Half a billion, which rounds a division by a billion to the nearest.
+const HALF_BILLION: i128 = 500_000_000;
 
 /// When the frames of a timeline are due, as a packet says it.
 ///

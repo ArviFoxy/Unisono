@@ -264,4 +264,60 @@ theorem stop_total (p : player.Player) : player.Player.stop p ⦃ _ => True ⦄ 
   unfold player.Player.stop
   simp
 
+/-! ## Positions and steps as counts of units
+
+The functions that the code outside the core uses to count positions and
+steps in units of 2^-64 frame return for every argument. -/
+
+theorem position_new_total (frame fraction : Std.U64) :
+    timing.Position.new frame fraction ⦃ _ => True ⦄ := by
+  unfold timing.Position.new
+  simp
+
+theorem position_at_frame_total (frame : Std.U64) :
+    timing.Position.at_frame frame ⦃ _ => True ⦄ := by
+  unfold timing.Position.at_frame
+  simp
+
+theorem position_frame_total (p : timing.Position) :
+    timing.Position.impl.frame p ⦃ _ => True ⦄ := by
+  unfold timing.Position.impl.frame
+  simp
+
+theorem position_fraction_total (p : timing.Position) :
+    timing.Position.impl.fraction p ⦃ _ => True ⦄ := by
+  unfold timing.Position.impl.fraction
+  simp
+
+@[step]
+theorem position_units_total (p : timing.Position) :
+    timing.Position.units p ⦃ _ => True ⦄ := by
+  unfold timing.Position.units
+  run
+
+@[step]
+theorem position_from_units_total (units : Std.U128) :
+    timing.Position.from_units units ⦃ _ => True ⦄ := by
+  unfold timing.Position.from_units
+  run
+
+@[step]
+theorem step_units_total (s : timing.Step) : timing.Step.units s ⦃ _ => True ⦄ := by
+  unfold timing.Step.units
+  run
+
+theorem step_new_total (offset : Std.I64) : timing.Step.new offset ⦃ _ => True ⦄ := by
+  unfold timing.Step.new
+  run
+
+theorem position_advance_total (p : timing.Position) (s : timing.Step) (frames : Std.U64) :
+    timing.Position.advance p s frames ⦃ _ => True ⦄ := by
+  unfold timing.Position.advance
+  run
+
+theorem step_from_parts_per_billion_total (parts : Std.I64) :
+    timing.Step.from_parts_per_billion parts ⦃ _ => True ⦄ := by
+  unfold timing.Step.from_parts_per_billion
+  run
+
 end Unisono.Player

@@ -1988,7 +1988,7 @@ def player.Plan.Insts.CoreMarkerStructuralPartialEq :
 }
 
 /-- [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Step> for unisono_core::timing::Step}::eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:22-100:31
     Visibility: public -/
 def timing.Step.Insts.CoreCmpPartialEqStep.eq
   (self : timing.Step) (other : timing.Step) : Result Bool := do
@@ -2147,13 +2147,13 @@ def player.Player.reach (self : player.Player) : Result Std.I128 := do
   fixed.div_floor i1 player.BILLION
 
 /-- [unisono_core::timing::{unisono_core::timing::Step}::LARGEST_OFFSET]
-    Source: 'crates/unisono-core/src/timing.rs', lines 99:4-99:59
+    Source: 'crates/unisono-core/src/timing.rs', lines 108:4-108:59
     Visibility: public -/
 @[global_simps, irreducible]
 def timing.Step.LARGEST_OFFSET : Std.I64 := 72057594037927936#i64
 
 /-- [unisono_core::timing::{unisono_core::timing::Step}::clamped]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 119:4-130:5
+    Source: 'crates/unisono-core/src/timing.rs', lines 128:4-139:5
     Visibility: public -/
 def timing.Step.clamped (offset : Std.I64) : Result timing.Step := do
   let low ← lift (core.num.I64.wrapping_sub 0#i64 timing.Step.LARGEST_OFFSET)
@@ -2195,7 +2195,7 @@ def player.Player.step
   timing.Step.clamped limited
 
 /-- [unisono_core::timing::advance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 269:0-290:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 290:0-311:1
     Visibility: public -/
 def timing.advance
   (start : timing.Position) (frames : Std.U32) (step : Std.I64) :
@@ -2220,7 +2220,7 @@ def timing.advance
     ok { frame := i8, fraction := i9 }
 
 /-- [unisono_core::timing::{unisono_core::timing::Step}::offset]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 134:4-136:5
+    Source: 'crates/unisono-core/src/timing.rs', lines 143:4-145:5
     Visibility: public -/
 def timing.Step.impl.offset (self : timing.Step) : Result Std.I64 := do
   ok self.offset
@@ -2266,7 +2266,7 @@ def player.Player.jumps
   else ok true
 
 /-- [unisono_core::timing::distance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 257:0-263:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 278:0-284:1
     Visibility: public -/
 def timing.distance
   («from» : timing.Position) («to» : timing.Position) :
@@ -2285,7 +2285,7 @@ def timing.distance
   fixed.saturate i7
 
 /-- [unisono_core::timing::{unisono_core::timing::Step}::UNITY]
-    Source: 'crates/unisono-core/src/timing.rs', lines 102:4-102:47
+    Source: 'crates/unisono-core/src/timing.rs', lines 111:4-111:47
     Visibility: public -/
 @[global_simps, irreducible]
 def timing.Step.UNITY : timing.Step := { offset := 0#i64 }
@@ -4126,7 +4126,7 @@ def relation.Estimator.remember
   ok { self with span := i }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopt]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 258:4-281:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 258:4-280:5 -/
 def receiver.Receiver.adopt
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4161,12 +4161,9 @@ def receiver.Receiver.adopt
           back := e2
       }
   else
-    let i ← if self.following
-              then ok 0#i64
-              else ok self.path
-    let i1 ← receiver.span_of header1
-    let e ← relation.Estimator.new M i1 self.limit
-    let e1 ← relation.Estimator.new M i1 self.limit
+    let i ← receiver.span_of header1
+    let e ← relation.Estimator.new M i self.limit
+    let e1 ← relation.Estimator.new M i self.limit
     ok
       {
         self
@@ -4175,7 +4172,6 @@ def receiver.Receiver.adopt
           timeline := header1.timeline,
           clock_id := header1.clock,
           has_candidate := false,
-          path := i,
           presence := p,
           clock := e,
           arrived := a,
@@ -4186,7 +4182,7 @@ def receiver.Receiver.adopt
       }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stamped_arrival]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 285:4-290:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 284:4-289:5 -/
 def receiver.Receiver.stamped_arrival
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4298,7 +4294,7 @@ def relation.Estimator.observe
       } sample
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::sample]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 295:4-306:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 294:4-305:5 -/
 def receiver.Receiver.sample
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrived : Std.I64)
@@ -4315,7 +4311,7 @@ def receiver.Receiver.sample
   ok { self with clock := e }
 
 /-- [unisono_core::timing::sender_time]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 192:0-212:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 213:0-233:1
     Visibility: public -/
 def timing.sender_time
   (line : relation.Line) (path : Std.I64) (time : Std.I64) :
@@ -4368,7 +4364,7 @@ def relation.Estimator.middle
       ok (some i4)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure_path]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 505:4-520:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 504:4-519:5 -/
 def receiver.Receiver.measure_path
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) :
@@ -4399,7 +4395,7 @@ def receiver.Receiver.measure_path
              ok { self with path := i4 }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 310:4-318:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 309:4-317:5 -/
 def receiver.Receiver.measure
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -4425,7 +4421,7 @@ def receiver.Receiver.measure
   ok { self1 with arrived := a }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::note]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 321:4-330:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 320:4-329:5 -/
 def receiver.Receiver.note
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4448,7 +4444,7 @@ def receiver.Receiver.note
     }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::slide_warmup]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 336:4-357:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 335:4-356:5 -/
 def receiver.Receiver.slide_warmup
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4486,7 +4482,7 @@ def receiver.Receiver.slide_warmup
       else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stale]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 363:4-373:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 362:4-372:5 -/
 def receiver.Receiver.stale
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (marked : presence.Marked)
@@ -4512,7 +4508,7 @@ def receiver.Receiver.stale
           ok (i1 >= self.silence, { self with fresh := i })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::renew]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 378:4-385:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 377:4-384:5 -/
 def receiver.Receiver.renew
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4526,7 +4522,7 @@ def receiver.Receiver.renew
   ok (m, { self with presence := p2, clock := e, player := p1 })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::refresh]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 391:4-401:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 390:4-400:5 -/
 def receiver.Receiver.refresh
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio)
@@ -4554,7 +4550,7 @@ def receiver.Receiver.refresh
         else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 404:4-418:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 403:4-417:5 -/
 def receiver.Receiver.accept
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -4579,7 +4575,7 @@ def receiver.Receiver.accept
   ok ({ ignored := false, adopted, restarted, marked }, self5)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 422:4-453:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 421:4-452:5
     Visibility: public -/
 def receiver.Receiver.packet
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4635,7 +4631,7 @@ def receiver.Receiver.packet
           adopted
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::report]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 457:4-469:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 456:4-468:5
     Visibility: public -/
 def receiver.Receiver.report
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4655,7 +4651,7 @@ def receiver.Receiver.report
   else ok (none, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reported]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 473:4-475:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 472:4-474:5
     Visibility: public -/
 def receiver.Receiver.reported
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4666,7 +4662,7 @@ def receiver.Receiver.reported
   ok { self with departures := a }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::echo]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 482:4-499:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 481:4-498:5
     Visibility: public -/
 def receiver.Receiver.echo
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4700,7 +4696,7 @@ def receiver.Receiver.echo
 @[global_simps, irreducible] def timing.BILLION : Std.I64 := 1000000000#i64
 
 /-- [unisono_core::timing::due]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 219:0-252:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 240:0-273:1
     Visibility: public -/
 def timing.due
   (schedule : timing.Schedule) (time : Std.I64) :
@@ -4752,7 +4748,7 @@ def timing.due
           ok (some { frame := i18, fraction := i20 })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::cycle]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 527:4-555:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 526:4-554:5
     Visibility: public -/
 def receiver.Receiver.cycle
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4821,7 +4817,7 @@ def receiver.Receiver.cycle
        }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 558:4-561:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 557:4-560:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -4834,7 +4830,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 566:4-591:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 565:4-590:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4856,7 +4852,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 597:4-604:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 596:4-603:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -5369,36 +5365,114 @@ def timing.Position.Insts.CoreCmpEq : core.cmp.Eq timing.Position := {
   assert_fields_are_eq := timing.Position.Insts.CoreCmpEq.assert_fields_are_eq
 }
 
+/-- [unisono_core::timing::FRAME]
+    Source: 'crates/unisono-core/src/timing.rs', lines 31:0-31:47 -/
+@[global_simps, irreducible]
+def timing.FRAME : Std.I128 := 18446744073709551616#i128
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::new]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 36:4-38:5
+    Visibility: public -/
+def timing.Position.new
+  (frame : Std.U64) (fraction : Std.U64) : Result timing.Position := do
+  ok { frame, fraction }
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::at_frame]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 42:4-44:5
+    Visibility: public -/
+def timing.Position.at_frame (frame : Std.U64) : Result timing.Position := do
+  ok { frame, fraction := 0#u64 }
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::frame]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 48:4-50:5
+    Visibility: public -/
+def timing.Position.impl.frame (self : timing.Position) : Result Std.U64 := do
+  ok self.frame
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::fraction]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 54:4-56:5
+    Visibility: public -/
+def timing.Position.impl.fraction
+  (self : timing.Position) : Result Std.U64 := do
+  ok self.fraction
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::units]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 60:4-65:5
+    Visibility: public -/
+def timing.Position.units (self : timing.Position) : Result Std.U128 := do
+  let i ← lift (UScalar.cast .U128 self.frame)
+  let i1 ← lift (core.num.U128.wrapping_shl i 64#u32)
+  let i2 ← lift (UScalar.cast .U128 self.fraction)
+  ok (core.num.U128.wrapping_add i1 i2)
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::from_units]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 70:4-75:5
+    Visibility: public -/
+def timing.Position.from_units
+  (units : Std.U128) : Result timing.Position := do
+  let i ← lift (core.num.U128.wrapping_shr units 64#u32)
+  let i1 ← lift (UScalar.cast .U64 i)
+  let i2 ← lift (UScalar.cast .U64 units)
+  ok { frame := i1, fraction := i2 }
+
+/-- [unisono_core::timing::{unisono_core::timing::Step}::units]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 173:4-176:5
+    Visibility: public -/
+def timing.Step.units (self : timing.Step) : Result Std.U128 := do
+  let i ← lift (IScalar.cast .I128 self.offset)
+  let i1 ← lift (core.num.I128.wrapping_add timing.FRAME i)
+  ok (IScalar.hcast .U128 i1)
+
+/-- [unisono_core::timing::{unisono_core::timing::Position}::advance]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 81:4-89:5
+    Visibility: public -/
+def timing.Position.advance
+  (self : timing.Position) (step : timing.Step) (frames : Std.U64) :
+  Result (Option timing.Position)
+  := do
+  let i ← timing.Step.units step
+  let i1 ← lift (UScalar.cast .U128 frames)
+  let o ← lift (U128.checked_mul i i1)
+  match o with
+  | none => ok none
+  | some distance =>
+    let i2 ← timing.Position.units self
+    let o1 ← lift (U128.checked_add i2 distance)
+    match o1 with
+    | none => ok none
+    | some units => let p ← timing.Position.from_units units
+                    ok (some p)
+
 /-- [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Step}::clone]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:9-91:14
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:9-100:14
     Visibility: public -/
 def timing.Step.Insts.CoreCloneClone.clone
   (self : timing.Step) : Result timing.Step := do
   ok self
 
 /-- Trait implementation: [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Step}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:9-91:14 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:9-100:14 -/
 @[reducible]
 def timing.Step.Insts.CoreCloneClone : core.clone.Clone timing.Step := {
   clone := timing.Step.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::Copy for unisono_core::timing::Step}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:16-91:20 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:16-100:20 -/
 @[reducible]
 def timing.Step.Insts.CoreMarkerCopy : core.marker.Copy timing.Step := {
   cloneInst := timing.Step.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::StructuralPartialEq for unisono_core::timing::Step}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:22-100:31 -/
 @[reducible]
 def timing.Step.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq timing.Step := {
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Step> for unisono_core::timing::Step}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:22-100:31 -/
 @[reducible]
 def timing.Step.Insts.CoreCmpPartialEqStep : core.cmp.PartialEq timing.Step
   timing.Step := {
@@ -5406,14 +5480,14 @@ def timing.Step.Insts.CoreCmpPartialEqStep : core.cmp.PartialEq timing.Step
 }
 
 /-- [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Step}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:33-91:35
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:33-100:35
     Visibility: public -/
 def timing.Step.Insts.CoreCmpEq.assert_fields_are_eq
   (self : timing.Step) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Step}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 91:33-91:35 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 100:33-100:35 -/
 @[reducible]
 def timing.Step.Insts.CoreCmpEq : core.cmp.Eq timing.Step := {
   partialEqInst := timing.Step.Insts.CoreCmpPartialEqStep
@@ -5421,7 +5495,7 @@ def timing.Step.Insts.CoreCmpEq : core.cmp.Eq timing.Step := {
 }
 
 /-- [unisono_core::timing::{unisono_core::timing::Step}::new]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 107:4-114:5
+    Source: 'crates/unisono-core/src/timing.rs', lines 116:4-123:5
     Visibility: public -/
 def timing.Step.new (offset : Std.I64) : Result (Option timing.Step) := do
   let low ← lift (core.num.I64.wrapping_sub 0#i64 timing.Step.LARGEST_OFFSET)
@@ -5431,15 +5505,38 @@ def timing.Step.new (offset : Std.I64) : Result (Option timing.Step) := do
        then ok none
        else ok (some { offset })
 
+/-- [unisono_core::timing::HALF_BILLION]
+    Source: 'crates/unisono-core/src/timing.rs', lines 180:0-180:39 -/
+@[global_simps, irreducible]
+def timing.HALF_BILLION : Std.I128 := 500000000#i128
+
+/-- [unisono_core::timing::{unisono_core::timing::Step}::from_parts_per_billion]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 151:4-168:5
+    Visibility: public -/
+def timing.Step.from_parts_per_billion
+  (parts : Std.I64) : Result timing.Step := do
+  let parts1 ←
+    if parts > 4000000#i64
+    then ok 4000000#i64
+    else if parts < (-4000000)#i64
+         then ok (-4000000)#i64
+         else ok parts
+  let i ← lift (IScalar.cast .I128 parts1)
+  let i1 ← lift (core.num.I128.wrapping_mul i timing.FRAME)
+  let i2 ← lift (core.num.I128.wrapping_add i1 timing.HALF_BILLION)
+  let offset ← fixed.div_floor i2 timing.BILLION
+  let i3 ← fixed.saturate offset
+  timing.Step.clamped i3
+
 /-- [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Schedule}::clone]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:9-168:14
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:9-189:14
     Visibility: public -/
 def timing.Schedule.Insts.CoreCloneClone.clone
   (self : timing.Schedule) : Result timing.Schedule := do
   ok self
 
 /-- Trait implementation: [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:9-168:14 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:9-189:14 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCloneClone : core.clone.Clone timing.Schedule
   := {
@@ -5447,7 +5544,7 @@ def timing.Schedule.Insts.CoreCloneClone : core.clone.Clone timing.Schedule
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::Copy for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:16-168:20 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:16-189:20 -/
 @[reducible]
 def timing.Schedule.Insts.CoreMarkerCopy : core.marker.Copy timing.Schedule
   := {
@@ -5455,14 +5552,14 @@ def timing.Schedule.Insts.CoreMarkerCopy : core.marker.Copy timing.Schedule
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::StructuralPartialEq for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:22-189:31 -/
 @[reducible]
 def timing.Schedule.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq timing.Schedule := {
 }
 
 /-- [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Schedule> for unisono_core::timing::Schedule}::eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:22-189:31
     Visibility: public -/
 def timing.Schedule.Insts.CoreCmpPartialEqSchedule.eq
   (self : timing.Schedule) (other : timing.Schedule) : Result Bool := do
@@ -5483,7 +5580,7 @@ def timing.Schedule.Insts.CoreCmpPartialEqSchedule.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Schedule> for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:22-189:31 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCmpPartialEqSchedule : core.cmp.PartialEq
   timing.Schedule timing.Schedule := {
@@ -5491,14 +5588,14 @@ def timing.Schedule.Insts.CoreCmpPartialEqSchedule : core.cmp.PartialEq
 }
 
 /-- [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Schedule}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:33-168:35
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:33-189:35
     Visibility: public -/
 def timing.Schedule.Insts.CoreCmpEq.assert_fields_are_eq
   (self : timing.Schedule) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 168:33-168:35 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 189:33-189:35 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCmpEq : core.cmp.Eq timing.Schedule := {
   partialEqInst := timing.Schedule.Insts.CoreCmpPartialEqSchedule

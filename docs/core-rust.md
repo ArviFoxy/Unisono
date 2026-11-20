@@ -51,6 +51,12 @@ configuration `translating` set, and every type of the core derives `Debug`
 with `#[cfg_attr(not(translating), derive(Debug))]`. What `Debug` prints is
 no part of what is proved.
 
+That is the only use of the configuration. A function of the core that was
+compiled only when not translating would be code that no theorem and no
+comparison covers, in the crate whose every function is proved to return.
+`tools/extract.sh` refuses a core that has one. What cannot be translated
+belongs in another crate.
+
 Three things translate into Lean that then does not serve:
 
 - a field with the name of a module whose types a later field of the same
