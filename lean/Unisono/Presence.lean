@@ -959,6 +959,66 @@ theorem run_spec (p : presence.Presence N) (start : Std.U64) (limit : Std.U32) :
   unfold presence.Presence.run
   exact run_loop_spec p start limit
 
+theorem gap_loop_spec (p : presence.Presence N) (start : Std.U64) (limit : Std.U32) :
+    presence.Presence.gap_loop p start limit 0#u32 ⦃ r =>
+      r.val ≤ limit.val
+      ∧ (∀ k, k < r.val → ¬ Held p (start.val + k))
+      ∧ (r.val < limit.val → Held p (start.val + r.val)) ⦄ := by
+  unfold presence.Presence.gap_loop
+  apply loop.spec_decr_nat
+    (measure := fun count : Std.U32 => limit.val - count.val)
+    (inv := fun count : Std.U32 =>
+      count.val ≤ limit.val ∧ ∀ k, k < count.val → ¬ Held p (start.val + k))
+  · rintro count ⟨hle, hall⟩
+    unfold presence.Presence.gap_loop.body
+    have hl : limit.val ≤ U32.max := by scalar_tac
+    split
+    · have hlt : count.val < limit.val := by scalar_tac
+      step as ⟨b, hb⟩
+      split
+      · rename_i hheld
+        simp only [WP.spec_ok]
+        exact ⟨hle, hall, fun _ => hb.mp hheld⟩
+      · rename_i hnot
+        step as ⟨count1, hcount1⟩
+        have hv : count1.val = count.val + 1 := by
+          rw [hcount1]; exact U32.saturating_add_one_val count limit.val hlt hl
+        refine ⟨by omega, ?_, by omega⟩
+        intro k hk
+        by_cases hkc : k = count.val
+        · subst hkc
+          exact fun h => hnot (hb.mpr h)
+        · exact hall k (by omega)
+    · have : ¬ count.val < limit.val := by scalar_tac
+      simp only [WP.spec_ok]
+      exact ⟨hle, hall, fun h => absurd h this⟩
+  · refine ⟨by scalar_tac, fun k hk => ?_⟩
+    have h0 : (0#u32).val = 0 := by rfl
+    omega
+
+/-- `gap` counts the frames that are not held without a break from an index
+on: none of that many frames is held, and the next one is, unless the count
+has reached the limit. -/
+@[step]
+theorem gap_spec (p : presence.Presence N) (start : Std.U64) (limit : Std.U32) :
+    presence.Presence.gap p start limit ⦃ r =>
+      r.val ≤ limit.val
+      ∧ (∀ k, k < r.val → ¬ Held p (start.val + k))
+      ∧ (r.val < limit.val → Held p (start.val + r.val)) ⦄ := by
+  unfold presence.Presence.gap
+  exact gap_loop_spec p start limit
+
+/-- A stretch that is started anew holds nothing. -/
+@[step]
+theorem restart_spec (p : presence.Presence N) (base : Std.U64) :
+    presence.Presence.restart p base ⦃ r => r.base = base ∧ ∀ j, ¬ Held r j ⦄ := by
+  unfold presence.Presence.restart
+  step as ⟨s1, hb1, hclear⟩
+  intro j h
+  have hb : bitOf s1 j = true := h.2
+  rw [hclear j] at hb
+  cases hb
+
 /-- A new stretch holds nothing. -/
 theorem new_spec (N : Std.Usize) :
     presence.Presence.new N ⦃ r => r.base.val = 0 ∧ ∀ j, ¬ Held r j ⦄ := by

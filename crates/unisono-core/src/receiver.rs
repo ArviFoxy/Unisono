@@ -195,21 +195,28 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.arrivals.find(header.stamped_index)
     }
 
+    /// Gives the estimate of the sender's clock the sample of the earlier
+    /// packet whose departure `header` carries and which arrived at
+    /// `arrived`.
+    fn sample(&mut self, header: &Audio, arrived: i64) {
+        let sample = Sample {
+            time: header.stamped_departure,
+            value: arrived.saturating_sub(header.stamped_departure),
+        };
+        // A window of no frames makes every packet a window.
+        let window = header
+            .stamped_index
+            .checked_div(header.window as u64)
+            .unwrap_or(header.stamped_index);
+        self.clock.observe(window, sample);
+    }
+
     /// Takes from a packet of the followed timeline what it says about the
     /// sender's clock, and keeps its arrival for a later packet to refer to.
     fn measure(&mut self, header: &Audio, arrival: i64) {
         self.clock.remember(span_of(header));
         if let Some(arrived) = self.stamped_arrival(header) {
-            let sample = Sample {
-                time: header.stamped_departure,
-                value: arrived.saturating_sub(header.stamped_departure),
-            };
-            // A window of no frames makes every packet a window.
-            let window = header
-                .stamped_index
-                .checked_div(header.window as u64)
-                .unwrap_or(header.stamped_index);
-            self.clock.observe(window, sample);
+            self.sample(header, arrived);
         }
         self.arrivals.record(header.index, arrival);
     }
@@ -230,6 +237,19 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
                 level: header.level,
                 level_slope: header.level_slope,
             });
+        }
+    }
+
+    /// Takes in a packet of the followed timeline.
+    fn accept(&mut self, header: &Audio, arrival: i64, adopted: bool) -> Heard {
+        self.heard = arrival;
+        self.measure(header, arrival);
+        self.note(header);
+        let marked = self.presence.mark(header.index, header.frames as u32);
+        Heard {
+            ignored: false,
+            adopted,
+            marked,
         }
     }
 
@@ -256,15 +276,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
                 },
             };
         }
-        self.heard = arrival;
-        self.measure(header, arrival);
-        self.note(header);
-        let marked = self.presence.mark(header.index, header.frames as u32);
-        Heard {
-            ignored: false,
-            adopted,
-            marked,
-        }
+        self.accept(header, arrival, adopted)
     }
 
     /// Moves the playhead forward by `frames`.

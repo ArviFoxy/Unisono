@@ -3049,6 +3049,23 @@ def relation.Estimator.observe
         line := o1
       }
 
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::sample]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 201:4-212:5 -/
+def receiver.Receiver.sample
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) (arrived : Std.I64)
+  :
+  Result (receiver.Receiver N M K)
+  := do
+  let i ← lift (core.num.I64.saturating_sub arrived header.stamped_departure)
+  let i1 ← lift (UScalar.cast .U64 header.window)
+  let o ← lift (U64.checked_div header.stamped_index i1)
+  let window ← lift (core.option.Option.unwrap_or o header.stamped_index)
+  let e ←
+    relation.Estimator.observe self.clock window
+      { time := header.stamped_departure, value := i }
+  ok { self with clock := e }
+
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::remember]:
     Source: 'crates/unisono-core/src/relation.rs', lines 139:4-141:5
     Visibility: public -/
@@ -3059,7 +3076,7 @@ def relation.Estimator.remember
   ok { self with span }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 200:4-215:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 216:4-222:5 -/
 def receiver.Receiver.measure
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -3069,26 +3086,16 @@ def receiver.Receiver.measure
   let i ← receiver.span_of header
   let e ← relation.Estimator.remember self.clock i
   let o ← receiver.Receiver.stamped_arrival { self with clock := e } header
-  let (e1, header1) ←
+  let self1 ←
     match o with
-    | none => ok (e, header)
+    | none => ok { self with clock := e }
     | some arrived =>
-      do
-      let i1 ←
-        lift (core.num.I64.saturating_sub arrived header.stamped_departure)
-      let i2 ← lift (UScalar.cast .U64 header.window)
-      let o1 ← lift (U64.checked_div header.stamped_index i2)
-      let window ←
-        lift (core.option.Option.unwrap_or o1 header.stamped_index)
-      let e2 ←
-        relation.Estimator.observe e window
-          { time := header.stamped_departure, value := i1 }
-      ok (e2, header)
-  let a ← arrivals.Arrivals.record self.arrivals header1.index arrival
-  ok { self with clock := e1, arrivals := a }
+      receiver.Receiver.sample { self with clock := e } header arrived
+  let a ← arrivals.Arrivals.record self1.arrivals header.index arrival
+  ok { self1 with arrivals := a }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::note]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 219:4-234:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 226:4-241:5 -/
 def receiver.Receiver.note
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -3118,8 +3125,23 @@ def receiver.Receiver.note
       }
   else ok { self with schedule := o }
 
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 244:4-254:5 -/
+def receiver.Receiver.accept
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
+  (adopted : Bool) :
+  Result (receiver.Heard × (receiver.Receiver N M K))
+  := do
+  let self1 ←
+    receiver.Receiver.measure { self with heard := arrival } header arrival
+  let self2 ← receiver.Receiver.note self1 header
+  let i ← lift (UScalar.cast .U32 header.frames)
+  let (marked, p) ← presence.Presence.mark self2.presence header.index i
+  ok ({ ignored := false, adopted, marked }, { self2 with presence := p })
+
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 238:4-268:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 258:4-280:5
     Visibility: public -/
 def receiver.Receiver.packet
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3135,12 +3157,7 @@ def receiver.Receiver.packet
   if adopted
   then
     let self1 ← receiver.Receiver.adopt { self with heard := i } header
-    let self2 ←
-      receiver.Receiver.measure { self1 with heard := arrival } header arrival
-    let self3 ← receiver.Receiver.note self2 header
-    let i1 ← lift (UScalar.cast .U32 header.frames)
-    let (marked, p) ← presence.Presence.mark self3.presence header.index i1
-    ok ({ ignored := false, adopted, marked }, { self3 with presence := p })
+    receiver.Receiver.accept self1 header arrival adopted
   else
     if header.timeline != self.timeline
     then
@@ -3157,15 +3174,10 @@ def receiver.Receiver.packet
              }
          }, { self with heard := i })
     else
-      let self1 ←
-        receiver.Receiver.measure { self with heard := arrival } header arrival
-      let self2 ← receiver.Receiver.note self1 header
-      let i1 ← lift (UScalar.cast .U32 header.frames)
-      let (marked, p) ← presence.Presence.mark self2.presence header.index i1
-      ok ({ ignored := false, adopted, marked }, { self2 with presence := p })
+      receiver.Receiver.accept { self with heard := i } header arrival adopted
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 271:4-274:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 283:4-286:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -3178,7 +3190,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 279:4-304:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 291:4-316:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3200,7 +3212,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 310:4-317:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 322:4-329:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
