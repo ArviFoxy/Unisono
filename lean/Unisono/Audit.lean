@@ -211,9 +211,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Receiver.cycle_spec
 
-/-- info: 'Unisono.Player.cycle_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Player.cycle_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Player.cycle_total
+#print axioms Unisono.Player.cycle_spec
 
 /-- info: 'Unisono.Player.sender_time_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -310,3 +310,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Rounds.sums_rounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Rounds.sums_rounds
+
+/-- info: 'Unisono.Player.cycle_step_small' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.cycle_step_small
+
+/-- info: 'Unisono.Fixed.div_floor_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.div_floor_spec

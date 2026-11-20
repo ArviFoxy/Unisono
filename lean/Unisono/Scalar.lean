@@ -4,6 +4,8 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
+import all Aeneas.Std.Scalar.CheckedOps.Div
+import all Aeneas.Std.Scalar.CheckedOps.Rem
 public import Aeneas
 import all Aeneas.Std.Scalar.SaturatingOps
 
@@ -87,6 +89,20 @@ theorem I128.cast_I64_val (x : I128) (h : -2^63 ≤ x.val ∧ x.val ≤ 2^63 - 1
   simp only [IScalar.cast_val_eq]
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> omega
 
+theorem I64.cast_I128_val (x : I64) : (IScalar.cast .I128 x).val = x.val := by
+  simp only [IScalar.cast_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> scalar_tac
+
+theorem U32.hcast_I128_val (x : U32) : (UScalar.hcast .I128 x).val = x.val := by
+  simp only [UScalar.hcast_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp
+  scalar_tac
+
+theorem U32.hcast_I64_val (x : U32) : (UScalar.hcast .I64 x).val = x.val := by
+  simp only [UScalar.hcast_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp
+  scalar_tac
+
 theorem I128.wrapping_mul_val (x y : I128)
     (h : -2^127 ≤ x.val * y.val ∧ x.val * y.val < 2^127) :
     (core.num.I128.wrapping_mul x y).val = x.val * y.val := by
@@ -97,6 +113,20 @@ theorem I128.wrapping_add_val (x y : I128)
     (h : -2^127 ≤ x.val + y.val ∧ x.val + y.val < 2^127) :
     (core.num.I128.wrapping_add x y).val = x.val + y.val := by
   simp only [core.num.I128.wrapping_add_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> omega
+
+/-- Checked division of 128-bit integers is the checked division that the
+library states its facts about. -/
+theorem I128.checked_div_eq (x y : I128) :
+    I128.checked_div x y = core.num.checked_div_IScalar x y := by rfl
+
+theorem I128.checked_rem_eq (x y : I128) :
+    I128.checked_rem x y = core.num.checked_rem_IScalar x y := by rfl
+
+theorem I128.wrapping_sub_val (x y : I128)
+    (h : -2^127 ≤ x.val - y.val ∧ x.val - y.val < 2^127) :
+    (core.num.I128.wrapping_sub x y).val = x.val - y.val := by
+  simp only [core.num.I128.wrapping_sub_val_eq]
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> omega
 
 /-- An arithmetic shift to the right is a division that rounds toward negative infinity. -/

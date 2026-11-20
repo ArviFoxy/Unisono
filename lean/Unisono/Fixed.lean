@@ -68,6 +68,68 @@ theorem saturate_spec (x : Std.I128) :
     rw [I128.cast_I64_val x (by scalar_tac)]
     scalar_tac
 
+/-- Rust divides integers rounding toward zero. With the remainder, that gives
+the quotient rounded toward negative infinity. -/
+theorem ediv_of_tdiv (a b : ℤ) (hb : 0 < b) :
+    a / b = if a.tmod b < 0 then a.tdiv b - 1 else a.tdiv b := by
+  have h := Int.mul_tdiv_add_tmod a b
+  have h1 : a.tmod b < b := Int.tmod_lt_of_pos a hb
+  have h2 : -b < a.tmod b := Int.lt_tmod_of_pos a hb
+  split
+  · exact ((Int.ediv_emod_unique hb).mpr
+      ⟨by linarith, by omega, by omega⟩ : a / b = a.tdiv b - 1 ∧ a % b = a.tmod b + b).1
+  · exact ((Int.ediv_emod_unique hb).mpr
+      ⟨by linarith, by omega, by omega⟩ : a / b = a.tdiv b ∧ a % b = a.tmod b).1
+
+/-- `div_floor` divides by a positive number rounding toward negative
+infinity, which is what `/` on the integers does, and gives zero for a divisor
+that is not positive. -/
+@[step]
+theorem div_floor_spec (a : Std.I128) (b : Std.I64) :
+    fixed.div_floor a b ⦃ r => (0 < b.val → r.val = a.val / b.val) ∧ (b.val ≤ 0 → r.val = 0) ⦄ := by
+  unfold fixed.div_floor
+  split
+  · simp
+    scalar_tac
+  · step as ⟨divisor, hdiv⟩
+    have hd : divisor.val = b.val := by scalar_tac
+    have hb : 0 < b.val := by scalar_tac
+    have hq := I128.checked_div_bv_spec a divisor
+    have hr := I128.checked_rem_bv_spec a divisor
+    simp only [lift, I128.checked_div_eq, I128.checked_rem_eq]
+    cases hq' : core.num.checked_div_IScalar a divisor <;>
+      cases hr' : core.num.checked_rem_IScalar a divisor <;>
+      simp only [hq', hr'] at hq hr ⊢ <;> simp only [bind_ok]
+    · omega
+    · rcases hq with h | ⟨_, h⟩ <;> omega
+    · omega
+    · rename_i q r
+      obtain ⟨-, -, hqv, -⟩ := hq
+      obtain ⟨-, hrv, -⟩ := hr
+      rw [hd] at hqv hrv
+      have hfloor := ediv_of_tdiv a.val b.val hb
+      split
+      · have hrneg : a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
+        -- A negative remainder leaves room below the quotient.
+        have hroom : -2^127 < q.val := by
+          have ha : -2^127 ≤ a.val := by scalar_tac
+          have hsum := Int.mul_tdiv_add_tmod a.val b.val
+          rw [hqv]
+          by_contra hcon
+          have : b.val * a.val.tdiv b.val ≤ a.val.tdiv b.val := by nlinarith
+          omega
+        have h1 : (1#i128).val = 1 := by rfl
+        have hv := I128.wrapping_sub_val q 1#i128 (by rw [h1]; scalar_tac)
+        simp only [WP.spec_ok]
+        refine ⟨fun _ => ?_, fun h => by omega⟩
+        rw [hv, h1, hfloor, hqv]
+        simp only [hrneg, ↓reduceIte]
+      · have hrpos : ¬ a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
+        simp only [WP.spec_ok]
+        refine ⟨fun _ => ?_, fun h => by omega⟩
+        rw [hfloor, hqv]
+        simp only [hrpos, ↓reduceIte]
+
 theorem roundShift_zero (x : ℤ) : roundShift x 0 = x := by
   rw [roundShift_eq_ediv]
   omega

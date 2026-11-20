@@ -120,7 +120,7 @@ structure packet.Echo where
   arrival : Std.I64
 
 /-- [unisono_core::player::Regulation]
-    Source: 'crates/unisono-core/src/player.rs', lines 49:0-59:1
+    Source: 'crates/unisono-core/src/player.rs', lines 58:0-68:1
     Visibility: public -/
 structure player.Regulation where
   gain : Std.U32
@@ -135,7 +135,7 @@ structure timing.Position where
   fraction : Std.U64
 
 /-- [unisono_core::player::Plan]
-    Source: 'crates/unisono-core/src/player.rs', lines 64:0-76:1
+    Source: 'crates/unisono-core/src/player.rs', lines 73:0-85:1
     Visibility: public -/
 structure player.Plan where
   frames : Std.U32
@@ -144,7 +144,7 @@ structure player.Plan where
   jumped : Bool
 
 /-- [unisono_core::player::Player]
-    Source: 'crates/unisono-core/src/player.rs', lines 81:0-90:1
+    Source: 'crates/unisono-core/src/player.rs', lines 90:0-99:1
     Visibility: public -/
 structure player.Player where
   regulation : player.Regulation

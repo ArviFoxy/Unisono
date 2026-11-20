@@ -43,6 +43,15 @@ const LONGEST_CYCLE: i64 = 1_099_511_627_776;
 /// The largest limit of the pace, in parts per billion: three in a thousand.
 const LARGEST_LIMIT: u32 = 3_000_000;
 
+/// One frame in the units of a step, which are 2^-64 frame: 2^64.
+const FRAME: i128 = 18_446_744_073_709_551_616;
+
+/// One frame in the units of a correction, which are 2^-48 frame: 2^48.
+const FRAME_IN_CORRECTIONS: i128 = 281_474_976_710_656;
+
+/// What a number is multiplied by to give it 16 more fractional bits: 2^16.
+const SIXTEEN_BITS: i128 = 65_536;
+
 /// The settings of a regulator.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(translating), derive(Debug))]
@@ -160,28 +169,38 @@ impl Player {
         )
     }
 
-    /// `correction` brought to where the pace of a cycle of `frames` output
-    /// frames, over which the schedule advances by `scheduled` units of
-    /// 2^-32 frame, is within the limit.
-    fn limited(&self, correction: i64, frames: u32, scheduled: i64) -> i64 {
+    /// The largest step either way: the limit of the pace, in units of 2^-64
+    /// frame for each output frame.
+    fn reach(&self) -> i128 {
         let limit = if self.regulation.limit > LARGEST_LIMIT {
             LARGEST_LIMIT
         } else {
             self.regulation.limit
         };
-        // 32 and 48 bits, then 22 more: no wrapping.
-        let even = (frames as i128).wrapping_shl(48);
-        let band = div_floor(even.wrapping_mul(limit as i128), BILLION);
-        let schedule = (scheduled as i128).wrapping_shl(16);
-        let low = even.wrapping_sub(band).wrapping_sub(schedule);
-        let high = even.wrapping_add(band).wrapping_sub(schedule);
-        let wide = correction as i128;
-        if wide < low {
-            saturate(low)
-        } else if wide > high {
-            saturate(high)
+        // 22 bits and 65: no wrapping.
+        div_floor((limit as i128).wrapping_mul(FRAME), BILLION)
+    }
+
+    /// The step of a cycle of `frames` output frames that is to read `wanted`
+    /// units of 2^-48 frame further than the schedule advances over it, which
+    /// is by `scheduled` units of 2^-32 frame: the step that does so, brought
+    /// within the limit of the pace.
+    fn step(&self, wanted: i64, frames: u32, scheduled: i64) -> i64 {
+        let reach = self.reach();
+        // How much further than one frame for each output frame the cycle is
+        // to read, in units of 2^-48 frame. 64 bits and 16, 64 bits, 32 bits
+        // and 49, and then 16 more: no wrapping.
+        let beyond = (scheduled as i128)
+            .wrapping_mul(SIXTEEN_BITS)
+            .wrapping_add(wanted as i128)
+            .wrapping_sub((frames as i128).wrapping_mul(FRAME_IN_CORRECTIONS));
+        let step = div_floor(beyond.wrapping_mul(SIXTEEN_BITS), frames as i64);
+        if step > reach {
+            saturate(reach)
+        } else if step < 0i128.wrapping_sub(reach) {
+            saturate(0i128.wrapping_sub(reach))
         } else {
-            correction
+            saturate(step)
         }
     }
 
@@ -190,16 +209,16 @@ impl Player {
     /// both in units of 2^-32 frame.
     fn play(&mut self, frames: u32, scheduled: i64, behind: i64, duration: i64) -> (Position, i64) {
         let start = self.position;
-        let correction = self.limited(self.regulate(behind, duration), frames, scheduled);
-        self.correction = correction;
-        // How much further than one frame for each output frame the cycle
-        // reads, in units of 2^-48 frame; within the limit, so 16 more bits
-        // fit.
-        let beyond = (scheduled as i128)
-            .wrapping_shl(16)
-            .wrapping_add(correction as i128)
-            .wrapping_sub((frames as i128).wrapping_shl(48));
-        let step = saturate(div_floor(beyond.wrapping_shl(16), frames as i64));
+        let step = self.step(self.regulate(behind, duration), frames, scheduled);
+        // The correction is what the cycle reads further than scheduled with
+        // this step, and not what was wanted: beyond the limit the two
+        // differ, and the distance to the schedule changes by the first. 32
+        // bits and 49, 32 bits and 64, 64 bits and 16: no wrapping.
+        let read = (frames as i128)
+            .wrapping_mul(FRAME_IN_CORRECTIONS)
+            .wrapping_add((frames as i128).wrapping_mul(step as i128).wrapping_shr(16));
+        self.correction =
+            saturate(read.wrapping_sub((scheduled as i128).wrapping_mul(SIXTEEN_BITS)));
         self.position = advance(start, frames, step);
         (start, step)
     }
@@ -420,5 +439,54 @@ mod tests {
                 .iter()
                 .all(|plan| (plan.step - limit).abs() <= 1 << 20)
         );
+    }
+
+    #[test]
+    fn the_pace_stays_within_the_limit_whatever_the_schedule_does() {
+        // Over a cycle the schedule can advance by far more than the cycle's
+        // frames, as when the device stalled, or by far less.
+        let limit = step_for(1_000_000);
+        for (frames, scheduled) in [
+            (FRAMES, 1),
+            (FRAMES, 100),
+            (FRAMES, 100_000),
+            (FRAMES, 10_000_000_000),
+            (1, 1 << 40),
+            (u32::MAX, 3),
+            (u32::MAX, 1 << 62),
+        ] {
+            let mut player = player();
+            let plan = player.cycle(at(1_000), at(1_000 + scheduled), frames, DURATION);
+            assert!(
+                plan.step.abs() <= limit,
+                "{frames} frames over {scheduled}: step {}",
+                plan.step
+            );
+            // The position moves by the frames at that pace and no further.
+            assert_eq!(
+                player.position(),
+                Some(advance(plan.start, frames, plan.step))
+            );
+        }
+    }
+
+    #[test]
+    fn at_the_limit_the_correction_is_what_was_read_and_does_not_build_up() {
+        // The schedule runs two thousandths fast for a while and then at the
+        // nominal pace. The limit is one thousandth, so the position falls
+        // behind, and then catches up at the limit without going past the
+        // schedule by more than the regulator does from rest.
+        let mut player = player();
+        let (_, _) = run(&mut player, at(0), step_for(2_000_000), 400);
+        let position = player.position().unwrap_or(at(0));
+        let now = advance(at(0), FRAMES * 400, step_for(2_000_000));
+        let fallen = distance(position, now);
+        assert!(fallen > 100 << 32 && fallen < 103 << 32, "{fallen}");
+        let (behind, plans) = run(&mut player, now, 0, 3_000);
+        assert!(plans.iter().all(|plan| !plan.jumped));
+        let lowest = behind.iter().copied().min().unwrap_or(0);
+        // From rest the regulator goes past by less than a twentieth.
+        assert!(lowest > -(fallen / 20), "{lowest}");
+        assert!(behind.last().copied().unwrap_or(i64::MAX).abs() < 1 << 20);
     }
 }

@@ -178,7 +178,8 @@ impl Pump {
             .unwrap_or(usize::MAX)
             .min(cycle);
         let start = Position::new(plan.start.frame, plan.start.fraction);
-        // The core keeps its steps well inside what the resampler takes.
+        // The step of a plan is within the regulator's limit of the pace,
+        // which is inside what the resampler takes, so this changes nothing.
         let step = Step::clamped(plan.step);
         if plan.jumped && wanted > 0 {
             self.jump();

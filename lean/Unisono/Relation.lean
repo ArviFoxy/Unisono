@@ -588,11 +588,6 @@ theorem bridge_spec {M : Std.Usize} (e : relation.Estimator M) (middle : Std.I64
   subst p1 p2 p3 p4 p5 p6 p7
   exact bridge_loop1_spec e middle hull1 size 0#usize
 
-theorem div_floor_total (a : Std.I128) (b : Std.I64) :
-    fixed.div_floor a b ⦃ _ => True ⦄ := by
-  unfold fixed.div_floor
-  step*
-
 theorem slope_within_total (rise run limit : Std.I64) :
     relation.slope_within rise run limit ⦃ _ => True ⦄ := by
   unfold relation.slope_within
@@ -732,7 +727,7 @@ theorem fit_spec {M : Std.Usize} (e : relation.Estimator M)
         split <;> simp [h1]
       · step as ⟨i1, hi1⟩
         step as ⟨i2, hi2⟩
-        step with div_floor_total as ⟨half⟩
+        step as ⟨half⟩
         step as ⟨i3, hi3⟩
         step as ⟨middle, hmiddle⟩
         step as ⟨o2, ho2⟩
@@ -897,7 +892,7 @@ theorem fit_total {M : Std.Usize} (e : relation.Estimator M) :
       · split <;> simp
       · step as ⟨i1, hi1⟩
         step as ⟨i2, hi2⟩
-        step with div_floor_total as ⟨half⟩
+        step as ⟨half⟩
         step with saturate_total as ⟨i3⟩
         step as ⟨middle, hmiddle⟩
         step as ⟨o2, ho2⟩
@@ -981,7 +976,7 @@ theorem eval_total (l : relation.Line) (time : Std.I64) :
   step as ⟨i, h2⟩
   step as ⟨i1, h3⟩
   step as ⟨product, h4⟩
-  step with div_floor_total as ⟨change⟩
+  step as ⟨change⟩
   step as ⟨i2, h5⟩
   step as ⟨i3, h6⟩
   exact saturate_total _

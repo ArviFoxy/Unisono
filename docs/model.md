@@ -392,8 +392,10 @@ cycle. The matrix of the two equations has determinant $1 - \sqrt2\,a$ and
 trace $2 - a^2 - \sqrt2\,a$, so the recursion is stable exactly for
 $0 < a < \sqrt6 - \sqrt2 \approx 1.04$; the code holds $a$ at one half or
 below. The pace as a whole, scheduled and corrected, is held within
-$u_{\max}$ by limiting $v$, and a distance beyond a set number of frames is
-not played away: the position jumps to the schedule.
+$u_{\max}$: the step from one output frame to the next is limited, and $v$ is
+then what was read beyond the schedule with that step, not what the recursion
+asked for. A distance beyond a set number of frames is not played away: the
+position jumps to the schedule.
 
 About the recursion over the real numbers, in `Unisono.Model.Regulator`:
 
@@ -413,8 +415,12 @@ About the recursion over the real numbers, in `Unisono.Model.Regulator`:
   limit holds for no more cycles in a row than the distance holds limits.
 
 About the code: planning a cycle returns for every state, schedule and reading
-of the clock (`Unisono.Player.cycle_total`), and changes nothing of a receiver
-but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
+of the clock, and the step of its plan is within the limit of the pace,
+however far the schedule advances over the cycle and whatever the state of the
+regulator (`Unisono.Player.cycle_spec`). The limit counts as three in a
+thousand when it is set higher, so every step is one that the resampler takes
+(`cycle_step_small`). Planning a cycle changes nothing of a receiver but its
+regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
 how far the computation in whole numbers is from the recursion in real
 numbers, and that after the limit has let go it does not take hold again.
 
