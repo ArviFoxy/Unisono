@@ -8,5 +8,10 @@ license.workspace = true
 [dependencies]
 libc = "0.2"
 
+# The ring is checked under every interleaving of its two threads by loom,
+# which replaces the atomics when the crate is built with `--cfg loom`.
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
+
 [lints]
 workspace = true

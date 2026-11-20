@@ -11,3 +11,4 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 pub mod clock;
+pub mod ring;
