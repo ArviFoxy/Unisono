@@ -114,4 +114,23 @@ theorem restart_spec (s : sender.Sender) (timeline : Std.U64) :
     simp only [WP.spec_ok]
     refine ⟨rfl, trivial, ?_, ?_, fun _ => ?_⟩ <;> omega
 
+/-- The answer to a report of the sender's stream names the receiver and the
+number of the report and gives the time at which the report arrived. A report
+of another stream gets no answer. -/
+theorem answer_spec (s : sender.Sender) (report : packet.Report) (arrival : Std.I64) :
+    sender.Sender.answer s report arrival ⦃ out =>
+      (report.stream ≠ s.settings.stream → out = none)
+      ∧ (report.stream = s.settings.stream →
+          out = some ⟨report.stream, report.receiver, report.sequence, arrival⟩) ⦄ := by
+  unfold sender.Sender.answer
+  split
+  · rename_i h
+    have hne : report.stream ≠ s.settings.stream := by simpa using h
+    simp [hne]
+  · rename_i h
+    have heq : report.stream = s.settings.stream := by
+      have : ¬ report.stream ≠ s.settings.stream := by simpa using h
+      exact not_not.mp this
+    simp [heq]
+
 end Unisono.Sender

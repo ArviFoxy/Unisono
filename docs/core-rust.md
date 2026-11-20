@@ -47,6 +47,17 @@ Three constructs fail to translate or bring in such a function:
 - a derived `Debug` on a type with a field that is an `Option` or a tuple.
   Such a type derives `Debug` only in tests.
 
+Three things translate into Lean that then does not serve:
+
+- a field with the name of a module whose types a later field of the same
+  struct uses: in the Lean structure the field's name hides the module's.
+  The field gets another name;
+- a constant written as a computation, such as `1 << 40`: it becomes a
+  computation in Lean too, and proofs that meet it run out of time. Constants
+  are written as plain numbers;
+- `clamp`, which fails when its bounds are out of order: a value is limited
+  with two comparisons instead.
+
 ## Rules of the core
 
 - **Nothing panics.** The lints at the top of `src/lib.rs` reject the

@@ -24,7 +24,9 @@ use unisono_sim::assumptions::{WIRED_BUSY, WIRED_CALM, WIRELESS};
 use unisono_sim::clock::OscillatorModel;
 use unisono_sim::link::LinkModel;
 use unisono_sim::random::Generator;
-use unisono_sim::stream::{CycleLength, HostModel, ReceiverModel, Scene, SenderModel, Trace};
+use unisono_sim::stream::{
+    CycleLength, HostModel, PathDelay, ReceiverModel, Scene, SenderModel, Trace,
+};
 
 fn oscillator(offset: f64, parts_per_million: f64, walk: f64) -> OscillatorModel {
     OscillatorModel {
@@ -60,7 +62,7 @@ fn receiver(host: usize, device_ppm: f64, walk: f64) -> ReceiverModel {
         },
         silence: 1_000_000_000,
         slope_limit: 200_000,
-        knows_path: true,
+        path: PathDelay::Told,
         cycle_length: CycleLength::Measured,
     }
 }
@@ -71,6 +73,7 @@ fn hosts(link: LinkModel, walk: f64) -> Vec<HostModel> {
         .map(|(offset, ppm)| HostModel {
             clock: oscillator(*offset, *ppm, walk),
             link,
+            back: link,
         })
         .collect()
 }
@@ -232,7 +235,7 @@ fn a_receiver_that_does_not_know_its_link_s_delay_plays_late_by_it() {
     // link, 100 microseconds here, which only an exchange in both
     // directions reveals.
     let mut scene = scene(&WIRED_CALM, 20, |receivers| {
-        receivers[1].knows_path = false;
+        receivers[1].path = PathDelay::Unknown;
     });
     scene.run(TrueTime::from_seconds(60.0));
     let traces = scene.traces();
@@ -297,4 +300,77 @@ fn restarts_of_the_sender_and_of_a_receiver_are_followed() {
             assert!(after < CALM_BOUND, "receiver {number}: {after}");
         }
     }
+}
+
+/// A scene in which every receiver finds the delay of its link from
+/// reports, twenty a second.
+fn measuring(assumptions: &unisono_sim::assumptions::OneWayAssumptions, level_ms: i64) -> Scene {
+    scene(assumptions, level_ms, |receivers| {
+        for receiver in receivers.iter_mut() {
+            receiver.path = PathDelay::Measured(50_000_000);
+        }
+    })
+}
+
+#[test]
+fn receivers_that_measure_their_links_play_within_a_microsecond_on_a_calm_wired_link() {
+    let mut scene = measuring(&WIRED_CALM, 20);
+    scene.run(TrueTime::from_seconds(60.0));
+    let (worst, apart) = worst_and_apart(&scene, 20.0);
+    assert!(worst < MICROSECOND, "worst {worst}");
+    assert!(apart < MICROSECOND, "apart {apart}");
+    for receiver in 0..4 {
+        // The link's smallest delay is 100 microseconds each way.
+        let delay = scene.delay(receiver).unwrap_or(0);
+        assert!((delay - 100_000).abs() < 1_000, "delay {delay}");
+    }
+}
+
+#[test]
+fn receivers_that_measure_their_links_play_within_twelve_microseconds_on_a_busy_wired_link() {
+    let mut scene = measuring(&WIRED_BUSY, 60);
+    scene.run(TrueTime::from_seconds(60.0));
+    let (worst, apart) = worst_and_apart(&scene, 20.0);
+    assert!(worst < 12.0 * MICROSECOND, "worst {worst}");
+    assert!(apart < 12.0 * MICROSECOND, "apart {apart}");
+}
+
+#[test]
+fn receivers_that_measure_their_links_play_within_150_microseconds_on_a_wireless_link() {
+    let mut scene = measuring(&WIRELESS, 60);
+    scene.run(TrueTime::from_seconds(120.0));
+    let (worst, apart) = worst_and_apart(&scene, 20.0);
+    assert!(worst < 150.0 * MICROSECOND, "worst {worst}");
+    assert!(apart < 150.0 * MICROSECOND, "apart {apart}");
+}
+
+#[test]
+fn a_link_that_is_slower_one_way_shifts_playback_by_half_the_difference() {
+    // 100 microseconds from the sender and 300 back: the receiver takes
+    // half of 400 for the way from the sender, and plays 100 early. Nothing
+    // that the two parties can measure tells this from clocks that differ.
+    let walk = WIRED_CALM.frequency_walk;
+    let mut slow_back = WIRED_CALM.link;
+    slow_back.minimum = 300e-6;
+    let mut models = hosts(WIRED_CALM.link, walk);
+    models[0].back = slow_back;
+    let mut receivers = [receiver(0, 80.0, walk), receiver(1, -120.0, walk)];
+    for receiver in &mut receivers {
+        receiver.path = PathDelay::Measured(50_000_000);
+    }
+    let mut scene = Scene::new(sender(walk, 20), &models, &receivers, &Generator::new(11));
+    scene.run(TrueTime::from_seconds(60.0));
+    let traces = scene.traces();
+    let errors: Vec<f64> = traces[0]
+        .errors
+        .iter()
+        .filter(|(at, _)| *at >= 20.0)
+        .map(|(_, error)| *error)
+        .collect();
+    let earliest = errors.iter().copied().fold(f64::MAX, f64::min);
+    let latest = errors.iter().copied().fold(f64::MIN, f64::max);
+    assert!(earliest > -101.0 * MICROSECOND, "earliest {earliest}");
+    assert!(latest < -99.0 * MICROSECOND, "latest {latest}");
+    // The receiver on a link that is the same both ways is on time.
+    assert!(worst(traces[1], 20.0) < MICROSECOND);
 }

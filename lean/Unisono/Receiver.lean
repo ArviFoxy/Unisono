@@ -85,7 +85,7 @@ theorem stamped_arrival_total (r : receiver.Receiver N M K) (h : packet.Audio) :
 @[step]
 theorem sample_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrived : Std.I64) :
     receiver.Receiver.sample r h arrived ⦃ r' =>
-      SameStream r' r ∧ r'.arrivals = r.arrivals ∧ r'.schedule = r.schedule ⦄ := by
+      SameStream r' r ∧ r'.arrived = r.arrived ∧ r'.schedule = r.schedule ⦄ := by
   unfold receiver.Receiver.sample
   step as ⟨i, hi⟩
   step as ⟨i1, hi1⟩
@@ -103,6 +103,7 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
   unfold receiver.Receiver.measure
   step as ⟨i⟩
   step as ⟨e⟩
+  step as ⟨e1⟩
   step as ⟨o⟩
   cases o with
   | none =>
@@ -203,6 +204,7 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
   step as ⟨e⟩
   step as ⟨a⟩
   step with Unisono.Player.stop_total as ⟨p1⟩
+  step as ⟨e1⟩
   exact ⟨hpb, hph⟩
 
 /-! ## A playhead that is ahead of everything that arrives -/
@@ -749,10 +751,9 @@ theorem skip_spec (r : receiver.Receiver N M K) (target : Std.U64) :
     rw [hf'] at hc; cases hc
 
 /-- A new receiver follows no timeline. -/
-theorem new_spec (N M K : Std.Usize) (silence limit : Std.I64)
-    (regulation : player.Regulation) :
-    receiver.Receiver.new N M K silence limit regulation ⦃ r =>
-      r.following = false ∧ r.silence = silence ∧ r.limit = limit ⦄ := by
+theorem new_spec (N M K : Std.Usize) (settings : receiver.Settings) :
+    receiver.Receiver.new N M K settings ⦃ r =>
+      r.following = false ∧ r.silence = settings.silence ∧ r.limit = settings.limit ⦄ := by
   unfold receiver.Receiver.new player.Player.new
   step with Unisono.Presence.new_spec as ⟨p⟩
   step as ⟨e⟩
@@ -929,6 +930,99 @@ theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
             simp only
             step as ⟨out⟩
             simp [SameStream]
+  · simp [SameStream]
+
+/-! ## Reports and the delay of the path -/
+
+/-- Runs a function to its end: step by step, taking a conditional apart
+wherever one stands in the way. -/
+local macro "run" : tactic => `(tactic| repeat' (first | split | step*))
+
+@[step]
+theorem middle_total (e : relation.Estimator M) :
+    relation.Estimator.middle e ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.middle
+  run
+
+/-- Taking the delay of the path from the two estimates changes that delay
+and nothing else. -/
+@[step]
+theorem measure_path_spec (r : receiver.Receiver N M K) :
+    receiver.Receiver.measure_path r ⦃ r' => SameStream r' r ⦄ := by
+  unfold receiver.Receiver.measure_path relation.Estimator.impl.line
+  simp only [bind_ok]
+  cases r.clock.line with
+  | none => simp [SameStream]
+  | some forward =>
+    simp only
+    cases r.back.line with
+    | none => simp [SameStream]
+    | some back =>
+      simp only
+      step as ⟨o⟩
+      cases o with
+      | none => simp [SameStream]
+      | some time =>
+        simp only
+        step as ⟨sender⟩
+        step as ⟨i⟩
+        step as ⟨i1, hi1⟩
+        step as ⟨i2⟩
+        step as ⟨i3, hi3⟩
+        step as ⟨both, hboth⟩
+        step as ⟨half, hhalf⟩
+        split
+        · simp [SameStream]
+        · step as ⟨i4⟩
+          simp [SameStream]
+
+/-- Making a report changes nothing about the timeline that is followed or
+the frames that are held. A receiver that follows no timeline makes none; one
+that does numbers its reports one after the other. -/
+theorem report_spec (r : receiver.Receiver N M K) (stream : Std.U16) :
+    receiver.Receiver.report r stream ⦃ out =>
+      SameStream out.2 r
+      ∧ (r.following = false → out.1 = none)
+      ∧ (r.following = true →
+          out.1 = some ⟨stream, r.timeline, r.identity, r.reports⟩) ⦄ := by
+  unfold receiver.Receiver.report
+  split
+  · rename_i hf
+    step as ⟨next⟩
+    simp [SameStream, hf]
+  · rename_i hf
+    simp [SameStream, hf]
+
+/-- Taking in when a report left changes nothing about the timeline that is
+followed or the frames that are held. -/
+theorem reported_spec (r : receiver.Receiver N M K) (sequence : Std.U64)
+    (departure : Std.I64) :
+    receiver.Receiver.reported r sequence departure ⦃ r' => SameStream r' r ⦄ := by
+  unfold receiver.Receiver.reported
+  step as ⟨a⟩
+  simp [SameStream]
+
+/-- Taking in the sender's answer to a report returns for every state and
+every answer, and changes nothing about the timeline that is followed or the
+frames that are held: only the estimate of the path. -/
+theorem echo_spec (r : receiver.Receiver N M K) (echo : packet.Echo) :
+    receiver.Receiver.echo r echo ⦃ r' => SameStream r' r ⦄ := by
+  unfold receiver.Receiver.echo
+  split
+  · split
+    · simp [SameStream]
+    · step as ⟨o⟩
+      cases o with
+      | none => simp [SameStream]
+      | some departure =>
+        simp only
+        step as ⟨i, hi⟩
+        step as ⟨o1, ho1⟩
+        step as ⟨window, hwindow⟩
+        step with Unisono.Relation.observe_total as ⟨e⟩
+        step as ⟨r1, hsame⟩
+        obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hsame
+        exact ⟨h1, h2, h3, h4, h5, h6, h7⟩
   · simp [SameStream]
 
 end Unisono.Receiver

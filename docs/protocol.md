@@ -5,9 +5,9 @@ the software, so there is one layout and nothing to negotiate: a datagram of
 another version is rejected. Every number is written least significant byte
 first.
 
-This page describes what is built so far: the audio packet. Reports from
-receivers, and the datagrams that carry the stamps for the exchange in both
-directions, are not specified yet.
+There are three kinds of datagram: audio from the sender, reports from
+receivers, and the sender's answers to reports. All begin with the same six
+bytes: the letters `unis`, the version, and the kind.
 
 ## The audio packet
 
@@ -52,3 +52,45 @@ against its clock.
 The level, the span and the window are the same for every receiver of the
 stream. They travel in every packet so that a receiver that has just started,
 or that missed packets, holds them at once.
+
+## The report
+
+A receiver sends reports to the sender. A report is padded with zeros to the
+length of an audio packet of the stream, so that it meets the delays that an
+audio packet meets; a receiver reads only the first 32 bytes.
+
+| Offset | Bytes | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | magic | the letters `unis` |
+| 4 | 1 | version | 1 |
+| 5 | 1 | kind | 2 for a report |
+| 6 | 2 | stream | which stream of the sender the receiver plays |
+| 8 | 8 | timeline | the timeline that the receiver follows |
+| 16 | 8 | receiver | a number that tells this receiver from the others |
+| 24 | 8 | sequence | the number of this report among the receiver's reports |
+
+What a receiver tells the sender about its margin, for the level, is not in
+the report yet.
+
+## The answer to a report
+
+The sender answers every report of its stream with a datagram of exactly 32
+bytes, sent to the address the report came from.
+
+| Offset | Bytes | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | magic | the letters `unis` |
+| 4 | 1 | version | 1 |
+| 5 | 1 | kind | 3 for an answer |
+| 6 | 2 | stream | which stream of the sender this is |
+| 8 | 8 | receiver | the receiver whose report this answers |
+| 16 | 8 | sequence | the number of the report |
+| 24 | 8 | arrival | when the report arrived, on the sender's clock (signed) |
+
+The receiver knows when the report left, on its own clock, so the answer
+gives it both stamps of the report. Audio packets tell a receiver its clock
+against the sender's, later by the smallest delay of the path from the
+sender; reports tell it the sender's clock against its own, later by the
+smallest delay of the path back. The two add up to the smallest delay there
+and back, and the receiver takes half of it for the path from the sender.
+How long the answer itself takes does not matter: it only carries a number.

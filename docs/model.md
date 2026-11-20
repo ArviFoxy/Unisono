@@ -321,6 +321,25 @@ Half the difference of the two estimates is the offset, up to the constant of
 section 2.5; half their sum is the smallest delay of the path, which monitors
 it. The packets used for this are of one size in both directions.
 
+In the code the packets of the other direction are the receiver's reports,
+padded to the size of an audio packet, and the sender's answers carry their
+arrival times (`docs/protocol.md`). Of every eight reports the one with the
+least delay is kept. The two estimates add up to the delay there and back at
+every time, so the receiver takes the sum where an estimate is best, at the
+middle of the time its reports cover, and uses half of it as the delay of the
+path from the sender. Taking in an answer returns for every state and changes
+nothing about the timeline or the frames held (`Unisono.Receiver.echo_spec`).
+
+In simulation (`crates/unisono-sim/tests/timing.rs`), with twenty reports a
+second, receivers that find their delay this way stay within a microsecond of
+the schedule on the calm wired link, within twelve on the busy one and within
+150 on the wireless one; told the true delay they stay within a quarter, one
+and a half and 25. The estimate of the delay is what the difference comes
+from. It errs high, by the queueing of the best report in the memory, and it
+estimates a constant, which a longer memory than that of the clocks would
+serve better. *That is not built.* A path that is slower one way shifts the
+receiver by half the difference, as section 2.5 says, and a test shows it.
+
 **Devices.** The reports of a device have errors of either sign, so its line is
 fitted by least squares with weights that fall with age.
 *Lean:* `Unisono.Model.LineFit.cost_le` (the line computed from the weighted

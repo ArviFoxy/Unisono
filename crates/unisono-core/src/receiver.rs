@@ -18,9 +18,18 @@
 //! keep arriving and every frame of theirs is behind the playhead for a
 //! while, the playhead is wrong, and the receiver starts anew at the frames
 //! that arrive.
+//!
+//! The stamps of audio packets give the receiver its clock against the
+//! sender's, but later by the smallest delay of the path from the sender. To
+//! find that delay the receiver sends reports. The sender answers each with
+//! the time at which it arrived, and the two stamps of a report give the
+//! sender's clock against the receiver's, later by the smallest delay of the
+//! path back. The two estimates add up to the smallest delay there and back,
+//! and the receiver takes half of it for the path from the sender.
 
 use crate::arrivals::Arrivals;
-use crate::packet::{Audio, FLAG_STAMPED};
+use crate::fixed::saturate;
+use crate::packet::{Audio, Echo, FLAG_STAMPED, Report};
 use crate::player::{Plan, Player, Regulation};
 use crate::presence::{Marked, Presence};
 use crate::relation::{Estimator, Line, Sample};
@@ -28,6 +37,11 @@ use crate::timing::{Position, Schedule, due, sender_time};
 
 /// The number of nanoseconds in a millisecond.
 const MILLISECOND: i64 = 1_000_000;
+
+/// The number of reports that make up one window of the estimate of the
+/// sender's clock from reports: of each window the report with the least
+/// delay is kept.
+const REPORTS_IN_WINDOW: u64 = 8;
 
 /// What a receiver did with a packet.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -55,6 +69,22 @@ pub struct Segment {
     pub frames: u32,
     /// Whether the frames are held. Absent frames are to be concealed.
     pub held: bool,
+}
+
+/// The settings of a receiver.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Settings {
+    /// A number that tells this receiver from the others of the stream.
+    pub identity: u64,
+    /// After how many nanoseconds without a packet of the followed timeline
+    /// the receiver takes up another, and after how many without a frame at
+    /// or ahead of its playhead it starts anew.
+    pub silence: i64,
+    /// The largest slope of its estimates of clocks, in nanoseconds per
+    /// second.
+    pub limit: i64,
+    /// How it steers its playback.
+    pub regulation: Regulation,
 }
 
 /// The receiver of a stream.
@@ -85,10 +115,21 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     /// sender, in nanoseconds.
     path: i64,
     presence: Presence<N>,
+    /// The receiver's clock minus the sender's, over the sender's clock,
+    /// from the stamps of audio packets.
     clock: Estimator<M>,
-    arrivals: Arrivals<K>,
+    arrived: Arrivals<K>,
     schedule: Option<Schedule>,
     player: Player,
+    /// A number that tells this receiver from the others of the stream.
+    identity: u64,
+    /// The number of the next report.
+    reports: u64,
+    /// When the last reports left, by their numbers.
+    departures: Arrivals<K>,
+    /// The sender's clock minus the receiver's, over the receiver's clock,
+    /// from the stamps of reports.
+    back: Estimator<M>,
 }
 
 /// How long a receiver remembers samples of the sender's clock, in
@@ -99,34 +140,41 @@ fn span_of(header: &Audio) -> i64 {
 }
 
 impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
-    /// A receiver that follows no timeline yet. After `silence` nanoseconds
-    /// without a packet of the timeline it follows it takes up another, and
-    /// after as long without a frame at or ahead of its playhead it starts
-    /// anew. It holds the slope of its estimate of the sender's clock within
-    /// `limit` nanoseconds per second, and steers its playback by
-    /// `regulation`.
+    /// A receiver with these settings that follows no timeline yet.
     #[must_use]
-    pub fn new(silence: i64, limit: i64, regulation: Regulation) -> Self {
+    pub fn new(settings: Settings) -> Self {
         Receiver {
             following: false,
             timeline: 0,
             heard: 0,
             fresh: 0,
-            silence,
-            limit,
+            silence: settings.silence,
+            limit: settings.limit,
             path: 0,
             presence: Presence::new(),
-            clock: Estimator::new(0, limit),
-            arrivals: Arrivals::new(),
+            clock: Estimator::new(0, settings.limit),
+            arrived: Arrivals::new(),
             schedule: None,
-            player: Player::new(regulation),
+            player: Player::new(settings.regulation),
+            identity: settings.identity,
+            reports: 0,
+            departures: Arrivals::new(),
+            back: Estimator::new(0, settings.limit),
         }
     }
 
     /// Sets the receiver's estimate of the smallest delay of a packet from
-    /// the sender, in nanoseconds.
+    /// the sender, in nanoseconds. A receiver whose reports are answered
+    /// finds it by itself.
     pub fn path(&mut self, path: i64) {
         self.path = path;
+    }
+
+    /// The receiver's estimate of the smallest delay of a packet from the
+    /// sender, in nanoseconds.
+    #[must_use]
+    pub fn delay(&self) -> i64 {
+        self.path
     }
 
     /// The timeline that is followed, if any.
@@ -185,9 +233,11 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.timeline = header.timeline;
         self.presence.restart(header.index);
         self.clock = Estimator::new(span_of(header), self.limit);
-        self.arrivals = Arrivals::new();
+        self.arrived = Arrivals::new();
         self.schedule = None;
         self.player.stop();
+        self.departures = Arrivals::new();
+        self.back = Estimator::new(span_of(header), self.limit);
     }
 
     /// When the earlier packet arrived whose departure `header` carries, if
@@ -196,7 +246,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if header.flags & FLAG_STAMPED == 0 {
             return None;
         }
-        self.arrivals.find(header.stamped_index)
+        self.arrived.find(header.stamped_index)
     }
 
     /// Gives the estimate of the sender's clock the sample of the earlier
@@ -219,10 +269,11 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// sender's clock, and keeps its arrival for a later packet to refer to.
     fn measure(&mut self, header: &Audio, arrival: i64) {
         self.clock.remember(span_of(header));
+        self.back.remember(span_of(header));
         if let Some(arrived) = self.stamped_arrival(header) {
             self.sample(header, arrived);
         }
-        self.arrivals.record(header.index, arrival);
+        self.arrived.record(header.index, arrival);
     }
 
     /// Keeps what `header` says about when frames are due.
@@ -318,6 +369,74 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.accept(header, arrival, adopted)
     }
 
+    /// The next report for the sender of `stream`, once a timeline is
+    /// followed. After it has been sent, [`Receiver::reported`] takes in
+    /// when it left.
+    pub fn report(&mut self, stream: u16) -> Option<Report> {
+        if !self.following {
+            return None;
+        }
+        let sequence = self.reports;
+        self.reports = self.reports.wrapping_add(1);
+        Some(Report {
+            stream,
+            timeline: self.timeline,
+            receiver: self.identity,
+            sequence,
+        })
+    }
+
+    /// Takes in that the report with number `sequence` left when the
+    /// receiver's clock read `departure`.
+    pub fn reported(&mut self, sequence: u64, departure: i64) {
+        self.departures.record(sequence, departure);
+    }
+
+    /// Takes in the sender's answer to a report: with the time at which the
+    /// report left it gives a sample of the sender's clock against the
+    /// receiver's, and with that the delay of the path from the sender.
+    /// An answer to another receiver, or to a report whose departure is no
+    /// longer kept, is left out.
+    pub fn echo(&mut self, echo: &Echo) {
+        if !self.following || echo.receiver != self.identity {
+            return;
+        }
+        let Some(departure) = self.departures.find(echo.sequence) else {
+            return;
+        };
+        let sample = Sample {
+            time: departure,
+            value: echo.arrival.saturating_sub(departure),
+        };
+        let window = echo
+            .sequence
+            .checked_div(REPORTS_IN_WINDOW)
+            .unwrap_or(echo.sequence);
+        self.back.observe(window, sample);
+        self.measure_path();
+    }
+
+    /// Takes half the smallest delay there and back as the delay of the path
+    /// from the sender. The two estimates of the clocks add up to the delay
+    /// there and back at every time; the sum is taken at the middle of the
+    /// time that the reports cover, where an estimate is best.
+    fn measure_path(&mut self) {
+        let Some(forward) = self.clock.line() else {
+            return;
+        };
+        let Some(back) = self.back.line() else {
+            return;
+        };
+        let Some(time) = self.back.middle() else {
+            return;
+        };
+        let sender = sender_time(&forward, 0, time);
+        // A sum of two 64-bit numbers: no wrapping.
+        let both = (forward.eval(sender) as i128).wrapping_add(back.eval(time) as i128);
+        let half = both.wrapping_shr(1);
+        self.path = if half < 0 { 0 } else { saturate(half) };
+    }
+
     /// Plans one cycle of the device: `frames` output frames, the first of
     /// which leaves the device when the receiver's clock reads `time`, and
     /// which take `duration` nanoseconds on that clock. Nothing is played,
@@ -405,7 +524,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Heard, Receiver, Segment};
+    use super::{Heard, Receiver, Segment, Settings};
+    use crate::packet::Echo;
     use crate::packet::{Audio, FLAG_STAMPED, Format};
     use crate::player::Regulation;
     use crate::presence::Marked;
@@ -442,12 +562,16 @@ mod tests {
     }
 
     fn receiver() -> Receiver<4, 8, 4> {
-        let regulation = Regulation {
-            gain: 4 << 16,
-            limit: 1_000_000,
-            jump: 240,
-        };
-        Receiver::new(SILENCE, 200_000, regulation)
+        Receiver::new(Settings {
+            identity: 42,
+            silence: SILENCE,
+            limit: 200_000,
+            regulation: Regulation {
+                gain: 4 << 16,
+                limit: 1_000_000,
+                jump: 240,
+            },
+        })
     }
 
     #[test]
@@ -669,5 +793,65 @@ mod tests {
         let next = receiver.cycle(time + 5_000_000, 5_000_000, 240);
         assert!(!next.jumped);
         assert_eq!(next.start.frame, plan.start.frame + 240);
+    }
+
+    #[test]
+    fn answered_reports_give_the_delay_of_the_path() {
+        // The receiver's clock is an hour ahead of the sender's. A packet
+        // takes 100 microseconds from the sender and 140 back.
+        let offset = 3_600_000_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        assert_eq!(receiver.report(1), None);
+        let period = 10_000_000i64;
+        for packet in 0..300u64 {
+            let departure = i64::try_from(packet).unwrap_or(0) * period;
+            let mut header = header(7, packet * 480, 480);
+            header.window = 4_800;
+            if packet > 0 {
+                header.flags = FLAG_STAMPED;
+                header.stamped_index = (packet - 1) * 480;
+                header.stamped_departure = departure - period;
+            }
+            let now = departure + offset + 100_000;
+            receiver.packet(&header, now);
+            // A report leaves with every fifth packet and is answered.
+            if packet % 5 == 0 {
+                let report = receiver.report(1).expect("a timeline is followed");
+                assert_eq!((report.timeline, report.receiver), (7, 42));
+                receiver.reported(report.sequence, now);
+                receiver.echo(&Echo {
+                    stream: 1,
+                    receiver: 42,
+                    sequence: report.sequence,
+                    arrival: now - offset + 140_000,
+                });
+            }
+        }
+        // Half of 240 microseconds there and back.
+        assert_eq!(receiver.delay(), 120_000);
+    }
+
+    #[test]
+    fn an_answer_that_is_not_for_this_receiver_is_left_out() {
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        receiver.packet(&header(7, 0, 10), 0);
+        receiver.path(77);
+        let report = receiver.report(1).expect("a timeline is followed");
+        receiver.reported(report.sequence, 1_000);
+        // To another receiver, and to a report that was never sent.
+        for (to, sequence) in [(43, report.sequence), (42, report.sequence + 9)] {
+            receiver.echo(&Echo {
+                stream: 1,
+                receiver: to,
+                sequence,
+                arrival: 5_000,
+            });
+        }
+        assert_eq!(receiver.delay(), 77);
+        // Reports are numbered one after the other.
+        assert_eq!(
+            receiver.report(1).map(|next| next.sequence),
+            Some(report.sequence + 1)
+        );
     }
 }

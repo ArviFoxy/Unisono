@@ -24,7 +24,8 @@ open unisono_core
 
 namespace Unisono.Player
 
-attribute [local step] Unisono.Relation.div_floor_total Unisono.Relation.saturate_total
+attribute [step] Unisono.Relation.div_floor_total Unisono.Relation.saturate_total
+  Unisono.Relation.eval_total
 
 /-- Runs a function to its end: step by step, taking a conditional apart
 wherever one stands in the way. -/

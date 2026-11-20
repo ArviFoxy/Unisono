@@ -195,6 +195,18 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
     | [2, target, _, _, _, _, _, _] => do
       let out ← receiver.Receiver.skip r (unsigned .U64 target)
       pure (out.2, ([out.1.val] : List Int))
+    | [4, target, delay, now, _, _, _, _] => do
+      let made ← receiver.Receiver.report r 1#u16
+      match made.1 with
+      | none =>
+        let path ← receiver.Receiver.delay made.2
+        pure (made.2, ([-1, path.val] : List Int))
+      | some report =>
+        let left ← receiver.Receiver.reported made.2 report.sequence (signed .I64 now)
+        let answered ← receiver.Receiver.echo left
+          ⟨1#u16, unsigned .U64 target, report.sequence, signed .I64 (now + delay)⟩
+        let path ← receiver.Receiver.delay answered
+        pure (answered, ([report.sequence.val, path.val] : List Int))
     | [3, time, frames, _, _, _, _, _] => do
       let out ← receiver.Receiver.cycle r (signed .I64 time) (signed .I64 (frames * 20833))
         (unsigned .U32 frames)
@@ -210,8 +222,9 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
 def runReceiver (silence : Int) (operations : List (List Int)) : Result (List Int) := do
   let regulation : player.Regulation :=
     { gain := 262144#u32, limit := 1000000#u32, jump := 30#u32 }
-  let start ← receiver.Receiver.new 2#usize 4#usize 2#usize (signed .I64 silence) 200000#i64
-    regulation
+  let start ← receiver.Receiver.new 2#usize 4#usize 2#usize
+    { identity := 9#u64, silence := signed .I64 silence, limit := 200000#i64,
+      regulation := regulation }
   let final ← operations.foldlM receiverStep (start, [])
   let line ← receiver.Receiver.impl.clock final.1
   let schedule ← receiver.Receiver.impl.schedule final.1
@@ -253,6 +266,43 @@ def runSender (first : Int) (operations : List (List Int)) : Result (List Int) :
   let start ← sender.Sender.new settings (unsigned .U64 first) 0#i64
   let final ← operations.foldlM senderStep (start, [])
   pure final.2
+
+/-- What reading a report gives, as numbers; see `report_numbers` in the Rust
+program. -/
+def runParseReport (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_report (byteSlice values)
+  match parsed with
+  | .Ok r => pure [0, r.stream.val, r.timeline.val, r.receiver.val, r.sequence.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+
+/-- What reading an answer to a report gives, as numbers. -/
+def runParseEcho (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_echo (byteSlice values)
+  match parsed with
+  | .Ok e => pure [0, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+
+/-- Writes a report into 96 bytes of the value 165, and returns the length
+that writing reports, or -1, and the bytes. -/
+def runWriteReport (stream timeline receiver number length : Int) : Result (List Int) := do
+  let out ← packet.write_report
+    ⟨unsigned .U16 stream, unsigned .U64 timeline, unsigned .U64 receiver, unsigned .U64 number⟩
+    (byteSlice (List.replicate 96 165)) (unsigned .Usize length)
+  let written : Int := match out.1 with
+    | some n => n.val
+    | none => -1
+  pure (written :: out.2.val.map (·.val))
+
+/-- Writes an answer to a report into 40 zero bytes, and returns the length
+that writing reports, or 0, and the bytes. -/
+def runWriteEcho (stream receiver number arrival : Int) : Result (List Int) := do
+  let out ← packet.write_echo
+    ⟨unsigned .U16 stream, unsigned .U64 receiver, unsigned .U64 number, signed .I64 arrival⟩
+    (byteSlice (List.replicate 40 0))
+  let written : Int := match out.1 with
+    | some n => n.val
+    | none => 0
+  pure (written :: out.2.val.map (·.val))
 
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
@@ -314,6 +364,12 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       if cycles.length = count then result (runPlayer gain limit jump cycles) id
       else .error "the number of cycles is not the stated one"
     | none => .error "cycles are not groups of six"
+  | "parse_report", bytes => result (runParseReport bytes) id
+  | "parse_echo", bytes => result (runParseEcho bytes) id
+  | "write_report", [stream, timeline, receiver, number, length] =>
+    result (runWriteReport stream timeline receiver number length) id
+  | "write_echo", [stream, receiver, number, arrival] =>
+    result (runWriteEcho stream receiver number arrival) id
   | "parse_audio", bytes => result (runParse bytes) id
   | "write_audio", fields => result (runWrite fields) id
   | _, _ => .error s!"no function {function} with {args.length} arguments"

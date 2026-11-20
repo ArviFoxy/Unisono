@@ -20,9 +20,9 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
-use unisono_core::packet::{Audio, Format};
+use unisono_core::packet::{Audio, Echo, Format, Report};
 use unisono_core::player::Regulation;
-use unisono_core::receiver::Receiver;
+use unisono_core::receiver::{Receiver, Settings as ReceiverSettings};
 use unisono_core::sender::{Sender, Settings};
 use unisono_core::timing::advance;
 
@@ -67,6 +67,8 @@ pub struct HostModel {
     pub clock: OscillatorModel,
     /// The link from the sender to it.
     pub link: LinkModel,
+    /// The link from it back to the sender.
+    pub back: LinkModel,
 }
 
 /// How a receiver learns how long a cycle of its device takes.
@@ -78,6 +80,18 @@ pub enum CycleLength {
     /// From the nominal rate alone, as if the device ran exactly at it. This
     /// is a mistake that a receiver could make.
     Nominal,
+}
+
+/// How a receiver learns the smallest delay of the link from the sender.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PathDelay {
+    /// It is told the true value.
+    Told,
+    /// It sends reports, this many nanoseconds apart, and takes half the
+    /// smallest delay there and back from the sender's answers.
+    Measured(i64),
+    /// It takes the delay to be zero.
+    Unknown,
 }
 
 /// What a receiver is like.
@@ -100,8 +114,8 @@ pub struct ReceiverModel {
     /// The largest slope of its estimate of the sender's clock, in
     /// nanoseconds per second.
     pub slope_limit: i64,
-    /// Whether it knows the smallest delay of its link.
-    pub knows_path: bool,
+    /// How it learns the smallest delay of its link.
+    pub path: PathDelay,
     /// How it learns the length of a cycle.
     pub cycle_length: CycleLength,
 }
@@ -130,11 +144,18 @@ enum Event {
     Arrive { host: usize, header: Audio },
     /// A receiver plans a cycle of its device.
     Plan { receiver: usize, cycle: u64 },
+    /// A receiver sends a report.
+    Report { receiver: usize },
+    /// A report arrives at the sender.
+    Answer { receiver: usize, report: Report },
+    /// The sender's answer arrives at a receiver.
+    Echo { receiver: usize, echo: Echo },
 }
 
 struct Host {
     clock: Course,
     link: Link,
+    back: Link,
     path: i64,
 }
 
@@ -163,9 +184,14 @@ pub struct Scene {
     now: TrueTime,
 }
 
-fn new_receiver(model: &ReceiverModel, path: i64) -> SimReceiver {
-    let mut core = SimReceiver::new(model.silence, model.slope_limit, model.regulation);
-    if model.knows_path {
+fn new_receiver(model: &ReceiverModel, identity: u64, path: i64) -> SimReceiver {
+    let mut core = SimReceiver::new(ReceiverSettings {
+        identity,
+        silence: model.silence,
+        limit: model.slope_limit,
+        regulation: model.regulation,
+    });
+    if model.path == PathDelay::Told {
         core.path(path);
     }
     core
@@ -203,6 +229,7 @@ impl Scene {
             .map(|(model, number)| Host {
                 clock: Course::new(model.clock, generator.fork(100 + number)),
                 link: Link::new(model.link, generator.fork(200 + number)),
+                back: Link::new(model.back, generator.fork(400 + number)),
                 path: seconds_to_nanos(model.link.minimum),
             })
             .collect();
@@ -211,7 +238,11 @@ impl Scene {
             .zip(0u64..)
             .map(|(model, number)| Listener {
                 model: *model,
-                core: new_receiver(model, hosts.get(model.host).map_or(0, |host| host.path)),
+                core: new_receiver(
+                    model,
+                    number,
+                    hosts.get(model.host).map_or(0, |host| host.path),
+                ),
                 device: Course::new(model.device, generator.fork(300 + number)),
                 trace: Trace::default(),
             })
@@ -232,6 +263,7 @@ impl Scene {
         scene.plan_send();
         for receiver in 0..scene.listeners.len() {
             scene.plan_cycle(receiver, 1);
+            scene.plan_report(receiver, TrueTime::ZERO);
         }
         scene
     }
@@ -243,6 +275,15 @@ impl Scene {
             .iter()
             .map(|listener| &listener.trace)
             .collect()
+    }
+
+    /// A receiver's estimate of the smallest delay of its link, in
+    /// nanoseconds.
+    #[must_use]
+    pub fn delay(&self, receiver: usize) -> Option<i64> {
+        self.listeners
+            .get(receiver)
+            .map(|listener| listener.core.delay())
     }
 
     /// The timeline that a receiver follows, if any.
@@ -298,6 +339,54 @@ impl Scene {
         let leaves = listener.device.when(first / f64::from(self.model.rate));
         let at = leaves.plus_seconds(-listener.model.lead);
         self.push(at, Event::Plan { receiver, cycle });
+    }
+
+    /// Plans the next report of a receiver that measures its path, after
+    /// true time `after`.
+    fn plan_report(&mut self, receiver: usize, after: TrueTime) {
+        let period = self
+            .listeners
+            .get(receiver)
+            .map(|listener| listener.model.path);
+        if let Some(PathDelay::Measured(period)) = period {
+            self.push(
+                TrueTime(after.0.saturating_add(period)),
+                Event::Report { receiver },
+            );
+        }
+    }
+
+    /// Lets a receiver send a report at true time `at`.
+    fn report(&mut self, receiver: usize, at: TrueTime) {
+        let Some(listener) = self.listeners.get_mut(receiver) else {
+            return;
+        };
+        let Some(host) = self.hosts.get_mut(listener.model.host) else {
+            return;
+        };
+        if let Some(report) = listener.core.report(1) {
+            listener.core.reported(report.sequence, host.clock.read(at));
+            let arrival = host.back.arrival(at);
+            self.push(arrival, Event::Answer { receiver, report });
+        }
+        self.plan_report(receiver, at);
+    }
+
+    /// Lets the sender answer a report that arrives at true time `at`.
+    fn answer(&mut self, receiver: usize, report: &Report, at: TrueTime) {
+        let Some(echo) = self.sender.answer(report, self.clock.read(at)) else {
+            return;
+        };
+        let host = self
+            .listeners
+            .get(receiver)
+            .map(|listener| listener.model.host);
+        let arrival = host
+            .and_then(|host| self.hosts.get_mut(host))
+            .map(|host| host.link.arrival(at));
+        if let Some(arrival) = arrival {
+            self.push(arrival, Event::Echo { receiver, echo });
+        }
     }
 
     /// Lets the sender send its next packet at true time `at`.
@@ -425,6 +514,13 @@ impl Scene {
                     }
                 }
                 Event::Plan { receiver, cycle } => self.cycle(receiver, cycle),
+                Event::Report { receiver } => self.report(receiver, at),
+                Event::Answer { receiver, report } => self.answer(receiver, &report, at),
+                Event::Echo { receiver, echo } => {
+                    if let Some(listener) = self.listeners.get_mut(receiver) {
+                        listener.core.echo(&echo);
+                    }
+                }
             }
         }
         self.now = until;
@@ -447,7 +543,7 @@ impl Scene {
                 .hosts
                 .get(listener.model.host)
                 .map_or(0, |host| host.path);
-            listener.core = new_receiver(&listener.model, path);
+            listener.core = new_receiver(&listener.model, receiver as u64, path);
         }
     }
 }

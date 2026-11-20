@@ -2,11 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The audio packet: a header of fixed size, then the samples.
+//! The packets of a stream: audio from the sender, reports from receivers,
+//! and the sender's answers to reports.
 //!
-//! Every number in the header is written least significant byte first. All
-//! parties of a stream run the same version of the software, so there is one
-//! layout and nothing to negotiate: a packet of another version is rejected.
+//! An audio packet is a header of fixed size, then the samples. A receiver
+//! sends reports, and the sender answers each with the time at which it
+//! arrived; the two stamps of a report tell the receiver about the path back
+//! to the sender what the stamps of audio packets tell it about the path
+//! from the sender.
+//!
+//! Every number is written least significant byte first. All parties of a
+//! stream run the same version of the software, so there is one layout and
+//! nothing to negotiate: a packet of another version is rejected.
 
 /// The first four bytes of every packet: the letters `unis`.
 pub const MAGIC: u64 = 0x7369_6e75;
@@ -17,8 +24,21 @@ pub const VERSION: u8 = 1;
 /// The kind of a packet that carries audio.
 pub const KIND_AUDIO: u8 = 1;
 
+/// The kind of a report of a receiver.
+pub const KIND_REPORT: u8 = 2;
+
+/// The kind of the sender's answer to a report.
+pub const KIND_ECHO: u8 = 3;
+
 /// The size of the header of an audio packet, in bytes.
 pub const HEADER: usize = 84;
+
+/// The size of what a report says, in bytes. A report is padded beyond it to
+/// the size of an audio packet, so that it meets the same delays.
+pub const REPORT: usize = 32;
+
+/// The size of the sender's answer to a report, in bytes.
+pub const ECHO: usize = 32;
 
 /// The bit of the flags that says the packet carries the departure of an
 /// earlier packet.
@@ -317,12 +337,175 @@ pub fn write_audio(header: &Audio, bytes: &mut [u8]) -> Option<usize> {
     }
 }
 
+/// A report of a receiver to the sender.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Report {
+    /// Which stream of the sender the receiver plays.
+    pub stream: u16,
+    /// The timeline that the receiver follows.
+    pub timeline: u64,
+    /// A number that tells this receiver from the others.
+    pub receiver: u64,
+    /// The number of this report among the receiver's reports.
+    pub sequence: u64,
+}
+
+/// The sender's answer to a report: when the report arrived.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Echo {
+    /// Which stream of the sender this is.
+    pub stream: u16,
+    /// The receiver whose report this answers.
+    pub receiver: u64,
+    /// The number of the report among that receiver's reports.
+    pub sequence: u64,
+    /// The sender's clock when the report arrived.
+    pub arrival: i64,
+}
+
+/// The kind of the packet in `bytes`, if it is a packet of this version:
+/// [`KIND_AUDIO`], [`KIND_REPORT`], [`KIND_ECHO`], or a kind this version
+/// does not know.
+///
+/// # Errors
+///
+/// The reason why `bytes` is not a packet of this version.
+// The casts take numbers that were read from one byte.
+#[allow(clippy::cast_possible_truncation)]
+pub fn kind(bytes: &[u8]) -> Result<u8, Rejected> {
+    let (Some(magic), Some(version), Some(kind)) =
+        (read(bytes, 0, 4), read(bytes, 4, 1), read(bytes, 5, 1))
+    else {
+        return Err(Rejected::TooShort);
+    };
+    if magic != MAGIC {
+        return Err(Rejected::NotUnisono);
+    }
+    if version != VERSION as u64 {
+        return Err(Rejected::Version(version as u8));
+    }
+    Ok(kind as u8)
+}
+
+/// Reads the report in `bytes`. What follows its first [`REPORT`] bytes is
+/// padding.
+///
+/// # Errors
+///
+/// The reason why `bytes` is not a report of this version.
+// The casts take numbers that were read from exactly as many bytes as the
+// field has.
+#[allow(clippy::cast_possible_truncation)]
+pub fn parse_report(bytes: &[u8]) -> Result<Report, Rejected> {
+    let found = match kind(bytes) {
+        Ok(found) => found,
+        Err(reason) => return Err(reason),
+    };
+    if found != KIND_REPORT {
+        return Err(Rejected::Kind(found));
+    }
+    let (Some(stream), Some(timeline), Some(receiver), Some(sequence)) = (
+        read(bytes, 6, 2),
+        read(bytes, 8, 8),
+        read(bytes, 16, 8),
+        read(bytes, 24, 8),
+    ) else {
+        return Err(Rejected::TooShort);
+    };
+    Ok(Report {
+        stream: stream as u16,
+        timeline,
+        receiver,
+        sequence,
+    })
+}
+
+/// Writes `report` into `bytes` as a packet of `length` bytes, padded with
+/// zeros, and returns the length. A `length` below [`REPORT`] counts as
+/// [`REPORT`]. `None` if `bytes` is shorter than the packet.
+pub fn write_report(report: &Report, bytes: &mut [u8], length: usize) -> Option<usize> {
+    let length = if length < REPORT { REPORT } else { length };
+    if bytes.len() < length {
+        return None;
+    }
+    let mut written = write(bytes, 0, 4, MAGIC);
+    written &= write(bytes, 4, 1, VERSION as u64);
+    written &= write(bytes, 5, 1, KIND_REPORT as u64);
+    written &= write(bytes, 6, 2, report.stream as u64);
+    written &= write(bytes, 8, 8, report.timeline);
+    written &= write(bytes, 16, 8, report.receiver);
+    written &= write(bytes, 24, 8, report.sequence);
+    let mut place = REPORT;
+    while place < length {
+        written &= write(bytes, place, 1, 0);
+        place = place.saturating_add(1);
+    }
+    if written { Some(length) } else { None }
+}
+
+/// Reads the sender's answer to a report in `bytes`.
+///
+/// # Errors
+///
+/// The reason why `bytes` is not such an answer of this version.
+// The casts take a number that was read from exactly as many bytes as the
+// field has, or turn an unsigned number into the signed one with the same
+// bits.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+pub fn parse_echo(bytes: &[u8]) -> Result<Echo, Rejected> {
+    let found = match kind(bytes) {
+        Ok(found) => found,
+        Err(reason) => return Err(reason),
+    };
+    if found != KIND_ECHO {
+        return Err(Rejected::Kind(found));
+    }
+    let (Some(stream), Some(receiver), Some(sequence), Some(arrival)) = (
+        read(bytes, 6, 2),
+        read(bytes, 8, 8),
+        read(bytes, 16, 8),
+        read(bytes, 24, 8),
+    ) else {
+        return Err(Rejected::TooShort);
+    };
+    if bytes.len() != ECHO {
+        return Err(Rejected::Length);
+    }
+    Ok(Echo {
+        stream: stream as u16,
+        receiver,
+        sequence,
+        arrival: arrival as i64,
+    })
+}
+
+/// Writes `echo` into the first [`ECHO`] bytes of `bytes` and returns that
+/// length. `None` if `bytes` is shorter.
+// The cast turns a signed number into the unsigned one with the same bits.
+#[allow(clippy::cast_sign_loss)]
+pub fn write_echo(echo: &Echo, bytes: &mut [u8]) -> Option<usize> {
+    if bytes.len() < ECHO {
+        return None;
+    }
+    let mut written = write(bytes, 0, 4, MAGIC);
+    written &= write(bytes, 4, 1, VERSION as u64);
+    written &= write(bytes, 5, 1, KIND_ECHO as u64);
+    written &= write(bytes, 6, 2, echo.stream as u64);
+    written &= write(bytes, 8, 8, echo.receiver);
+    written &= write(bytes, 16, 8, echo.sequence);
+    written &= write(bytes, 24, 8, echo.arrival as u64);
+    if written { Some(ECHO) } else { None }
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
     use std::vec::Vec;
 
-    use super::{Audio, Format, HEADER, Rejected, parse_audio, write_audio};
+    use super::{
+        Audio, ECHO, Echo, Format, HEADER, KIND_AUDIO, KIND_ECHO, KIND_REPORT, REPORT, Rejected,
+        Report, kind, parse_audio, parse_echo, parse_report, write_audio, write_echo, write_report,
+    };
 
     fn header() -> Audio {
         Audio {
@@ -414,5 +597,70 @@ mod tests {
     fn a_header_is_not_written_where_there_is_no_room() {
         let mut short = [0u8; HEADER - 1];
         assert_eq!(write_audio(&header(), &mut short), None);
+    }
+
+    #[test]
+    fn a_report_is_padded_and_read_back() {
+        let report = Report {
+            stream: 0x0102,
+            timeline: 0x1112_1314_1516_1718,
+            receiver: 0x2122_2324_2526_2728,
+            sequence: 0x3132_3334_3536_3738,
+        };
+        let mut bytes = [0xaau8; 200];
+        assert_eq!(write_report(&report, &mut bytes, 150), Some(150));
+        assert_eq!(bytes[4..8], [1, 2, 0x02, 0x01]);
+        assert_eq!(bytes[24..32], 0x3132_3334_3536_3738u64.to_le_bytes());
+        // The padding is zero, and nothing beyond the packet is touched.
+        assert!(bytes[REPORT..150].iter().all(|byte| *byte == 0));
+        assert_eq!(bytes[150], 0xaa);
+        assert_eq!(parse_report(&bytes[..150]), Ok(report));
+        assert_eq!(kind(&bytes[..150]), Ok(KIND_REPORT));
+        // A length below what a report says is brought up to it.
+        assert_eq!(write_report(&report, &mut bytes, 0), Some(REPORT));
+        assert_eq!(write_report(&report, &mut bytes[..REPORT - 1], 0), None);
+        assert_eq!(parse_report(&bytes[..REPORT - 1]), Err(Rejected::TooShort));
+    }
+
+    #[test]
+    fn an_answer_to_a_report_is_read_back() {
+        let echo = Echo {
+            stream: 7,
+            receiver: u64::MAX,
+            sequence: 99,
+            arrival: -5,
+        };
+        let mut bytes = [0u8; ECHO];
+        assert_eq!(write_echo(&echo, &mut bytes), Some(ECHO));
+        assert_eq!(
+            bytes[24..32],
+            [0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+        );
+        assert_eq!(parse_echo(&bytes), Ok(echo));
+        assert_eq!(kind(&bytes), Ok(KIND_ECHO));
+        let mut long = [0u8; ECHO + 1];
+        long[..ECHO].copy_from_slice(&bytes);
+        assert_eq!(parse_echo(&long), Err(Rejected::Length));
+    }
+
+    #[test]
+    fn a_packet_of_one_kind_is_not_read_as_another() {
+        let audio = packet(&header());
+        assert_eq!(kind(&audio), Ok(KIND_AUDIO));
+        assert_eq!(parse_report(&audio), Err(Rejected::Kind(KIND_AUDIO)));
+        assert_eq!(parse_echo(&audio), Err(Rejected::Kind(KIND_AUDIO)));
+        let mut bytes = [0u8; ECHO];
+        let echo = Echo {
+            stream: 1,
+            receiver: 2,
+            sequence: 3,
+            arrival: 4,
+        };
+        write_echo(&echo, &mut bytes);
+        assert_eq!(parse_audio(&bytes), Err(Rejected::TooShort));
+        assert_eq!(parse_report(&bytes), Err(Rejected::Kind(KIND_ECHO)));
+        assert_eq!(kind(&[]), Err(Rejected::TooShort));
+        bytes[0] = 0;
+        assert_eq!(kind(&bytes), Err(Rejected::NotUnisono));
     }
 }

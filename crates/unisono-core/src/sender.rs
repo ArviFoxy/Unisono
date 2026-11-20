@@ -5,7 +5,7 @@
 //! The sender of a stream: which index the next frame has, and what the
 //! header of the next packet says.
 
-use crate::packet::{Audio, FLAG_STAMPED, Format};
+use crate::packet::{Audio, Echo, FLAG_STAMPED, Format, Report};
 
 /// What stays the same in every packet of a stream until the sender changes
 /// it.
@@ -128,6 +128,21 @@ impl Sender {
         self.stamped_departure = departure;
     }
 
+    /// The answer to a report of a receiver that arrived when the sender's
+    /// clock read `arrival`. A report for another stream gets none.
+    #[must_use]
+    pub fn answer(&self, report: &Report, arrival: i64) -> Option<Echo> {
+        if report.stream != self.settings.stream {
+            return None;
+        }
+        Some(Echo {
+            stream: report.stream,
+            receiver: report.receiver,
+            sequence: report.sequence,
+            arrival,
+        })
+    }
+
     /// Starts another timeline, for instance because the capture device
     /// started anew. Its number is `timeline`, or one more than the number
     /// of the timeline before if that is larger, so that receivers follow it
@@ -143,7 +158,7 @@ impl Sender {
 #[cfg(test)]
 mod tests {
     use super::{Sender, Settings};
-    use crate::packet::{FLAG_STAMPED, Format};
+    use crate::packet::{Echo, FLAG_STAMPED, Format, Report};
 
     fn sender() -> Sender {
         let settings = Settings {
@@ -213,5 +228,30 @@ mod tests {
         sender.level(30_000_000, 40);
         let header = sender.packet(240, 0, 0);
         assert_eq!((header.level, header.level_slope), (30_000_000, 40));
+    }
+
+    #[test]
+    fn a_report_is_answered_with_its_arrival() {
+        let sender = sender();
+        let report = Report {
+            stream: 3,
+            timeline: 100,
+            receiver: 42,
+            sequence: 7,
+        };
+        assert_eq!(
+            sender.answer(&report, 123_456),
+            Some(Echo {
+                stream: 3,
+                receiver: 42,
+                sequence: 7,
+                arrival: 123_456
+            })
+        );
+        let other = Report {
+            stream: 4,
+            ..report
+        };
+        assert_eq!(sender.answer(&other, 123_456), None);
     }
 }

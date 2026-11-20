@@ -140,6 +140,20 @@ impl<const M: usize> Estimator<M> {
         self.span = span;
     }
 
+    /// The middle of the time that the kept samples cover, where the
+    /// estimate is best, once a sample has been kept.
+    #[must_use]
+    pub fn middle(&self) -> Option<i64> {
+        let Some(first) = self.sample(0) else {
+            return None;
+        };
+        let Some(last) = self.sample(self.len.saturating_sub(1)) else {
+            return None;
+        };
+        let half = div_floor(last.time.saturating_sub(first.time) as i128, 2);
+        Some(first.time.saturating_add(saturate(half)))
+    }
+
     /// The current estimate, once a sample has been kept.
     #[must_use]
     pub fn line(&self) -> Option<Line> {

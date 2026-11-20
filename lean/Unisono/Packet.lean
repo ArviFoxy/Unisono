@@ -106,4 +106,62 @@ theorem write_audio_total (h : packet.Audio) (bytes : Slice Std.U8) :
   simp only
   step*
 
+/-! ## Reports and the answers to them -/
+
+/-- Telling the kind of a packet returns for every string of bytes. -/
+@[step]
+theorem kind_total (bytes : Slice Std.U8) : packet.kind bytes ⦃ _ => True ⦄ := by
+  unfold packet.kind
+  step*
+
+/-- Reading a report returns, with a report or with a reason for rejection,
+for every string of bytes. -/
+theorem parse_report_total (bytes : Slice Std.U8) :
+    packet.parse_report bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_report
+  step*
+
+/-- Reading an answer to a report returns for every string of bytes. -/
+theorem parse_echo_total (bytes : Slice Std.U8) :
+    packet.parse_echo bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_echo
+  step*
+
+/-- Writing an answer to a report returns for every answer and every
+buffer. -/
+theorem write_echo_total (e : packet.Echo) (bytes : Slice Std.U8) :
+    packet.write_echo e bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_echo
+  simp only
+  step*
+
+@[step]
+theorem write_report_loop_total (bytes : Slice Std.U8) (length : Std.Usize)
+    (written : Bool) (place : Std.Usize) :
+    packet.write_report_loop bytes length written place ⦃ _ => True ⦄ := by
+  unfold packet.write_report_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : Slice Std.U8 × Bool × Std.Usize => length.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨bytes1, written1, place1⟩ _
+    unfold packet.write_report_loop.body
+    simp only
+    split
+    · have hlt : place1.val < length.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add place1 1#usize).val = place1.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨out⟩
+      step as ⟨place2, hplace2⟩
+      rw [hplace2]
+      omega
+    · simp
+  · trivial
+
+/-- Writing a report, padded to a length, returns for every report, buffer
+and length. -/
+theorem write_report_total (r : packet.Report) (bytes : Slice Std.U8) (length : Std.Usize) :
+    packet.write_report r bytes length ⦃ _ => True ⦄ := by
+  unfold packet.write_report
+  split <;> simp only <;> step*
+
 end Unisono.Packet

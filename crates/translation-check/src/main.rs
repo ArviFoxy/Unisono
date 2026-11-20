@@ -395,9 +395,15 @@ fn stream_header(
 /// held. 2 and an index: a skip, whose result is the number of frames
 /// skipped. 3, a time and a number of frames: a cycle of the device, whose
 /// results are the plan's number of frames, the frame and the fraction of
-/// its start, its step and whether it jumped. After every operation the
-/// followed timeline, or -1, and the playhead follow. At the end come the line of the clock estimate, or
+/// its start, its step and whether it jumped. 4, a receiver and a delay: a
+/// report is made, has left now, and is answered for that receiver as
+/// having arrived after the delay; the results are the report's number, or
+/// -1 when none was made, and the delay of the path afterwards. After every
+/// operation the followed timeline, or -1, and the playhead follow. At the end come the line of the clock estimate, or
 /// zeros, and the index of the schedule, or -1.
+// One arm for each kind of operation; apart they would share most of their
+// arguments.
+#[allow(clippy::too_many_lines)]
 fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(5);
     for _ in 0..200 {
@@ -407,11 +413,12 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
             limit: 1_000_000,
             jump: 30,
         };
-        let mut receiver = receiver::Receiver::<2, 4, 2>::new(
-            i64::try_from(silence).unwrap_or(0),
-            200_000,
+        let mut receiver = receiver::Receiver::<2, 4, 2>::new(receiver::Settings {
+            identity: 9,
+            silence: i64::try_from(silence).unwrap_or(0),
+            limit: 200_000,
             regulation,
-        );
+        });
         let operations = 1 + sequence.next() % 40;
         let mut results: Vec<i128> = Vec::new();
         write!(out, "receiver {silence} {operations}")?;
@@ -423,7 +430,24 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
         let mut timeline = 2u64;
         let mut recent = [0u64; 2];
         for _ in 0..operations {
-            match sequence.next() % 6 {
+            match sequence.next() % 7 {
+                3 => {
+                    let to = 9 - sequence.next() % 8 / 7;
+                    let delay = i64::try_from(sequence.next() % 500).unwrap_or(0);
+                    write!(out, " 4 {to} {delay} {now} 0 0 0 0")?;
+                    let number = receiver.report(1).map(|report| {
+                        receiver.reported(report.sequence, now);
+                        receiver.echo(&packet::Echo {
+                            stream: 1,
+                            receiver: to,
+                            sequence: report.sequence,
+                            arrival: now + delay,
+                        });
+                        report.sequence
+                    });
+                    results.push(number.map_or(-1, i128::from));
+                    results.push(i128::from(receiver.delay()));
+                }
                 2 => {
                     let frames = u32::try_from(sequence.next() % 40).unwrap_or(0);
                     let time = now + i64::try_from(sequence.next() % 400_000).unwrap_or(0);
@@ -713,6 +737,133 @@ fn player_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Reports and answers to them, written and read back, and the same packets
+/// with one byte changed and with one byte less.
+fn report_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(9);
+    for _ in 0..150 {
+        // The casts keep the low bits of random numbers.
+        #[allow(clippy::cast_possible_truncation)]
+        let report = packet::Report {
+            stream: sequence.next() as u16,
+            timeline: sequence.next(),
+            receiver: sequence.next(),
+            sequence: sequence.next(),
+        };
+        let length = usize::try_from(sequence.next() % 80).unwrap_or(0);
+        let mut buffer = [0xa5u8; 96];
+        let written = packet::write_report(&report, &mut buffer, length);
+        writeln!(
+            out,
+            "write_report {} {} {} {} {length} -> {} {}",
+            report.stream,
+            report.timeline,
+            report.receiver,
+            report.sequence,
+            written.map_or(-1, |n| i128::try_from(n).unwrap_or(-1)),
+            bytes_of(&buffer)
+        )?;
+        #[allow(clippy::cast_possible_truncation)]
+        let echo = packet::Echo {
+            stream: sequence.next() as u16,
+            receiver: sequence.next(),
+            sequence: sequence.next(),
+            arrival: sequence.signed(),
+        };
+        let mut answer = [0u8; 40];
+        let size = packet::write_echo(&echo, &mut answer).unwrap_or(0);
+        writeln!(
+            out,
+            "write_echo {} {} {} {} -> {size} {}",
+            echo.stream,
+            echo.receiver,
+            echo.sequence,
+            echo.arrival,
+            bytes_of(&answer)
+        )?;
+        let used = written.unwrap_or(0);
+        let mut changed = buffer[..used].to_vec();
+        let place = usize::try_from(sequence.next() % 32).unwrap_or(0);
+        if let Some(byte) = changed.get_mut(place) {
+            *byte ^= 1 << (sequence.next() % 8);
+        }
+        let mut changed_answer = answer[..size].to_vec();
+        if let Some(byte) = changed_answer.get_mut(place) {
+            *byte ^= 1 << (sequence.next() % 8);
+        }
+        for bytes in [
+            &buffer[..used],
+            &changed[..],
+            &buffer[..used.saturating_sub(1).min(31)],
+            &answer[..size],
+            &changed_answer[..],
+            &answer[..=size],
+        ] {
+            writeln!(
+                out,
+                "parse_report {} -> {}",
+                bytes_of(bytes),
+                join(&report_numbers(bytes))
+            )?;
+            writeln!(
+                out,
+                "parse_echo {} -> {}",
+                bytes_of(bytes),
+                join(&echo_numbers(bytes))
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// A reason for rejection as two numbers: which reason, and its detail.
+fn rejection(reason: packet::Rejected) -> [i128; 2] {
+    match reason {
+        packet::Rejected::TooShort => [1, 0],
+        packet::Rejected::NotUnisono => [2, 0],
+        packet::Rejected::Version(version) => [3, i128::from(version)],
+        packet::Rejected::Kind(kind) => [4, i128::from(kind)],
+        packet::Rejected::Format(format) => [5, i128::from(format)],
+        packet::Rejected::Length => [6, 0],
+    }
+}
+
+/// What reading a report gives, as numbers: 0 and its fields, or the reason
+/// for rejection and zeros.
+fn report_numbers(bytes: &[u8]) -> [i128; 5] {
+    match packet::parse_report(bytes) {
+        Ok(report) => [
+            0,
+            i128::from(report.stream),
+            i128::from(report.timeline),
+            i128::from(report.receiver),
+            i128::from(report.sequence),
+        ],
+        Err(reason) => {
+            let [code, detail] = rejection(reason);
+            [code, detail, 0, 0, 0]
+        }
+    }
+}
+
+/// What reading an answer to a report gives, as numbers: 0 and its fields,
+/// or the reason for rejection and zeros.
+fn echo_numbers(bytes: &[u8]) -> [i128; 5] {
+    match packet::parse_echo(bytes) {
+        Ok(echo) => [
+            0,
+            i128::from(echo.stream),
+            i128::from(echo.receiver),
+            i128::from(echo.sequence),
+            i128::from(echo.arrival),
+        ],
+        Err(reason) => {
+            let [code, detail] = rejection(reason);
+            [code, detail, 0, 0, 0]
+        }
+    }
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -725,5 +876,6 @@ fn main() -> io::Result<()> {
     sender_cases(&mut out)?;
     timing_cases(&mut out)?;
     player_cases(&mut out)?;
+    report_cases(&mut out)?;
     out.flush()
 }
