@@ -9,6 +9,10 @@
 //! they are faded in. Nothing is delayed for this: the continuation is made
 //! from the frames already played.
 //!
+//! `docs/concealment.md` states what a concealment computes as a problem of
+//! inference, which instance of it this module solves, and how the
+//! alternatives compare.
+//!
 //! # The continuation
 //!
 //! The continuation is a linear prediction. Each channel's last frames
