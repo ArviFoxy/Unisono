@@ -8,11 +8,16 @@ use std::error::Error;
 use std::fmt::{self, Display, Formatter, Write};
 use std::io;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::counter::Counter;
 use crate::gauge::{FloatGauge, Gauge};
 use crate::histogram::{Buckets, Histogram};
 use crate::text::{self, Braced, Number};
+
+/// Monotonic identifier assigned to each [`Registry`] so handles from one
+/// registry are never accepted by another.
+static NEXT_REGISTRY: AtomicU64 = AtomicU64::new(1);
 
 /// Why a family or a series was not registered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -58,19 +63,19 @@ impl Error for RegistrationError {}
 
 /// A family of counters in a [`Registry`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct CounterFamily(usize);
+pub struct CounterFamily(u64, usize);
 
 /// A family of integer gauges in a [`Registry`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct GaugeFamily(usize);
+pub struct GaugeFamily(u64, usize);
 
 /// A family of floating-point gauges in a [`Registry`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FloatGaugeFamily(usize);
+pub struct FloatGaugeFamily(u64, usize);
 
 /// A family of histograms in a [`Registry`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct HistogramFamily(usize);
+pub struct HistogramFamily(u64, usize);
 
 /// What the series of a family are.
 #[derive(Debug, PartialEq)]
@@ -145,16 +150,26 @@ struct Family {
 ///
 /// The registry holds a handle to every series, so a thread that drops its
 /// handle frees no memory as long as the registry lives.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Registry {
+    id: u64,
     families: Vec<Family>,
+}
+
+impl Default for Registry {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Registry {
     /// A registry without families.
     #[must_use]
     pub fn new() -> Self {
-        Self::default()
+        Registry {
+            id: NEXT_REGISTRY.fetch_add(1, Ordering::Relaxed),
+            families: Vec::new(),
+        }
     }
 
     /// Registers a family of counters.
@@ -176,8 +191,9 @@ impl Registry {
         help: &str,
         label_names: &[&str],
     ) -> Result<CounterFamily, RegistrationError> {
+        let id = self.id;
         self.family(name, help, label_names, Kind::Counter)
-            .map(CounterFamily)
+            .map(|index| CounterFamily(id, index))
     }
 
     /// Registers a family of integer gauges.
@@ -199,8 +215,9 @@ impl Registry {
         help: &str,
         label_names: &[&str],
     ) -> Result<GaugeFamily, RegistrationError> {
+        let id = self.id;
         self.family(name, help, label_names, Kind::Gauge)
-            .map(GaugeFamily)
+            .map(|index| GaugeFamily(id, index))
     }
 
     /// Registers a family of floating-point gauges.
@@ -222,8 +239,9 @@ impl Registry {
         help: &str,
         label_names: &[&str],
     ) -> Result<FloatGaugeFamily, RegistrationError> {
+        let id = self.id;
         self.family(name, help, label_names, Kind::FloatGauge)
-            .map(FloatGaugeFamily)
+            .map(|index| FloatGaugeFamily(id, index))
     }
 
     /// Registers a family of histograms.
@@ -256,8 +274,9 @@ impl Registry {
         steps_per_unit: u64,
     ) -> Result<HistogramFamily, RegistrationError> {
         let buckets = Buckets::new(bounds, steps_per_unit).ok_or(RegistrationError::Buckets)?;
+        let id = self.id;
         self.family(name, help, label_names, Kind::Histogram(Arc::new(buckets)))
-            .map(HistogramFamily)
+            .map(|index| HistogramFamily(id, index))
     }
 
     /// The counter of `family` with the given label values, one for each
@@ -275,7 +294,9 @@ impl Registry {
         family: CounterFamily,
         label_values: &[&str],
     ) -> Result<Counter, RegistrationError> {
-        match self.series(family.0, label_values, |kind| matches!(kind, Kind::Counter))? {
+        match self.series(family.0, family.1, label_values, |kind| {
+            matches!(kind, Kind::Counter)
+        })? {
             Series::Counter(counter) => Ok(counter),
             _ => Err(RegistrationError::UnknownFamily),
         }
@@ -296,7 +317,9 @@ impl Registry {
         family: GaugeFamily,
         label_values: &[&str],
     ) -> Result<Gauge, RegistrationError> {
-        match self.series(family.0, label_values, |kind| matches!(kind, Kind::Gauge))? {
+        match self.series(family.0, family.1, label_values, |kind| {
+            matches!(kind, Kind::Gauge)
+        })? {
             Series::Gauge(gauge) => Ok(gauge),
             _ => Err(RegistrationError::UnknownFamily),
         }
@@ -317,7 +340,7 @@ impl Registry {
         family: FloatGaugeFamily,
         label_values: &[&str],
     ) -> Result<FloatGauge, RegistrationError> {
-        match self.series(family.0, label_values, |kind| {
+        match self.series(family.0, family.1, label_values, |kind| {
             matches!(kind, Kind::FloatGauge)
         })? {
             Series::FloatGauge(gauge) => Ok(gauge),
@@ -340,7 +363,7 @@ impl Registry {
         family: HistogramFamily,
         label_values: &[&str],
     ) -> Result<Histogram, RegistrationError> {
-        match self.series(family.0, label_values, |kind| {
+        match self.series(family.0, family.1, label_values, |kind| {
             matches!(kind, Kind::Histogram(_))
         })? {
             Series::Histogram(histogram) => Ok(histogram),
@@ -460,10 +483,14 @@ impl Registry {
     /// must be of the kind that `expected` accepts.
     fn series(
         &mut self,
+        registry: u64,
         family: usize,
         label_values: &[&str],
         expected: fn(&Kind) -> bool,
     ) -> Result<Series, RegistrationError> {
+        if registry != self.id {
+            return Err(RegistrationError::UnknownFamily);
+        }
         let family = self
             .families
             .get_mut(family)
@@ -499,5 +526,60 @@ struct Text<'a>(&'a Registry);
 impl Display for Text<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self.0.write_text(f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{RegistrationError, Registry};
+
+    #[test]
+    fn family_handles_from_another_registry_are_rejected() {
+        let mut first = Registry::new();
+        let mut second = Registry::default();
+
+        let c1 = first
+            .counter_family("packets_total", "Packets.", &["kind"])
+            .expect("register counter");
+        let g1 = first
+            .gauge_family("level_ns", "Level.", &[])
+            .expect("register gauge");
+        let f1 = first
+            .float_gauge_family("drift_ppm", "Drift.", &[])
+            .expect("register float gauge");
+        let h1 = first
+            .histogram_family("delay_s", "Delay.", &[], &[100, 1_000], 1_000)
+            .expect("register histogram");
+
+        // Mirror the exact same indices and kinds in the second registry.
+        let _ = second
+            .counter_family("packets_total", "Packets.", &["kind"])
+            .expect("register counter");
+        let _ = second
+            .gauge_family("level_ns", "Level.", &[])
+            .expect("register gauge");
+        let _ = second
+            .float_gauge_family("drift_ppm", "Drift.", &[])
+            .expect("register float gauge");
+        let _ = second
+            .histogram_family("delay_s", "Delay.", &[], &[100, 1_000], 1_000)
+            .expect("register histogram");
+
+        assert_eq!(
+            second.counter(c1, &["audio"]).unwrap_err(),
+            RegistrationError::UnknownFamily
+        );
+        assert_eq!(
+            second.gauge(g1, &[]).unwrap_err(),
+            RegistrationError::UnknownFamily
+        );
+        assert_eq!(
+            second.float_gauge(f1, &[]).unwrap_err(),
+            RegistrationError::UnknownFamily
+        );
+        assert_eq!(
+            second.histogram(h1, &[]).unwrap_err(),
+            RegistrationError::UnknownFamily
+        );
     }
 }
