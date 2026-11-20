@@ -207,8 +207,8 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
     | [2, target, _, _, _, _, _, _] => do
       let out ← receiver.Receiver.skip r (unsigned .U64 target)
       pure (out.2, ([out.1.val] : List Int))
-    | [4, target, delay, now, _, _, _, _] => do
-      let made ← receiver.Receiver.report r 1#u16
+    | [4, target, delay, now, echoStream, _, _, _] => do
+      let made ← receiver.Receiver.report r
       match made.1 with
       | none =>
         let path ← receiver.Receiver.delay made.2
@@ -216,7 +216,8 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
       | some report =>
         let left ← receiver.Receiver.reported made.2 report.sequence (signed .I64 now)
         let answered ← receiver.Receiver.echo left
-          ⟨1#u16, unsigned .U64 target, report.sequence, signed .I64 (now + delay)⟩
+          ⟨unsigned .U16 echoStream, unsigned .U64 target, report.sequence,
+            signed .I64 (now + delay)⟩
         let path ← receiver.Receiver.delay answered
         pure (answered, ([report.sequence.val, path.val] : List Int))
     | [3, time, frames, _, _, _, _, _] => do
@@ -235,7 +236,7 @@ def runReceiver (silence : Int) (operations : List (List Int)) : Result (List In
   let regulation : player.Regulation :=
     { gain := 262144#u32, limit := 1000000#u32, jump := 30#u32 }
   let start ← receiver.Receiver.new 2#usize 4#usize 2#usize
-    { identity := 9#u64, silence := signed .I64 silence, limit := 200000#i64,
+    { stream := 1#u16, identity := 9#u64, silence := signed .I64 silence, limit := 200000#i64,
       regulation := regulation }
   let final ← operations.foldlM receiverStep (start, [])
   let line ← receiver.Receiver.impl.clock final.1

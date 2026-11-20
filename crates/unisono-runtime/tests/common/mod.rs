@@ -137,6 +137,7 @@ impl Line {
 /// frames.
 pub(crate) fn settings(rate: u32, concealment: Parameters) -> Settings {
     Settings {
+        stream: 1,
         rate,
         channels: 2,
         identity: 1,

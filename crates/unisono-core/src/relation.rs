@@ -88,6 +88,11 @@ fn side(a: Sample, b: Sample, c: Sample) -> i128 {
     left.saturating_sub(right)
 }
 
+/// Clamps a negative setting to zero.
+fn non_negative(value: i64) -> i64 {
+    if value < 0 { 0 } else { value }
+}
+
 /// An estimator of the relation between two clocks, which remembers up to `M`
 /// samples.
 ///
@@ -112,34 +117,47 @@ pub struct Estimator<const M: usize> {
     span: i64,
     /// The largest size of the line's slope, in nanoseconds per second.
     limit: i64,
+    /// Whether a window has been opened since creation or [`Estimator::reset_window`].
+    has_window: bool,
     /// The window that `lowest` belongs to.
     window: u64,
-    /// The lowest sample of the current window so far, with its height above
-    /// the line.
-    lowest: Option<(Sample, i64)>,
+    /// The lowest sample of the current window so far, with its exact height
+    /// above the line.
+    lowest: Option<(Sample, i128)>,
     line: Option<Line>,
 }
 
 impl<const M: usize> Estimator<M> {
     /// An estimator that has seen nothing, remembers samples for `span`
     /// nanoseconds, and holds the slope of its line within `limit`
-    /// nanoseconds per second.
+    /// nanoseconds per second. Negative `span` or `limit` values are clamped
+    /// to zero.
     #[must_use]
     pub fn new(span: i64, limit: i64) -> Self {
         Estimator {
             kept: [Sample { time: 0, value: 0 }; M],
             len: 0,
-            span,
-            limit,
+            span: non_negative(span),
+            limit: non_negative(limit),
+            has_window: false,
             window: 0,
             lowest: None,
             line: None,
         }
     }
 
-    /// Sets how long a kept sample is remembered, in nanoseconds.
+    /// Sets how long a kept sample is remembered, in nanoseconds. Negative
+    /// values are clamped to zero.
     pub fn remember(&mut self, span: i64) {
-        self.span = span;
+        self.span = non_negative(span);
+    }
+
+    /// Finishes the current window and allows window numbers to restart from
+    /// any value while keeping the remembered samples and fitted line.
+    pub fn reset_window(&mut self) {
+        self.end_window();
+        self.has_window = false;
+        self.window = 0;
     }
 
     /// The middle of the time that the kept samples cover, where the
@@ -201,16 +219,19 @@ impl<const M: usize> Estimator<M> {
 
     /// Takes in the sample of one packet of window `window`.
     ///
-    /// A window ends when a sample of another window is given, or when
-    /// [`Estimator::end_window`] is called. A sample of the window just
-    /// before the current one does not end it: such a sample comes from a
-    /// packet that a packet of the current window overtook, and it is left
-    /// out. Its own window has ended and kept its lowest sample already.
+    /// A window ends when a sample of a later window arrives, or when
+    /// [`Estimator::end_window`] is called. Samples from any window earlier
+    /// than the current one are ignored: they come from packets overtaken by
+    /// later windows, whose own windows have already closed. Call
+    /// [`Estimator::reset_window`] when window numbering intentionally restarts
+    /// on the same clock.
     pub fn observe(&mut self, window: u64, sample: Sample) {
-        if window != self.window {
-            if self.window.wrapping_sub(window) == 1 {
-                return;
-            }
+        if !self.has_window {
+            self.has_window = true;
+            self.window = window;
+        } else if window < self.window {
+            return;
+        } else if window > self.window {
             self.end_window();
             self.window = window;
         }
@@ -220,9 +241,10 @@ impl<const M: usize> Estimator<M> {
     /// Makes `sample` the lowest of the current window so far if it lies
     /// lower against the line than the lowest before it.
     fn consider(&mut self, sample: Sample) {
+        // Difference of two `i64` values in `i128`: exact and never saturates.
         let height = match self.line {
-            Some(line) => sample.value.saturating_sub(line.eval(sample.time)),
-            None => sample.value,
+            Some(line) => (sample.value as i128).wrapping_sub(line.eval(sample.time) as i128),
+            None => sample.value as i128,
         };
         let lower = match self.lowest {
             Some((_, lowest)) => height < lowest,
@@ -594,15 +616,62 @@ mod tests {
     }
 
     #[test]
-    fn a_sample_of_a_window_further_back_starts_a_window() {
-        // A sender that started anew numbers its windows from the start.
+    fn samples_of_earlier_windows_do_not_end_the_current_window() {
+        // Reordering across multiple windows leaves the current window open.
         let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
         estimator.observe(7, sample(0, 100));
         estimator.observe(7, sample(10, 110));
-        estimator.observe(2, sample(20, 120));
+        estimator.observe(2, sample(20, 50));
+        estimator.observe(5, sample(25, 60));
+        assert_eq!(estimator.kept(), 0);
+        estimator.observe(8, sample(30, 130));
         assert_eq!(estimator.kept(), 1);
-        estimator.observe(3, sample(30, 130));
+        assert_eq!(estimator.line().expect("a line").eval(0), 100);
+    }
+
+    #[test]
+    fn reset_window_restarts_window_numbering_without_losing_the_line() {
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
+        estimator.observe(10, sample(0, 100));
+        estimator.observe(11, sample(10, 110));
+        estimator.reset_window();
         assert_eq!(estimator.kept(), 2);
+        assert_eq!(estimator.line().expect("a line").eval(20), 120);
+        // Window numbers can start from 0 again on the same clock.
+        estimator.observe(0, sample(20, 120));
+        estimator.observe(1, sample(30, 130));
+        estimator.end_window();
+        assert_eq!(estimator.kept(), 4);
+        assert_eq!(estimator.line().expect("a line").eval(40), 140);
+    }
+
+    #[test]
+    fn negative_span_and_limit_are_clamped_to_zero() {
+        let mut estimator = Estimator::<8>::new(-500, -200_000);
+        feed(&mut estimator, &[sample(0, 100), sample(1_000_000, 10_000)]);
+        // Clamped span = 0 keeps only samples at the newest timestamp; clamped
+        // limit = 0 forces a flat line.
+        assert_eq!(estimator.kept(), 1);
+        let line = estimator.line().expect("a line");
+        assert_eq!((line.rise, line.eval(1_000_000)), (0, 10_000));
+
+        estimator.remember(-100);
+        estimator.observe(3, sample(2_000_000, 20_000));
+        estimator.end_window();
+        assert_eq!(estimator.kept(), 1);
+        assert_eq!(estimator.line().expect("a line").eval(2_000_000), 20_000);
+    }
+
+    #[test]
+    fn extreme_offset_differences_compare_without_saturating_ties() {
+        let mut estimator = Estimator::<8>::new(5, 0);
+        feed(&mut estimator, &[sample(0, i64::MIN + 10)]);
+        // Both samples lie more than i64::MAX above the previous line; exact
+        // i128 heights distinguish them instead of saturating to i64::MAX.
+        estimator.observe(2, sample(10, 1_000));
+        estimator.observe(2, sample(20, 500));
+        estimator.end_window();
+        assert_eq!(estimator.line().expect("a line").eval(20), 500);
     }
 
     #[test]
@@ -659,7 +728,8 @@ mod tests {
             &[sample(1000, 5), sample(2000, 6), sample(3000, 7)],
         );
         // More than the span before the last kept sample: another clock.
-        feed(&mut estimator, &[sample(10, 900)]);
+        estimator.observe(4, sample(10, 900));
+        estimator.end_window();
         assert_eq!(estimator.kept(), 1);
         assert_eq!(estimator.line().expect("a line").eval(10), 900);
     }
@@ -673,7 +743,8 @@ mod tests {
         );
         let before = estimator.line();
         // Within the span before the last kept sample: a packet that came late.
-        feed(&mut estimator, &[sample(2500, -900)]);
+        estimator.observe(4, sample(2500, -900));
+        estimator.end_window();
         assert_eq!(estimator.kept(), 3);
         assert_eq!(estimator.line(), before);
     }

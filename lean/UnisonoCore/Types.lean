@@ -202,9 +202,10 @@ structure receiver.Segment where
   held : Bool
 
 /-- [unisono_core::receiver::Settings]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 77:0-89:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 77:0-92:1
     Visibility: public -/
 structure receiver.Settings where
+  stream : Std.U16
   identity : Std.U64
   silence : Std.I64
   limit : Std.I64
@@ -238,24 +239,29 @@ structure relation.Sample where
   value : Std.I64
 
 /-- [unisono_core::relation::Estimator]
-    Source: 'crates/unisono-core/src/relation.rs', lines 107:0-121:1
+    Source: 'crates/unisono-core/src/relation.rs', lines 112:0-128:1
     Visibility: public -/
 structure relation.Estimator (M : Std.Usize) where
   kept : Array relation.Sample M
   len : Std.Usize
   span : Std.I64
   limit : Std.I64
+  has_window : Bool
   window : Std.U64
-  lowest : Option (relation.Sample × Std.I64)
+  lowest : Option (relation.Sample × Std.I128)
   line : Option relation.Line
 
 /-- [unisono_core::receiver::Receiver]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 98:0-134:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 101:0-146:1
     Visibility: public -/
 structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   where
+  stream : Std.U16
   following : Bool
   timeline : Std.U64
+  clock_id : Std.U32
+  has_candidate : Bool
+  candidate : Std.U64
   heard : Std.I64
   fresh : Std.I64
   silence : Std.I64

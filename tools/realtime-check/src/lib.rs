@@ -68,8 +68,8 @@ pub extern "C" fn realtime_receiver_skip(receiver: &mut Listener, to: u64) -> u6
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_receiver_report(receiver: &mut Listener, stream: u16, report: &mut Report) -> bool {
-    match receiver.report(stream) {
+pub extern "C" fn realtime_receiver_report(receiver: &mut Listener, report: &mut Report) -> bool {
+    match receiver.report() {
         Some(made) => {
             *report = made;
             true

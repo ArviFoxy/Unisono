@@ -66,6 +66,7 @@ impl Scene {
             clock: 1,
         };
         let listener = Listener::new(&Settings {
+            stream: 1,
             rate: RATE,
             channels: 2,
             identity: 1,

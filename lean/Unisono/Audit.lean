@@ -419,3 +419,39 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Packet.parse_echo_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Packet.parse_echo_kind
+
+/-- info: 'Unisono.Relation.new_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.new_spec
+
+/-- info: 'Unisono.Relation.remember_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.remember_spec
+
+/-- info: 'Unisono.Relation.reset_window_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.reset_window_spec
+
+/-- info: 'Unisono.Relation.observe_reordered_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.observe_reordered_noop
+
+/-- info: 'Unisono.Receiver.adopt_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.adopt_spec
+
+/-- info: 'Unisono.Receiver.slide_warmup_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.slide_warmup_spec
+
+/-- info: 'Unisono.Receiver.wrong_stream_packet_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.wrong_stream_packet_noop
+
+/-- info: 'Unisono.Receiver.wrong_stream_echo_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.wrong_stream_echo_noop
+
+/-- info: 'Unisono.Receiver.single_stray_timeline_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.single_stray_timeline_noop

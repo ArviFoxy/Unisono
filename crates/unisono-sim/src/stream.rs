@@ -194,6 +194,7 @@ pub struct Scene {
 
 fn new_receiver(model: &ReceiverModel, identity: u64, path: i64) -> SimReceiver {
     let mut core = SimReceiver::new(ReceiverSettings {
+        stream: 1,
         identity,
         silence: model.silence,
         limit: model.slope_limit,
@@ -375,7 +376,7 @@ impl Scene {
         let Some(host) = self.hosts.get_mut(listener.model.host) else {
             return;
         };
-        if let Some(report) = listener.core.report(1) {
+        if let Some(report) = listener.core.report() {
             listener.core.reported(report.sequence, host.clock.read(at));
             let arrival = host.back.arrival(at);
             self.push(arrival, Event::Answer { receiver, report });

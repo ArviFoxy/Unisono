@@ -3043,14 +3043,17 @@ def receiver.Settings.Insts.CoreMarkerStructuralPartialEq :
     Visibility: public -/
 def receiver.Settings.Insts.CoreCmpPartialEqSettings.eq
   (self : receiver.Settings) (other : receiver.Settings) : Result Bool := do
-  if self.identity = other.identity
+  if self.stream = other.stream
   then
-    if self.silence = other.silence
+    if self.identity = other.identity
     then
-      if self.limit = other.limit
+      if self.silence = other.silence
       then
-        player.Regulation.Insts.CoreCmpPartialEqRegulation.eq self.regulation
-          other.regulation
+        if self.limit = other.limit
+        then
+          player.Regulation.Insts.CoreCmpPartialEqRegulation.eq self.regulation
+            other.regulation
+        else ok false
       else ok false
     else ok false
   else ok false
@@ -3080,7 +3083,7 @@ def receiver.Settings.Insts.CoreCmpEq : core.cmp.Eq receiver.Settings := {
 }
 
 /-- [unisono_core::receiver::{impl core::clone::Clone for unisono_core::receiver::Receiver<N, M, K>}::clone]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 96:9-96:14
+    Source: 'crates/unisono-core/src/receiver.rs', lines 99:9-99:14
     Visibility: public -/
 def receiver.Receiver.Insts.CoreCloneClone.clone
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3090,7 +3093,7 @@ def receiver.Receiver.Insts.CoreCloneClone.clone
   ok self
 
 /-- Trait implementation: [unisono_core::receiver::{impl core::clone::Clone for unisono_core::receiver::Receiver<N, M, K>}]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 96:9-96:14 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 99:9-99:14 -/
 @[reducible]
 def receiver.Receiver.Insts.CoreCloneClone (N : Std.Usize) (M : Std.Usize) (K :
   Std.Usize) : core.clone.Clone (receiver.Receiver N M K) := {
@@ -3098,7 +3101,7 @@ def receiver.Receiver.Insts.CoreCloneClone (N : Std.Usize) (M : Std.Usize) (K :
 }
 
 /-- Trait implementation: [unisono_core::receiver::{impl core::marker::Copy for unisono_core::receiver::Receiver<N, M, K>}]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 96:16-96:20 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 99:16-99:20 -/
 @[reducible]
 def receiver.Receiver.Insts.CoreMarkerCopy (N : Std.Usize) (M : Std.Usize) (K :
   Std.Usize) : core.marker.Copy (receiver.Receiver N M K) := {
@@ -3106,10 +3109,17 @@ def receiver.Receiver.Insts.CoreMarkerCopy (N : Std.Usize) (M : Std.Usize) (K :
 }
 
 /-- [unisono_core::receiver::span_of]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 138:0-141:1 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 150:0-153:1 -/
 def receiver.span_of (header : packet.Audio) : Result Std.I64 := do
   let i ← lift (UScalar.hcast .I64 header.span)
   ok (core.num.I64.wrapping_mul i receiver.MILLISECOND)
+
+/-- [unisono_core::relation::non_negative]:
+    Source: 'crates/unisono-core/src/relation.rs', lines 92:0-94:1 -/
+def relation.non_negative (value : Std.I64) : Result Std.I64 := do
+  if value < 0#i64
+  then ok 0#i64
+  else ok value
 
 /-- [unisono_core::relation::{impl core::clone::Clone for unisono_core::relation::Sample}::clone]:
     Source: 'crates/unisono-core/src/relation.rs', lines 22:9-22:14
@@ -3127,26 +3137,29 @@ def relation.Sample.Insts.CoreCloneClone : core.clone.Clone relation.Sample
 }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::new]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 128:4-138:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 136:4-147:5
     Visibility: public -/
 def relation.Estimator.new
   (M : Std.Usize) (span : Std.I64) (limit : Std.I64) :
   Result (relation.Estimator M)
   := do
   let a := Array.repeat M { time := 0#i64, value := 0#i64 }
+  let i ← relation.non_negative span
+  let i1 ← relation.non_negative limit
   ok
     {
       kept := a,
       len := 0#usize,
-      span,
-      limit,
+      span := i,
+      limit := i1,
+      has_window := false,
       window := 0#u64,
       lowest := none,
       line := none
     }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::new]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 146:4-165:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 158:4-181:5
     Visibility: public -/
 def receiver.Receiver.new
   (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
@@ -3159,8 +3172,12 @@ def receiver.Receiver.new
   let p1 ← player.Player.new settings.regulation
   ok
     {
+      stream := settings.stream,
       following := false,
       timeline := 0#u64,
+      clock_id := 0#u32,
+      has_candidate := false,
+      candidate := 0#u64,
       heard := 0#i64,
       fresh := 0#i64,
       silence := settings.silence,
@@ -3178,7 +3195,7 @@ def receiver.Receiver.new
     }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::path]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 170:4-172:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 186:4-188:5
     Visibility: public -/
 def receiver.Receiver.impl.path
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3188,7 +3205,7 @@ def receiver.Receiver.impl.path
   ok { self with path }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::delay]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 177:4-179:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 193:4-195:5
     Visibility: public -/
 def receiver.Receiver.delay
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3198,7 +3215,7 @@ def receiver.Receiver.delay
   ok self.path
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::timeline]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 183:4-189:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 199:4-205:5
     Visibility: public -/
 def receiver.Receiver.impl.timeline
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3210,7 +3227,7 @@ def receiver.Receiver.impl.timeline
   else ok none
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::playhead]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 193:4-195:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 209:4-211:5
     Visibility: public -/
 def receiver.Receiver.playhead
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3220,7 +3237,7 @@ def receiver.Receiver.playhead
   presence.Presence.impl.base self.presence
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::covers]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 200:4-202:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 216:4-218:5
     Visibility: public -/
 def receiver.Receiver.covers
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3232,7 +3249,7 @@ def receiver.Receiver.covers
   else ok false
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::line]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 161:4-163:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 179:4-181:5
     Visibility: public -/
 def relation.Estimator.impl.line
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -3241,7 +3258,7 @@ def relation.Estimator.impl.line
   ok self.line
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::clock]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 207:4-209:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 223:4-225:5
     Visibility: public -/
 def receiver.Receiver.impl.clock
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3251,7 +3268,7 @@ def receiver.Receiver.impl.clock
   relation.Estimator.impl.line self.clock
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::schedule]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 214:4-216:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 230:4-232:5
     Visibility: public -/
 def receiver.Receiver.impl.schedule
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -3261,7 +3278,7 @@ def receiver.Receiver.impl.schedule
   ok self.schedule
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopts]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 220:4-228:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 240:4-251:5 -/
 def receiver.Receiver.adopts
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (timeline : Std.U64) (arrival : Std.I64) :
@@ -3272,55 +3289,21 @@ def receiver.Receiver.adopts
     if timeline = self.timeline
     then ok false
     else
-      if timeline > self.timeline
-      then ok true
-      else
-        let i ← lift (core.num.I64.saturating_sub arrival self.heard)
-        ok (i >= self.silence)
+      if self.has_candidate
+      then
+        if self.candidate != timeline
+        then ok false
+        else
+          if timeline > self.timeline
+          then ok true
+          else
+            let i ← lift (core.num.I64.saturating_sub arrival self.heard)
+            ok (i >= self.silence)
+      else ok false
   else ok true
 
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopt]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 232:4-242:5 -/
-def receiver.Receiver.adopt
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) :
-  Result (receiver.Receiver N M K)
-  := do
-  let p ← presence.Presence.restart self.presence header.index
-  let i ← receiver.span_of header
-  let e ← relation.Estimator.new M i self.limit
-  let a ← arrivals.Arrivals.new K
-  let p1 ← player.Player.stop self.player
-  let e1 ← relation.Estimator.new M i self.limit
-  ok
-    {
-      self
-        with
-        following := true,
-        timeline := header.timeline,
-        presence := p,
-        clock := e,
-        arrived := a,
-        schedule := none,
-        player := p1,
-        departures := a,
-        back := e1
-    }
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stamped_arrival]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 246:4-251:5 -/
-def receiver.Receiver.stamped_arrival
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) :
-  Result (Option Std.I64)
-  := do
-  let i ← lift (header.flags &&& packet.FLAG_STAMPED)
-  if i = 0#u16
-  then ok none
-  else arrivals.Arrivals.find self.arrived header.stamped_index
-
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::sample]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 172:4-180:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 190:4-198:5 -/
 def relation.Estimator.sample
   {M : Std.Usize} (self : relation.Estimator M) (index : Std.Usize) :
   Result (Option relation.Sample)
@@ -3355,7 +3338,7 @@ def relation.side
   ok (core.num.I128.saturating_sub left right)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 462:8-471:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 484:8-493:5 -/
 @[rust_loop_body]
 def relation.Estimator.is_under_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -3379,7 +3362,7 @@ def relation.Estimator.is_under_loop.body
   else ok (done true)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 462:8-471:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 484:8-493:5 -/
 @[rust_loop]
 def relation.Estimator.is_under_loop
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -3392,7 +3375,7 @@ def relation.Estimator.is_under_loop
     index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 460:4-471:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 482:4-493:5 -/
 @[reducible]
 def relation.Estimator.is_under
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -3402,7 +3385,7 @@ def relation.Estimator.is_under
   relation.Estimator.is_under_loop self «from» «to» 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::hull_sample]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 183:4-188:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 201:4-206:5 -/
 def relation.Estimator.hull_sample
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
   (position : Std.Usize) :
@@ -3417,13 +3400,13 @@ def relation.Estimator.hull_sample
   | some index => relation.Estimator.sample self index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 427:12-436:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 449:12-458:13 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0_loop0.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
-  (i2 : Std.I64) (i3 : Std.U64) (o : Option (relation.Sample × Std.I64))
-  (o1 : Option relation.Line) (hull : Array Std.Usize M)
-  (candidate : relation.Sample) (size : Std.Usize) :
+  (i2 : Std.I64) (b : Bool) (i3 : Std.U64)
+  (o : Option (relation.Sample × Std.I128)) (o1 : Option relation.Line)
+  (hull : Array Std.Usize M) (candidate : relation.Sample) (size : Std.Usize) :
   Result (ControlFlow Std.Usize Std.Usize)
   := do
   if size >= 2#usize
@@ -3436,6 +3419,7 @@ def relation.Estimator.bridge_loop0_loop0.body
           len := i,
           span := i1,
           limit := i2,
+          has_window := b,
           window := i3,
           lowest := o,
           line := o1
@@ -3448,6 +3432,7 @@ def relation.Estimator.bridge_loop0_loop0.body
           len := i,
           span := i1,
           limit := i2,
+          has_window := b,
           window := i3,
           lowest := o,
           line := o1
@@ -3457,8 +3442,8 @@ def relation.Estimator.bridge_loop0_loop0.body
     | some a1 =>
       match «end» with
       | none => ok (done size)
-      | some b =>
-        let i6 ← relation.side a1 candidate b
+      | some b1 =>
+        let i6 ← relation.side a1 candidate b1
         if i6 >= 0#i128
         then
           let size1 ← lift (core.num.Usize.saturating_sub size 1#usize)
@@ -3467,42 +3452,43 @@ def relation.Estimator.bridge_loop0_loop0.body
   else ok (done size)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 427:12-436:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 449:12-458:13 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0_loop0
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
-  (i2 : Std.I64) (i3 : Std.U64) (o : Option (relation.Sample × Std.I64))
-  (o1 : Option relation.Line) (hull : Array Std.Usize M) (size : Std.Usize)
-  (candidate : relation.Sample) :
+  (i2 : Std.I64) (b : Bool) (i3 : Std.U64)
+  (o : Option (relation.Sample × Std.I128)) (o1 : Option relation.Line)
+  (hull : Array Std.Usize M) (size : Std.Usize) (candidate : relation.Sample) :
   Result Std.Usize
   := do
   loop
-    (fun size1 => relation.Estimator.bridge_loop0_loop0.body a i i1 i2 i3 o o1
-      hull candidate size1)
+    (fun size1 => relation.Estimator.bridge_loop0_loop0.body a i i1 i2 b i3 o
+      o1 hull candidate size1)
     size
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 421:8-442:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 443:8-464:9 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0.body
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
   (size : Std.Usize) (next : Std.Usize) :
   Result (ControlFlow ((Array Std.Usize M) × Std.Usize × Std.Usize) ((Array
-    relation.Sample M) × Std.Usize × Std.I64 × Std.I64 × Std.U64 × (Option
-    (relation.Sample × Std.I64)) × (Option relation.Line) × (Array Std.Usize
-    M) × Std.Usize))
+    relation.Sample M) × Std.Usize × Std.I64 × Std.I64 × Bool × Std.U64 ×
+    (Option (relation.Sample × Std.I128)) × (Option relation.Line) × (Array
+    Std.Usize M) × Std.Usize))
   := do
   if next < self.len
   then
     let o ← relation.Estimator.sample self next
     match o with
     | none =>
-      ok (done (self.kept, self.len, self.span, self.limit, self.window,
-        self.lowest, self.line, hull, size))
+      ok (done (self.kept, self.len, self.span, self.limit, self.has_window,
+        self.window, self.lowest, self.line, hull, size))
     | some candidate =>
       let size1 ←
         relation.Estimator.bridge_loop0_loop0 self.kept self.len self.span
-          self.limit self.window self.lowest self.line hull size candidate
+          self.limit self.has_window self.window self.lowest self.line hull
+          size candidate
       let (s, to_slice_mut_back) ← lift (Array.to_slice_mut hull)
       let (o1, get_mut_back) ←
         core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
@@ -3522,18 +3508,18 @@ def relation.Estimator.bridge_loop0.body
       let next1 ← lift (core.num.Usize.saturating_add next 1#usize)
       ok (cont (hull1, size2, next1))
   else
-    ok (done (self.kept, self.len, self.span, self.limit, self.window,
-      self.lowest, self.line, hull, size))
+    ok (done (self.kept, self.len, self.span, self.limit, self.has_window,
+      self.window, self.lowest, self.line, hull, size))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 421:8-442:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 443:8-464:9 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
   (size : Std.Usize) (next : Std.Usize) :
-  Result ((Array relation.Sample M) × Std.Usize × Std.I64 × Std.I64 ×
-    Std.U64 × (Option (relation.Sample × Std.I64)) × (Option relation.Line)
-    × (Array Std.Usize M) × Std.Usize)
+  Result ((Array relation.Sample M) × Std.Usize × Std.I64 × Std.I64 × Bool
+    × Std.U64 × (Option (relation.Sample × Std.I128)) × (Option
+    relation.Line) × (Array Std.Usize M) × Std.Usize)
   := do
   loop
     (fun (hull1, size1, next1) => relation.Estimator.bridge_loop0.body self
@@ -3541,13 +3527,14 @@ def relation.Estimator.bridge_loop0
     (hull, size, next)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 445:8-457:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 467:8-479:5 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop1.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
-  (i2 : Std.I64) (i3 : Std.U64) (o : Option (relation.Sample × Std.I64))
-  (o1 : Option relation.Line) (middle : Std.I64) (hull : Array Std.Usize M)
-  (size : Std.Usize) (edge : Std.Usize) :
+  (i2 : Std.I64) (b : Bool) (i3 : Std.U64)
+  (o : Option (relation.Sample × Std.I128)) (o1 : Option relation.Line)
+  (middle : Std.I64) (hull : Array Std.Usize M) (size : Std.Usize)
+  (edge : Std.Usize) :
   Result (ControlFlow Std.Usize (Option (relation.Sample × relation.Sample)))
   := do
   let i4 ← lift (core.num.Usize.saturating_add edge 1#usize)
@@ -3560,6 +3547,7 @@ def relation.Estimator.bridge_loop1.body
           len := i,
           span := i1,
           limit := i2,
+          has_window := b,
           window := i3,
           lowest := o,
           line := o1
@@ -3577,6 +3565,7 @@ def relation.Estimator.bridge_loop1.body
             len := i,
             span := i1,
             limit := i2,
+            has_window := b,
             window := i3,
             lowest := o,
             line := o1
@@ -3604,37 +3593,38 @@ def relation.Estimator.bridge_loop1.body
   else ok (done none)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 445:8-457:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 467:8-479:5 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop1
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
-  (i2 : Std.I64) (i3 : Std.U64) (o : Option (relation.Sample × Std.I64))
-  (o1 : Option relation.Line) (middle : Std.I64) (hull : Array Std.Usize M)
-  (size : Std.Usize) (edge : Std.Usize) :
+  (i2 : Std.I64) (b : Bool) (i3 : Std.U64)
+  (o : Option (relation.Sample × Std.I128)) (o1 : Option relation.Line)
+  (middle : Std.I64) (hull : Array Std.Usize M) (size : Std.Usize)
+  (edge : Std.Usize) :
   Result (Option (relation.Sample × relation.Sample))
   := do
   loop
-    (fun edge1 => relation.Estimator.bridge_loop1.body a i i1 i2 i3 o o1 middle
-      hull size edge1)
+    (fun edge1 => relation.Estimator.bridge_loop1.body a i i1 i2 b i3 o o1
+      middle hull size edge1)
     edge
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 416:4-457:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 438:4-479:5 -/
 def relation.Estimator.bridge
   {M : Std.Usize} (self : relation.Estimator M) (middle : Std.I64) :
   Result (Option (relation.Sample × relation.Sample))
   := do
   let hull := Array.repeat M 0#usize
-  let (a, i, i1, i2, i3, o, o1, hull1, size) ←
+  let (a, i, i1, i2, b, i3, o, o1, hull1, size) ←
     relation.Estimator.bridge_loop0 self hull 0#usize 0#usize
-  relation.Estimator.bridge_loop1 a i i1 i2 i3 o o1 middle hull1 size 0#usize
+  relation.Estimator.bridge_loop1 a i i1 i2 b i3 o o1 middle hull1 size 0#usize
 
 /-- [unisono_core::relation::SECOND]
     Source: 'crates/unisono-core/src/relation.rs', lines 60:0-60:34 -/
 @[global_simps, irreducible] def relation.SECOND : Std.I64 := 1000000000#i64
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 398:8-409:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 420:8-431:9 -/
 @[rust_loop_body]
 def relation.Estimator.lowest_against_loop.body
   {M : Std.Usize} (self : relation.Estimator M) (rise : Std.I64)
@@ -3660,7 +3650,7 @@ def relation.Estimator.lowest_against_loop.body
   else ok (done lowest)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 398:8-409:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 420:8-431:9 -/
 @[rust_loop]
 def relation.Estimator.lowest_against_loop
   {M : Std.Usize} (self : relation.Estimator M) (rise : Std.I64)
@@ -3673,7 +3663,7 @@ def relation.Estimator.lowest_against_loop
     (lowest, index)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 395:4-411:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 417:4-433:5 -/
 @[reducible]
 def relation.Estimator.lowest_against
   {M : Std.Usize} (self : relation.Estimator M) (start : relation.Sample)
@@ -3683,7 +3673,7 @@ def relation.Estimator.lowest_against
   relation.Estimator.lowest_against_loop self rise start 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::limited]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 375:4-391:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 397:4-413:5 -/
 def relation.Estimator.limited
   {M : Std.Usize} (self : relation.Estimator M) (start : relation.Sample)
   (rise : Std.I64) :
@@ -3721,7 +3711,7 @@ def relation.slope_within
   ok (i1 <= i4)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::fit]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 320:4-368:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 342:4-390:5 -/
 def relation.Estimator.fit
   {M : Std.Usize} (self : relation.Estimator M) :
   Result (relation.Estimator M)
@@ -3806,7 +3796,7 @@ def relation.Estimator.fit
           else ok self
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::put]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 192:4-200:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 210:4-218:5 -/
 def relation.Estimator.put
   {M : Std.Usize} (self : relation.Estimator M) (index : Std.Usize)
   (sample : relation.Sample) :
@@ -3827,14 +3817,15 @@ def relation.Estimator.put
     ok (true, { self with kept := a })
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 309:8-315:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 331:8-337:9 -/
 @[rust_loop_body]
 def relation.Estimator.drop_oldest_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
   («from» : Std.Usize) :
   Result (ControlFlow ((relation.Estimator M) × Std.Usize × Std.Usize)
-    ((Array relation.Sample M) × Std.I64 × Std.I64 × Std.U64 × (Option
-    (relation.Sample × Std.I64)) × (Option relation.Line) × Std.Usize))
+    ((Array relation.Sample M) × Std.I64 × Std.I64 × Bool × Std.U64 ×
+    (Option (relation.Sample × Std.I128)) × (Option relation.Line) ×
+    Std.Usize))
   := do
   if «from» < self.len
   then
@@ -3850,17 +3841,18 @@ def relation.Estimator.drop_oldest_loop.body
     let from1 ← lift (core.num.Usize.saturating_add «from» 1#usize)
     ok (cont (self1, to1, from1))
   else
-    ok (done (self.kept, self.span, self.limit, self.window, self.lowest,
-      self.line, «to»))
+    ok (done (self.kept, self.span, self.limit, self.has_window, self.window,
+      self.lowest, self.line, «to»))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 309:8-315:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 331:8-337:9 -/
 @[rust_loop]
 def relation.Estimator.drop_oldest_loop
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
   («from» : Std.Usize) :
-  Result ((Array relation.Sample M) × Std.I64 × Std.I64 × Std.U64 × (Option
-    (relation.Sample × Std.I64)) × (Option relation.Line) × Std.Usize)
+  Result ((Array relation.Sample M) × Std.I64 × Std.I64 × Bool × Std.U64 ×
+    (Option (relation.Sample × Std.I128)) × (Option relation.Line) ×
+    Std.Usize)
   := do
   loop
     (fun (self1, to1, from1) => relation.Estimator.drop_oldest_loop.body self1
@@ -3868,7 +3860,7 @@ def relation.Estimator.drop_oldest_loop
     (self, «to», «from»)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 303:4-317:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 325:4-339:5 -/
 def relation.Estimator.drop_oldest
   {M : Std.Usize} (self : relation.Estimator M) (count : Std.Usize) :
   Result (relation.Estimator M)
@@ -3876,7 +3868,7 @@ def relation.Estimator.drop_oldest
   if count = 0#usize
   then ok self
   else
-    let (a, i, i1, i2, o, o1, «to») ←
+    let (a, i, i1, b, i2, o, o1, «to») ←
       relation.Estimator.drop_oldest_loop self 0#usize count
     ok
       {
@@ -3884,61 +3876,62 @@ def relation.Estimator.drop_oldest
         len := «to»,
         span := i,
         limit := i1,
+        has_window := b,
         window := i2,
         lowest := o,
         line := o1
       }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 293:8-298:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 315:8-320:9 -/
 @[rust_loop_body]
 def relation.Estimator.forget_before_loop.body
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
   (old : Std.Usize) :
   Result (ControlFlow Std.Usize ((Array relation.Sample M) × Std.Usize ×
-    Std.I64 × Std.I64 × Std.U64 × (Option (relation.Sample × Std.I64)) ×
-    (Option relation.Line) × Std.Usize))
+    Std.I64 × Std.I64 × Bool × Std.U64 × (Option (relation.Sample ×
+    Std.I128)) × (Option relation.Line) × Std.Usize))
   := do
   if old < self.len
   then
     let o ← relation.Estimator.sample self old
     match o with
     | none =>
-      ok (done (self.kept, self.len, self.span, self.limit, self.window,
-        self.lowest, self.line, old))
+      ok (done (self.kept, self.len, self.span, self.limit, self.has_window,
+        self.window, self.lowest, self.line, old))
     | some sample =>
       if sample.time < time
       then
         let old1 ← lift (core.num.Usize.saturating_add old 1#usize)
         ok (cont old1)
       else
-        ok (done (self.kept, self.len, self.span, self.limit, self.window,
-          self.lowest, self.line, old))
+        ok (done (self.kept, self.len, self.span, self.limit, self.has_window,
+          self.window, self.lowest, self.line, old))
   else
-    ok (done (self.kept, self.len, self.span, self.limit, self.window,
-      self.lowest, self.line, old))
+    ok (done (self.kept, self.len, self.span, self.limit, self.has_window,
+      self.window, self.lowest, self.line, old))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 293:8-298:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 315:8-320:9 -/
 @[rust_loop]
 def relation.Estimator.forget_before_loop
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
   (old : Std.Usize) :
-  Result ((Array relation.Sample M) × Std.Usize × Std.I64 × Std.I64 ×
-    Std.U64 × (Option (relation.Sample × Std.I64)) × (Option relation.Line)
-    × Std.Usize)
+  Result ((Array relation.Sample M) × Std.Usize × Std.I64 × Std.I64 × Bool
+    × Std.U64 × (Option (relation.Sample × Std.I128)) × (Option
+    relation.Line) × Std.Usize)
   := do
   loop
     (fun old1 => relation.Estimator.forget_before_loop.body self time old1)
     old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 291:4-300:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 313:4-322:5 -/
 def relation.Estimator.forget_before
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64) :
   Result (relation.Estimator M)
   := do
-  let (a, i, i1, i2, i3, o, o1, old) ←
+  let (a, i, i1, i2, b, i3, o, o1, old) ←
     relation.Estimator.forget_before_loop self time 0#usize
   relation.Estimator.drop_oldest
     {
@@ -3946,13 +3939,14 @@ def relation.Estimator.forget_before
       len := i,
       span := i1,
       limit := i2,
+      has_window := b,
       window := i3,
       lowest := o,
       line := o1
     } old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::append]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 281:4-288:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 303:4-310:5 -/
 def relation.Estimator.append
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -3969,7 +3963,7 @@ def relation.Estimator.append
   else ok self2
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::clear]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 274:4-277:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 296:4-299:5 -/
 def relation.Estimator.clear
   {M : Std.Usize} (self : relation.Estimator M) :
   Result (relation.Estimator M)
@@ -3977,7 +3971,7 @@ def relation.Estimator.clear
   ok { self with len := 0#usize, line := none }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::keep]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 254:4-271:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 276:4-293:5 -/
 def relation.Estimator.keep
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -4004,7 +3998,7 @@ def relation.Estimator.keep
     else relation.Estimator.append self1 sample
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::end_window]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 238:4-244:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 260:4-266:5
     Visibility: public -/
 def relation.Estimator.end_window
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -4019,6 +4013,98 @@ def relation.Estimator.end_window
     let i ← lift (core.num.I64.saturating_sub sample.time self1.span)
     let self2 ← relation.Estimator.forget_before self1 i
     relation.Estimator.fit self2
+
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::reset_window]:
+    Source: 'crates/unisono-core/src/relation.rs', lines 157:4-161:5
+    Visibility: public -/
+def relation.Estimator.reset_window
+  {M : Std.Usize} (self : relation.Estimator M) :
+  Result (relation.Estimator M)
+  := do
+  let self1 ← relation.Estimator.end_window self
+  ok { self1 with has_window := false, window := 0#u64 }
+
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::remember]:
+    Source: 'crates/unisono-core/src/relation.rs', lines 151:4-153:5
+    Visibility: public -/
+def relation.Estimator.remember
+  {M : Std.Usize} (self : relation.Estimator M) (span : Std.I64) :
+  Result (relation.Estimator M)
+  := do
+  let i ← relation.non_negative span
+  ok { self with span := i }
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopt]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 258:4-281:5 -/
+def receiver.Receiver.adopt
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) :
+  Result (receiver.Receiver N M K)
+  := do
+  let (header1, same_clock) ←
+    if self.following
+    then ok (header, header.clock = self.clock_id)
+    else ok (header, false)
+  let p ← presence.Presence.restart self.presence header1.index
+  let a ← arrivals.Arrivals.new K
+  let p1 ← player.Player.stop self.player
+  if same_clock
+  then
+    let i ← receiver.span_of header1
+    let e ← relation.Estimator.remember self.clock i
+    let e1 ← relation.Estimator.reset_window e
+    let e2 ← relation.Estimator.remember self.back i
+    ok
+      {
+        self
+          with
+          following := true,
+          timeline := header1.timeline,
+          clock_id := header1.clock,
+          has_candidate := false,
+          presence := p,
+          clock := e1,
+          arrived := a,
+          schedule := none,
+          player := p1,
+          back := e2
+      }
+  else
+    let i ← if self.following
+              then ok 0#i64
+              else ok self.path
+    let i1 ← receiver.span_of header1
+    let e ← relation.Estimator.new M i1 self.limit
+    let e1 ← relation.Estimator.new M i1 self.limit
+    ok
+      {
+        self
+          with
+          following := true,
+          timeline := header1.timeline,
+          clock_id := header1.clock,
+          has_candidate := false,
+          path := i,
+          presence := p,
+          clock := e,
+          arrived := a,
+          schedule := none,
+          player := p1,
+          departures := a,
+          back := e1
+      }
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stamped_arrival]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 285:4-290:5 -/
+def receiver.Receiver.stamped_arrival
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) :
+  Result (Option Std.I64)
+  := do
+  let i ← lift (header.flags &&& packet.FLAG_STAMPED)
+  if i = 0#u16
+  then ok none
+  else arrivals.Arrivals.find self.arrived header.stamped_index
 
 /-- [unisono_core::relation::{unisono_core::relation::Line}::eval]:
     Source: 'crates/unisono-core/src/relation.rs', lines 49:4-55:5
@@ -4035,18 +4121,23 @@ def relation.Line.eval
   fixed.saturate i3
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::consider]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 222:4-234:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 243:4-256:5 -/
 def relation.Estimator.consider
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
   := do
   let (o, height) ←
     match self.line with
-    | none => ok (none, sample.value)
+    | none =>
+      do
+      let height1 ← lift (IScalar.cast .I128 sample.value)
+      ok (none, height1)
     | some line =>
       do
-      let i ← relation.Line.eval line sample.time
-      let height1 ← lift (core.num.I64.saturating_sub sample.value i)
+      let i ← lift (IScalar.cast .I128 sample.value)
+      let i1 ← relation.Line.eval line sample.time
+      let i2 ← lift (IScalar.cast .I128 i1)
+      let height1 ← lift (core.num.I128.wrapping_sub i i2)
       ok (self.line, height1)
   let (o1, lower) ←
     match self.lowest with
@@ -4058,25 +4149,44 @@ def relation.Estimator.consider
   else ok { self with lowest := o1, line := o }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::observe]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 209:4-218:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 228:4-239:5
     Visibility: public -/
 def relation.Estimator.observe
   {M : Std.Usize} (self : relation.Estimator M) (window : Std.U64)
   (sample : relation.Sample) :
   Result (relation.Estimator M)
   := do
-  if window != self.window
+  if self.has_window
   then
-    let i ← lift (core.num.U64.wrapping_sub self.window window)
-    if i = 1#u64
+    if window < self.window
     then ok self
     else
-      let self1 ← relation.Estimator.end_window self
-      relation.Estimator.consider { self1 with window } sample
-  else relation.Estimator.consider self sample
+      let (a, i, i1, i2, b, i3, o, o1) ←
+        if window > self.window
+        then
+          do
+          let self1 ← relation.Estimator.end_window self
+          ok (self1.kept, self1.len, self1.span, self1.limit, self1.has_window,
+            window, self1.lowest, self1.line)
+        else
+          ok (self.kept, self.len, self.span, self.limit, self.has_window,
+            self.window, self.lowest, self.line)
+      relation.Estimator.consider
+        {
+          kept := a,
+          len := i,
+          span := i1,
+          limit := i2,
+          has_window := b,
+          window := i3,
+          lowest := o,
+          line := o1
+        } sample
+  else
+    relation.Estimator.consider { self with has_window := true, window } sample
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::sample]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 256:4-267:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 295:4-306:5 -/
 def receiver.Receiver.sample
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrived : Std.I64)
@@ -4091,210 +4201,6 @@ def receiver.Receiver.sample
     relation.Estimator.observe self.clock window
       { time := header.stamped_departure, value := i }
   ok { self with clock := e }
-
-/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::remember]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 141:4-143:5
-    Visibility: public -/
-def relation.Estimator.remember
-  {M : Std.Usize} (self : relation.Estimator M) (span : Std.I64) :
-  Result (relation.Estimator M)
-  := do
-  ok { self with span }
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 271:4-278:5 -/
-def receiver.Receiver.measure
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
-  :
-  Result (receiver.Receiver N M K)
-  := do
-  let i ← receiver.span_of header
-  let e ← relation.Estimator.remember self.clock i
-  let e1 ← relation.Estimator.remember self.back i
-  let o ←
-    receiver.Receiver.stamped_arrival { self with clock := e, back := e1 }
-      header
-  let self1 ←
-    match o with
-    | none => ok { self with clock := e, back := e1 }
-    | some arrived =>
-      receiver.Receiver.sample { self with clock := e, back := e1 } header
-        arrived
-  let a ← arrivals.Arrivals.record self1.arrived header.index arrival
-  ok { self1 with arrived := a }
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::note]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 281:4-290:5 -/
-def receiver.Receiver.note
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) :
-  Result (receiver.Receiver N M K)
-  := do
-  ok
-    {
-      self
-        with
-        schedule :=
-          (some
-            {
-              index := header.index,
-              capture := header.capture,
-              rate := header.rate,
-              drift := header.drift,
-              level := header.level,
-              level_slope := header.level_slope
-            })
-    }
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stale]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 296:4-306:5 -/
-def receiver.Receiver.stale
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (marked : presence.Marked)
-  (arrival : Std.I64) :
-  Result (Bool × (receiver.Receiver N M K))
-  := do
-  let i ← if self.fresh > arrival
-            then ok arrival
-            else ok self.fresh
-  if marked.late = 0#u32
-  then ok (false, { self with fresh := i })
-  else
-    if marked.stored > 0#u32
-    then ok (false, { self with fresh := i })
-    else
-      if marked.duplicate > 0#u32
-      then ok (false, { self with fresh := i })
-      else
-        if marked.early > 0#u32
-        then ok (false, { self with fresh := i })
-        else
-          let i1 ← lift (core.num.I64.saturating_sub arrival i)
-          ok (i1 >= self.silence, { self with fresh := i })
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::renew]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 311:4-315:5 -/
-def receiver.Receiver.renew
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) :
-  Result (presence.Marked × (receiver.Receiver N M K))
-  := do
-  let p ← presence.Presence.restart self.presence header.index
-  let p1 ← player.Player.stop self.player
-  let i ← lift (UScalar.cast .U32 header.frames)
-  let (m, p2) ← presence.Presence.mark p header.index i
-  ok (m, { self with presence := p2, player := p1 })
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::refresh]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 321:4-328:5 -/
-def receiver.Receiver.refresh
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio)
-  (marked : presence.Marked) (arrival : Std.I64) :
-  Result (receiver.Receiver N M K)
-  := do
-  if marked.stored > 0#u32
-  then receiver.Receiver.note { self with fresh := arrival } header
-  else
-    if marked.duplicate > 0#u32
-    then receiver.Receiver.note { self with fresh := arrival } header
-    else
-      if marked.early > 0#u32
-      then ok { self with fresh := arrival }
-      else ok self
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 331:4-344:5 -/
-def receiver.Receiver.accept
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
-  (adopted : Bool) :
-  Result (receiver.Heard × (receiver.Receiver N M K))
-  := do
-  let self1 ←
-    receiver.Receiver.measure { self with heard := arrival } header arrival
-  let i ← lift (UScalar.cast .U32 header.frames)
-  let (first, p) ← presence.Presence.mark self1.presence header.index i
-  let (restarted, self2) ←
-    receiver.Receiver.stale { self1 with presence := p } first arrival
-  let (self3, marked) ←
-    if restarted
-    then
-      do
-      let (marked1, self4) ← receiver.Receiver.renew self2 header
-      ok (self4, marked1)
-    else ok (self2, first)
-  let self4 ← receiver.Receiver.refresh self3 header marked arrival
-  ok ({ ignored := false, adopted, restarted, marked }, self4)
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 348:4-371:5
-    Visibility: public -/
-def receiver.Receiver.packet
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
-  :
-  Result (receiver.Heard × (receiver.Receiver N M K))
-  := do
-  let i ← if self.heard > arrival
-            then ok arrival
-            else ok self.heard
-  let adopted ←
-    receiver.Receiver.adopts { self with heard := i } header.timeline arrival
-  if adopted
-  then
-    let self1 ← receiver.Receiver.adopt { self with heard := i } header
-    receiver.Receiver.accept self1 header arrival adopted
-  else
-    if header.timeline != self.timeline
-    then
-      ok
-        ({
-           ignored := true,
-           adopted := false,
-           restarted := false,
-           marked :=
-             {
-               stored := 0#u32,
-               duplicate := 0#u32,
-               late := 0#u32,
-               early := 0#u32
-             }
-         }, { self with heard := i })
-    else
-      receiver.Receiver.accept { self with heard := i } header arrival adopted
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::report]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 376:4-388:5
-    Visibility: public -/
-def receiver.Receiver.report
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (stream : Std.U16) :
-  Result ((Option packet.Report) × (receiver.Receiver N M K))
-  := do
-  if self.following
-  then
-    let i ← lift (core.num.U64.wrapping_add self.reports 1#u64)
-    ok (some
-      {
-        stream,
-        timeline := self.timeline,
-        receiver := self.identity,
-        sequence := self.reports
-      }, { self with reports := i })
-  else ok (none, self)
-
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reported]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 392:4-394:5
-    Visibility: public -/
-def receiver.Receiver.reported
-  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
-  (self : receiver.Receiver N M K) (sequence : Std.U64) (departure : Std.I64) :
-  Result (receiver.Receiver N M K)
-  := do
-  let a ← arrivals.Arrivals.record self.departures sequence departure
-  ok { self with departures := a }
 
 /-- [unisono_core::timing::sender_time]:
     Source: 'crates/unisono-core/src/timing.rs', lines 61:0-81:1
@@ -4329,7 +4235,7 @@ def timing.sender_time
   fixed.saturate i11
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::middle]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 148:4-157:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 166:4-175:5
     Visibility: public -/
 def relation.Estimator.middle
   {M : Std.Usize} (self : relation.Estimator M) : Result (Option Std.I64) := do
@@ -4350,7 +4256,7 @@ def relation.Estimator.middle
       ok (some i4)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure_path]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 424:4-439:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 502:4-517:5 -/
 def receiver.Receiver.measure_path
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) :
@@ -4380,8 +4286,274 @@ def receiver.Receiver.measure_path
         else let i4 ← fixed.saturate half
              ok { self with path := i4 }
 
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 310:4-318:5 -/
+def receiver.Receiver.measure
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
+  :
+  Result (receiver.Receiver N M K)
+  := do
+  let i ← receiver.span_of header
+  let e ← relation.Estimator.remember self.clock i
+  let e1 ← relation.Estimator.remember self.back i
+  let o ←
+    receiver.Receiver.stamped_arrival { self with clock := e, back := e1 }
+      header
+  let self1 ←
+    match o with
+    | none => ok { self with clock := e, back := e1 }
+    | some arrived =>
+      do
+      let self2 ←
+        receiver.Receiver.sample { self with clock := e, back := e1 } header
+          arrived
+      receiver.Receiver.measure_path self2
+  let a ← arrivals.Arrivals.record self1.arrived header.index arrival
+  ok { self1 with arrived := a }
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::note]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 321:4-330:5 -/
+def receiver.Receiver.note
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) :
+  Result (receiver.Receiver N M K)
+  := do
+  ok
+    {
+      self
+        with
+        schedule :=
+          (some
+            {
+              index := header.index,
+              capture := header.capture,
+              rate := header.rate,
+              drift := header.drift,
+              level := header.level,
+              level_slope := header.level_slope
+            })
+    }
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::slide_warmup]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 336:4-357:5 -/
+def receiver.Receiver.slide_warmup
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) :
+  Result (receiver.Receiver N M K)
+  := do
+  let o ← relation.Estimator.impl.line self.clock
+  let b := core.option.Option.is_some o
+  if b
+  then ok self
+  else
+    let width ← presence.Presence.width self.presence
+    if width = 0#u64
+    then ok self
+    else
+      let base ← presence.Presence.impl.base self.presence
+      let i ← lift (UScalar.cast .U64 header.frames)
+      let «end» ← lift (core.num.U64.saturating_add header.index i)
+      let stretch_end ← lift (core.num.U64.saturating_add base width)
+      let limit ← lift (core.num.U64.saturating_add stretch_end width)
+      if header.index > base
+      then
+        if «end» > stretch_end
+        then
+          if header.index <= limit
+          then
+            let target ← lift (core.num.U64.saturating_sub «end» width)
+            let new_base ←
+              if target < header.index
+              then ok target
+              else ok header.index
+            let p ← presence.Presence.advance self.presence new_base
+            ok { self with presence := p }
+          else ok self
+        else ok self
+      else ok self
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stale]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 363:4-373:5 -/
+def receiver.Receiver.stale
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (marked : presence.Marked)
+  (arrival : Std.I64) :
+  Result (Bool × (receiver.Receiver N M K))
+  := do
+  let i ← if self.fresh > arrival
+            then ok arrival
+            else ok self.fresh
+  if marked.late = 0#u32
+  then ok (false, { self with fresh := i })
+  else
+    if marked.stored > 0#u32
+    then ok (false, { self with fresh := i })
+    else
+      if marked.duplicate > 0#u32
+      then ok (false, { self with fresh := i })
+      else
+        if marked.early > 0#u32
+        then ok (false, { self with fresh := i })
+        else
+          let i1 ← lift (core.num.I64.saturating_sub arrival i)
+          ok (i1 >= self.silence, { self with fresh := i })
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::renew]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 378:4-382:5 -/
+def receiver.Receiver.renew
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) :
+  Result (presence.Marked × (receiver.Receiver N M K))
+  := do
+  let p ← presence.Presence.restart self.presence header.index
+  let p1 ← player.Player.stop self.player
+  let i ← lift (UScalar.cast .U32 header.frames)
+  let (m, p2) ← presence.Presence.mark p header.index i
+  ok (m, { self with presence := p2, player := p1 })
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::refresh]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 388:4-398:5 -/
+def receiver.Receiver.refresh
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio)
+  (marked : presence.Marked) (arrival : Std.I64) :
+  Result (receiver.Receiver N M K)
+  := do
+  if marked.stored > 0#u32
+  then receiver.Receiver.note { self with fresh := arrival } header
+  else
+    if marked.duplicate > 0#u32
+    then receiver.Receiver.note { self with fresh := arrival } header
+    else
+      if header.frames = 0#u16
+      then
+        let b ← presence.Presence.covers self.presence header.index
+        if b
+        then receiver.Receiver.note { self with fresh := arrival } header
+        else
+          if marked.early > 0#u32
+          then ok { self with fresh := arrival }
+          else ok self
+      else
+        if marked.early > 0#u32
+        then ok { self with fresh := arrival }
+        else ok self
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 401:4-415:5 -/
+def receiver.Receiver.accept
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
+  (adopted : Bool) :
+  Result (receiver.Heard × (receiver.Receiver N M K))
+  := do
+  let self1 ←
+    receiver.Receiver.slide_warmup { self with heard := arrival } header
+  let self2 ← receiver.Receiver.measure self1 header arrival
+  let i ← lift (UScalar.cast .U32 header.frames)
+  let (first, p) ← presence.Presence.mark self2.presence header.index i
+  let (restarted, self3) ←
+    receiver.Receiver.stale { self2 with presence := p } first arrival
+  let (self4, marked) ←
+    if restarted
+    then
+      do
+      let (marked1, self5) ← receiver.Receiver.renew self3 header
+      ok (self5, marked1)
+    else ok (self3, first)
+  let self5 ← receiver.Receiver.refresh self4 header marked arrival
+  ok ({ ignored := false, adopted, restarted, marked }, self5)
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 419:4-450:5
+    Visibility: public -/
+def receiver.Receiver.packet
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
+  :
+  Result (receiver.Heard × (receiver.Receiver N M K))
+  := do
+  if header.stream != self.stream
+  then
+    ok
+      ({
+         ignored := true,
+         adopted := false,
+         restarted := false,
+         marked :=
+           { stored := 0#u32, duplicate := 0#u32, late := 0#u32, early := 0#u32
+           }
+       }, self)
+  else
+    let i ← if self.heard > arrival
+              then ok arrival
+              else ok self.heard
+    let adopted ←
+      receiver.Receiver.adopts { self with heard := i } header.timeline arrival
+    if adopted
+    then
+      let self1 ← receiver.Receiver.adopt { self with heard := i } header
+      receiver.Receiver.accept self1 header arrival adopted
+    else
+      if header.timeline != self.timeline
+      then
+        ok
+          ({
+             ignored := true,
+             adopted := false,
+             restarted := false,
+             marked :=
+               {
+                 stored := 0#u32,
+                 duplicate := 0#u32,
+                 late := 0#u32,
+                 early := 0#u32
+               }
+           },
+          {
+            self
+              with
+              has_candidate := true, candidate := header.timeline, heard := i
+          })
+      else
+        receiver.Receiver.accept
+          { self with has_candidate := false, heard := i } header arrival
+          adopted
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::report]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 454:4-466:5
+    Visibility: public -/
+def receiver.Receiver.report
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) :
+  Result ((Option packet.Report) × (receiver.Receiver N M K))
+  := do
+  if self.following
+  then
+    let i ← lift (core.num.U64.wrapping_add self.reports 1#u64)
+    ok (some
+      {
+        stream := self.stream,
+        timeline := self.timeline,
+        receiver := self.identity,
+        sequence := self.reports
+      }, { self with reports := i })
+  else ok (none, self)
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reported]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 470:4-472:5
+    Visibility: public -/
+def receiver.Receiver.reported
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (sequence : Std.U64) (departure : Std.I64) :
+  Result (receiver.Receiver N M K)
+  := do
+  let a ← arrivals.Arrivals.record self.departures sequence departure
+  ok { self with departures := a }
+
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::echo]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 401:4-418:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 479:4-496:5
     Visibility: public -/
 def receiver.Receiver.echo
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4390,21 +4562,24 @@ def receiver.Receiver.echo
   := do
   if self.following
   then
-    if echo.receiver != self.identity
+    if echo.stream != self.stream
     then ok self
     else
-      let o ← arrivals.Arrivals.find self.departures echo.sequence
-      match o with
-      | none => ok self
-      | some departure =>
-        let i ← lift (core.num.I64.saturating_sub echo.arrival departure)
-        let o1 ←
-          lift (U64.checked_div echo.sequence receiver.REPORTS_IN_WINDOW)
-        let window ← lift (core.option.Option.unwrap_or o1 echo.sequence)
-        let e ←
-          relation.Estimator.observe self.back window
-            { time := departure, value := i }
-        receiver.Receiver.measure_path { self with back := e }
+      if echo.receiver != self.identity
+      then ok self
+      else
+        let o ← arrivals.Arrivals.find self.departures echo.sequence
+        match o with
+        | none => ok self
+        | some departure =>
+          let i ← lift (core.num.I64.saturating_sub echo.arrival departure)
+          let o1 ←
+            lift (U64.checked_div echo.sequence receiver.REPORTS_IN_WINDOW)
+          let window ← lift (core.option.Option.unwrap_or o1 echo.sequence)
+          let e ←
+            relation.Estimator.observe self.back window
+              { time := departure, value := i }
+          receiver.Receiver.measure_path { self with back := e }
   else ok self
 
 /-- [unisono_core::timing::BILLION]
@@ -4464,7 +4639,7 @@ def timing.due
           ok (some { frame := i18, fraction := i20 })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::cycle]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 446:4-474:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 524:4-552:5
     Visibility: public -/
 def receiver.Receiver.cycle
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4533,7 +4708,7 @@ def receiver.Receiver.cycle
        }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 477:4-480:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 555:4-558:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -4546,7 +4721,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 485:4-510:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 563:4-588:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4568,7 +4743,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 516:4-523:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 594:4-601:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4699,7 +4874,7 @@ def relation.Line.Insts.CoreCmpEq : core.cmp.Eq relation.Line := {
 }
 
 /-- [unisono_core::relation::{impl core::clone::Clone for unisono_core::relation::Estimator<M>}::clone]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 105:9-105:14
+    Source: 'crates/unisono-core/src/relation.rs', lines 110:9-110:14
     Visibility: public -/
 def relation.Estimator.Insts.CoreCloneClone.clone
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -4708,7 +4883,7 @@ def relation.Estimator.Insts.CoreCloneClone.clone
   ok self
 
 /-- Trait implementation: [unisono_core::relation::{impl core::clone::Clone for unisono_core::relation::Estimator<M>}]
-    Source: 'crates/unisono-core/src/relation.rs', lines 105:9-105:14 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 110:9-110:14 -/
 @[reducible]
 def relation.Estimator.Insts.CoreCloneClone (M : Std.Usize) : core.clone.Clone
   (relation.Estimator M) := {
@@ -4716,7 +4891,7 @@ def relation.Estimator.Insts.CoreCloneClone (M : Std.Usize) : core.clone.Clone
 }
 
 /-- Trait implementation: [unisono_core::relation::{impl core::marker::Copy for unisono_core::relation::Estimator<M>}]
-    Source: 'crates/unisono-core/src/relation.rs', lines 105:16-105:20 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 110:16-110:20 -/
 @[reducible]
 def relation.Estimator.Insts.CoreMarkerCopy (M : Std.Usize) : core.marker.Copy
   (relation.Estimator M) := {
@@ -4724,7 +4899,7 @@ def relation.Estimator.Insts.CoreMarkerCopy (M : Std.Usize) : core.marker.Copy
 }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::kept]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 167:4-169:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 185:4-187:5
     Visibility: public -/
 def relation.Estimator.impl.kept
   {M : Std.Usize} (self : relation.Estimator M) : Result Std.Usize := do

@@ -173,17 +173,17 @@ theorem is_under_spec {M : Std.Usize} (e : relation.Estimator M) (a b : relation
 /-- Two estimators that differ at most in the samples they keep and in how
 many. -/
 def SameBesidesKept {M : Std.Usize} (e' e : relation.Estimator M) : Prop :=
-  e'.span = e.span ∧ e'.limit = e.limit ∧ e'.window = e.window
-  ∧ e'.lowest = e.lowest ∧ e'.line = e.line
+  e'.span = e.span ∧ e'.limit = e.limit ∧ e'.has_window = e.has_window
+  ∧ e'.window = e.window ∧ e'.lowest = e.lowest ∧ e'.line = e.line
 
 theorem SameBesidesKept.refl {M : Std.Usize} (e : relation.Estimator M) :
-    SameBesidesKept e e := ⟨rfl, rfl, rfl, rfl, rfl⟩
+    SameBesidesKept e e := ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem SameBesidesKept.trans {M : Std.Usize} {a b c : relation.Estimator M}
     (h1 : SameBesidesKept a b) (h2 : SameBesidesKept b c) : SameBesidesKept a c := by
-  obtain ⟨a1, a2, a3, a4, a5⟩ := h1
-  obtain ⟨b1, b2, b3, b4, b5⟩ := h2
-  exact ⟨a1.trans b1, a2.trans b2, a3.trans b3, a4.trans b4, a5.trans b5⟩
+  obtain ⟨a1, a2, a3, a4, a5, a6⟩ := h1
+  obtain ⟨b1, b2, b3, b4, b5, b6⟩ := h2
+  exact ⟨a1.trans b1, a2.trans b2, a3.trans b3, a4.trans b4, a5.trans b5, a6.trans b6⟩
 
 /-- `put` writes a sample at a place of the room for kept samples, if the
 place exists, and changes nothing else. -/
@@ -231,10 +231,11 @@ def DropInv {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize)
 theorem drop_oldest_loop_spec {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize)
     (hfit : e.len.val ≤ M.val) :
     relation.Estimator.drop_oldest_loop e 0#usize count ⦃ r =>
-      (r.2.2.2.2.2.2.val = e.len.val - count.val)
-      ∧ r.1.val.take r.2.2.2.2.2.2.val = (keptList e).drop count.val
-      ∧ r.2.1 = e.span ∧ r.2.2.1 = e.limit ∧ r.2.2.2.1 = e.window
-      ∧ r.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.1 = e.line ⦄ := by
+      (r.2.2.2.2.2.2.2.val = e.len.val - count.val)
+      ∧ r.1.val.take r.2.2.2.2.2.2.2.val = (keptList e).drop count.val
+      ∧ r.2.1 = e.span ∧ r.2.2.1 = e.limit ∧ r.2.2.2.1 = e.has_window
+      ∧ r.2.2.2.2.1 = e.window ∧ r.2.2.2.2.2.1 = e.lowest
+      ∧ r.2.2.2.2.2.2.1 = e.line ⦄ := by
   unfold relation.Estimator.drop_oldest_loop
   apply loop.spec_decr_nat
     (measure := fun x : relation.Estimator M × Std.Usize × Std.Usize => e.len.val - x.2.2.val)
@@ -293,8 +294,8 @@ theorem drop_oldest_loop_spec {M : Std.Usize} (e : relation.Estimator M) (count 
     · have hge : e.len.val ≤ from1.val := by rw [← hlen]; scalar_tac
       simp only [WP.spec_ok]
       have hto : to1.val = e.len.val - count.val := by omega
-      obtain ⟨g1, g2, g3, g4, g5⟩ := hrest
-      refine ⟨hto, ?_, g1, g2, g3, g4, g5⟩
+      obtain ⟨g1, g2, g3, g4, g5, g6⟩ := hrest
+      refine ⟨hto, ?_, g1, g2, g3, g4, g5, g6⟩
       apply List.ext_getElem?
       intro k
       simp only [keptList, List.getElem?_take, List.getElem?_drop]
@@ -316,8 +317,8 @@ theorem drop_oldest_spec {M : Std.Usize} (e : relation.Estimator M) (count : Std
   split
   · have h0 : count.val = 0 := by scalar_tac
     simp [h0, SameBesidesKept.refl]
-  · step as ⟨a, sp, lim, wi, lo, li, left, p1, p2, p3, p4, p5, p6, p7⟩
-    exact ⟨p2, p1, p3, p4, p5, p6, p7⟩
+  · step as ⟨a, sp, lim, hw, wi, lo, li, left, p1, p2, p3, p4, p5, p6, p7, p8⟩
+    exact ⟨p2, p1, p3, p4, p5, p6, p7, p8⟩
 
 /-- Dropping the first `n` of a list is dropping while a test holds, when the
 first `n` pass the test and the next one, if there is one, does not. -/
@@ -347,10 +348,11 @@ theorem drop_eq_dropWhile {α : Type} (p : α → Bool) (l : List α) (n : ℕ)
 theorem forget_before_loop_spec {M : Std.Usize} (e : relation.Estimator M) (time : Std.I64) :
     relation.Estimator.forget_before_loop e time 0#usize ⦃ r =>
       r.1 = e.kept ∧ r.2.1 = e.len ∧ r.2.2.1 = e.span ∧ r.2.2.2.1 = e.limit
-      ∧ r.2.2.2.2.1 = e.window ∧ r.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.1 = e.line
-      ∧ r.2.2.2.2.2.2.2.val ≤ (keptList e).length
-      ∧ (∀ k, k < r.2.2.2.2.2.2.2.val → ∀ s, (keptList e)[k]? = some s → s.time.val < time.val)
-      ∧ (∀ s, (keptList e)[r.2.2.2.2.2.2.2.val]? = some s → ¬ s.time.val < time.val) ⦄ := by
+      ∧ r.2.2.2.2.1 = e.has_window ∧ r.2.2.2.2.2.1 = e.window
+      ∧ r.2.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.2.1 = e.line
+      ∧ r.2.2.2.2.2.2.2.2.val ≤ (keptList e).length
+      ∧ (∀ k, k < r.2.2.2.2.2.2.2.2.val → ∀ s, (keptList e)[k]? = some s → s.time.val < time.val)
+      ∧ (∀ s, (keptList e)[r.2.2.2.2.2.2.2.2.val]? = some s → ¬ s.time.val < time.val) ⦄ := by
   unfold relation.Estimator.forget_before_loop
   apply loop.spec_decr_nat (measure := fun old : Std.Usize => e.len.val - old.val)
     (inv := fun old : Std.Usize => old.val ≤ (keptList e).length
@@ -412,16 +414,16 @@ theorem forget_before_spec {M : Std.Usize} (e : relation.Estimator M) (time : St
       ∧ e'.len.val = (keptList e').length
       ∧ SameBesidesKept e' e ⦄ := by
   unfold relation.Estimator.forget_before
-  step as ⟨a, len, sp, lim, wi, lo, li, old, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10⟩
-  subst p1 p2 p3 p4 p5 p6 p7
-  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+  step as ⟨a, len, sp, lim, hw, wi, lo, li, old, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11⟩
+  subst p1 p2 p3 p4 p5 p6 p7 p8
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.has_window, e.window, e.lowest, e.line⟩ :
       relation.Estimator M) = e := rfl
   rw [he]
   step as ⟨e', q1, q2, q3⟩
   refine ⟨?_, ?_, q3⟩
   · rw [q1]
-    exact drop_eq_dropWhile _ _ _ (fun k hk s hs => by simpa using p9 k hk s hs)
-      (fun s hs => by simpa using p10 s hs) p8
+    exact drop_eq_dropWhile _ _ _ (fun k hk s hs => by simpa using p10 k hk s hs)
+      (fun s hs => by simpa using p11 s hs) p9
   · have hM : e'.kept.val.length = M.val := by scalar_tac
     simp only [keptList, List.length_take]
     omega
@@ -449,13 +451,13 @@ and the first earlier than the second. -/
 @[step]
 theorem bridge_loop1_spec {M : Std.Usize} (e : relation.Estimator M) (middle : Std.I64)
     (hull : Std.Array Std.Usize M) (size edge : Std.Usize) :
-    relation.Estimator.bridge_loop1 e.kept e.len e.span e.limit e.window e.lowest e.line
-        middle hull size edge
+    relation.Estimator.bridge_loop1 e.kept e.len e.span e.limit e.has_window e.window e.lowest
+        e.line middle hull size edge
       ⦃ r => ∀ a b, r = some (a, b) →
         a ∈ keptList e ∧ b ∈ keptList e ∧ a.time.val ≤ middle.val
         ∧ middle.val ≤ b.time.val ∧ a.time.val < b.time.val ⦄ := by
   unfold relation.Estimator.bridge_loop1
-  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.has_window, e.window, e.lowest, e.line⟩ :
       relation.Estimator M) = e := rfl
   apply loop.spec_decr_nat (measure := fun edge1 : Std.Usize => size.val - edge1.val)
     (inv := fun _ : Std.Usize => True)
@@ -510,10 +512,10 @@ theorem bridge_loop1_spec {M : Std.Usize} (e : relation.Estimator M) (middle : S
 @[step]
 theorem bridge_loop0_loop0_spec {M : Std.Usize} (e : relation.Estimator M)
     (hull : Std.Array Std.Usize M) (size : Std.Usize) (candidate : relation.Sample) :
-    relation.Estimator.bridge_loop0_loop0 e.kept e.len e.span e.limit e.window e.lowest
-        e.line hull size candidate ⦃ _ => True ⦄ := by
+    relation.Estimator.bridge_loop0_loop0 e.kept e.len e.span e.limit e.has_window e.window
+        e.lowest e.line hull size candidate ⦃ _ => True ⦄ := by
   unfold relation.Estimator.bridge_loop0_loop0
-  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.has_window, e.window, e.lowest, e.line⟩ :
       relation.Estimator M) = e := rfl
   apply loop.spec_decr_nat (measure := fun size1 : Std.Usize => size1.val)
     (inv := fun _ : Std.Usize => True)
@@ -546,7 +548,8 @@ theorem bridge_loop0_spec {M : Std.Usize} (e : relation.Estimator M)
     (hull : Std.Array Std.Usize M) (size next : Std.Usize) :
     relation.Estimator.bridge_loop0 e hull size next ⦃ r =>
       r.1 = e.kept ∧ r.2.1 = e.len ∧ r.2.2.1 = e.span ∧ r.2.2.2.1 = e.limit
-      ∧ r.2.2.2.2.1 = e.window ∧ r.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.1 = e.line ⦄ := by
+      ∧ r.2.2.2.2.1 = e.has_window ∧ r.2.2.2.2.2.1 = e.window
+      ∧ r.2.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.2.1 = e.line ⦄ := by
   unfold relation.Estimator.bridge_loop0
   apply loop.spec_decr_nat
     (measure := fun x : Std.Array Std.Usize M × Std.Usize × Std.Usize => e.len.val - x.2.2.val)
@@ -584,8 +587,8 @@ theorem bridge_spec {M : Std.Usize} (e : relation.Estimator M) (middle : Std.I64
         ∧ middle.val ≤ b.time.val ∧ a.time.val < b.time.val ⦄ := by
   unfold relation.Estimator.bridge
   simp only
-  step as ⟨a, len, sp, lim, wi, lo, li, hull1, size, p1, p2, p3, p4, p5, p6, p7⟩
-  subst p1 p2 p3 p4 p5 p6 p7
+  step as ⟨a, len, sp, lim, hw, wi, lo, li, hull1, size, p1, p2, p3, p4, p5, p6, p7, p8⟩
+  subst p1 p2 p3 p4 p5 p6 p7 p8
   exact bridge_loop1_spec e middle hull1 size 0#usize
 
 theorem slope_within_total (rise run limit : Std.I64) :
@@ -707,7 +710,7 @@ theorem fit_spec {M : Std.Usize} (e : relation.Estimator M)
     (htiny : ∀ s ∈ keptList e, Tiny s) (hlimit : 0 ≤ e.limit.val ∧ e.limit.val ≤ 2^60) :
     relation.Estimator.fit e ⦃ e' =>
       e'.kept = e.kept ∧ e'.len = e.len ∧ e'.span = e.span ∧ e'.limit = e.limit
-      ∧ e'.window = e.window ∧ e'.lowest = e.lowest
+      ∧ e'.has_window = e.has_window ∧ e'.window = e.window ∧ e'.lowest = e.lowest
       ∧ (e.len.val ≠ 1 → e'.line = e.line ∨ e'.line = none
           ∨ ∃ l, e'.line = some l ∧ LineUnder l (keptList e)) ⦄ := by
   have hsmall : ∀ s ∈ keptList e, Small s := fun s hs => (htiny s hs).small
@@ -863,7 +866,7 @@ theorem drop_oldest_total {M : Std.Usize} (e : relation.Estimator M) (count : St
 theorem forget_before_total {M : Std.Usize} (e : relation.Estimator M) (time : Std.I64) :
     relation.Estimator.forget_before e time ⦃ _ => True ⦄ := by
   unfold relation.Estimator.forget_before
-  step as ⟨a, len, sp, lim, wi, lo, li, old⟩
+  step as ⟨a, len, sp, lim, hw, wi, lo, li, old⟩
   exact drop_oldest_total _ _
 
 theorem limited_total {M : Std.Usize} (e : relation.Estimator M) (start : relation.Sample)
@@ -981,12 +984,73 @@ theorem eval_total (l : relation.Line) (time : Std.I64) :
   step as ⟨i3, h6⟩
   exact saturate_total _
 
+@[step]
+theorem non_negative_spec (v : Std.I64) :
+    relation.non_negative v ⦃ r => 0 ≤ r.val ∧ r.val = max 0 v.val ⦄ := by
+  unfold relation.non_negative
+  split
+  · rw [WP.spec_ok]
+    have hlt : v.val < 0 := by scalar_tac
+    have h0 : (0#i64).val = 0 := by rfl
+    rw [h0]
+    exact ⟨le_refl 0, (max_eq_left (by omega)).symm⟩
+  · rw [WP.spec_ok]
+    have hge : 0 ≤ v.val := by scalar_tac
+    exact ⟨hge, (max_eq_right hge).symm⟩
+
+/-- A new estimator clamps negative `span` and `limit` to zero and starts empty
+with no open window. -/
+@[step]
+theorem new_spec (M : Std.Usize) (span limit : Std.I64) :
+    relation.Estimator.new M span limit ⦃ e =>
+      0 ≤ e.span.val ∧ e.span.val = max 0 span.val
+      ∧ 0 ≤ e.limit.val ∧ e.limit.val = max 0 limit.val
+      ∧ e.len.val = 0 ∧ e.has_window = false ∧ e.lowest = none ∧ e.line = none ⦄ := by
+  unfold relation.Estimator.new
+  step as ⟨sp, hsp0, hsp⟩
+  step as ⟨lm, hlm0, hlm⟩
+  exact ⟨hsp0, hsp, hlm0, hlm, rfl⟩
+
+/-- `remember` clamps negative `span` to zero and leaves everything else untouched. -/
+@[step]
+theorem remember_spec {M : Std.Usize} (e : relation.Estimator M) (span : Std.I64) :
+    relation.Estimator.remember e span ⦃ e' =>
+      0 ≤ e'.span.val ∧ e'.span.val = max 0 span.val
+      ∧ e'.kept = e.kept ∧ e'.len = e.len ∧ e'.limit = e.limit
+      ∧ e'.has_window = e.has_window ∧ e'.window = e.window
+      ∧ e'.lowest = e.lowest ∧ e'.line = e.line ⦄ := by
+  unfold relation.Estimator.remember
+  step as ⟨sp, hsp0, hsp⟩
+  exact ⟨hsp0, hsp⟩
+
+/-- `reset_window` finishes any open window, clears the window state so window
+numbers can restart from any value, and preserves the remembered samples and
+line whenever no sample was pending in the open window. -/
+@[step]
+theorem reset_window_spec {M : Std.Usize} (e : relation.Estimator M) :
+    relation.Estimator.reset_window e ⦃ e' =>
+      e'.has_window = false ∧ e'.window = 0#u64
+      ∧ (e.lowest = none → e'.kept = e.kept ∧ e'.len = e.len ∧ e'.line = e.line) ⦄ := by
+  unfold relation.Estimator.reset_window
+  cases hlo : e.lowest with
+  | none =>
+    have hend : relation.Estimator.end_window e ⦃ e1 => e1 = e ⦄ := by
+      unfold relation.Estimator.end_window
+      simp only [core.option.Option.take, hlo]
+      cases e; simp only at hlo; subst hlo; simp
+    step with hend as ⟨e1, he1⟩
+    rw [he1]
+    exact ⟨rfl, rfl, rfl⟩
+  | some p =>
+    step with end_window_total as ⟨e1⟩
+    intro hc; cases hc
+
 theorem consider_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.Sample) :
     relation.Estimator.consider e x ⦃ _ => True ⦄ := by
   unfold relation.Estimator.consider
   cases e.line with
   | none =>
-    simp only [bind_ok]
+    simp only [lift, bind_ok]
     cases e.lowest with
     | none => simp
     | some p =>
@@ -994,11 +1058,14 @@ theorem consider_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.
       split <;> simp
   | some line =>
     rw [Aeneas.Std.bind_assoc]
+    step as ⟨i⟩
     step with eval_total as ⟨i4⟩
+    step as ⟨i2⟩
+    step as ⟨h1⟩
     cases e.lowest with
-    | none => simp [lift]
+    | none => simp
     | some p =>
-      simp only [lift, bind_ok, uncurry]
+      simp only [bind_ok, uncurry]
       split <;> simp
 
 /-- Taking in a packet returns, for every state of the estimator and every
@@ -1007,11 +1074,23 @@ theorem observe_total {M : Std.Usize} (e : relation.Estimator M) (window : Std.U
     (x : relation.Sample) : relation.Estimator.observe e window x ⦃ _ => True ⦄ := by
   unfold relation.Estimator.observe
   split
-  · step as ⟨i, hi⟩
-    split
+  · split
     · simp
-    · step with end_window_total as ⟨e1⟩
-      exact consider_total _ x
-  · exact consider_total e x
+    · split
+      · rw [Aeneas.Std.bind_assoc]
+        step with end_window_total as ⟨e1⟩
+        exact consider_total _ x
+      · simp only [bind_ok]
+        exact consider_total _ x
+  · exact consider_total _ x
+
+/-- A sample from any window earlier than the open window is ignored without
+modifying the estimator. -/
+theorem observe_reordered_noop {M : Std.Usize} (e : relation.Estimator M) (window : Std.U64)
+    (x : relation.Sample) (hopen : e.has_window = true) (hprev : window.val < e.window.val) :
+    relation.Estimator.observe e window x ⦃ e' => e' = e ⦄ := by
+  unfold relation.Estimator.observe
+  have hlt : window < e.window := by scalar_tac
+  simp [hopen, hlt]
 
 end Unisono.Relation

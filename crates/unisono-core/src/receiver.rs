@@ -75,6 +75,9 @@ pub struct Segment {
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(translating), derive(Debug))]
 pub struct Settings {
+    /// The stream identifier that this receiver accepts. Packets and echoes
+    /// carrying a different stream identifier are ignored.
+    pub stream: u16,
     /// A number that tells this receiver from the others of the stream.
     pub identity: u64,
     /// After how many nanoseconds without a packet of the followed timeline
@@ -96,10 +99,19 @@ pub struct Settings {
 #[derive(Clone, Copy)]
 #[cfg_attr(not(translating), derive(Debug))]
 pub struct Receiver<const N: usize, const M: usize, const K: usize> {
+    /// The stream identifier that this receiver accepts.
+    stream: u16,
     /// Whether a timeline is followed.
     following: bool,
     /// The timeline that is followed.
     timeline: u64,
+    /// The sender clock identifier of the followed timeline.
+    clock_id: u32,
+    /// Whether another timeline has been seen once and awaits a second packet
+    /// before switching.
+    has_candidate: bool,
+    /// The timeline awaiting a second packet for confirmation.
+    candidate: u64,
     /// The receiver's clock when a packet of the followed timeline last
     /// arrived.
     heard: i64,
@@ -145,8 +157,12 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     #[must_use]
     pub fn new(settings: Settings) -> Self {
         Receiver {
+            stream: settings.stream,
             following: false,
             timeline: 0,
+            clock_id: 0,
+            has_candidate: false,
+            candidate: 0,
             heard: 0,
             fresh: 0,
             silence: settings.silence,
@@ -217,6 +233,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
 
     /// Whether a packet of `timeline` that arrives at `arrival` makes the
     /// receiver follow that timeline instead of what it follows now.
+    ///
+    /// When the receiver is already following a timeline, a new timeline must
+    /// be confirmed by a second packet before switching, so a single stray or
+    /// forged packet cannot hijack playback.
     fn adopts(&self, timeline: u64, arrival: i64) -> bool {
         if !self.following {
             return true;
@@ -224,21 +244,40 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if timeline == self.timeline {
             return false;
         }
+        if !self.has_candidate || self.candidate != timeline {
+            return false;
+        }
         timeline > self.timeline || arrival.saturating_sub(self.heard) >= self.silence
     }
 
-    /// Begins to follow the timeline of `header`, with nothing held and
-    /// nothing known about the sender's clock.
+    /// Begins to follow the timeline of `header`, with nothing held. When the
+    /// new timeline shares the sender clock identifier of the previous one
+    /// (for instance after a capture-device restart on the same host), the
+    /// clock and path estimates are preserved and only the forward window
+    /// numbering is reset.
     fn adopt(&mut self, header: &Audio) {
+        let was_following = self.following;
+        let same_clock = was_following && header.clock == self.clock_id;
         self.following = true;
         self.timeline = header.timeline;
+        self.clock_id = header.clock;
+        self.has_candidate = false;
         self.presence.restart(header.index);
-        self.clock = Estimator::new(span_of(header), self.limit);
         self.arrived = Arrivals::new();
         self.schedule = None;
         self.player.stop();
-        self.departures = Arrivals::new();
-        self.back = Estimator::new(span_of(header), self.limit);
+        if same_clock {
+            self.clock.remember(span_of(header));
+            self.clock.reset_window();
+            self.back.remember(span_of(header));
+        } else {
+            if was_following {
+                self.path = 0;
+            }
+            self.clock = Estimator::new(span_of(header), self.limit);
+            self.departures = Arrivals::new();
+            self.back = Estimator::new(span_of(header), self.limit);
+        }
     }
 
     /// When the earlier packet arrived whose departure `header` carries, if
@@ -273,6 +312,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.back.remember(span_of(header));
         if let Some(arrived) = self.stamped_arrival(header) {
             self.sample(header, arrived);
+            self.measure_path();
         }
         self.arrived.record(header.index, arrival);
     }
@@ -287,6 +327,33 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             level: header.level,
             level_slope: header.level_slope,
         });
+    }
+
+    /// Slides the stretch forward while waiting for the sender's clock to lock,
+    /// keeping the newest frames when warmup outlasts the stretch. Packets
+    /// more than one stretch beyond the current end are left alone so a damaged
+    /// header cannot pull the playhead away.
+    fn slide_warmup(&mut self, header: &Audio) {
+        if self.clock.line().is_some() {
+            return;
+        }
+        let width = self.presence.width();
+        if width == 0 {
+            return;
+        }
+        let base = self.presence.base();
+        let end = header.index.saturating_add(header.frames as u64);
+        let stretch_end = base.saturating_add(width);
+        let limit = stretch_end.saturating_add(width);
+        if header.index > base && end > stretch_end && header.index <= limit {
+            let target = end.saturating_sub(width);
+            let new_base = if target < header.index {
+                target
+            } else {
+                header.index
+            };
+            self.presence.advance(new_base);
+        }
     }
 
     /// Whether the frames of a packet that arrived at `arrival` and were
@@ -316,10 +383,13 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
 
     /// Takes in that a packet with `header` arrived at `arrival` and its
     /// frames were marked as `marked`. A packet with a frame in the stretch
-    /// is one of the stream as the receiver holds it, and says when its
-    /// frames are due.
+    /// (or an empty keepalive at a covered index) is part of the stream as
+    /// the receiver holds it, and updates the schedule.
     fn refresh(&mut self, header: &Audio, marked: &Marked, arrival: i64) {
-        if marked.stored > 0 || marked.duplicate > 0 {
+        if marked.stored > 0
+            || marked.duplicate > 0
+            || (header.frames == 0 && self.presence.covers(header.index))
+        {
             self.fresh = arrival;
             self.note(header);
         } else if marked.early > 0 {
@@ -330,6 +400,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Takes in a packet of the followed timeline.
     fn accept(&mut self, header: &Audio, arrival: i64, adopted: bool) -> Heard {
         self.heard = arrival;
+        self.slide_warmup(header);
         self.measure(header, arrival);
         let first = self.presence.mark(header.index, header.frames as u32);
         let restarted = self.stale(&first, arrival);
@@ -346,6 +417,20 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Takes in the packet with `header` that arrived when the receiver's
     /// clock read `arrival`, and says what was done with it.
     pub fn packet(&mut self, header: &Audio, arrival: i64) -> Heard {
+        let ignored = Heard {
+            ignored: true,
+            adopted: false,
+            restarted: false,
+            marked: Marked {
+                stored: 0,
+                duplicate: 0,
+                late: 0,
+                early: 0,
+            },
+        };
+        if header.stream != self.stream {
+            return ignored;
+        }
         // The clock is not behind the last arrival; a record that says so is
         // wrong, and is put right here so that silence is noticed.
         if self.heard > arrival {
@@ -355,32 +440,25 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if adopted {
             self.adopt(header);
         } else if header.timeline != self.timeline {
-            return Heard {
-                ignored: true,
-                adopted: false,
-                restarted: false,
-                marked: Marked {
-                    stored: 0,
-                    duplicate: 0,
-                    late: 0,
-                    early: 0,
-                },
-            };
+            self.has_candidate = true;
+            self.candidate = header.timeline;
+            return ignored;
+        } else {
+            self.has_candidate = false;
         }
         self.accept(header, arrival, adopted)
     }
 
-    /// The next report for the sender of `stream`, once a timeline is
-    /// followed. After it has been sent, [`Receiver::reported`] takes in
-    /// when it left.
-    pub fn report(&mut self, stream: u16) -> Option<Report> {
+    /// The next report for the followed stream, once a timeline is followed.
+    /// After it has been sent, [`Receiver::reported`] takes in when it left.
+    pub fn report(&mut self) -> Option<Report> {
         if !self.following {
             return None;
         }
         let sequence = self.reports;
         self.reports = self.reports.wrapping_add(1);
         Some(Report {
-            stream,
+            stream: self.stream,
             timeline: self.timeline,
             receiver: self.identity,
             sequence,
@@ -396,10 +474,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Takes in the sender's answer to a report: with the time at which the
     /// report left it gives a sample of the sender's clock against the
     /// receiver's, and with that the delay of the path from the sender.
-    /// An answer to another receiver, or to a report whose departure is no
-    /// longer kept, is left out.
+    /// An answer to another stream or receiver, or to a report whose departure
+    /// is no longer kept, is left out.
     pub fn echo(&mut self, echo: &Echo) {
-        if !self.following || echo.receiver != self.identity {
+        if !self.following || echo.stream != self.stream || echo.receiver != self.identity {
             return;
         }
         let Some(departure) = self.departures.find(echo.sequence) else {
@@ -565,6 +643,7 @@ mod tests {
 
     fn receiver() -> Receiver<4, 8, 4> {
         Receiver::new(Settings {
+            stream: 1,
             identity: 42,
             silence: SILENCE,
             limit: 200_000,
@@ -658,16 +737,61 @@ mod tests {
     }
 
     #[test]
-    fn a_later_timeline_is_followed_at_once_and_an_earlier_one_is_ignored() {
+    fn a_later_timeline_requires_confirmation_and_an_earlier_one_is_ignored() {
         let mut receiver = receiver();
         receiver.packet(&header(7, 0, 10), 0);
-        let heard = receiver.packet(&header(9, 100, 10), 1);
+        // A single stray packet of a later timeline does not hijack playback.
+        let stray = receiver.packet(&header(9, 100, 10), 1);
+        assert!(stray.ignored && !stray.adopted);
+        assert_eq!((receiver.timeline(), receiver.playhead()), (Some(7), 0));
+        // A second packet confirms the later timeline.
+        let heard = receiver.packet(&header(9, 110, 10), 2);
         assert!(heard.adopted && !heard.ignored);
-        assert_eq!((receiver.timeline(), receiver.playhead()), (Some(9), 100));
-        // A packet of the old timeline that was still under way.
-        let heard = receiver.packet(&header(7, 10, 10), 2);
+        assert_eq!((receiver.timeline(), receiver.playhead()), (Some(9), 110));
+        // Packets of the old timeline still in flight are ignored.
+        let heard = receiver.packet(&header(7, 10, 10), 3);
         assert!(heard.ignored && !heard.adopted);
         assert_eq!(receiver.timeline(), Some(9));
+    }
+
+    #[test]
+    fn a_packet_of_the_followed_timeline_clears_a_stray_candidate() {
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 0, 10), 0);
+        assert!(receiver.packet(&header(99, 0, 10), 1).ignored);
+        // Normal traffic clears the candidate, so another stray packet later
+        // does not add up to a switch.
+        assert!(!receiver.packet(&header(7, 10, 10), 2).ignored);
+        assert!(receiver.packet(&header(99, 10, 10), 3).ignored);
+        assert_eq!(receiver.timeline(), Some(7));
+    }
+
+    #[test]
+    fn packets_and_echoes_of_another_stream_are_ignored() {
+        let mut receiver = receiver();
+        let mut wrong = header(7, 0, 10);
+        wrong.stream = 2;
+        assert!(receiver.packet(&wrong, 0).ignored);
+        assert_eq!(receiver.timeline(), None);
+
+        receiver.packet(&header(7, 0, 10), 0);
+        receiver.path(77);
+        let report = receiver.report().expect("a timeline is followed");
+        assert_eq!(report.stream, 1);
+        receiver.reported(report.sequence, 1_000);
+        receiver.echo(&Echo {
+            stream: 2,
+            receiver: 42,
+            sequence: report.sequence,
+            arrival: 5_000,
+        });
+        assert_eq!(receiver.delay(), 77);
+        // Even a higher timeline on the wrong stream leaves the receiver alone.
+        let mut wrong_later = header(99, 0, 10);
+        wrong_later.stream = 2;
+        assert!(receiver.packet(&wrong_later, 1).ignored);
+        assert!(receiver.packet(&wrong_later, 2).ignored);
+        assert_eq!(receiver.timeline(), Some(7));
     }
 
     #[test]
@@ -803,7 +927,7 @@ mod tests {
         // takes 100 microseconds from the sender and 140 back.
         let offset = 3_600_000_000_000i64;
         let mut receiver: Receiver<4, 8, 4> = receiver();
-        assert_eq!(receiver.report(1), None);
+        assert_eq!(receiver.report(), None);
         let period = 10_000_000i64;
         for packet in 0..300u64 {
             let departure = i64::try_from(packet).unwrap_or(0) * period;
@@ -818,8 +942,11 @@ mod tests {
             receiver.packet(&header, now);
             // A report leaves with every fifth packet and is answered.
             if packet % 5 == 0 {
-                let report = receiver.report(1).expect("a timeline is followed");
-                assert_eq!((report.timeline, report.receiver), (7, 42));
+                let report = receiver.report().expect("a timeline is followed");
+                assert_eq!(
+                    (report.stream, report.timeline, report.receiver),
+                    (1, 7, 42)
+                );
                 receiver.reported(report.sequence, now);
                 receiver.echo(&Echo {
                     stream: 1,
@@ -838,7 +965,7 @@ mod tests {
         let mut receiver: Receiver<4, 8, 4> = receiver();
         receiver.packet(&header(7, 0, 10), 0);
         receiver.path(77);
-        let report = receiver.report(1).expect("a timeline is followed");
+        let report = receiver.report().expect("a timeline is followed");
         receiver.reported(report.sequence, 1_000);
         // To another receiver, and to a report that was never sent.
         for (to, sequence) in [(43, report.sequence), (42, report.sequence + 9)] {
@@ -852,8 +979,81 @@ mod tests {
         assert_eq!(receiver.delay(), 77);
         // Reports are numbered one after the other.
         assert_eq!(
-            receiver.report(1).map(|next| next.sequence),
+            receiver.report().map(|next| next.sequence),
             Some(report.sequence + 1)
         );
+    }
+
+    #[test]
+    fn same_clock_restart_keeps_clock_and_path_while_different_clock_resets_them() {
+        let offset = 5_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        stream(&mut receiver, offset, 0, 60);
+        receiver.path(100_000);
+        let line_before = receiver.clock().expect("clock locked");
+
+        // Capture restart on the same sender clock (clock == 1): two packets
+        // confirm timeline 9 and preserve the clock line and path estimate.
+        let p0 = header(9, 0, 480);
+        assert!(receiver.packet(&p0, offset + 700_000_000).ignored);
+        let p1 = header(9, 480, 480);
+        assert!(receiver.packet(&p1, offset + 710_000_000).adopted);
+        let line_after = receiver
+            .clock()
+            .expect("clock stays locked across same-clock restart");
+        assert_eq!(line_after.eval(500_000_000), line_before.eval(500_000_000));
+        assert_eq!(receiver.delay(), 100_000);
+
+        // Sender reboot (clock == 2): two packets confirm timeline 11 and
+        // reset both clock and path estimates.
+        let mut r0 = header(11, 0, 480);
+        r0.clock = 2;
+        let mut r1 = header(11, 480, 480);
+        r1.clock = 2;
+        assert!(receiver.packet(&r0, offset + 800_000_000).ignored);
+        assert!(receiver.packet(&r1, offset + 810_000_000).adopted);
+        assert_eq!(receiver.clock(), None);
+        assert_eq!(receiver.delay(), 0);
+    }
+
+    #[test]
+    fn warmup_slides_the_stretch_to_keep_the_newest_frames_and_schedule() {
+        // Stretch is 4 * 64 = 256 frames. Feed 600 frames before clock locks.
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        for n in 0..60u64 {
+            let mut h = header(7, n * 10, 10);
+            h.capture = i64::try_from(n).unwrap_or(0) * 1_000;
+            let heard = receiver.packet(&h, i64::try_from(n).unwrap_or(0) * 1_000);
+            assert_eq!(heard.marked.stored, 10, "packet {n} stored");
+            assert_eq!(heard.marked.early, 0, "packet {n} not discarded early");
+        }
+        assert_eq!(receiver.playhead(), 600 - 256);
+        let schedule = receiver.schedule().expect("schedule tracked during warmup");
+        assert_eq!((schedule.index, schedule.capture), (590, 59_000));
+    }
+
+    #[test]
+    fn path_updates_when_clock_locks_after_echoes_have_already_arrived() {
+        let offset = 3_600_000_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        let period = 10_000_000i64;
+        // First packet adopts timeline 7, before the forward clock has a line.
+        receiver.packet(&header(7, 0, 480), offset + 100_000);
+        // Send enough reports and echoes to populate `back` while `clock` is still None.
+        for k in 0..20i64 {
+            let now = offset + k * period + 100_000;
+            let report = receiver.report().expect("following");
+            receiver.reported(report.sequence, now);
+            receiver.echo(&Echo {
+                stream: 1,
+                receiver: 42,
+                sequence: report.sequence,
+                arrival: now - offset + 140_000,
+            });
+        }
+        assert_eq!(receiver.delay(), 0);
+        // Now lock `clock` using audio packets only (no further echoes).
+        stream(&mut receiver, offset, 1, 60);
+        assert_eq!(receiver.delay(), 120_000);
     }
 }

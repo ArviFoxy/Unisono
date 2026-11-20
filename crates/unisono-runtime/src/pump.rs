@@ -443,6 +443,8 @@ impl Pace {
 /// What a receiver that plays on a device is set up with.
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
+    /// The stream identifier that this receiver accepts.
+    pub stream: u16,
     /// Frames per second of the stream and of the device.
     pub rate: u32,
     /// The number of samples in a frame.
@@ -490,6 +492,7 @@ impl<const N: usize, const M: usize, const K: usize> ReceiverPlayback<N, M, K> {
         let channels = usize::from(settings.channels);
         ReceiverPlayback {
             receiver: Receiver::new(receiver::Settings {
+                stream: settings.stream,
                 identity: settings.identity,
                 silence: settings.silence,
                 limit: settings.slope_limit,

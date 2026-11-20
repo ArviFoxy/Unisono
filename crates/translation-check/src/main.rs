@@ -132,17 +132,22 @@ fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
 fn relation_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(2);
     for case in 0..400u64 {
-        let span = [900, 60_000, i64::MAX][usize::try_from(case % 3).unwrap_or(0)];
+        let span = [-500, 900, 60_000, i64::MAX][usize::try_from(case % 4).unwrap_or(0)];
         let packets = 1 + sequence.next() % 48;
-        let limit = [5, 200_000, i64::MAX][usize::try_from(case / 3 % 3).unwrap_or(0)];
+        let limit = [-10, 5, 200_000, i64::MAX][usize::try_from(case / 4 % 4).unwrap_or(0)];
         let mut estimator = relation::Estimator::<8>::new(span, limit);
         write!(out, "relation {span} {limit} {packets}")?;
         let (mut window, mut time) = (sequence.next() % 5, sequence.signed() % 1_000_000);
         let slope = sequence.signed() % 2000;
         for _ in 0..packets {
-            if sequence.next().is_multiple_of(3) {
-                window += 1;
-            }
+            let step_window = match sequence.next() % 12 {
+                0 => window.saturating_sub(2),
+                1..=4 => {
+                    window += 1;
+                    window
+                }
+                _ => window,
+            };
             time += match sequence.next() % 40 {
                 0 => -300,
                 1 => 0,
@@ -154,8 +159,8 @@ fn relation_cases(out: &mut impl Write) -> io::Result<()> {
                 (sequence.signed() % 4000).abs()
             };
             let value = 12_345 + time / 1000 * slope + delay;
-            estimator.observe(window, relation::Sample { time, value });
-            write!(out, " {window} {time} {value}")?;
+            estimator.observe(step_window, relation::Sample { time, value });
+            write!(out, " {step_window} {time} {value}")?;
         }
         estimator.end_window();
         match estimator.line() {
@@ -476,6 +481,7 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
             jump: 30,
         };
         let mut receiver = receiver::Receiver::<2, 4, 2>::new(receiver::Settings {
+            stream: 1,
             identity: 9,
             silence: i64::try_from(silence).unwrap_or(0),
             limit: 200_000,
@@ -495,12 +501,13 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
             match sequence.next() % 7 {
                 3 => {
                     let to = 9 - sequence.next() % 8 / 7;
+                    let echo_stream = 1 + u16::try_from(sequence.next() % 8 / 7).unwrap_or(0);
                     let delay = i64::try_from(sequence.next() % 500).unwrap_or(0);
-                    write!(out, " 4 {to} {delay} {now} 0 0 0 0")?;
-                    let number = receiver.report(1).map(|report| {
+                    write!(out, " 4 {to} {delay} {now} {echo_stream} 0 0 0")?;
+                    let number = receiver.report().map(|report| {
                         receiver.reported(report.sequence, now);
                         receiver.echo(&packet::Echo {
-                            stream: 1,
+                            stream: echo_stream,
                             receiver: to,
                             sequence: report.sequence,
                             arrival: now + delay,
