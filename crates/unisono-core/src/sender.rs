@@ -26,6 +26,9 @@ pub struct Settings {
     pub span: u32,
     /// The number of frames that make up one window of that estimate.
     pub window: u32,
+    /// Identifies the sender's clock instance: changes when the host reboots,
+    /// stays constant across capture-device restarts on the same host.
+    pub clock: u32,
 }
 
 /// The sender of a stream.
@@ -129,6 +132,7 @@ impl Sender {
             protection: 0,
             stamped_index: self.stamped_index,
             stamped_departure: self.stamped_departure,
+            clock: self.settings.clock,
         }
     }
 
@@ -191,6 +195,7 @@ mod tests {
             format: Format::Signed24,
             span: 11_000,
             window: 15_360,
+            clock: 1,
         };
         Sender::new(settings, 100, 20_000_000)
     }

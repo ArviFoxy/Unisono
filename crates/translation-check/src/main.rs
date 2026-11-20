@@ -177,7 +177,7 @@ fn relation_cases(out: &mut impl Write) -> io::Result<()> {
 }
 
 /// The fields of a header as numbers, in the order of the layout.
-fn fields(header: &packet::Audio) -> [i128; 17] {
+fn fields(header: &packet::Audio) -> [i128; 18] {
     [
         i128::from(header.stream),
         i128::from(header.timeline),
@@ -199,29 +199,31 @@ fn fields(header: &packet::Audio) -> [i128; 17] {
         i128::from(header.stamped_index),
         i128::from(header.stamped_departure),
         i128::from(header.drift),
+        i128::from(header.clock),
     ]
 }
 
 /// What parsing gives, as numbers: 0 and the fields, or the number of the
 /// reason for rejection, its detail, and zeros.
-fn parsed(bytes: &[u8]) -> [i128; 18] {
-    let mut numbers = [0i128; 18];
+fn parsed(bytes: &[u8]) -> [i128; 19] {
+    let mut numbers = [0i128; 19];
     match packet::parse_audio(bytes) {
         Ok(header) => numbers[1..].copy_from_slice(&fields(&header)),
         Err(reason) => {
-            let (code, detail) = match reason {
-                packet::Rejected::TooShort => (1, 0),
-                packet::Rejected::NotUnisono => (2, 0),
-                packet::Rejected::Version(version) => (3, version),
-                packet::Rejected::Kind(kind) => (4, kind),
-                packet::Rejected::Format(format) => (5, format),
-                packet::Rejected::Length => (6, 0),
-            };
+            let [code, detail] = rejection(reason);
             numbers[0] = code;
-            numbers[1] = i128::from(detail);
+            numbers[1] = detail;
         }
     }
     numbers
+}
+
+/// What `packet::kind` gives: `[0, kind]` or `[code, detail]`.
+fn kind_numbers(bytes: &[u8]) -> [i128; 2] {
+    match packet::kind(bytes) {
+        Ok(found) => [0, i128::from(found)],
+        Err(reason) => rejection(reason),
+    }
 }
 
 fn join(numbers: &[i128]) -> String {
@@ -240,36 +242,62 @@ fn bytes_of(bytes: &[u8]) -> String {
         .join(" ")
 }
 
+/// Draws a random audio header; when `valid` is true, its semantic fields pass
+/// `parse_audio`'s checks.
+#[allow(clippy::cast_possible_truncation)]
+fn random_audio(sequence: &mut Sequence, valid: bool) -> packet::Audio {
+    packet::Audio {
+        stream: sequence.next() as u16,
+        timeline: sequence.next(),
+        index: sequence.next(),
+        capture: sequence.signed(),
+        rate: if valid {
+            1 + (sequence.next() as u32 % 192_000)
+        } else {
+            sequence.next() as u32
+        },
+        frames: (sequence.next() % 4) as u16,
+        channels: if valid {
+            1 + (sequence.next() % 4) as u8
+        } else {
+            (sequence.next() % 4) as u8
+        },
+        format: if sequence.next().is_multiple_of(2) {
+            packet::Format::Signed16
+        } else {
+            packet::Format::Signed24
+        },
+        level: sequence.signed(),
+        level_slope: if valid {
+            (sequence.signed() % 999_999_999) as i32
+        } else {
+            sequence.signed() as i32
+        },
+        span: sequence.next() as u32,
+        window: sequence.next() as u32,
+        flags: if valid {
+            (sequence.next() % 2) as u16
+        } else {
+            sequence.next() as u16
+        },
+        protection: if valid { 0 } else { sequence.next() as u16 },
+        stamped_index: sequence.next(),
+        stamped_departure: sequence.signed(),
+        drift: if valid {
+            (sequence.signed() % 999_999_999) as i32
+        } else {
+            sequence.signed() as i32
+        },
+        clock: sequence.next() as u32,
+    }
+}
+
 /// Headers drawn at random, written and read back, and the same packets with
 /// one byte changed, one byte more, and one byte less.
 fn packet_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(3);
-    for _ in 0..150 {
-        // Each cast keeps the low bits of a random number, which is the intent.
-        #[allow(clippy::cast_possible_truncation)]
-        let header = packet::Audio {
-            stream: sequence.next() as u16,
-            timeline: sequence.next(),
-            index: sequence.next(),
-            capture: sequence.signed(),
-            rate: sequence.next() as u32,
-            frames: (sequence.next() % 4) as u16,
-            channels: (sequence.next() % 4) as u8,
-            format: if sequence.next().is_multiple_of(2) {
-                packet::Format::Signed16
-            } else {
-                packet::Format::Signed24
-            },
-            level: sequence.signed(),
-            level_slope: sequence.signed() as i32,
-            span: sequence.next() as u32,
-            window: sequence.next() as u32,
-            flags: sequence.next() as u16,
-            protection: sequence.next() as u16,
-            stamped_index: sequence.next(),
-            stamped_departure: sequence.signed(),
-            drift: sequence.signed() as i32,
-        };
+    for round in 0..150 {
+        let header = random_audio(&mut sequence, round % 2 == 0);
         let mut buffer = [0u8; 256];
         let Some(length) = packet::write_audio(&header, &mut buffer) else {
             continue;
@@ -287,14 +315,26 @@ fn packet_cases(out: &mut impl Write) -> io::Result<()> {
             bytes_of(good),
             join(&parsed(good))
         )?;
+        writeln!(
+            out,
+            "packet_kind {} -> {}",
+            bytes_of(good),
+            join(&kind_numbers(good))
+        )?;
         let mut changed = good.to_vec();
-        let place = usize::try_from(sequence.next() % 84).unwrap_or(0);
+        let place = usize::try_from(sequence.next() % packet::HEADER as u64).unwrap_or(0);
         changed[place] ^= 1 << (sequence.next() % 8);
         writeln!(
             out,
             "parse_audio {} -> {}",
             bytes_of(&changed),
             join(&parsed(&changed))
+        )?;
+        writeln!(
+            out,
+            "packet_kind {} -> {}",
+            bytes_of(&changed),
+            join(&kind_numbers(&changed))
         )?;
         let mut longer = good.to_vec();
         longer.push(0);
@@ -403,6 +443,7 @@ fn stream_header(
         protection: 0,
         stamped_index,
         stamped_departure,
+        clock: 1,
     }
 }
 
@@ -567,6 +608,7 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
             format: packet::Format::Signed16,
             span: 20,
             window: 50,
+            clock: 1,
         };
         let first = sequence.next() % 4;
         let mut sender = sender::Sender::new(settings, first, 0);
@@ -882,6 +924,11 @@ fn rejection(reason: packet::Rejected) -> [i128; 2] {
         packet::Rejected::Kind(kind) => [4, i128::from(kind)],
         packet::Rejected::Format(format) => [5, i128::from(format)],
         packet::Rejected::Length => [6, 0],
+        packet::Rejected::Rate => [7, 0],
+        packet::Rejected::Channels => [8, 0],
+        packet::Rejected::Flags(flags) => [9, i128::from(flags)],
+        packet::Rejected::Protection(protection) => [10, i128::from(protection)],
+        packet::Rejected::Pace => [11, 0],
     }
 }
 

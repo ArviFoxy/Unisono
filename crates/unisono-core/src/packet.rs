@@ -31,7 +31,7 @@ pub const KIND_REPORT: u8 = 2;
 pub const KIND_ECHO: u8 = 3;
 
 /// The size of the header of an audio packet, in bytes.
-pub const HEADER: usize = 84;
+pub const HEADER: usize = 88;
 
 /// The size of what a report says, in bytes. A report is padded beyond it to
 /// the size of an audio packet, so that it meets the same delays.
@@ -43,6 +43,13 @@ pub const ECHO: usize = 32;
 /// The bit of the flags that says the packet carries the departure of an
 /// earlier packet.
 pub const FLAG_STAMPED: u16 = 1;
+
+/// All flag bits defined by this version.
+const KNOWN_FLAGS: u16 = FLAG_STAMPED;
+
+/// Smallest permitted `drift` or `level_slope`, in parts per billion /
+/// nanoseconds per second: `1_000_000_000 + slope` must stay positive.
+const MIN_SLOPE: i32 = -999_999_999;
 
 /// How one sample of one channel is written.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -126,6 +133,9 @@ pub struct Audio {
     pub stamped_index: u64,
     /// When that earlier packet left the sender.
     pub stamped_departure: i64,
+    /// Identifies the sender's clock instance: changes when the host reboots,
+    /// stays constant across capture-device restarts on the same host.
+    pub clock: u32,
 }
 
 /// Why a datagram is not an audio packet of this version.
@@ -144,6 +154,16 @@ pub enum Rejected {
     Format(u8),
     /// Its length is not that of the header and the samples it announces.
     Length,
+    /// Its sample rate is zero.
+    Rate,
+    /// Its channel count is zero.
+    Channels,
+    /// Its flags carry bits not defined by this version, which are given.
+    Flags(u16),
+    /// Its loss protection scheme is not supported, which is given.
+    Protection(u16),
+    /// Its capture drift or level slope would give a non-positive pace.
+    Pace,
 }
 
 /// The number in the `count` bytes of `bytes` from `at`, least significant
@@ -199,6 +219,26 @@ fn payload(header: &Audio) -> usize {
         .wrapping_mul(header.format.bytes())
 }
 
+/// Checks that the semantic fields of an audio header are valid.
+fn validate_audio(header: &Audio) -> Result<(), Rejected> {
+    if header.rate == 0 {
+        return Err(Rejected::Rate);
+    }
+    if header.channels == 0 {
+        return Err(Rejected::Channels);
+    }
+    if (header.flags & KNOWN_FLAGS) != header.flags {
+        return Err(Rejected::Flags(header.flags));
+    }
+    if header.protection != 0 {
+        return Err(Rejected::Protection(header.protection));
+    }
+    if header.drift < MIN_SLOPE || header.level_slope < MIN_SLOPE {
+        return Err(Rejected::Pace);
+    }
+    Ok(())
+}
+
 /// Reads the header of the audio packet in `bytes`. The samples follow the
 /// header, from byte [`HEADER`] on.
 ///
@@ -213,30 +253,24 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
     if bytes.len() < HEADER {
         return Err(Rejected::TooShort);
     }
-    let (
-        Some(magic),
-        Some(version),
-        Some(kind),
-        Some(stream),
-        Some(timeline),
-        Some(index),
-        Some(capture),
-        Some(rate),
-    ) = (
-        read(bytes, 0, 4),
-        read(bytes, 4, 1),
-        read(bytes, 5, 1),
+    let found = match kind(bytes) {
+        Ok(found) => found,
+        Err(reason) => return Err(reason),
+    };
+    if found != KIND_AUDIO {
+        return Err(Rejected::Kind(found));
+    }
+    let (Some(stream), Some(timeline), Some(index), Some(capture), Some(rate), Some(frames)) = (
         read(bytes, 6, 2),
         read(bytes, 8, 8),
         read(bytes, 16, 8),
         read(bytes, 24, 8),
         read(bytes, 32, 4),
-    )
-    else {
+        read(bytes, 36, 2),
+    ) else {
         return Err(Rejected::TooShort);
     };
     let (
-        Some(frames),
         Some(channels),
         Some(format),
         Some(level),
@@ -245,7 +279,6 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
         Some(window),
         Some(flags),
     ) = (
-        read(bytes, 36, 2),
         read(bytes, 38, 1),
         read(bytes, 39, 1),
         read(bytes, 40, 8),
@@ -257,23 +290,15 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
     else {
         return Err(Rejected::TooShort);
     };
-    let (Some(protection), Some(stamped_index), Some(stamped_departure), Some(drift)) = (
+    let (Some(protection), Some(stamped_index), Some(stamped_departure), Some(drift), Some(clock)) = (
         read(bytes, 62, 2),
         read(bytes, 64, 8),
         read(bytes, 72, 8),
         read(bytes, 80, 4),
+        read(bytes, 84, 4),
     ) else {
         return Err(Rejected::TooShort);
     };
-    if magic != MAGIC {
-        return Err(Rejected::NotUnisono);
-    }
-    if version != VERSION as u64 {
-        return Err(Rejected::Version(version as u8));
-    }
-    if kind != KIND_AUDIO as u64 {
-        return Err(Rejected::Kind(kind as u8));
-    }
     let Some(format) = Format::from_code(format as u8) else {
         return Err(Rejected::Format(format as u8));
     };
@@ -295,7 +320,11 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
         protection: protection as u16,
         stamped_index,
         stamped_departure: stamped_departure as i64,
+        clock: clock as u32,
     };
+    if let Err(reason) = validate_audio(&header) {
+        return Err(reason);
+    }
     if bytes.len().wrapping_sub(HEADER) != payload(&header) {
         return Err(Rejected::Length);
     }
@@ -333,6 +362,7 @@ pub fn write_audio(header: &Audio, bytes: &mut [u8]) -> Option<usize> {
     written &= write(bytes, 64, 8, header.stamped_index);
     written &= write(bytes, 72, 8, header.stamped_departure as u64);
     written &= write(bytes, 80, 4, header.drift as u32 as u64);
+    written &= write(bytes, 84, 4, header.clock as u64);
     if written {
         Some(HEADER.wrapping_add(payload(header)))
     } else {
@@ -518,7 +548,7 @@ mod tests {
             timeline: 0x1112_1314_1516_1718,
             index: 0x2122_2324_2526_2728,
             capture: -0x3132_3334_3536_3738,
-            drift: -0x5152_5354,
+            drift: -51_525_354,
             rate: 48_000,
             frames: 4,
             channels: 2,
@@ -531,6 +561,7 @@ mod tests {
             protection: 0,
             stamped_index: 0x4142_4344_4546_4748,
             stamped_departure: -1,
+            clock: 0x6162_6364,
         }
     }
 
@@ -556,7 +587,8 @@ mod tests {
         assert_eq!(bytes[36..40], [4, 0, 2, 2]);
         assert_eq!(bytes[48..52], (-7i32).to_le_bytes());
         assert_eq!(bytes[72..80], [0xff; 8]);
-        assert_eq!(bytes[80..84], (-0x5152_5354i32).to_le_bytes());
+        assert_eq!(bytes[80..84], (-51_525_354i32).to_le_bytes());
+        assert_eq!(bytes[84..88], 0x6162_6364u32.to_le_bytes());
     }
 
     #[test]
@@ -568,8 +600,10 @@ mod tests {
             channels: 255,
             frames: 1,
             capture: i64::MIN,
-            drift: i32::MIN,
-            level_slope: i32::MIN,
+            drift: -999_999_999,
+            level_slope: -999_999_999,
+            flags: super::FLAG_STAMPED,
+            clock: u32::MAX,
             ..original
         };
         assert_eq!(parse_audio(&packet(&other)), Ok(other));
@@ -592,6 +626,24 @@ mod tests {
         let mut bytes = good.clone();
         bytes[39] = 0;
         assert_eq!(parse_audio(&bytes), Err(Rejected::Format(0)));
+        let mut bytes = good.clone();
+        bytes[32..36].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Rate));
+        let mut bytes = good.clone();
+        bytes[38] = 0;
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Channels));
+        let mut bytes = good.clone();
+        bytes[60..62].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Flags(2)));
+        let mut bytes = good.clone();
+        bytes[62..64].copy_from_slice(&1u16.to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Protection(1)));
+        let mut bytes = good.clone();
+        bytes[80..84].copy_from_slice(&(-1_000_000_000i32).to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Pace));
+        let mut bytes = good.clone();
+        bytes[48..52].copy_from_slice(&i32::MIN.to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Pace));
         let mut bytes = good.clone();
         bytes.push(0);
         assert_eq!(parse_audio(&bytes), Err(Rejected::Length));

@@ -76,6 +76,7 @@ impl Line {
             format: Format::Signed24,
             span: 2_000,
             window: u32::from(packet) * 10,
+            clock: 1,
         };
         Line {
             rate,

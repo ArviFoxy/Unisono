@@ -11,9 +11,11 @@ bytes: the letters `unis`, the version, and the kind.
 
 ## The audio packet
 
-A header of 84 bytes, then the samples: `frames × channels` samples, each of 2
+A header of 88 bytes, then the samples: `frames × channels` samples, each of 2
 or 3 bytes, frame after frame. A datagram whose length is not exactly that of
-the header and the samples it announces is rejected.
+the header and the samples it announces is rejected, as is a header with a zero
+sample rate or channel count, unknown flag bits, an unsupported protection
+scheme, or a `drift` or `level slope` of `-10⁹` or below.
 
 Times are in nanoseconds on the sender's raw clock.
 
@@ -39,6 +41,7 @@ Times are in nanoseconds on the sender's raw clock.
 | 64 | 8 | stamped index | the index of the first frame of an earlier packet of this timeline, if bit 0 of the flags is set |
 | 72 | 8 | stamped departure | when that earlier packet left the sender (signed) |
 | 80 | 4 | drift | how much faster than the rate the capture device runs against the sender's clock, in parts per billion (signed) |
+| 84 | 4 | clock | identifies the sender's clock instance; changes on host reboot and stays constant across capture-device restarts |
 
 A sender learns when a packet left only after it has left, so each packet
 carries the departure of an earlier one. A receiver that kept the time of

@@ -230,6 +230,7 @@ impl Scene {
             format: Format::Signed24,
             span: sender.span,
             window: sender.window,
+            clock: 1,
         };
         let hosts: Vec<Host> = hosts
             .iter()

@@ -60,7 +60,7 @@ structure device.Device (W : Std.Usize) where
   rate : Std.U32
 
 /-- [unisono_core::packet::Format]
-    Source: 'crates/unisono-core/src/packet.rs', lines 50:0-55:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 57:0-62:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Format where
@@ -68,7 +68,7 @@ inductive packet.Format where
 | Signed24 : packet.Format
 
 /-- [unisono_core::packet::Audio]
-    Source: 'crates/unisono-core/src/packet.rs', lines 89:0-129:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 96:0-139:1
     Visibility: public -/
 structure packet.Audio where
   stream : Std.U16
@@ -88,9 +88,10 @@ structure packet.Audio where
   protection : Std.U16
   stamped_index : Std.U64
   stamped_departure : Std.I64
+  clock : Std.U32
 
 /-- [unisono_core::packet::Rejected]
-    Source: 'crates/unisono-core/src/packet.rs', lines 134:0-147:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 144:0-167:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Rejected where
@@ -100,9 +101,14 @@ inductive packet.Rejected where
 | Kind : Std.U8 → packet.Rejected
 | Format : Std.U8 → packet.Rejected
 | Length : packet.Rejected
+| Rate : packet.Rejected
+| Channels : packet.Rejected
+| Flags : Std.U16 → packet.Rejected
+| Protection : Std.U16 → packet.Rejected
+| Pace : packet.Rejected
 
 /-- [unisono_core::packet::Report]
-    Source: 'crates/unisono-core/src/packet.rs', lines 346:0-355:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 376:0-385:1
     Visibility: public -/
 structure packet.Report where
   stream : Std.U16
@@ -111,7 +117,7 @@ structure packet.Report where
   sequence : Std.U64
 
 /-- [unisono_core::packet::Echo]
-    Source: 'crates/unisono-core/src/packet.rs', lines 360:0-369:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 390:0-399:1
     Visibility: public -/
 structure packet.Echo where
   stream : Std.U16
@@ -266,7 +272,7 @@ structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   back : relation.Estimator M
 
 /-- [unisono_core::sender::Settings]
-    Source: 'crates/unisono-core/src/sender.rs', lines 15:0-29:1
+    Source: 'crates/unisono-core/src/sender.rs', lines 15:0-32:1
     Visibility: public -/
 structure sender.Settings where
   stream : Std.U16
@@ -275,9 +281,10 @@ structure sender.Settings where
   format : packet.Format
   span : Std.U32
   window : Std.U32
+  clock : Std.U32
 
 /-- [unisono_core::sender::Sender]
-    Source: 'crates/unisono-core/src/sender.rs', lines 34:0-51:1
+    Source: 'crates/unisono-core/src/sender.rs', lines 37:0-54:1
     Visibility: public -/
 structure sender.Sender where
   settings : sender.Settings

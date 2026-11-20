@@ -63,6 +63,7 @@ impl Scene {
             // fills.
             span: 30_000,
             window: u32::from(PACKET) * 64,
+            clock: 1,
         };
         let listener = Listener::new(&Settings {
             rate: RATE,

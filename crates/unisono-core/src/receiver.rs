@@ -552,6 +552,7 @@ mod tests {
             protection: 0,
             stamped_index: 0,
             stamped_departure: 0,
+            clock: 1,
         }
     }
 

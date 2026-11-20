@@ -4,6 +4,7 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
+public import Unisono.Arrivals
 public import Unisono.Device
 public import Unisono.Fixed
 public import Unisono.Model.Exchange
@@ -350,3 +351,71 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Device.beyondZ_eq_floor_lineFit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Device.beyondZ_eq_floor_lineFit
+
+/-- info: 'Unisono.Arrivals.find_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Arrivals.find_spec
+
+/-- info: 'Unisono.Arrivals.record_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Arrivals.record_spec
+
+/-- info: 'Unisono.Packet.read_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.read_spec
+
+/-- info: 'Unisono.Packet.write_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_spec
+
+/-- info: 'Unisono.Packet.payload_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.payload_spec
+
+/-- info: 'Unisono.Packet.validate_audio_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.validate_audio_spec
+
+/-- info: 'Unisono.Packet.parse_audio_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_audio_valid
+
+/-- info: 'Unisono.Packet.write_audio_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_audio_spec
+
+/-- info: 'Unisono.Packet.audio_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.audio_roundtrip
+
+/-- info: 'Unisono.Packet.write_report_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_report_spec
+
+/-- info: 'Unisono.Packet.report_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.report_roundtrip
+
+/-- info: 'Unisono.Packet.write_echo_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_echo_spec
+
+/-- info: 'Unisono.Packet.echo_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.echo_roundtrip
+
+/-- info: 'Unisono.Packet.kind_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.kind_spec
+
+/-- info: 'Unisono.Packet.parse_audio_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_audio_kind
+
+/-- info: 'Unisono.Packet.parse_report_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_report_kind
+
+/-- info: 'Unisono.Packet.parse_echo_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_echo_kind

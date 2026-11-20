@@ -58,7 +58,7 @@ def headerFields (h : packet.Audio) : List Int :=
       | .Signed16 => 1
       | .Signed24 => 2),
     h.level.val, h.level_slope.val, h.span.val, h.window.val, h.flags.val, h.protection.val,
-    h.stamped_index.val, h.stamped_departure.val, h.drift.val]
+    h.stamped_index.val, h.stamped_departure.val, h.drift.val, h.clock.val]
 
 /-- A reason for rejection as two numbers: which reason, and its detail. -/
 def rejection : packet.Rejected → List Int
@@ -68,6 +68,11 @@ def rejection : packet.Rejected → List Int
   | .Kind k => [4, k.val]
   | .Format f => [5, f.val]
   | .Length => [6, 0]
+  | .Rate => [7, 0]
+  | .Channels => [8, 0]
+  | .Flags f => [9, f.val]
+  | .Protection p => [10, p.val]
+  | .Pace => [11, 0]
 
 /-- What parsing gives, as numbers: 0 and the fields, or the number of the
 reason for rejection, its detail, and zeros. -/
@@ -75,14 +80,21 @@ def runParse (values : List Int) : Result (List Int) := do
   let parsed ← packet.parse_audio (byteSlice values)
   match parsed with
   | .Ok header => pure (0 :: headerFields header)
-  | .Err reason => pure (rejection reason ++ List.replicate 16 0)
+  | .Err reason => pure (rejection reason ++ List.replicate 17 0)
+
+/-- What `packet::kind` gives: `[0, kind]` or `[code, detail]`. -/
+def runKind (values : List Int) : Result (List Int) := do
+  let parsed ← packet.kind (byteSlice values)
+  match parsed with
+  | .Ok k => pure [0, k.val]
+  | .Err reason => pure (rejection reason)
 
 /-- Writes a header given by its fields into 256 zero bytes, and returns the
-length that writing reports and the first 84 bytes. -/
+length that writing reports and the first 88 bytes. -/
 def runWrite (f : List Int) : Result (List Int) := do
   match f with
   | [stream, timeline, index, capture, rate, frames, channels, format, level, slope, span,
-      window, flags, protection, stampedIndex, stampedDeparture, drift] =>
+      window, flags, protection, stampedIndex, stampedDeparture, drift, clock] =>
     let header : packet.Audio := {
       stream := unsigned .U16 stream, timeline := unsigned .U64 timeline,
       index := unsigned .U64 index, capture := signed .I64 capture,
@@ -94,10 +106,10 @@ def runWrite (f : List Int) : Result (List Int) := do
       flags := unsigned .U16 flags, protection := unsigned .U16 protection,
       stamped_index := unsigned .U64 stampedIndex,
       stamped_departure := signed .I64 stampedDeparture,
-      drift := signed .I32 drift }
+      drift := signed .I32 drift, clock := unsigned .U32 clock }
     let (length, bytes) ← packet.write_audio header (byteSlice (List.replicate 256 0))
     match length with
-    | some n => pure (n.val :: (bytes.val.take 84).map (·.val))
+    | some n => pure (n.val :: (bytes.val.take 88).map (·.val))
     | none => pure [-1]
   | _ => pure [-2]
 
@@ -144,7 +156,7 @@ def streamHeader (timeline index frames flags stampedIndex stampedDeparture : In
     channels := 2#u8, format := .Signed16, level := 0#i64, level_slope := 0#i32,
     span := 20#u32, window := 50#u32, flags := unsigned .U16 flags, protection := 0#u16,
     stamped_index := unsigned .U64 stampedIndex,
-    stamped_departure := signed .I64 stampedDeparture }
+    stamped_departure := signed .I64 stampedDeparture, clock := 1#u32 }
 
 abbrev CheckedReceiver := receiver.Receiver 2#usize 4#usize 2#usize
 
@@ -277,7 +289,7 @@ def senderStep (state : sender.Sender × List Int) (operation : List Int) :
 def runSender (first : Int) (operations : List (List Int)) : Result (List Int) := do
   let settings : sender.Settings :=
     { stream := 1#u16, rate := 48000#u32, channels := 2#u8, format := .Signed16,
-      span := 20#u32, window := 50#u32 }
+      span := 20#u32, window := 50#u32, clock := 1#u32 }
   let start ← sender.Sender.new settings (unsigned .U64 first) 0#i64
   let final ← operations.foldlM senderStep (start, [])
   pure final.2
@@ -409,6 +421,7 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   | "write_echo", [stream, receiver, number, arrival] =>
     result (runWriteEcho stream receiver number arrival) id
   | "parse_audio", bytes => result (runParse bytes) id
+  | "packet_kind", bytes => result (runKind bytes) id
   | "write_audio", fields => result (runWrite fields) id
   | _, _ => .error s!"no function {function} with {args.length} arguments"
 where
