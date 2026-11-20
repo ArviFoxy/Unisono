@@ -22,8 +22,8 @@ use unisono_runtime::pump::{ReceiverPlayback, Settings};
 use unisono_runtime::software::Output;
 
 /// The receiver that the tests use: room for 4,096 frames, 64 samples of the
-/// sender's clock, the arrivals of 8 packets.
-pub(crate) type Listener = ReceiverPlayback<64, 64, 8>;
+/// sender's clock, the arrivals of 8 packets, 64 reports of its device.
+pub(crate) type Listener = ReceiverPlayback<64, 64, 8, 64>;
 
 /// The number of samples in a frame.
 pub(crate) const CHANNELS: usize = 2;
@@ -133,8 +133,8 @@ impl Line {
 }
 
 /// Settings of a receiver for a stream of `rate` frames per second, with a
-/// gain of four per second, a limit of a thousandth and a jump beyond 240
-/// frames.
+/// gain of four per second, a limit of a thousandth, a jump beyond 240
+/// frames, and a device whose rate is within a hundredth of the nominal one.
 pub(crate) fn settings(rate: u32, concealment: Parameters) -> Settings {
     Settings {
         stream: 1,
@@ -150,6 +150,7 @@ pub(crate) fn settings(rate: u32, concealment: Parameters) -> Settings {
         },
         concealment,
         block: 256,
+        device_range: 10_000_000,
     }
 }
 

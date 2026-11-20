@@ -514,6 +514,11 @@ pub struct Settings {
     pub concealment: Parameters,
     /// The most output frames that are computed in one go.
     pub block: usize,
+    /// How far the rate of the line fitted to the device's reports may be
+    /// from the nominal rate for the line to be used, in parts per billion.
+    /// A line further off comes from too few reports or from reports that
+    /// are wrong, and the nominal rate is used in its place.
+    pub device_range: u32,
 }
 
 /// A receiver, the samples it holds and its pump, as what a playback device
@@ -524,11 +529,14 @@ pub struct Settings {
 ///
 /// The receiver holds up to `64 * N` frames, remembers `M` samples of the
 /// sender's clock and keeps the arrivals of `K` packets.
-pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize> {
+pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, const W: usize> {
     receiver: Receiver<N, M, K>,
     store: Store,
     pump: Pump,
-    device: Device<64>,
+    /// The line through the last `W` reports of the device.
+    device: Device<W>,
+    /// How far its rate may be from the nominal one, in parts per billion.
+    device_range: u32,
     /// Sub-nanosecond duration remainder carried between cycles, in units of
     /// 2^-16 nanosecond.
     carried: i64,
@@ -538,7 +546,7 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize> {
     totals: Totals,
 }
 
-impl<const N: usize, const M: usize, const K: usize> ReceiverPlayback<N, M, K> {
+impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPlayback<N, M, K, W> {
     /// A receiver that follows no timeline yet.
     #[must_use]
     pub fn new(settings: &Settings) -> Self {
@@ -559,6 +567,7 @@ impl<const N: usize, const M: usize, const K: usize> ReceiverPlayback<N, M, K> {
                 settings.block,
             ),
             device: Device::new(settings.rate),
+            device_range: settings.device_range,
             carried: 0,
             rate: settings.rate,
             channels: settings.channels,
@@ -653,7 +662,8 @@ impl<const N: usize, const M: usize, const K: usize> ReceiverPlayback<N, M, K> {
             .map_or((time, nominal_q16), |(s, d)| (s, i128::from(d)));
         let usable = self.device.kept() > 1
             && measured_q16 > 0
-            && (measured_q16 - nominal_q16).abs() * 100 <= nominal_q16;
+            && (measured_q16 - nominal_q16).abs() * 1_000_000_000
+                <= nominal_q16 * i128::from(self.device_range);
         let duration_q16 = if usable {
             measured_q16
         } else {
@@ -671,7 +681,9 @@ impl<const N: usize, const M: usize, const K: usize> ReceiverPlayback<N, M, K> {
     }
 }
 
-impl<const N: usize, const M: usize, const K: usize> Playback for ReceiverPlayback<N, M, K> {
+impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
+    for ReceiverPlayback<N, M, K, W>
+{
     fn channels(&self) -> usize {
         usize::from(self.channels)
     }
@@ -695,7 +707,7 @@ mod tests {
 
     use super::{ReceiverPlayback, Settings};
 
-    fn test_playback(rate: u32) -> ReceiverPlayback<16, 16, 4> {
+    fn test_playback(rate: u32) -> ReceiverPlayback<16, 16, 4, 64> {
         ReceiverPlayback::new(&Settings {
             stream: 1,
             rate,
@@ -710,6 +722,7 @@ mod tests {
             },
             concealment: Parameters::for_rate(rate),
             block: 256,
+            device_range: 10_000_000,
         })
     }
 

@@ -64,6 +64,7 @@ fn receiver(host: usize, device_ppm: f64, walk: f64) -> ReceiverModel {
         slope_limit: 200_000,
         path: PathDelay::Told,
         cycle_length: CycleLength::Measured,
+        stands_still: None,
     }
 }
 
@@ -398,6 +399,45 @@ fn fitting(error: i64) -> Scene {
             receiver.cycle_length = CycleLength::Fitted(error);
         }
     })
+}
+
+#[test]
+fn a_device_that_stands_still_for_a_cycle_is_followed_two_cycles_later() {
+    // The device of the first receiver stands still for the time of one
+    // cycle, 5.3 ms, thirty seconds in: every later frame leaves it that
+    // much later than its count of frames says. Its reports are off by up
+    // to 20 microseconds, as in the test before.
+    let cycle = 256.0 / 48_000.0;
+    let mut scene = scene(&WIRED_CALM, 20, |receivers| {
+        for receiver in receivers.iter_mut() {
+            receiver.cycle_length = CycleLength::Fitted(20_000);
+        }
+        // The cycle that begins nearest to thirty seconds.
+        receivers[0].stands_still = Some((5_625, cycle));
+    });
+    scene.run(TrueTime::from_seconds(60.0));
+    let traces = scene.traces();
+    let stood = traces[0]
+        .errors
+        .iter()
+        .map(|(at, _)| *at)
+        .find(|at| *at >= 30.0)
+        .expect("cycles after the device stood still");
+    // The first report after it is set aside, the second shows the step,
+    // and the position jumps to where the schedule is. The size of the step
+    // is known from those two reports, so to 20 microseconds at worst; from
+    // the third cycle on the receiver plays within that and the bound of
+    // the test before.
+    let after = worst(traces[0], stood + 2.5 * cycle);
+    assert!(after < 32.0 * MICROSECOND, "after {after}");
+    // When all 64 reports of the line are later than the step, the bound of
+    // the test before holds again.
+    let later = worst(traces[0], stood + 70.0 * cycle);
+    assert!(later < 12.0 * MICROSECOND, "later {later}");
+    // The receivers whose devices went on were not disturbed.
+    for trace in traces.iter().skip(1) {
+        assert!(worst(trace, 20.0) < 12.0 * MICROSECOND);
+    }
 }
 
 #[test]

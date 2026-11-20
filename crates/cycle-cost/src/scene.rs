@@ -29,7 +29,7 @@ const LEVEL: i64 = 20_000_000;
 /// Packets in a window of the clock estimate.
 const WINDOW: u64 = 64;
 
-type Listener = ReceiverPlayback<64, 64, 8>;
+type Listener = ReceiverPlayback<64, 64, 8, 64>;
 
 /// The sender's clock when it captured the frame with `index`.
 fn captured(index: u64) -> i64 {
@@ -79,6 +79,7 @@ impl Scene {
             },
             concealment: Parameters::for_rate(RATE),
             block: CYCLE,
+            device_range: 10_000_000,
         });
         Scene {
             sender: Sender::new(settings, 7, LEVEL),

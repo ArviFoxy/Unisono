@@ -320,45 +320,33 @@ theorem nominal_total (d : device.Device W) (frames : Std.I128) :
   run
 
 @[step]
-theorem restarted_total (d : device.Device W) (position : Std.U64) (time : Std.I64) :
-    device.Device.restarted d position time ⦃ _ => True ⦄ := by
-  unfold device.Device.restarted
-  step as ⟨o, _, _⟩
-  cases o with
-  | none => simp
-  | some newest =>
+theorem last_total (d : device.Device W) : device.Device.last d ⦃ _ => True ⦄ := by
+  unfold device.Device.last
+  cases d.aside with
+  | none =>
     simp only
-    run
+    apply WP.spec_mono (newest_spec d)
+    intro _ _
+    trivial
+  | some r => simp
 
-private theorem observe_write_spec (d1 : device.Device W) (cap : Std.Usize)
-    (position : Std.U64) (time : Std.I64)
-    (hcap : cap.val = min W.val 4096) :
-    (do
-      let i ← if d1.len > cap then ok cap else ok d1.len
-      if cap = 0#usize then ok { d1 with len := i }
-      else
-        let i1 ← if d1.next >= cap then ok 0#usize else ok d1.next
-        let (s, to_slice_mut_back) ← lift (Array.to_slice_mut d1.readings)
-        let (o, get_mut_back) ←
-          core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice device.Reading) s i1
-        let a ←
-          match o with
-          | none =>
-            let s1 := get_mut_back none
-            ok (to_slice_mut_back s1)
-          | some _ =>
-            let s1 := get_mut_back (some { position, time })
-            ok (to_slice_mut_back s1)
-        let next ← lift (core.num.Usize.saturating_add i1 1#usize)
-        let next1 ← if next >= cap then ok 0#usize else ok next
-        if i < cap then
-          let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
-          ok { d1 with readings := a, len := i2, next := next1 }
-        else ok { d1 with readings := a, len := i, next := next1 })
-    ⦃ d' =>
-      d'.rate = d1.rate
-      ∧ d'.len.val ≤ min W.val 4096
-      ∧ (0 < W.val → d'.next.val < min W.val 4096) ⦄ := by
+theorem restarted_total (last : device.Reading) (position : Std.U64) :
+    device.Device.restarted W last position ⦃ _ => True ⦄ := by
+  unfold device.Device.restarted
+  run
+
+/-- The counts of a device are within what it can keep. -/
+def Fits (d : device.Device W) : Prop :=
+  d.len.val ≤ min W.val 4096 ∧ (0 < W.val → d.next.val < min W.val 4096)
+
+/-- Writing a report: it is then the newest of the kept ones, the counts are
+within what the device can keep, and the rate and what is set aside stay. -/
+theorem push_spec (d1 : device.Device W) (reading : device.Reading) :
+    device.Device.push d1 reading ⦃ d' =>
+      d'.rate = d1.rate ∧ d'.aside = d1.aside ∧ Fits d'
+      ∧ (0 < W.val → newestReading d' = some reading) ⦄ := by
+  unfold device.Device.push
+  step as ⟨cap, hcap, hcapW, hcapM⟩
   have hi_spec : (if d1.len > cap then ok cap else ok d1.len) ⦃ i => i.val ≤ cap.val ⦄ := by
     split <;> simp only [WP.spec_ok] <;> scalar_tac
   apply WP.spec_bind hi_spec
@@ -368,7 +356,8 @@ private theorem observe_write_spec (d1 : device.Device W) (cap : Std.Usize)
     have hc0v : cap.val = 0 := by scalar_tac
     rw [WP.spec_ok]
     dsimp only
-    exact ⟨rfl, by omega, fun hW => by omega⟩
+    exact ⟨rfl, rfl, (by unfold Fits; dsimp only; exact ⟨by omega, fun hW => by omega⟩),
+      fun hW => by omega⟩
   · rename_i hcne0
     have hcpos : 0 < cap.val := by scalar_tac
     have hi1_spec : (if d1.next >= cap then ok 0#usize else ok d1.next)
@@ -378,7 +367,8 @@ private theorem observe_write_spec (d1 : device.Device W) (cap : Std.Usize)
     intro i1 hi1
     simp only [Array.to_slice_mut, lift, core.slice.Slice.get_mut,
       core.slice.index.Usize.get_mut, bind_ok, Std.uncurry]
-    have ha_spec : ∀ a : Array device.Reading W,
+    have hlenW : d1.readings.val.length = W.val := d1.readings.property
+    have ha_spec : ∀ a : Array device.Reading W, a.val[i1.val]? = some reading →
         (do
           let next1 ←
             if core.num.Usize.saturating_add i1 1#usize >= cap then ok 0#usize
@@ -387,17 +377,34 @@ private theorem observe_write_spec (d1 : device.Device W) (cap : Std.Usize)
             ok { d1 with readings := a, len := core.num.Usize.saturating_add i 1#usize, next := next1 }
           else ok { d1 with readings := a, len := i, next := next1 })
         ⦃ d' =>
-          d'.rate = d1.rate
-          ∧ d'.len.val ≤ min W.val 4096
-          ∧ (0 < W.val → d'.next.val < min W.val 4096) ⦄ := by
-      intro a
+          d'.rate = d1.rate ∧ d'.aside = d1.aside ∧ Fits d'
+          ∧ (0 < W.val → newestReading d' = some reading) ⦄ := by
+      intro a ha
+      have hsucc : (core.num.Usize.saturating_add i1 1#usize).val = i1.val + 1 := by
+        rw [Usize.saturating_add_val _ _ (by scalar_tac)]; rfl
       have hn1_spec :
           (if core.num.Usize.saturating_add i1 1#usize >= cap then ok 0#usize
            else ok (core.num.Usize.saturating_add i1 1#usize))
-          ⦃ next1 => next1.val < cap.val ⦄ := by
-        split <;> simp only [WP.spec_ok] <;> scalar_tac
+          ⦃ next1 => next1.val < cap.val
+            ∧ (if next1.val = 0 ∨ cap.val < next1.val then cap.val - 1 else next1.val - 1)
+                = i1.val ⦄ := by
+        split
+        · rename_i hge
+          have : cap.val ≤ i1.val + 1 := by rw [← hsucc]; scalar_tac
+          simp only [WP.spec_ok]
+          have h0 : (0#usize).val = 0 := by rfl
+          rw [h0]
+          simp only [true_or, ↓reduceIte]
+          omega
+        · rename_i hlt
+          have : i1.val + 1 < cap.val := by rw [← hsucc]; scalar_tac
+          simp only [WP.spec_ok, hsucc]
+          refine ⟨this, ?_⟩
+          have hne : ¬ (i1.val + 1 = 0 ∨ cap.val < i1.val + 1) := by omega
+          simp only [hne, ↓reduceIte]
+          omega
       apply WP.spec_bind hn1_spec
-      intro next1 hnext1
+      rintro next1 ⟨hnext1, hplace⟩
       split
       · rename_i hilt
         have hil : i.val < cap.val := by scalar_tac
@@ -405,42 +412,60 @@ private theorem observe_write_spec (d1 : device.Device W) (cap : Std.Usize)
           rw [Usize.saturating_add_val _ _ (by scalar_tac)]; rfl
         rw [WP.spec_ok]
         dsimp only
-        exact ⟨rfl, by omega, fun _ => by omega⟩
-      · rw [WP.spec_ok]
+        refine ⟨rfl, rfl, (by unfold Fits; dsimp only; exact ⟨by omega, fun _ => by omega⟩),
+          fun hW => ?_⟩
+        unfold newestReading
         dsimp only
-        exact ⟨rfl, by omega, fun _ => by omega⟩
+        have hne : ¬ ((core.num.Usize.saturating_add i 1#usize).val = 0 ∨ min W.val 4096 = 0) := by
+          omega
+        simp only [hne, ↓reduceIte]
+        rw [← hcap, hplace]
+        exact ha
+      · rename_i hige
+        have hie : i.val = cap.val := by scalar_tac
+        rw [WP.spec_ok]
+        dsimp only
+        refine ⟨rfl, rfl, (by unfold Fits; dsimp only; exact ⟨by omega, fun _ => by omega⟩),
+          fun hW => ?_⟩
+        unfold newestReading
+        dsimp only
+        have hne : ¬ (i.val = 0 ∨ min W.val 4096 = 0) := by omega
+        simp only [hne, ↓reduceIte]
+        rw [← hcap, hplace]
+        exact ha
+    have hi1W : i1.val < d1.readings.val.length := by omega
     have ha_match :
         (match d1.readings.to_slice[i1]? with
           | none => ok (d1.readings.from_slice (d1.readings.to_slice.set_opt i1 none))
           | some _ =>
             ok (d1.readings.from_slice
-              (d1.readings.to_slice.set_opt i1 (some { position, time }))))
-        ⦃ _ => True ⦄ := by
-      cases d1.readings.to_slice[i1]? <;> simp
+              (d1.readings.to_slice.set_opt i1 (some reading))))
+        ⦃ a => a.val[i1.val]? = some reading ⦄ := by
+      cases h : d1.readings.to_slice[i1]? with
+      | none =>
+        simp at h
+        omega
+      | some x =>
+        simp
+        rw [Unisono.Lists.set_opt_some, List.getElem?_set_self hi1W]
     apply WP.spec_bind ha_match
-    intro a _
-    exact ha_spec a
+    intro a ha
+    exact ha_spec a ha
 
-/-- Taking in a report returns for every state and every report, keeps `rate`
-unchanged, and leaves `len` and `next` within the device's capacity. -/
-theorem observe_spec (d : device.Device W) (position : Std.U64) (time : Std.I64) :
-    device.Device.observe d position time ⦃ d' =>
-      d'.rate = d.rate
-      ∧ d'.len.val ≤ min W.val 4096
-      ∧ (0 < W.val → d'.next.val < min W.val 4096) ⦄ := by
-  unfold device.Device.observe
-  step as ⟨cap, hcap, hcapW, hcapM⟩
-  step as ⟨b⟩
-  split
-  · simp only [bind_ok]
-    exact observe_write_spec { d with len := 0#usize, next := 0#usize } cap position time hcap
-  · simp only [bind_ok]
-    exact observe_write_spec d cap position time hcap
+/-- Starting anew at a report: it alone is kept, and nothing is set aside. -/
+theorem start_spec (d : device.Device W) (reading : device.Reading) :
+    device.Device.start d reading ⦃ d' =>
+      d'.rate = d.rate ∧ d'.aside = none ∧ Fits d'
+      ∧ (0 < W.val → newestReading d' = some reading) ⦄ := by
+  unfold device.Device.start
+  apply WP.spec_mono (push_spec _ reading)
+  rintro d' ⟨h1, h2, h3, h4⟩
+  exact ⟨h1, h2, h3, h4⟩
 
-/-- Taking in a report returns for every state of the device and every report. -/
-theorem observe_total (d : device.Device W) (position : Std.U64) (time : Std.I64) :
-    device.Device.observe d position time ⦃ _ => True ⦄ :=
-  WP.spec_mono (observe_spec d position time) fun _ _ => trivial
+theorem follows_total (d : device.Device W) (earlier later : device.Reading) :
+    device.Device.follows d earlier later ⦃ _ => True ⦄ := by
+  unfold device.Device.follows
+  run
 
 theorem add_spec (d : device.Device W) (sums : device.Sums)
     (newest reading : device.Reading) (rs : List device.Reading)
@@ -1046,6 +1071,143 @@ and every position. -/
 theorem when_total (d : device.Device W) (position : Std.U64) :
     device.Device.when d position ⦃ _ => True ⦄ :=
   WP.spec_mono (when_spec d position) fun _ _ => trivial
+
+/-! ## Taking in a report -/
+
+/-- Moving the times of the kept reports changes nothing but the reports. -/
+theorem shift_spec (d : device.Device W) (b : Std.I128) :
+    device.Device.shift d b ⦃ d' =>
+      d'.rate = d.rate ∧ d'.aside = d.aside ∧ d'.len = d.len ∧ d'.next = d.next ⦄ := by
+  unfold device.Device.shift device.Device.shift_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : device.Device W × Std.Usize => W.val - x.2.val)
+    (inv := fun x : device.Device W × Std.Usize =>
+      x.1.rate = d.rate ∧ x.1.aside = d.aside ∧ x.1.len = d.len ∧ x.1.next = d.next)
+  · rintro ⟨s, place⟩ hinv
+    dsimp only at hinv
+    unfold device.Device.shift_loop.body
+    simp only
+    split
+    · rename_i hlt
+      have hlt' : place.val < W.val := by scalar_tac
+      have hsucc : (core.num.Usize.saturating_add place 1#usize).val = place.val + 1 := by
+        rw [Usize.saturating_add_val _ _ (by scalar_tac)]; rfl
+      obtain ⟨h1, h2, h3, h4⟩ := hinv
+      step as ⟨o, ho⟩
+      cases o with
+      | none =>
+        simp only [bind_ok, lift, WP.spec_ok]
+        exact ⟨h1, h2, h3, h4, by rw [hsucc]; omega⟩
+      | some reading =>
+        simp only
+        step as ⟨i, hi⟩
+        step as ⟨i1, hi1⟩
+        step with Fixed.saturate_spec as ⟨i2, hi2⟩
+        simp only [Array.to_slice_mut, lift, core.slice.Slice.get_mut,
+          core.slice.index.Usize.get_mut, bind_ok, Std.uncurry]
+        cases s.readings.to_slice[place]? <;>
+          (simp only [bind_ok, WP.spec_ok]
+           exact ⟨h1, h2, h3, h4, by rw [hsucc]; omega⟩)
+    · simp only [WP.spec_ok]
+      exact hinv
+  · exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem off_total (d : device.Device W) (reading : device.Reading) (otherwise : Std.I128) :
+    device.Device.off d reading otherwise ⦃ _ => True ⦄ := by
+  unfold device.Device.off
+  step with when_total as ⟨o⟩
+  cases o <;> simp [lift]
+
+/-- A report is kept: it is the newest of the kept reports, nothing is set
+aside, and the counts are within what the device can keep. -/
+def Kept (d : device.Device W) (r : device.Reading) : Prop :=
+  d.aside = none ∧ Fits d ∧ (0 < W.val → newestReading d = some r)
+
+/-- Taking in a step keeps the second of its two reports. -/
+theorem step_spec (d : device.Device W) (earlier report : device.Reading) :
+    device.Device.step d earlier report ⦃ d' => d'.rate = d.rate ∧ Kept d' report ⦄ := by
+  unfold device.Device.step
+  step with off_total as ⟨second⟩
+  step with off_total as ⟨first⟩
+  step as ⟨i, hi⟩
+  step as ⟨i1, hi1⟩
+  step with shift_spec as ⟨d1, hr1, ha1, hl1, hn1⟩
+  step with push_spec as ⟨d2, hr2, ha2, hf2, hnew2⟩
+  apply WP.spec_mono (push_spec d2 report)
+  rintro d' ⟨hr, ha, hf, hnew⟩
+  exact ⟨hr.trans (hr2.trans hr1), ha.trans ha2, hf, hnew⟩
+
+/-- What taking in a report does, for every state of the device and every
+report. The rate stays. The report is either kept, or it is set aside while
+everything else stays as it is, and that only when nothing was set aside
+before. So of any two reports in a row the second is kept: whatever a device
+holds, its line follows the reports again from the second one on. -/
+theorem observe_spec (d : device.Device W) (position : Std.U64) (time : Std.I64) :
+    device.Device.observe d position time ⦃ d' =>
+      d'.rate = d.rate
+      ∧ (Kept d' ⟨position, time⟩
+        ∨ (d.aside = none ∧ d'.aside = some ⟨position, time⟩ ∧ d'.readings = d.readings
+            ∧ d'.len = d.len ∧ d'.next = d.next)) ⦄ := by
+  have hstart : device.Device.start d ⟨position, time⟩ ⦃ d' =>
+      d'.rate = d.rate
+      ∧ (Kept d' ⟨position, time⟩
+        ∨ (d.aside = none ∧ d'.aside = some ⟨position, time⟩ ∧ d'.readings = d.readings
+            ∧ d'.len = d.len ∧ d'.next = d.next)) ⦄ := by
+    apply WP.spec_mono (start_spec d ⟨position, time⟩)
+    rintro d' ⟨hr, ha, hf, hnew⟩
+    exact ⟨hr, Or.inl ⟨ha, hf, hnew⟩⟩
+  unfold device.Device.observe
+  step with last_total as ⟨o⟩
+  step as ⟨o1, ho1⟩
+  cases o with
+  | none => exact hstart
+  | some last =>
+    cases o1 with
+    | none => exact hstart
+    | some newest =>
+      simp only
+      step with restarted_total as ⟨b⟩
+      split
+      · exact hstart
+      · cases haside : d.aside with
+        | none =>
+          simp only
+          step with follows_total as ⟨b1⟩
+          split
+          · apply WP.spec_mono (push_spec d ⟨position, time⟩)
+            rintro d' ⟨hr, ha, hf, hnew⟩
+            exact ⟨hr, Or.inl ⟨ha.trans haside, hf, hnew⟩⟩
+          · rw [WP.spec_ok]
+            exact ⟨rfl, Or.inr ⟨rfl, rfl, rfl, rfl⟩⟩
+        | some earlier =>
+          simp only
+          step with follows_total as ⟨b1⟩
+          split
+          · apply WP.spec_mono (step_spec d earlier ⟨position, time⟩)
+            rintro d' ⟨hr, hk⟩
+            exact ⟨hr, Or.inl hk⟩
+          · step with follows_total as ⟨b2⟩
+            split
+            · apply WP.spec_mono (push_spec _ ⟨position, time⟩)
+              rintro d' ⟨hr, ha, hf, hnew⟩
+              exact ⟨hr, Or.inl ⟨ha, hf, hnew⟩⟩
+            · apply WP.spec_mono (start_spec d ⟨position, time⟩)
+              rintro d' ⟨hr, ha, hf, hnew⟩
+              exact ⟨hr, Or.inl ⟨ha, hf, hnew⟩⟩
+
+/-- A report that follows one that was set aside is kept. -/
+theorem observe_after_aside (d : device.Device W) (position : Std.U64) (time : Std.I64)
+    (h : d.aside ≠ none) :
+    device.Device.observe d position time ⦃ d' => Kept d' ⟨position, time⟩ ⦄ := by
+  apply WP.spec_mono (observe_spec d position time)
+  rintro d' ⟨-, hk | ⟨hnone, -⟩⟩
+  · exact hk
+  · exact absurd hnone h
+
+/-- Taking in a report returns for every state of the device and every report. -/
+theorem observe_total (d : device.Device W) (position : Std.U64) (time : Std.I64) :
+    device.Device.observe d position time ⦃ _ => True ⦄ :=
+  WP.spec_mono (observe_spec d position time) fun _ _ => trivial
 
 /-! ## Connection to `Unisono.Model.LineFit`
 

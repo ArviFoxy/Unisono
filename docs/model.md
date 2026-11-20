@@ -374,25 +374,58 @@ short startup burst followed by a lower-rate, longer-memory path estimator. A
 path that is slower one way shifts the receiver by half the difference, as
 section 2.5 says, and a test shows it.
 
-**Devices.** Device reports carry two-sided timing error, so a device's line is
-fitted by least squares. The core (`unisono_core::device::Device<W>`) fits an
-unweighted least-squares line over the last `min(W, 4096)` reports using exact
-128-bit integer sums relative to the newest report and the nominal rate; a
-report resets the history only when the frame counter goes back, jumps beyond
-$2^{28}$ frames, or deviates from the nominal prediction by more than 100 ms,
-so ordinary timestamp jitter never discards the window.
+**Devices.** The reports of a device, each a count of frames and the time
+that belongs to it, have errors of either sign, so a device's line is fitted
+by least squares. The core (`unisono_core::device::Device<W>`) fits the line
+to the last `min(W, 4096)` reports, without weights, in exact sums of 128-bit
+integers taken relative to the newest report and to the nominal rate.
+
+A device's timing can also make a step: it leaves frames out, or stands still
+for a cycle, and from then on every frame leaves it later than its count says
+by the same amount. A line fitted across a step is wrong on both sides of it
+for as long as reports from before the step are kept. So a report is first
+held against the report before it. If the time between the two is what the
+frames between them take at the nominal rate, within half of that, the report
+is kept. If not, it is set aside for one report:
+
+- the next report lies where the one set aside puts it: the timing made a
+  step. The kept reports are moved by the step and the two reports are kept.
+  The line keeps the rate it had, which a step does not change, and goes on
+  through the new reports;
+- the next report lies where the kept reports put it: the one set aside was
+  wrong, and is dropped;
+- neither: the line starts anew at that report, as it does when a count of
+  frames goes back.
+
+The size of the step is the mean of how far the two reports lie from the
+line, so it is known as well as two reports tell it; the line is as good as
+before the step once the kept reports are all from after it. A device that
+leaves out a cycle is off by the whole time of a cycle, and two reports that
+are each wrong by less than a quarter of it are never apart by more than
+half, so the rule takes no report for a step as long as reports are that
+good. In simulation, with reports off by up to 20 microseconds and a device
+that stands still for one cycle of 5.3 ms, the receiver plays within 17
+microseconds from the third cycle on, and within the 12 of undisturbed
+playback 64 cycles later; without the rule it is 5.3 ms off at the third
+cycle.
 
 *Lean:*
-- `Unisono.Model.LineFit`: `cost_le` (the line from the weighted sums minimizes
-  weighted squared residuals), `moment_shift`, `moment_scale`, `moment_insert`
-  (incremental sum maintenance), `error_bound` (deterministic worst-case bound
-  from bounded errors).
-- `Unisono.Device`: `observe_spec` (always terminates and keeps state within
-  capacity), `when_spec` (for any window size `W`, no 128-bit intermediate
-  arithmetic wraps), and `beyondZ_eq_floor_lineFit` (whenever the kept reports
-  span at least two distinct positions, `Device::when` adds the exact integer
-  floor of the least-squares optimal residual line from `Unisono.Model.LineFit`
-  to the nominal prediction).
+- `Unisono.Model.LineFit`: `cost_le` (the line computed from the weighted sums
+  has the smallest weighted sum of squared residuals), `moment_shift`,
+  `moment_scale`, `moment_insert` (the sums can be kept as samples come and
+  age), `error_bound` (a bound for errors that are bounded).
+- `Unisono.Device`: `when_spec` (for any `W`, no sum or product wraps, and
+  the result is the stated function of the kept reports), and
+  `beyondZ_eq_floor_lineFit` (when the kept reports are of at least two
+  positions, that function is the nominal time plus the least-squares line of
+  `Unisono.Model.LineFit` through the departures from it, rounded down).
+- `Unisono.Device.observe_spec`: for every state of the device and every
+  report, the report is either kept, as the newest of the kept reports with
+  the counts within what the device can hold, or it is set aside with
+  everything else as it was, and that only when nothing was set aside before.
+  So of any two reports in a row the second is kept
+  (`observe_after_aside`): whatever a device holds, its line follows the
+  reports again from the second one on.
 
 ### 6.4 The regulator
 

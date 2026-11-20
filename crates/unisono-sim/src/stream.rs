@@ -123,6 +123,10 @@ pub struct ReceiverModel {
     pub path: PathDelay,
     /// How it learns the length of a cycle.
     pub cycle_length: CycleLength,
+    /// A cycle before which its device stands still, and for how many
+    /// seconds: the frames from that cycle on leave the device that much
+    /// later than the device's count of frames says.
+    pub stands_still: Option<(u64, f64)>,
 }
 
 /// What a receiver did over a run.
@@ -172,6 +176,23 @@ struct Listener {
     line: Device<64>,
     noise: Generator,
     trace: Trace,
+}
+
+impl Listener {
+    /// When the frame that the device counts as `frame` leaves it.
+    fn leaves(&mut self, frame: f64, rate: f64) -> TrueTime {
+        let counted = self.device.when(frame / rate);
+        match self.model.stands_still {
+            // A count below 2^53 is exact as a float.
+            #[allow(clippy::cast_precision_loss)]
+            Some((cycle, seconds))
+                if frame >= (cycle * u64::from(self.model.cycle_frames)) as f64 =>
+            {
+                counted.plus_seconds(seconds)
+            }
+            _ => counted,
+        }
+    }
 }
 
 /// A sender, hosts and receivers, and the events between them.
@@ -348,7 +369,7 @@ impl Scene {
         // A count below 2^53 is exact as a float.
         #[allow(clippy::cast_precision_loss)]
         let first = (cycle * u64::from(listener.model.cycle_frames)) as f64;
-        let leaves = listener.device.when(first / f64::from(self.model.rate));
+        let leaves = listener.leaves(first, f64::from(self.model.rate));
         let at = leaves.plus_seconds(-listener.model.lead);
         self.push(at, Event::Plan { receiver, cycle });
     }
@@ -443,8 +464,8 @@ impl Scene {
         // A count below 2^53 is exact as a float.
         #[allow(clippy::cast_precision_loss)]
         let first = (cycle * u64::from(frames)) as f64;
-        let leaves = listener.device.when(first / rate);
-        let ends = listener.device.when((first + f64::from(frames)) / rate);
+        let leaves = listener.leaves(first, rate);
+        let ends = listener.leaves(first + f64::from(frames), rate);
         let exact = host.clock.read(leaves);
         let (time, duration) = match listener.model.cycle_length {
             CycleLength::Measured => (exact, host.clock.read(ends) - exact),

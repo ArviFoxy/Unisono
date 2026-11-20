@@ -30,11 +30,6 @@ const REACH: i128 = 268_435_456;
 /// for any `W`.
 const MAX_KEPT: usize = 4_096;
 
-/// A departure from what the nominal rate predicts from the newest report, in
-/// nanoseconds, beyond which a report is treated as a restart of the device
-/// rather than jitter of its clock reports: 100 ms.
-const MAX_JUMP: i128 = 100_000_000;
-
 /// One report of a device.
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(not(translating), derive(Debug))]
@@ -68,6 +63,10 @@ pub struct Device<const W: usize> {
     next: usize,
     /// The nominal rate, in frames per second.
     rate: u32,
+    /// A report that lies off the line, set aside until the next report
+    /// shows whether the device's timing made a step or the report was
+    /// wrong.
+    aside: Option<Reading>,
 }
 
 /// `value` brought within [`REACH`] either way.
@@ -93,6 +92,7 @@ impl<const W: usize> Device<W> {
             len: 0,
             next: 0,
             rate,
+            aside: None,
         }
     }
 
@@ -139,34 +139,25 @@ impl<const W: usize> Device<W> {
         div_floor(frames.wrapping_mul(BILLION), self.rate as i64)
     }
 
-    /// Whether a report shows that the device started anew: its position is
-    /// not after the newest report, its distance in frames exceeds [`REACH`],
-    /// or its time differs from what the nominal rate predicts from the newest
-    /// report by more than [`MAX_JUMP`].
-    fn restarted(&self, position: u64, time: i64) -> bool {
-        let Some(newest) = self.newest() else {
-            return false;
-        };
-        if position <= newest.position {
-            return true;
+    /// The last report: the one set aside if there is one, and else the
+    /// newest of the kept ones.
+    fn last(&self) -> Option<Reading> {
+        match self.aside {
+            Some(aside) => Some(aside),
+            None => self.newest(),
         }
-        let frames = (position as i128).wrapping_sub(newest.position as i128);
-        if frames > REACH {
-            return true;
-        }
-        let elapsed = (time as i128).wrapping_sub(newest.time as i128);
-        let deviation = elapsed.wrapping_sub(self.nominal(frames));
-        deviation > MAX_JUMP || deviation < 0i128.wrapping_sub(MAX_JUMP)
     }
 
-    /// Takes in a report. When it shows that the device started anew, what
-    /// was known is dropped first.
-    pub fn observe(&mut self, position: u64, time: i64) {
+    /// Whether a report at `position` after the report `last` shows that the
+    /// device started anew: its position is not after that of `last`, or it
+    /// is further on than [`REACH`] frames.
+    fn restarted(last: Reading, position: u64) -> bool {
+        position <= last.position || (position as i128).wrapping_sub(last.position as i128) > REACH
+    }
+
+    /// Writes a report as the newest of the kept ones.
+    fn push(&mut self, reading: Reading) {
         let cap = Self::capacity();
-        if self.restarted(position, time) {
-            self.len = 0;
-            self.next = 0;
-        }
         if self.len > cap {
             self.len = cap;
         }
@@ -177,12 +168,123 @@ impl<const W: usize> Device<W> {
             self.next = 0;
         }
         if let Some(place) = self.readings.get_mut(self.next) {
-            *place = Reading { position, time };
+            *place = reading;
         }
         let next = self.next.saturating_add(1);
         self.next = if next >= cap { 0 } else { next };
         if self.len < cap {
             self.len = self.len.saturating_add(1);
+        }
+    }
+
+    /// Drops what was known and keeps `reading` alone.
+    fn start(&mut self, reading: Reading) {
+        self.len = 0;
+        self.next = 0;
+        self.aside = None;
+        self.push(reading);
+    }
+
+    /// Whether `later` lies where the nominal rate puts it after `earlier`:
+    /// the time between the two is that of the frames between them at the
+    /// nominal rate, to within half of it. A device that leaves out a cycle
+    /// or stands still for one is off by a whole such time. Two reports that
+    /// are each wrong by less than a quarter of it are never apart by more.
+    fn follows(&self, earlier: Reading, later: Reading) -> bool {
+        let frames = within((later.position as i128).wrapping_sub(earlier.position as i128));
+        // Differences of 64-bit numbers: no wrapping. The nominal time is
+        // below 2^58, so its negation does not wrap either.
+        let between = self.nominal(frames);
+        let elapsed = (later.time as i128).wrapping_sub(earlier.time as i128);
+        let off = elapsed.wrapping_sub(between);
+        let allowed = between.wrapping_shr(1);
+        off <= allowed && off >= 0i128.wrapping_sub(allowed)
+    }
+
+    /// Moves the time of every kept report by `by` nanoseconds.
+    fn shift(&mut self, by: i128) {
+        let mut place = 0usize;
+        while place < W {
+            if let Some(reading) = self.at(place) {
+                let moved = Reading {
+                    position: reading.position,
+                    // A 64-bit number and a difference of two: no wrapping.
+                    time: saturate((reading.time as i128).wrapping_add(by)),
+                };
+                if let Some(slot) = self.readings.get_mut(place) {
+                    *slot = moved;
+                }
+            }
+            place = place.saturating_add(1);
+        }
+    }
+
+    /// How far `reading` is from where the line puts it, or `otherwise` when
+    /// there is no line.
+    fn off(&self, reading: Reading, otherwise: i128) -> i128 {
+        match self.when(reading.position) {
+            // A difference of 64-bit numbers: no wrapping.
+            Some(expected) => (reading.time as i128).wrapping_sub(expected as i128),
+            None => otherwise,
+        }
+    }
+
+    /// Takes in a step of the device's timing, which the two reports
+    /// `earlier` and `report` show: the first does not lie where the kept
+    /// reports put it, and the second lies where the first puts it. The kept
+    /// reports are moved by the step, so that the line goes on through the
+    /// two reports with the rate that it had. The step is taken as the mean
+    /// of how far the two are from the line.
+    fn step(&mut self, earlier: Reading, report: Reading) {
+        let second = self.off(report, 0);
+        let first = self.off(earlier, second);
+        // The sum of two differences of 64-bit numbers: no wrapping.
+        self.shift(first.wrapping_add(second).wrapping_shr(1));
+        self.aside = None;
+        self.push(earlier);
+        self.push(report);
+    }
+
+    /// Takes in a report.
+    ///
+    /// A report that lies where the nominal rate puts it after the report
+    /// before, within half the time of the frames between them, is kept. One
+    /// that does not is set aside for one report. If the next report lies
+    /// where the one set aside puts it, the device's timing made a step: it
+    /// left frames out or stood still. The kept reports are then moved by
+    /// the step and the two are kept, so the line keeps its rate. If the
+    /// next report lies where the kept reports put it, the one set aside
+    /// was wrong and is dropped. If it does neither, the line is not to be
+    /// trusted, and it starts anew at that report. A report whose position
+    /// does not go on from the last one starts the line anew as well.
+    ///
+    /// So of any two reports in a row the second is kept, whatever the
+    /// device held before.
+    pub fn observe(&mut self, position: u64, time: i64) {
+        let report = Reading { position, time };
+        let (Some(last), Some(newest)) = (self.last(), self.newest()) else {
+            self.start(report);
+            return;
+        };
+        if Self::restarted(last, position) {
+            self.start(report);
+            return;
+        }
+        let Some(earlier) = self.aside else {
+            if self.follows(newest, report) {
+                self.push(report);
+            } else {
+                self.aside = Some(report);
+            }
+            return;
+        };
+        if self.follows(earlier, report) {
+            self.step(earlier, report);
+        } else if self.follows(newest, report) {
+            self.aside = None;
+            self.push(report);
+        } else {
+            self.start(report);
         }
     }
 
@@ -318,7 +420,7 @@ impl<const W: usize> Device<W> {
 mod tests {
     use std::vec::Vec;
 
-    use super::Device;
+    use super::{Device, Reading};
 
     /// Reports of a device whose frame `p` belongs to the time
     /// `offset + p * period / 1000` nanoseconds, every 256 frames, each
@@ -456,16 +558,113 @@ mod tests {
     }
 
     #[test]
-    fn jitter_that_moves_a_report_earlier_does_not_drop_the_history() {
+    fn reports_that_scatter_by_less_than_a_quarter_of_a_cycle_are_all_kept() {
+        // 256 frames take 5.3 ms; the reports are up to 1.3 ms off either
+        // way, so two in a row are up to 2.6 ms apart from where they belong.
+        let mut device = Device::<64>::new(48_000);
+        let error =
+            |number: u64| [1_300_000i64, -1_300_000, 300_000, -1_200_000][(number % 4) as usize];
+        for (position, time) in reports(64, 0, 20_833_333, error) {
+            device.observe(position, time);
+        }
+        assert_eq!(device.kept(), 64);
+        assert_eq!(device.aside, None);
+    }
+
+    #[test]
+    fn a_report_far_off_the_line_is_left_out() {
+        let mut device = Device::<64>::new(48_000);
+        let all = reports(40, 7_000_000_000, 20_835_417, |number| {
+            // One report says a time 4 ms late, more than half a cycle.
+            if number == 20 { 4_000_000 } else { 0 }
+        });
+        for (position, time) in &all {
+            device.observe(*position, *time);
+        }
+        // It was set aside, and dropped when the next report lay on the line.
+        assert_eq!(device.kept(), 39);
+        assert_eq!(device.aside, None);
+        // The line is that of the other reports, to the rounding of the
+        // times they were given in.
+        let (position, time) = all[39];
+        assert!(
+            device
+                .when(position)
+                .is_some_and(|at| (at - time).abs() <= 1)
+        );
+        let (position, time) = all[20];
+        let exact = time - 4_000_000;
+        assert!(
+            device
+                .when(position)
+                .is_some_and(|at| (at - exact).abs() <= 1)
+        );
+    }
+
+    #[test]
+    fn a_device_that_stands_still_for_a_cycle_keeps_its_rate() {
+        // 100 parts per million slow. After 32 reports the device stands
+        // still for the time of one cycle, so every later report is that
+        // much later.
+        let stood = 5_333_867;
+        let mut device = Device::<64>::new(48_000);
+        let all = reports(40, 7_000_000_000, 20_835_417, |number| {
+            if number >= 32 { stood } else { 0 }
+        });
+        for (position, time) in all.iter().take(33) {
+            device.observe(*position, *time);
+        }
+        // The first report after the step is set aside: the line is as it
+        // was.
+        assert_eq!(device.kept(), 32);
+        let before = all[32].1 - stood;
+        assert!(
+            device
+                .when(all[32].0)
+                .is_some_and(|at| (at - before).abs() <= 1)
+        );
+        // The second shows the step. All reports are kept, moved by it, so
+        // the line has the rate it had: it gives the time of a frame ten
+        // cycles on to the nanosecond.
+        device.observe(all[33].0, all[33].1);
+        assert_eq!(device.kept(), 34);
+        assert_eq!(device.aside, None);
+        let ahead = all[33].0 + 2_560;
+        let expected =
+            7_000_000_000 + stood + i64::try_from(ahead).unwrap_or(0) * 20_835_417 / 1_000;
+        let found = device.when(ahead).expect("a line");
+        assert!((found - expected).abs() <= 1, "{found} against {expected}");
+    }
+
+    #[test]
+    fn of_two_reports_in_a_row_the_second_is_kept() {
+        // Whatever the device holds and whatever the reports say: a report
+        // is kept or set aside, and no two in a row are set aside.
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
         let mut device = Device::<8>::new(48_000);
-        // 64 frames take 1.333 ms nominally; a +/- 2 ms report jitter can make
-        // one report carry a smaller timestamp than the one before.
-        device.observe(1_000, 10_000_000);
-        device.observe(1_064, 12_500_000);
-        device.observe(1_128, 12_000_000);
-        assert_eq!(device.kept(), 3);
-        let at = device.when(1_128).expect("a line");
-        assert!((at - 12_500_000).abs() < 2_000_000, "unexpected fit {at}");
+        let mut was_set_aside = false;
+        let mut position = 0u64;
+        for _ in 0..20_000 {
+            position = match next() % 16 {
+                0 => next() >> (next() % 64),
+                _ => position.wrapping_add(1 + next() % 1_000),
+            };
+            #[allow(clippy::cast_possible_wrap)]
+            let time = (next() >> (next() % 64)) as i64;
+            device.observe(position, time);
+            let report = Reading { position, time };
+            let kept = device.newest() == Some(report) && device.aside.is_none();
+            let set_aside = device.aside == Some(report);
+            assert!(kept || set_aside);
+            assert!(!(set_aside && was_set_aside));
+            was_set_aside = set_aside;
+        }
     }
 
     #[test]

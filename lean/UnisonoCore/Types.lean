@@ -35,14 +35,14 @@ structure arrivals.Arrivals (K : Std.Usize) where
   next : Std.Usize
 
 /-- [unisono_core::device::Reading]
-    Source: 'crates/unisono-core/src/device.rs', lines 41:0-46:1
+    Source: 'crates/unisono-core/src/device.rs', lines 36:0-41:1
     Visibility: public -/
 structure device.Reading where
   position : Std.U64
   time : Std.I64
 
 /-- [unisono_core::device::Sums]
-    Source: 'crates/unisono-core/src/device.rs', lines 52:0-58:1 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 47:0-53:1 -/
 structure device.Sums where
   count : Std.I128
   x : Std.I128
@@ -51,13 +51,14 @@ structure device.Sums where
   xy : Std.I128
 
 /-- [unisono_core::device::Device]
-    Source: 'crates/unisono-core/src/device.rs', lines 63:0-71:1
+    Source: 'crates/unisono-core/src/device.rs', lines 58:0-70:1
     Visibility: public -/
 structure device.Device (W : Std.Usize) where
   readings : Array device.Reading W
   len : Std.Usize
   next : Std.Usize
   rate : Std.U32
+  aside : Option device.Reading
 
 /-- [unisono_core::packet::Format]
     Source: 'crates/unisono-core/src/packet.rs', lines 57:0-62:1

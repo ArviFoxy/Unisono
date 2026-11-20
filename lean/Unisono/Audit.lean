@@ -507,3 +507,23 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Player.step_from_parts_per_billion_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Player.step_from_parts_per_billion_total
+
+/-- info: 'Unisono.Device.push_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.push_spec
+
+/-- info: 'Unisono.Device.start_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.start_spec
+
+/-- info: 'Unisono.Device.shift_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.shift_spec
+
+/-- info: 'Unisono.Device.step_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.step_spec
+
+/-- info: 'Unisono.Device.observe_after_aside' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.observe_after_aside
