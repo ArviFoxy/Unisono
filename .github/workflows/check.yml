@@ -8,22 +8,22 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
-      - run: just format-check lint test targets realtime
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      - run: just format-check lint test targets realtime cost
 
   proofs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - name: Install elan
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://elan.lean-lang.org/elan-init.sh \
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       # The Lean library of Aeneas is built from source and takes long without this.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             .tools/aeneas
@@ -34,11 +34,11 @@ jobs:
   translation:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: extractions/setup-just@v2
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
       - name: Install opam
         run: sudo apt-get update && sudo apt-get install --yes opam libgmp-dev pkg-config
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             .tools/aeneas
