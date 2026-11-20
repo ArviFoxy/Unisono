@@ -256,7 +256,7 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       ∧ (r.following = true → h.clock = r.clock_id →
           r'.path = r.path ∧ r'.departures = r.departures
           ∧ r'.back.kept = r.back.kept ∧ r'.back.len = r.back.len ∧ r'.back.line = r.back.line
-          ∧ r'.clock.has_window = false
+          ∧ r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
           ∧ (r.clock.lowest = none →
               r'.clock.kept = r.clock.kept ∧ r'.clock.len = r.clock.len
               ∧ r'.clock.line = r.clock.line))
@@ -275,11 +275,11 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       have hclk' : h.clock = r.clock_id := by simpa using hclk
       step as ⟨i⟩
       step as ⟨e, _, _, he_kept, he_len, _, _, _, he_low, he_line⟩
-      step as ⟨e1, he1_hw, _, he1_keep⟩
+      step as ⟨e1, he1_hw, he1_win, he1_keep⟩
       step as ⟨e2, _, _, he2_kept, he2_len, _, _, _, _, he2_line⟩
       refine ⟨hpb, hph, ?_, ?_⟩
       · intro _ _
-        refine ⟨he2_kept, he2_len, he2_line, he1_hw, fun hlo => ?_⟩
+        refine ⟨he2_kept, he2_len, he2_line, he1_hw, he1_win, fun hlo => ?_⟩
         obtain ⟨hk, hl, hli⟩ := he1_keep (by rw [he_low]; exact hlo)
         exact ⟨hk.trans he_kept, hl.trans he_len, hli.trans he_line⟩
       · intro _ hne
@@ -485,8 +485,10 @@ theorem stale_spec (r : receiver.Receiver N M K) (m : presence.Marked) (t : Std.
               scalar_tac
           simp [hiff]
 
-/-- Starting anew at a packet: the playhead is at the packet's first frame and
-nothing but the packet's frames is held. -/
+/-- Starting anew at a packet: the playhead is at the packet's first frame,
+nothing but the packet's frames is held, and the windows of the clock's
+estimate, which are numbered by the index, can be numbered from the start
+again. -/
 @[step]
 theorem renew_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.renew r h ⦃ out =>
@@ -494,16 +496,18 @@ theorem renew_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       ∧ out.2.clock_id = r.clock_id ∧ out.2.has_candidate = r.has_candidate
       ∧ out.2.candidate = r.candidate ∧ out.2.heard = r.heard ∧ out.2.fresh = r.fresh
       ∧ out.2.silence = r.silence ∧ out.2.limit = r.limit
+      ∧ out.2.clock.window = 0#u64
       ∧ ∃ p0 : presence.Presence N, p0.base = h.index ∧ (∀ j, ¬ Held p0 j)
           ∧ Arrived p0 h.index.val h.frames.val out.2.presence out.1 ⦄ := by
   unfold receiver.Receiver.renew
   step as ⟨p, hpb, hph⟩
   step with Unisono.Player.stop_total as ⟨p1⟩
+  step as ⟨e1, hlatest, hwindow, hkept⟩
   step as ⟨i, hi⟩
   have hiv : i.val = h.frames.val := by rw [hi]; exact U16.cast_U32_val h.frames
   step as ⟨m, p2, harr⟩
   rw [hiv] at harr
-  exact ⟨p, hpb, hph, harr⟩
+  exact ⟨hwindow, p, hpb, hph, harr⟩
 
 /-- Taking in how a packet's frames were marked: a packet with a frame at or
 ahead of the playhead (or a covered zero-frame keepalive) makes now the time
@@ -609,7 +613,7 @@ theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
   cases restarted with
   | true =>
     simp only [↓reduceIte]
-    step as ⟨out1, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, p0, c11, c12, c13⟩
+    step as ⟨out1, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, cwin, p0, c11, c12, c13⟩
     obtain ⟨m1, r4⟩ := out1
     simp only at c1 c2 c3 c4 c5 c6 c7 c8 c9 c10 c13 ⊢
     step as ⟨r5, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12⟩

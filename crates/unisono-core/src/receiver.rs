@@ -378,6 +378,9 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     fn renew(&mut self, header: &Audio) -> Marked {
         self.presence.restart(header.index);
         self.player.stop();
+        // The windows of the clock's estimate are numbered by the index,
+        // which has started again.
+        self.clock.reset_window();
         self.presence.mark(header.index, header.frames as u32)
     }
 

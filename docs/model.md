@@ -263,6 +263,16 @@ seen through the values $z$ of section 2.2. Every sample lies on or above it.
 packet that lies lowest against the current line is kept. This thins the
 samples; it is not what makes the estimate right.
 
+Packets can overtake each other, so a sample of an earlier window can arrive
+when its window has ended. It is left out, on one condition: its time is not
+later than the latest sample taken in, and not earlier by more than the memory
+$T$. A packet that was overtaken meets that condition. A sample of an earlier
+window that does not meet it cannot come from such a packet: the sender has
+started again and numbers its windows anew, and the sample begins a window. A
+rule that left out every sample of an earlier window would be simpler and
+wrong: after a sender has started again with lower indices, the estimate would
+stay that of the run before until the new run had gone as far.
+
 **Fit.** Kept samples older than the memory $T$ are forgotten. The estimate is
 the line that lies on or under every kept sample and is highest at the middle
 of the time they cover. It passes through two kept samples, one on each side of
@@ -301,6 +311,21 @@ years in nanoseconds.
 For every state of the estimator, in range or not, and every packet, taking
 in a packet and ending a window return: `observe_total`, `end_window_total`.
 Nothing in the estimator can fail or run forever.
+
+The estimator also takes a stream in again from any state. `observe_spec`
+says what a sample does: one that can come from an overtaken packet leaves the
+estimator exactly as it is, and every other one is taken in, after which the
+estimator holds that sample's window. A sample later than every sample taken
+in is always taken in (`observe_later`), and so is every sample of the window
+held or a later one (`observe_in_order`). A sample that is left out is at most
+$T$ earlier than the latest one taken in, and leaving it out changes nothing.
+So whatever the estimator holds, of a stream whose time goes on it leaves out
+at most the samples of the first $T$, and takes in all that follow.
+`crates/unisono-core/tests/restarts.rs` runs a receiver through each way a
+sender can start again: the same timeline number with the index back at the
+start, on a clock that began anew, on the same clock and on a clock that reads
+a little less; a later timeline on the same clock and on another; and another
+sender with the same identifiers.
 
 Not stated in Lean: that the fit always finds a line when there are two kept
 samples, which needs the hull to be built correctly and is covered by tests;

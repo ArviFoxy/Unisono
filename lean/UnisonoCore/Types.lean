@@ -245,14 +245,14 @@ structure relation.Sample where
   value : Std.I64
 
 /-- [unisono_core::relation::Estimator]
-    Source: 'crates/unisono-core/src/relation.rs', lines 112:0-128:1
+    Source: 'crates/unisono-core/src/relation.rs', lines 112:0-129:1
     Visibility: public -/
 structure relation.Estimator (M : Std.Usize) where
   kept : Array relation.Sample M
   len : Std.Usize
   span : Std.I64
   limit : Std.I64
-  has_window : Bool
+  latest : Std.I64
   window : Std.U64
   lowest : Option (relation.Sample × Std.I128)
   line : Option relation.Line

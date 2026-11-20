@@ -117,8 +117,9 @@ pub struct Estimator<const M: usize> {
     span: i64,
     /// The largest size of the line's slope, in nanoseconds per second.
     limit: i64,
-    /// Whether a window has been opened since creation or [`Estimator::reset_window`].
-    has_window: bool,
+    /// The latest time of a sample that was taken in since the numbering of
+    /// windows last started.
+    latest: i64,
     /// The window that `lowest` belongs to.
     window: u64,
     /// The lowest sample of the current window so far, with its exact height
@@ -139,7 +140,7 @@ impl<const M: usize> Estimator<M> {
             len: 0,
             span: non_negative(span),
             limit: non_negative(limit),
-            has_window: false,
+            latest: i64::MIN,
             window: 0,
             lowest: None,
             line: None,
@@ -152,12 +153,21 @@ impl<const M: usize> Estimator<M> {
         self.span = non_negative(span);
     }
 
-    /// Finishes the current window and allows window numbers to restart from
-    /// any value while keeping the remembered samples and fitted line.
+    /// Ends the current window and lets the numbering of windows start
+    /// again from any number. The kept samples and the line stay.
     pub fn reset_window(&mut self) {
         self.end_window();
-        self.has_window = false;
+        self.latest = i64::MIN;
         self.window = 0;
+    }
+
+    /// Whether a sample of time `time` in a window before the current one
+    /// can come from a packet that later packets overtook: it is not later
+    /// than the latest sample taken in, and not earlier by more than the
+    /// time for which samples are remembered.
+    fn overtaken(&self, time: i64) -> bool {
+        // A difference of two 64-bit numbers: no wrapping.
+        time <= self.latest && (self.latest as i128).wrapping_sub(time as i128) <= self.span as i128
     }
 
     /// The middle of the time that the kept samples cover, where the
@@ -219,21 +229,32 @@ impl<const M: usize> Estimator<M> {
 
     /// Takes in the sample of one packet of window `window`.
     ///
-    /// A window ends when a sample of a later window arrives, or when
-    /// [`Estimator::end_window`] is called. Samples from any window earlier
-    /// than the current one are ignored: they come from packets overtaken by
-    /// later windows, whose own windows have already closed. Call
-    /// [`Estimator::reset_window`] when window numbering intentionally restarts
-    /// on the same clock.
+    /// A window ends when a sample of a later window is given, or when
+    /// [`Estimator::end_window`] is called. A sample of an earlier window is
+    /// left out when it can come from a packet that later packets overtook:
+    /// its own window has ended and kept its lowest sample already. A sample
+    /// of an earlier window that is later in time than every sample taken
+    /// in, or earlier by more than samples are remembered, cannot be such a
+    /// packet's. The numbering of windows has then started again, as when a
+    /// sender starts anew, and the sample begins a window. So whatever
+    /// window the estimator holds, it takes in a stream again within the
+    /// time for which it remembers samples.
     pub fn observe(&mut self, window: u64, sample: Sample) {
-        if !self.has_window {
-            self.has_window = true;
-            self.window = window;
-        } else if window < self.window {
-            return;
-        } else if window > self.window {
+        if window < self.window {
+            if self.overtaken(sample.time) {
+                return;
+            }
             self.end_window();
             self.window = window;
+            self.latest = sample.time;
+        } else {
+            if window > self.window {
+                self.end_window();
+                self.window = window;
+            }
+            if sample.time > self.latest {
+                self.latest = sample.time;
+            }
         }
         self.consider(sample);
     }
@@ -616,17 +637,69 @@ mod tests {
     }
 
     #[test]
-    fn samples_of_earlier_windows_do_not_end_the_current_window() {
-        // Reordering across multiple windows leaves the current window open.
+    fn samples_of_earlier_windows_from_overtaken_packets_are_left_out() {
+        // Packets overtaken across several windows: their samples are
+        // earlier in time than what was taken in, by less than the span.
         let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
-        estimator.observe(7, sample(0, 100));
-        estimator.observe(7, sample(10, 110));
+        estimator.observe(7, sample(100, 100));
+        estimator.observe(7, sample(110, 110));
         estimator.observe(2, sample(20, 50));
-        estimator.observe(5, sample(25, 60));
+        estimator.observe(5, sample(60, 60));
         assert_eq!(estimator.kept(), 0);
-        estimator.observe(8, sample(30, 130));
+        estimator.observe(8, sample(130, 130));
         assert_eq!(estimator.kept(), 1);
         assert_eq!(estimator.line().expect("a line").eval(0), 100);
+    }
+
+    #[test]
+    fn an_earlier_window_later_in_time_starts_the_numbering_again() {
+        // A sender that started anew on the same clock numbers its windows
+        // from the start, and its clock has gone on.
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
+        estimator.observe(700, sample(100, 100));
+        estimator.observe(701, sample(110, 110));
+        estimator.observe(0, sample(120, 120));
+        // The window that was open has ended, and the sample began one.
+        assert_eq!(estimator.kept(), 2);
+        estimator.observe(1, sample(130, 130));
+        estimator.observe(2, sample(140, 140));
+        assert_eq!(estimator.kept(), 4);
+        assert_eq!(estimator.line().expect("a line").eval(150), 150);
+    }
+
+    #[test]
+    fn an_earlier_window_far_back_in_time_starts_the_numbering_again() {
+        // A sender whose clock began anew: its samples are earlier than what
+        // is kept by more than the span, so what is kept is dropped too.
+        let mut estimator = Estimator::<8>::new(1_000, STEEP);
+        estimator.observe(700, sample(50_000, 100));
+        estimator.observe(701, sample(50_010, 110));
+        estimator.observe(0, sample(10, 9_000));
+        estimator.observe(1, sample(20, 9_010));
+        estimator.observe(2, sample(30, 9_020));
+        assert_eq!(estimator.kept(), 2);
+        assert_eq!(estimator.line().expect("a line").eval(30), 9_020);
+    }
+
+    #[test]
+    fn any_window_number_is_left_within_the_span() {
+        // Whatever window an estimator holds, a stream whose windows are
+        // numbered lower is taken in once its time has passed the latest
+        // sample, which is within the span here.
+        let mut estimator = Estimator::<8>::new(100, STEEP);
+        estimator.observe(u64::MAX, sample(1_000, 5));
+        let mut taken = None;
+        for k in 0..30u64 {
+            let time = 950 + i64::try_from(k).unwrap_or(0) * 10;
+            estimator.observe(k, sample(time, 7));
+            if taken.is_none() && estimator.kept() > 0 {
+                taken = Some(time);
+            }
+        }
+        // The first sample later than 1,000 began a window, which ended the
+        // one that was open.
+        assert_eq!(taken, Some(1_010));
+        assert!(estimator.kept() >= 8);
     }
 
     #[test]
