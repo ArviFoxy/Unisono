@@ -376,13 +376,28 @@ below. The pace as a whole, scheduled and corrected, is held within
 $u_{\max}$ by limiting $v$, and a distance beyond a set number of frames is
 not played away: the position jumps to the schedule.
 
-Stated in Lean so far: planning a cycle returns for every state, schedule and
-reading of the clock (`Unisono.Player.cycle_total`), and changes nothing of a
-receiver but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in
-Lean:* the stability above, that the error tends to zero for a constant
-$\hat u$, that from any state the pace leaves its bound after a bounded time,
-and how far the computation in whole numbers is from the recursion in real
-numbers.
+About the recursion over the real numbers, in `Unisono.Model.Regulator`:
+
+- A quadratic form of $(E, v)$, the area spanned by a state and the state
+  after it, is multiplied by exactly $1 - \sqrt2\,a$ in every cycle
+  (`energy_step`). For $0 < a \le \tfrac12$ it is positive definite and
+  bounds the distance (`distance_le_energy`).
+- From rest, as after a start or a jump, the distance after $k$ cycles is at
+  most $\sqrt{12}\,(1 - \sqrt2\,a)^{k/2}$ times the distance at the start
+  (`distance_from_rest`), and from any state it is bounded the same way by the
+  form at the start (`distance_after`).
+- With a pace that is wrong by $d$ frames a cycle, the state moves as without
+  the error around the point where the distance is $\sqrt2\,d/a$
+  (`stepWith_shift`), so that is where the distance tends.
+- A cycle whose correction is at the limit $L$ starts at least
+  $\sqrt2\,L/a$ from the schedule and ends $L$ nearer (`at_limit`), so the
+  limit holds for no more cycles in a row than the distance holds limits.
+
+About the code: planning a cycle returns for every state, schedule and reading
+of the clock (`Unisono.Player.cycle_total`), and changes nothing of a receiver
+but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
+how far the computation in whole numbers is from the recursion in real
+numbers, and that after the limit has let go it does not take hold again.
 
 In simulation (`crates/unisono-sim/tests/timing.rs`), with the cycle lengths
 taken from a device that is 120 parts per million off its nominal rate, the

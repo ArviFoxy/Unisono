@@ -7,6 +7,7 @@ module
 public import Unisono.Fixed
 public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
+public import Unisono.Model.Regulator
 public import Unisono.Model.SupportLine
 public import Unisono.Packet
 public import Unisono.Player
@@ -219,3 +220,19 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Player.due_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Player.due_total
+
+/-- info: 'Unisono.Model.Regulator.energy_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulator.energy_step
+
+/-- info: 'Unisono.Model.Regulator.distance_from_rest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulator.distance_from_rest
+
+/-- info: 'Unisono.Model.Regulator.stepWith_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulator.stepWith_shift
+
+/-- info: 'Unisono.Model.Regulator.at_limit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulator.at_limit
