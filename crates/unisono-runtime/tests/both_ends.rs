@@ -100,7 +100,7 @@ fn frames_play_a_level_after_they_were_captured() {
         audio_end,
         Intake {
             items: 8,
-            report_period: 50_000_000,
+            report_period: Some(50_000_000),
         },
     );
     let device = Device {

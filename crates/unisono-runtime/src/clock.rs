@@ -29,6 +29,8 @@
 //! conversion can know; the tracker notices the step at that measurement and
 //! forgets the rate.
 
+use std::sync::atomic::{AtomicI64, Ordering};
+
 /// The number of nanoseconds in a second.
 const SECOND: i64 = 1_000_000_000;
 
@@ -67,10 +69,40 @@ fn read(clock: libc::clockid_t) -> i64 {
     seconds.saturating_mul(SECOND).saturating_add(nanos)
 }
 
-/// The raw clock now, in nanoseconds.
+/// How far this process moves the host's raw clock, in nanoseconds.
+static OFFSET: AtomicI64 = AtomicI64::new(0);
+
+/// How much faster this process lets the host's raw clock run, in parts per
+/// billion.
+static SKEW: AtomicI64 = AtomicI64::new(0);
+
+/// Gives this process a raw clock of its own: from now on [`raw`] reads the
+/// host's raw clock `r` as `r + offset + r * skew / 10^9`.
+///
+/// This is for tests that run several processes on one host, which would
+/// otherwise share one clock: each process can be given an offset and a rate
+/// as a host of its own would have. Everything in unisono that reads the
+/// raw clock, kernel stamps of packets included, which are converted to it,
+/// then sees the clock of the process. A program sets it once, before it
+/// reads a clock.
+pub fn shift(offset: i64, skew: i64) {
+    OFFSET.store(offset, Ordering::Relaxed);
+    SKEW.store(skew, Ordering::Relaxed);
+}
+
+/// The raw clock now, in nanoseconds: the host's, moved as [`shift`] says.
 #[must_use]
 pub fn raw() -> i64 {
-    read(libc::CLOCK_MONOTONIC_RAW)
+    let host = read(libc::CLOCK_MONOTONIC_RAW);
+    let offset = OFFSET.load(Ordering::Relaxed);
+    let skew = SKEW.load(Ordering::Relaxed);
+    if offset == 0 && skew == 0 {
+        return host;
+    }
+    // A 64-bit time times a skew of 64 bits: below 2^127.
+    let gained = i128::from(host) * i128::from(skew) / i128::from(SECOND);
+    let moved = i128::from(host) + i128::from(offset) + gained;
+    i64::try_from(moved).unwrap_or(if moved < 0 { i64::MIN } else { i64::MAX })
 }
 
 /// The system clock now, in nanoseconds.

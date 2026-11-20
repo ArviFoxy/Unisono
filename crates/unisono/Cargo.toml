@@ -1,0 +1,16 @@
+[package]
+name = "unisono"
+description = "The unisono program: sends a stream of audio to receivers, or receives one and plays it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+unisono-core.workspace = true
+unisono-dsp.workspace = true
+unisono-metrics.workspace = true
+unisono-runtime.workspace = true
+
+[lints]
+workspace = true

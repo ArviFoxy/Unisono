@@ -11,6 +11,7 @@ license = "MPL-2.0"
 [workspace.dependencies]
 unisono-core = { path = "crates/unisono-core", version = "0.1.0" }
 unisono-dsp = { path = "crates/unisono-dsp", version = "0.1.0" }
+unisono-metrics = { path = "crates/unisono-metrics", version = "0.1.0" }
 unisono-runtime = { path = "crates/unisono-runtime", version = "0.1.0" }
 
 [workspace.lints.rust]

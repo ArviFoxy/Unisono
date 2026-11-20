@@ -153,7 +153,7 @@ fn the_audio_end_calls_the_allocator_never() {
     playback.path(line.delay);
     let intake = Intake {
         items: 4,
-        report_period: 50_000_000,
+        report_period: Some(50_000_000),
     };
     let mut audio = ReceiverAudio::new(playback, end, intake);
     let device = Device {

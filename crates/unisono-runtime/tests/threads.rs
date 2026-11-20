@@ -179,7 +179,7 @@ fn run(seconds: i64, from: i64, path: Option<(Impairment, Impairment)>) -> Outco
         audio_end,
         Intake {
             items: 8,
-            report_period: 50_000_000,
+            report_period: Some(50_000_000),
         },
     );
     let device = Device {

@@ -330,8 +330,9 @@ impl ReceiverNetwork {
 pub struct Intake {
     /// The most items taken in at the start of a cycle.
     pub items: usize,
-    /// The time between two reports, in nanoseconds.
-    pub report_period: i64,
+    /// The time between two reports, in nanoseconds; `None` for a receiver
+    /// that sends no reports, as one that is told the delay of its path.
+    pub report_period: Option<i64>,
 }
 
 /// A receiver's playback with the end of the audio thread: what a playback
@@ -404,11 +405,14 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
 
     /// Makes a report when one is due at `time`.
     fn report(&mut self, time: i64) {
+        let Some(period) = self.intake.report_period else {
+            return;
+        };
         let due = *self.next_report.get_or_insert(time);
         if time < due {
             return;
         }
-        self.next_report = Some(time.saturating_add(self.intake.report_period));
+        self.next_report = Some(time.saturating_add(period));
         if let Some(report) = self.playback.report()
             && self.end.reports.put(report).is_err()
         {
