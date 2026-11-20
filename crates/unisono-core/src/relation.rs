@@ -170,10 +170,19 @@ impl<const M: usize> Estimator<M> {
         }
     }
 
-    /// Appends `sample` to the kept samples. The times of kept samples
-    /// increase; a sample that is not later than the last kept one means the
-    /// sender's clock has started anew, and everything kept is dropped.
+    /// Appends `sample` to the kept samples, whose times increase.
+    ///
+    /// A sample that is not later than the last kept one is left out when it
+    /// is older by no more than the span: packets can overtake each other.
+    /// When it is older by more, what is kept does not belong to the clock
+    /// the sample was stamped with, and everything kept is dropped. A count
+    /// of kept samples that exceeds the room for them cannot arise from
+    /// samples; it is treated the same way.
     fn keep(&mut self, sample: Sample) {
+        if self.len > M {
+            self.len = 0;
+            self.line = None;
+        }
         let last = match self.len.checked_sub(1) {
             Some(index) => self.sample(index),
             None => None,
@@ -181,6 +190,9 @@ impl<const M: usize> Estimator<M> {
         if let Some(last) = last
             && sample.time <= last.time
         {
+            if last.time.saturating_sub(sample.time) <= self.span {
+                return;
+            }
             self.len = 0;
             self.line = None;
         }
@@ -459,15 +471,39 @@ mod tests {
     }
 
     #[test]
-    fn a_time_that_goes_back_starts_the_memory_anew() {
-        let mut estimator = Estimator::<8>::new(1_000_000);
+    fn a_time_far_in_the_past_starts_the_memory_anew() {
+        let mut estimator = Estimator::<8>::new(500);
         feed(
             &mut estimator,
             &[sample(1000, 5), sample(2000, 6), sample(3000, 7)],
         );
+        // More than the span before the last kept sample: another clock.
         feed(&mut estimator, &[sample(10, 900)]);
         assert_eq!(estimator.kept(), 1);
         assert_eq!(estimator.line().expect("a line").eval(10), 900);
+    }
+
+    #[test]
+    fn a_sample_that_was_overtaken_is_left_out() {
+        let mut estimator = Estimator::<8>::new(5_000);
+        feed(
+            &mut estimator,
+            &[sample(1000, 5), sample(2000, 6), sample(3000, 7)],
+        );
+        let before = estimator.line();
+        // Within the span before the last kept sample: a packet that came late.
+        feed(&mut estimator, &[sample(2500, -900)]);
+        assert_eq!(estimator.kept(), 3);
+        assert_eq!(estimator.line(), before);
+    }
+
+    #[test]
+    fn an_impossible_count_of_kept_samples_is_dropped_at_once() {
+        let mut estimator = Estimator::<4>::new(1_000_000);
+        estimator.len = usize::MAX;
+        feed(&mut estimator, &[sample(10, 1), sample(20, 2)]);
+        assert_eq!(estimator.kept(), 2);
+        assert_eq!(estimator.line().expect("a line").eval(20), 2);
     }
 
     /// The fitted line against every pair of samples: it must lie under all
