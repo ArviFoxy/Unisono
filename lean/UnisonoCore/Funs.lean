@@ -579,8 +579,40 @@ def fixed.saturate (x : Std.I128) : Result Std.I64 := do
     then ok core.num.I64.MIN
     else ok (IScalar.cast .I64 x)
 
+/-- [unisono_core::device::{unisono_core::device::Device<W>}::eval_at]:
+    Source: 'crates/unisono-core/src/device.rs', lines 228:4-253:5 -/
+def device.Device.eval_at
+  {W : Std.Usize} (self : device.Device W) (newest : device.Reading)
+  (sums : device.Sums) (spread : Std.I128) (position : Std.U64) :
+  Result Std.I64
+  := do
+  let i ← lift (UScalar.hcast .I128 position)
+  let i1 ← lift (UScalar.hcast .I128 newest.position)
+  let i2 ← lift (core.num.I128.wrapping_sub i i1)
+  let ahead ← device.within i2
+  let beyond ←
+    if spread > 0#i128
+    then
+      do
+      let i3 ← lift (core.num.I128.wrapping_mul sums.count sums.xy)
+      let i4 ← lift (core.num.I128.wrapping_mul sums.x sums.y)
+      let tilt ← lift (core.num.I128.wrapping_sub i3 i4)
+      let i5 ← lift (core.num.I128.wrapping_mul sums.count ahead)
+      let lever ← lift (core.num.I128.wrapping_sub i5 sums.x)
+      let i6 ← lift (core.num.I128.wrapping_mul sums.y spread)
+      let i7 ← lift (core.num.I128.wrapping_mul tilt lever)
+      let i8 ← lift (core.num.I128.wrapping_add i6 i7)
+      let i9 ← lift (core.num.I128.wrapping_mul sums.count spread)
+      fixed.div_floor_wide i8 i9
+    else fixed.div_floor_wide sums.y sums.count
+  let i3 ← lift (IScalar.cast .I128 newest.time)
+  let i4 ← device.Device.nominal self ahead
+  let i5 ← lift (core.num.I128.wrapping_add i3 i4)
+  let i6 ← lift (core.num.I128.wrapping_add i5 beyond)
+  fixed.saturate i6
+
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::when]:
-    Source: 'crates/unisono-core/src/device.rs', lines 231:4-267:5
+    Source: 'crates/unisono-core/src/device.rs', lines 260:4-273:5
     Visibility: public -/
 def device.Device.when
   {W : Std.Usize} (self : device.Device W) (position : Std.U64) :
@@ -594,34 +626,51 @@ def device.Device.when
     if sums.count <= 0#i128
     then ok none
     else
-      let i ← lift (UScalar.hcast .I128 position)
-      let i1 ← lift (UScalar.hcast .I128 newest.position)
-      let i2 ← lift (core.num.I128.wrapping_sub i i1)
-      let ahead ← device.within i2
-      let i3 ← lift (core.num.I128.wrapping_mul sums.count sums.xx)
-      let i4 ← lift (core.num.I128.wrapping_mul sums.x sums.x)
-      let spread ← lift (core.num.I128.wrapping_sub i3 i4)
-      let beyond ←
+      let i ← lift (core.num.I128.wrapping_mul sums.count sums.xx)
+      let i1 ← lift (core.num.I128.wrapping_mul sums.x sums.x)
+      let spread ← lift (core.num.I128.wrapping_sub i i1)
+      let i2 ← device.Device.eval_at self newest sums spread position
+      ok (some i2)
+
+/-- [unisono_core::device::{unisono_core::device::Device<W>}::when_cycle]:
+    Source: 'crates/unisono-core/src/device.rs', lines 284:4-314:5
+    Visibility: public -/
+def device.Device.when_cycle
+  {W : Std.Usize} (self : device.Device W) (position : Std.U64)
+  (frames : Std.U32) :
+  Result (Option (Std.I64 × Std.I64))
+  := do
+  let o ← device.Device.newest self
+  match o with
+  | none => ok none
+  | some newest =>
+    let sums ← device.Device.sums self newest
+    if sums.count <= 0#i128
+    then ok none
+    else
+      let i ← lift (core.num.I128.wrapping_mul sums.count sums.xx)
+      let i1 ← lift (core.num.I128.wrapping_mul sums.x sums.x)
+      let spread ← lift (core.num.I128.wrapping_sub i i1)
+      let start ← device.Device.eval_at self newest sums spread position
+      let i2 ← lift (UScalar.hcast .I128 frames)
+      let span ← device.within i2
+      let span_q16 ← lift (core.num.I128.wrapping_shl span 16#u32)
+      let i3 ← lift (core.num.I128.wrapping_mul span_q16 device.BILLION)
+      let i4 ← lift (UScalar.hcast .I64 self.rate)
+      let nominal_q16 ← fixed.div_floor i3 i4
+      let beyond_q16 ←
         if spread > 0#i128
         then
           do
           let i5 ← lift (core.num.I128.wrapping_mul sums.count sums.xy)
           let i6 ← lift (core.num.I128.wrapping_mul sums.x sums.y)
           let tilt ← lift (core.num.I128.wrapping_sub i5 i6)
-          let i7 ← lift (core.num.I128.wrapping_mul sums.count ahead)
-          let lever ← lift (core.num.I128.wrapping_sub i7 sums.x)
-          let i8 ← lift (core.num.I128.wrapping_mul sums.y spread)
-          let i9 ← lift (core.num.I128.wrapping_mul tilt lever)
-          let i10 ← lift (core.num.I128.wrapping_add i8 i9)
-          let i11 ← lift (core.num.I128.wrapping_mul sums.count spread)
-          fixed.div_floor_wide i10 i11
-        else fixed.div_floor_wide sums.y sums.count
-      let i5 ← lift (IScalar.cast .I128 newest.time)
-      let i6 ← device.Device.nominal self ahead
-      let i7 ← lift (core.num.I128.wrapping_add i5 i6)
-      let i8 ← lift (core.num.I128.wrapping_add i7 beyond)
-      let i9 ← fixed.saturate i8
-      ok (some i9)
+          let i7 ← lift (core.num.I128.wrapping_mul span_q16 tilt)
+          fixed.div_floor_wide i7 spread
+        else ok 0#i128
+      let i5 ← lift (core.num.I128.wrapping_add nominal_q16 beyond_q16)
+      let duration_q16 ← fixed.saturate i5
+      ok (some (start, duration_q16))
 
 /-- [unisono_core::fixed::MAX_SHIFT]
     Source: 'crates/unisono-core/src/fixed.rs', lines 13:0-13:30
@@ -1938,6 +1987,13 @@ def player.Plan.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq player.Plan := {
 }
 
+/-- [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Step> for unisono_core::timing::Step}::eq]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31
+    Visibility: public -/
+def timing.Step.Insts.CoreCmpPartialEqStep.eq
+  (self : timing.Step) (other : timing.Step) : Result Bool := do
+  ok (self.offset = other.offset)
+
 /-- [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Position> for unisono_core::timing::Position}::eq]:
     Source: 'crates/unisono-core/src/timing.rs', lines 20:22-20:31
     Visibility: public -/
@@ -1954,12 +2010,13 @@ def player.Plan.Insts.CoreCmpPartialEqPlan.eq
   (self : player.Plan) (other : player.Plan) : Result Bool := do
   if self.frames = other.frames
   then
-    if self.step = other.step
+    if self.jumped = other.jumped
     then
-      if self.jumped = other.jumped
-      then
+      let b ←
         timing.Position.Insts.CoreCmpPartialEqPosition.eq self.start
           other.start
+      if b
+      then timing.Step.Insts.CoreCmpPartialEqStep.eq self.step other.step
       else ok false
     else ok false
   else ok false
@@ -1988,28 +2045,28 @@ def player.Plan.Insts.CoreCmpEq : core.cmp.Eq player.Plan := {
 }
 
 /-- [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Player}::clone]:
-    Source: 'crates/unisono-core/src/player.rs', lines 88:9-88:14
+    Source: 'crates/unisono-core/src/player.rs', lines 87:9-87:14
     Visibility: public -/
 def player.Player.Insts.CoreCloneClone.clone
   (self : player.Player) : Result player.Player := do
   ok self
 
 /-- Trait implementation: [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Player}]
-    Source: 'crates/unisono-core/src/player.rs', lines 88:9-88:14 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 87:9-87:14 -/
 @[reducible]
 def player.Player.Insts.CoreCloneClone : core.clone.Clone player.Player := {
   clone := player.Player.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::player::{impl core::marker::Copy for unisono_core::player::Player}]
-    Source: 'crates/unisono-core/src/player.rs', lines 88:16-88:20 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 87:16-87:20 -/
 @[reducible]
 def player.Player.Insts.CoreMarkerCopy : core.marker.Copy player.Player := {
   cloneInst := player.Player.Insts.CoreCloneClone
 }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::new]:
-    Source: 'crates/unisono-core/src/player.rs', lines 104:4-114:5
+    Source: 'crates/unisono-core/src/player.rs', lines 103:4-113:5
     Visibility: public -/
 def player.Player.new
   (regulation : player.Regulation) : Result player.Player := do
@@ -2022,13 +2079,13 @@ def player.Player.new
     }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::stop]:
-    Source: 'crates/unisono-core/src/player.rs', lines 118:4-121:5
+    Source: 'crates/unisono-core/src/player.rs', lines 117:4-120:5
     Visibility: public -/
 def player.Player.stop (self : player.Player) : Result player.Player := do
   ok { self with running := false, correction := 0#i64 }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::position]:
-    Source: 'crates/unisono-core/src/player.rs', lines 125:4-131:5
+    Source: 'crates/unisono-core/src/player.rs', lines 124:4-130:5
     Visibility: public -/
 def player.Player.impl.position
   (self : player.Player) : Result (Option timing.Position) := do
@@ -2037,7 +2094,7 @@ def player.Player.impl.position
   else ok none
 
 /-- [unisono_core::player::{unisono_core::player::Player}::gain]:
-    Source: 'crates/unisono-core/src/player.rs', lines 134:4-152:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 133:4-151:5 -/
 def player.Player.gain
   (self : player.Player) (duration : Std.I64) : Result Std.I128 := do
   let span ←
@@ -2057,7 +2114,7 @@ def player.Player.gain
   else ok gain
 
 /-- [unisono_core::player::{unisono_core::player::Player}::regulate]:
-    Source: 'crates/unisono-core/src/player.rs', lines 156:4-170:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 155:4-169:5 -/
 def player.Player.regulate
   (self : player.Player) (behind : Std.I64) (duration : Std.I64) :
   Result Std.I64
@@ -2079,7 +2136,7 @@ def player.Player.regulate
   fixed.saturate i8
 
 /-- [unisono_core::player::{unisono_core::player::Player}::reach]:
-    Source: 'crates/unisono-core/src/player.rs', lines 174:4-182:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 173:4-181:5 -/
 def player.Player.reach (self : player.Player) : Result Std.I128 := do
   let limit ←
     if self.regulation.limit > player.LARGEST_LIMIT
@@ -2089,12 +2146,29 @@ def player.Player.reach (self : player.Player) : Result Std.I128 := do
   let i1 ← lift (core.num.I128.wrapping_mul i player.FRAME)
   fixed.div_floor i1 player.BILLION
 
+/-- [unisono_core::timing::{unisono_core::timing::Step}::LARGEST_OFFSET]
+    Source: 'crates/unisono-core/src/timing.rs', lines 99:4-99:59
+    Visibility: public -/
+@[global_simps, irreducible]
+def timing.Step.LARGEST_OFFSET : Std.I64 := 72057594037927936#i64
+
+/-- [unisono_core::timing::{unisono_core::timing::Step}::clamped]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 119:4-130:5
+    Visibility: public -/
+def timing.Step.clamped (offset : Std.I64) : Result timing.Step := do
+  let low ← lift (core.num.I64.wrapping_sub 0#i64 timing.Step.LARGEST_OFFSET)
+  if offset > timing.Step.LARGEST_OFFSET
+  then ok { offset := timing.Step.LARGEST_OFFSET }
+  else if offset < low
+       then ok { offset := low }
+       else ok { offset }
+
 /-- [unisono_core::player::{unisono_core::player::Player}::step]:
-    Source: 'crates/unisono-core/src/player.rs', lines 188:4-205:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 187:4-205:5 -/
 def player.Player.step
   (self : player.Player) (wanted : Std.I64) (frames : Std.U32)
   (scheduled : Std.I64) :
-  Result Std.I64
+  Result timing.Step
   := do
   let reach ← player.Player.reach self
   let i ← lift (IScalar.cast .I128 scheduled)
@@ -2107,18 +2181,21 @@ def player.Player.step
   let i6 ← lift (core.num.I128.wrapping_mul beyond player.SIXTEEN_BITS)
   let i7 ← lift (UScalar.hcast .I64 frames)
   let step ← fixed.div_floor i6 i7
-  if step > reach
-  then fixed.saturate reach
-  else
-    let i8 ← lift (core.num.I128.wrapping_sub 0#i128 reach)
-    if step < i8
-    then
-      let i9 ← lift (core.num.I128.wrapping_sub 0#i128 reach)
-      fixed.saturate i9
-    else fixed.saturate step
+  let limited ←
+    if step > reach
+    then fixed.saturate reach
+    else
+      do
+      let i8 ← lift (core.num.I128.wrapping_sub 0#i128 reach)
+      if step < i8
+      then
+        let i9 ← lift (core.num.I128.wrapping_sub 0#i128 reach)
+        fixed.saturate i9
+      else fixed.saturate step
+  timing.Step.clamped limited
 
 /-- [unisono_core::timing::advance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 138:0-159:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 269:0-290:1
     Visibility: public -/
 def timing.advance
   (start : timing.Position) (frames : Std.U32) (step : Std.I64) :
@@ -2142,31 +2219,38 @@ def timing.advance
     let i9 ← lift (IScalar.hcast .U64 moved)
     ok { frame := i8, fraction := i9 }
 
+/-- [unisono_core::timing::{unisono_core::timing::Step}::offset]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 134:4-136:5
+    Visibility: public -/
+def timing.Step.impl.offset (self : timing.Step) : Result Std.I64 := do
+  ok self.offset
+
 /-- [unisono_core::player::{unisono_core::player::Player}::play]:
-    Source: 'crates/unisono-core/src/player.rs', lines 210:4-224:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 210:4-234:5 -/
 def player.Player.play
   (self : player.Player) (frames : Std.U32) (scheduled : Std.I64)
   (behind : Std.I64) (duration : Std.I64) :
-  Result ((timing.Position × Std.I64) × player.Player)
+  Result ((timing.Position × timing.Step) × player.Player)
   := do
   let i ← player.Player.regulate self behind duration
   let step ← player.Player.step self i frames scheduled
   let i1 ← lift (UScalar.hcast .I128 frames)
   let i2 ← lift (core.num.I128.wrapping_mul i1 player.FRAME_IN_CORRECTIONS)
   let i3 ← lift (UScalar.hcast .I128 frames)
-  let i4 ← lift (IScalar.cast .I128 step)
-  let i5 ← lift (core.num.I128.wrapping_mul i3 i4)
-  let i6 ← lift (core.num.I128.wrapping_shr i5 16#u32)
-  let read ← lift (core.num.I128.wrapping_add i2 i6)
-  let i7 ← lift (IScalar.cast .I128 scheduled)
-  let i8 ← lift (core.num.I128.wrapping_mul i7 player.SIXTEEN_BITS)
-  let i9 ← lift (core.num.I128.wrapping_sub read i8)
-  let i10 ← fixed.saturate i9
-  let p ← timing.advance self.position frames step
-  ok ((self.position, step), { self with position := p, correction := i10 })
+  let i4 ← timing.Step.impl.offset step
+  let i5 ← lift (IScalar.cast .I128 i4)
+  let i6 ← lift (core.num.I128.wrapping_mul i3 i5)
+  let i7 ← lift (core.num.I128.wrapping_shr i6 16#u32)
+  let read ← lift (core.num.I128.wrapping_add i2 i7)
+  let i8 ← lift (IScalar.cast .I128 scheduled)
+  let i9 ← lift (core.num.I128.wrapping_mul i8 player.SIXTEEN_BITS)
+  let i10 ← lift (core.num.I128.wrapping_sub read i9)
+  let i11 ← fixed.saturate i10
+  let p ← timing.advance self.position frames i4
+  ok ((self.position, step), { self with position := p, correction := i11 })
 
 /-- [unisono_core::player::{unisono_core::player::Player}::jumps]:
-    Source: 'crates/unisono-core/src/player.rs', lines 229:4-237:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 239:4-247:5 -/
 def player.Player.jumps
   (self : player.Player) (behind : Std.I64) : Result Bool := do
   if self.running
@@ -2182,7 +2266,7 @@ def player.Player.jumps
   else ok true
 
 /-- [unisono_core::timing::distance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 126:0-132:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 257:0-263:1
     Visibility: public -/
 def timing.distance
   («from» : timing.Position) («to» : timing.Position) :
@@ -2200,8 +2284,14 @@ def timing.distance
   let i7 ← lift (core.num.I128.wrapping_add i6 fractions)
   fixed.saturate i7
 
+/-- [unisono_core::timing::{unisono_core::timing::Step}::UNITY]
+    Source: 'crates/unisono-core/src/timing.rs', lines 102:4-102:47
+    Visibility: public -/
+@[global_simps, irreducible]
+def timing.Step.UNITY : timing.Step := { offset := 0#i64 }
+
 /-- [unisono_core::player::{unisono_core::player::Player}::cycle]:
-    Source: 'crates/unisono-core/src/player.rs', lines 243:4-269:5
+    Source: 'crates/unisono-core/src/player.rs', lines 253:4-279:5
     Visibility: public -/
 def player.Player.cycle
   (self : player.Player) (now : timing.Position) («then» : timing.Position)
@@ -2215,7 +2305,7 @@ def player.Player.cycle
       ({
          frames := 0#u32,
          start := self.position,
-         step := 0#i64,
+         step := timing.Step.UNITY,
          jumped := false
        }, self)
   else
@@ -2225,7 +2315,7 @@ def player.Player.cycle
         ({
            frames := 0#u32,
            start := self.position,
-           step := 0#i64,
+           step := timing.Step.UNITY,
            jumped := false
          }, self)
     else
@@ -4203,7 +4293,7 @@ def receiver.Receiver.sample
   ok { self with clock := e }
 
 /-- [unisono_core::timing::sender_time]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 61:0-81:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 192:0-212:1
     Visibility: public -/
 def timing.sender_time
   (line : relation.Line) (path : Std.I64) (time : Std.I64) :
@@ -4587,7 +4677,7 @@ def receiver.Receiver.echo
 @[global_simps, irreducible] def timing.BILLION : Std.I64 := 1000000000#i64
 
 /-- [unisono_core::timing::due]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 88:0-121:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 219:0-252:1
     Visibility: public -/
 def timing.due
   (schedule : timing.Schedule) (time : Std.I64) :
@@ -4656,7 +4746,7 @@ def receiver.Receiver.cycle
         ({
            frames := 0#u32,
            start := { frame := 0#u64, fraction := 0#u64 },
-           step := 0#i64,
+           step := timing.Step.UNITY,
            jumped := false
          }, self)
     | some line =>
@@ -4666,7 +4756,7 @@ def receiver.Receiver.cycle
           ({
              frames := 0#u32,
              start := { frame := 0#u64, fraction := 0#u64 },
-             step := 0#i64,
+             step := timing.Step.UNITY,
              jumped := false
            }, self)
       | some schedule =>
@@ -4680,7 +4770,7 @@ def receiver.Receiver.cycle
             ({
                frames := 0#u32,
                start := { frame := 0#u64, fraction := 0#u64 },
-               step := 0#i64,
+               step := timing.Step.UNITY,
                jumped := false
              }, self)
         | some now =>
@@ -4691,7 +4781,7 @@ def receiver.Receiver.cycle
               ({
                  frames := 0#u32,
                  start := { frame := 0#u64, fraction := 0#u64 },
-                 step := 0#i64,
+                 step := timing.Step.UNITY,
                  jumped := false
                }, self)
           | some «then» =>
@@ -4703,7 +4793,7 @@ def receiver.Receiver.cycle
       ({
          frames := 0#u32,
          start := { frame := 0#u64, fraction := 0#u64 },
-         step := 0#i64,
+         step := timing.Step.UNITY,
          jumped := false
        }, self)
 
@@ -5256,15 +5346,77 @@ def timing.Position.Insts.CoreCmpEq : core.cmp.Eq timing.Position := {
   assert_fields_are_eq := timing.Position.Insts.CoreCmpEq.assert_fields_are_eq
 }
 
+/-- [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Step}::clone]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:9-91:14
+    Visibility: public -/
+def timing.Step.Insts.CoreCloneClone.clone
+  (self : timing.Step) : Result timing.Step := do
+  ok self
+
+/-- Trait implementation: [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Step}]
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:9-91:14 -/
+@[reducible]
+def timing.Step.Insts.CoreCloneClone : core.clone.Clone timing.Step := {
+  clone := timing.Step.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::timing::{impl core::marker::Copy for unisono_core::timing::Step}]
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:16-91:20 -/
+@[reducible]
+def timing.Step.Insts.CoreMarkerCopy : core.marker.Copy timing.Step := {
+  cloneInst := timing.Step.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::timing::{impl core::marker::StructuralPartialEq for unisono_core::timing::Step}]
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31 -/
+@[reducible]
+def timing.Step.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq timing.Step := {
+}
+
+/-- Trait implementation: [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Step> for unisono_core::timing::Step}]
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:22-91:31 -/
+@[reducible]
+def timing.Step.Insts.CoreCmpPartialEqStep : core.cmp.PartialEq timing.Step
+  timing.Step := {
+  eq := timing.Step.Insts.CoreCmpPartialEqStep.eq
+}
+
+/-- [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Step}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:33-91:35
+    Visibility: public -/
+def timing.Step.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : timing.Step) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Step}]
+    Source: 'crates/unisono-core/src/timing.rs', lines 91:33-91:35 -/
+@[reducible]
+def timing.Step.Insts.CoreCmpEq : core.cmp.Eq timing.Step := {
+  partialEqInst := timing.Step.Insts.CoreCmpPartialEqStep
+  assert_fields_are_eq := timing.Step.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [unisono_core::timing::{unisono_core::timing::Step}::new]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 107:4-114:5
+    Visibility: public -/
+def timing.Step.new (offset : Std.I64) : Result (Option timing.Step) := do
+  let low ← lift (core.num.I64.wrapping_sub 0#i64 timing.Step.LARGEST_OFFSET)
+  if offset > timing.Step.LARGEST_OFFSET
+  then ok none
+  else if offset < low
+       then ok none
+       else ok (some { offset })
+
 /-- [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Schedule}::clone]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:9-37:14
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:9-168:14
     Visibility: public -/
 def timing.Schedule.Insts.CoreCloneClone.clone
   (self : timing.Schedule) : Result timing.Schedule := do
   ok self
 
 /-- Trait implementation: [unisono_core::timing::{impl core::clone::Clone for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:9-37:14 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:9-168:14 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCloneClone : core.clone.Clone timing.Schedule
   := {
@@ -5272,7 +5424,7 @@ def timing.Schedule.Insts.CoreCloneClone : core.clone.Clone timing.Schedule
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::Copy for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:16-37:20 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:16-168:20 -/
 @[reducible]
 def timing.Schedule.Insts.CoreMarkerCopy : core.marker.Copy timing.Schedule
   := {
@@ -5280,14 +5432,14 @@ def timing.Schedule.Insts.CoreMarkerCopy : core.marker.Copy timing.Schedule
 }
 
 /-- Trait implementation: [unisono_core::timing::{impl core::marker::StructuralPartialEq for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:22-37:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31 -/
 @[reducible]
 def timing.Schedule.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq timing.Schedule := {
 }
 
 /-- [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Schedule> for unisono_core::timing::Schedule}::eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:22-37:31
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31
     Visibility: public -/
 def timing.Schedule.Insts.CoreCmpPartialEqSchedule.eq
   (self : timing.Schedule) (other : timing.Schedule) : Result Bool := do
@@ -5308,7 +5460,7 @@ def timing.Schedule.Insts.CoreCmpPartialEqSchedule.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::PartialEq<unisono_core::timing::Schedule> for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:22-37:31 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:22-168:31 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCmpPartialEqSchedule : core.cmp.PartialEq
   timing.Schedule timing.Schedule := {
@@ -5316,14 +5468,14 @@ def timing.Schedule.Insts.CoreCmpPartialEqSchedule : core.cmp.PartialEq
 }
 
 /-- [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Schedule}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:33-37:35
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:33-168:35
     Visibility: public -/
 def timing.Schedule.Insts.CoreCmpEq.assert_fields_are_eq
   (self : timing.Schedule) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::timing::{impl core::cmp::Eq for unisono_core::timing::Schedule}]
-    Source: 'crates/unisono-core/src/timing.rs', lines 37:33-37:35 -/
+    Source: 'crates/unisono-core/src/timing.rs', lines 168:33-168:35 -/
 @[reducible]
 def timing.Schedule.Insts.CoreCmpEq : core.cmp.Eq timing.Schedule := {
   partialEqInst := timing.Schedule.Insts.CoreCmpPartialEqSchedule

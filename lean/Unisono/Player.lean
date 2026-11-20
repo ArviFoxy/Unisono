@@ -111,13 +111,45 @@ theorem reach_spec (p : player.Player) :
     have : min p.regulation.limit.val 3000000 = p.regulation.limit.val := by omega
     rw [this]
 
+/-- Clamping a step offset brings it within `±2^56` units of `2^-64` frame. -/
+@[step]
+theorem step_clamped_spec (offset : Std.I64) :
+    timing.Step.clamped offset ⦃ s =>
+      s.offset.val = max (-2^56) (min offset.val (2^56))
+      ∧ -2^56 ≤ s.offset.val ∧ s.offset.val ≤ 2^56 ⦄ := by
+  unfold timing.Step.clamped
+  have hl : timing.Step.LARGEST_OFFSET.val = 2^56 := by simp [timing.Step.LARGEST_OFFSET]
+  have h0 : (0#i64).val = 0 := by rfl
+  step as ⟨low, hlow⟩
+  have hlowv : low.val = -(2^56) := by
+    rw [hlow, I64.wrapping_sub_val _ _ (by rw [h0, hl]; norm_num), h0, hl]
+    norm_num
+  split
+  · have hgt : 2^56 < offset.val := by rw [← hl]; scalar_tac
+    simp only [WP.spec_ok, hl]
+    omega
+  · have hle : offset.val ≤ 2^56 := by rw [← hl]; scalar_tac
+    split
+    · have hlt : offset.val < -(2^56) := by rw [← hlowv]; scalar_tac
+      simp only [WP.spec_ok, hlowv]
+      omega
+    · have hge : -(2^56) ≤ offset.val := by rw [← hlowv]; scalar_tac
+      simp only [WP.spec_ok]
+      omega
+
+@[step]
+theorem step_offset_spec (s : timing.Step) :
+    timing.Step.impl.offset s ⦃ r => r = s.offset ⦄ := by
+  unfold timing.Step.impl.offset
+  simp
+
 /-- The step of a cycle is within the limit of the pace, whatever the state
 of the regulator, the schedule and the correction that was wanted. -/
 @[step]
 theorem step_spec (p : player.Player) (wanted : Std.I64) (frames : Std.U32)
     (scheduled : Std.I64) :
     player.Player.step p wanted frames scheduled
-      ⦃ r => -reach p ≤ r.val ∧ r.val ≤ reach p ⦄ := by
+      ⦃ r => -reach p ≤ r.offset.val ∧ r.offset.val ≤ reach p ⦄ := by
   unfold player.Player.step
   have hb := reach_bounds p
   step as ⟨reach1, hreach⟩
@@ -135,31 +167,45 @@ theorem step_spec (p : player.Player) (wanted : Std.I64) (frames : Std.U32)
   have hneg : (core.num.I128.wrapping_sub 0#i128 reach1).val = -reach p := by
     rw [I128.wrapping_sub_val _ _ (by rw [h0, hreach]; omega), h0, hreach]
     omega
-  split
-  · step with Fixed.saturate_spec as ⟨r, hr⟩
-    simp only [Fixed.clamp64, hreach] at hr
-    omega
-  · rename_i hle
-    have hle' : even.val ≤ reach p := by rw [← hreach]; scalar_tac
-    step as ⟨i8, hi8⟩
+  have hlim :
+      (if even > reach1 then fixed.saturate reach1
+       else do
+         let i8 ← lift (core.num.I128.wrapping_sub 0#i128 reach1)
+         if even < i8 then
+           let i9 ← lift (core.num.I128.wrapping_sub 0#i128 reach1)
+           fixed.saturate i9
+         else fixed.saturate even)
+      ⦃ lim => -reach p ≤ lim.val ∧ lim.val ≤ reach p ⦄ := by
     split
-    · step as ⟨i9, hi9⟩
-      step with Fixed.saturate_spec as ⟨r, hr⟩
-      rw [hi9, hneg] at hr
-      simp only [Fixed.clamp64] at hr
+    · step with Fixed.saturate_spec as ⟨r, hr⟩
+      simp only [Fixed.clamp64, hreach] at hr
       omega
-    · rename_i hge
-      have hge' : -reach p ≤ even.val := by rw [← hneg, ← hi8]; scalar_tac
-      step with Fixed.saturate_spec as ⟨r, hr⟩
-      simp only [Fixed.clamp64] at hr
-      omega
+    · rename_i hle
+      have hle' : even.val ≤ reach p := by rw [← hreach]; scalar_tac
+      step as ⟨i8, hi8⟩
+      split
+      · step as ⟨i9, hi9⟩
+        step with Fixed.saturate_spec as ⟨r, hr⟩
+        rw [hi9, hneg] at hr
+        simp only [Fixed.clamp64] at hr
+        omega
+      · rename_i hge
+        have hge' : -reach p ≤ even.val := by rw [← hneg, ← hi8]; scalar_tac
+        step with Fixed.saturate_spec as ⟨r, hr⟩
+        simp only [Fixed.clamp64] at hr
+        omega
+  apply WP.spec_bind hlim
+  intro lim ⟨hlo, hhi⟩
+  step with step_clamped_spec lim as ⟨s, hseq, _, _⟩
+  omega
 
 /-- Playing a cycle takes a step within the limit of the pace and leaves the
 settings of the regulator as they are. -/
 @[step]
 theorem play_spec (p : player.Player) (frames : Std.U32) (scheduled behind duration : Std.I64) :
     player.Player.play p frames scheduled behind duration
-      ⦃ r => -reach p ≤ r.1.2.val ∧ r.1.2.val ≤ reach p ∧ r.2.regulation = p.regulation ⦄ := by
+      ⦃ r => -reach p ≤ r.1.2.offset.val ∧ r.1.2.offset.val ≤ reach p
+        ∧ r.2.regulation = p.regulation ⦄ := by
   unfold player.Player.play
   step as ⟨wanted⟩
   step as ⟨st, hlo, hhi⟩
@@ -179,18 +225,18 @@ stream for each output frame, whatever the schedule does over it. -/
 theorem cycle_spec (p : player.Player) (now later : timing.Position) (frames : Std.U32)
     (duration : Std.I64) :
     player.Player.cycle p now later frames duration
-      ⦃ r => -reach p ≤ r.1.step.val ∧ r.1.step.val ≤ reach p ∧
+      ⦃ r => -reach p ≤ r.1.step.offset.val ∧ r.1.step.offset.val ≤ reach p ∧
         r.2.regulation = p.regulation ⦄ := by
   unfold player.Player.cycle
   have hb := reach_bounds p
   step as ⟨scheduled⟩
-  have h0 : (0#i64).val = 0 := by rfl
+  have hu : timing.Step.UNITY.offset.val = 0 := by simp [timing.Step.UNITY]
   split
   · simp only [WP.spec_ok]
-    refine ⟨?_, ?_, trivial⟩ <;> (rw [h0]; omega)
+    refine ⟨?_, ?_, trivial⟩ <;> (rw [hu]; omega)
   · split
     · simp only [WP.spec_ok]
-      refine ⟨?_, ?_, trivial⟩ <;> (rw [h0]; omega)
+      refine ⟨?_, ?_, trivial⟩ <;> (rw [hu]; omega)
     · step as ⟨behind⟩
       step as ⟨jumped⟩
       cases jumped
@@ -207,7 +253,7 @@ output frame. -/
 theorem cycle_step_small (p : player.Player) (now later : timing.Position) (frames : Std.U32)
     (duration : Std.I64) :
     player.Player.cycle p now later frames duration
-      ⦃ r => -2^56 < r.1.step.val ∧ r.1.step.val < 2^56 ⦄ := by
+      ⦃ r => -2^56 < r.1.step.offset.val ∧ r.1.step.offset.val < 2^56 ⦄ := by
   have hb := reach_bounds p
   apply WP.spec_mono (cycle_spec p now later frames duration)
   intro r hr

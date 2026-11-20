@@ -455,3 +455,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Receiver.single_stray_timeline_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Receiver.single_stray_timeline_noop
+
+/-- info: 'Unisono.Player.step_clamped_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.step_clamped_spec
+
+/-- info: 'Unisono.Device.when_cycle_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.when_cycle_spec
+
+/-- info: 'Unisono.Device.beyondSlopeQ16Z_eq_floor_lineFit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.beyondSlopeQ16Z_eq_floor_lineFit

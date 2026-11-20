@@ -132,6 +132,12 @@ theorem I128.checked_div_eq (x y : I128) :
 theorem I128.checked_rem_eq (x y : I128) :
     I128.checked_rem x y = core.num.checked_rem_IScalar x y := by rfl
 
+theorem I64.wrapping_sub_val (x y : I64)
+    (h : -2^63 ≤ x.val - y.val ∧ x.val - y.val < 2^63) :
+    (core.num.I64.wrapping_sub x y).val = x.val - y.val := by
+  simp only [core.num.I64.wrapping_sub_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp <;> omega
+
 theorem I128.wrapping_sub_val (x y : I128)
     (h : -2^127 ≤ x.val - y.val ∧ x.val - y.val < 2^127) :
     (core.num.I128.wrapping_sub x y).val = x.val - y.val := by
@@ -144,6 +150,30 @@ theorem I128.wrapping_shr_val (x : I128) (s : U32) (h : s.val < 128) :
   simp only [IScalar.val, core.num.I128.wrapping_shr_bv_eq]
   have : s.val % 128 = s.val := Nat.mod_eq_of_lt h
   simp [this, BitVec.toInt_sshiftRight, Int.shiftRight_eq_div_pow]
+
+theorem I128.wrapping_shl_val (x : I128) (s : U32) (hs : s.val < 128)
+    (h : -2^127 ≤ x.val * 2^s.val ∧ x.val * 2^s.val < 2^127) :
+    (core.num.I128.wrapping_shl x s).val = x.val * 2^s.val := by
+  simp only [IScalar.val, core.num.I128.wrapping_shl_bv_eq] at h ⊢
+  have hmod : s.val % 128 = s.val := Nat.mod_eq_of_lt hs
+  rw [hmod]
+  have hshl : (x.bv.shiftLeft s.val).toInt = ((x.bv.toNat : ℤ) * 2 ^ s.val).bmod (2 ^ 128) := by
+    simp [BitVec.toInt_shiftLeft, Int.shiftLeft_eq]
+  rw [hshl]
+  have heq : ((x.bv.toNat : ℤ) * 2 ^ s.val).bmod (2 ^ 128)
+      = (x.bv.toInt * 2 ^ s.val).bmod (2 ^ 128) := by
+    have hmod_eq : ((x.bv.toNat : ℤ) * 2 ^ s.val) % (2 ^ 128 : ℕ)
+        = (x.bv.toInt * 2 ^ s.val) % (2 ^ 128 : ℕ) := by
+      rw [BitVec.toInt_eq_toNat_cond]
+      split
+      · rfl
+      · have hsub : (((x.bv.toNat : ℤ) - (2 ^ 128 : ℕ)) * 2 ^ s.val)
+            = (x.bv.toNat : ℤ) * 2 ^ s.val + (-(2 ^ s.val : ℤ)) * (2 ^ 128 : ℕ) := by
+          rw [Int.sub_mul, Int.sub_eq_add_neg, Int.mul_comm ((2 ^ 128 : ℕ) : ℤ), Int.neg_mul]
+        rw [hsub, Int.add_mul_emod_self_right]
+    simp only [Int.bmod, hmod_eq]
+  rw [heq]
+  exact Int.bmod_pow2_eq_of_inBounds' 128 _ (by norm_num) (by simpa using h.1) (by simpa using h.2)
 
 theorem I128.wrapping_shl_one_val (s : U32) (h : s.val < 127) :
     (core.num.I128.wrapping_shl 1#i128 s).val = 2^s.val := by

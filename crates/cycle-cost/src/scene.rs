@@ -145,13 +145,14 @@ impl Scene {
     }
 
     /// Gives the line of the device the report of the next cycle and asks it
-    /// when that cycle begins and ends.
+    /// for the cycle's start and sub-nanosecond duration.
     pub(crate) fn device(&mut self) {
         let position = self.cycles * CYCLE as u64;
         self.line.observe(position, self.next_cycle());
-        let begins = self.line.when(position);
-        let ends = self.line.when(position + CYCLE as u64);
-        std::hint::black_box((begins, ends));
+        let cycle = self
+            .line
+            .when_cycle(position, u32::try_from(CYCLE).unwrap_or(u32::MAX));
+        std::hint::black_box(cycle);
     }
 
     /// Runs packets and cycles in the order of their times, as long as

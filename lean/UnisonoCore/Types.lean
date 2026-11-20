@@ -133,6 +133,12 @@ structure player.Regulation where
   limit : Std.U32
   jump : Std.U32
 
+/-- [unisono_core::timing::Step]
+    Source: 'crates/unisono-core/src/timing.rs', lines 93:0-95:1
+    Visibility: public -/
+structure timing.Step where
+  offset : Std.I64
+
 /-- [unisono_core::timing::Position]
     Source: 'crates/unisono-core/src/timing.rs', lines 22:0-28:1
     Visibility: public -/
@@ -141,16 +147,16 @@ structure timing.Position where
   fraction : Std.U64
 
 /-- [unisono_core::player::Plan]
-    Source: 'crates/unisono-core/src/player.rs', lines 73:0-85:1
+    Source: 'crates/unisono-core/src/player.rs', lines 73:0-84:1
     Visibility: public -/
 structure player.Plan where
   frames : Std.U32
   start : timing.Position
-  step : Std.I64
+  step : timing.Step
   jumped : Bool
 
 /-- [unisono_core::player::Player]
-    Source: 'crates/unisono-core/src/player.rs', lines 90:0-99:1
+    Source: 'crates/unisono-core/src/player.rs', lines 89:0-98:1
     Visibility: public -/
 structure player.Player where
   regulation : player.Regulation
@@ -212,7 +218,7 @@ structure receiver.Settings where
   regulation : player.Regulation
 
 /-- [unisono_core::timing::Schedule]
-    Source: 'crates/unisono-core/src/timing.rs', lines 39:0-53:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 170:0-184:1
     Visibility: public -/
 structure timing.Schedule where
   index : Std.U64

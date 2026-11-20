@@ -414,7 +414,7 @@ fn plan_numbers(plan: &player::Plan) -> [i128; 5] {
         i128::from(plan.frames),
         i128::from(plan.start.frame),
         i128::from(plan.start.fraction),
-        i128::from(plan.step),
+        i128::from(plan.step.offset()),
         i128::from(plan.jumped),
     ]
 }
@@ -1018,10 +1018,19 @@ fn device_cases(out: &mut impl Write) -> io::Result<()> {
             let asked = position
                 .saturating_add(sequence.next() % 4_096)
                 .saturating_sub(1_024);
-            write!(out, " {position} {time} {asked}")?;
+            let cycle_frames = match sequence.next() % 5 {
+                0 => 0u32,
+                1 => u32::MAX,
+                _ => u32::try_from(1 + sequence.next() % 4_096).unwrap_or(256),
+            };
+            write!(out, " {position} {time} {asked} {cycle_frames}")?;
             match line.when(asked) {
                 Some(found) => results.extend([1, i128::from(found)]),
                 None => results.extend([0, 0]),
+            }
+            match line.when_cycle(asked, cycle_frames) {
+                Some((start, dur)) => results.extend([1, i128::from(start), i128::from(dur)]),
+                None => results.extend([0, 0, 0]),
             }
         }
         writeln!(out, " -> {}", join(&results))?;

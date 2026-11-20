@@ -26,7 +26,7 @@
 //! silence.
 
 use crate::fixed::{div_floor, saturate};
-use crate::timing::{Position, advance, distance};
+use crate::timing::{Position, Step, advance, distance};
 
 /// The number of nanoseconds in a second, and of parts in a billion.
 const BILLION: i64 = 1_000_000_000;
@@ -76,9 +76,8 @@ pub struct Plan {
     pub frames: u32,
     /// The position in the stream of the first of them.
     pub start: Position,
-    /// Each further output frame is taken one frame and this many units of
-    /// 2^-64 frame after the one before.
-    pub step: i64,
+    /// Each further output frame is taken this step after the one before.
+    pub step: Step,
     /// Whether the position jumped to the schedule at the start of this
     /// cycle, so that the cycle does not go on where the one before ended.
     pub jumped: bool,
@@ -185,7 +184,7 @@ impl Player {
     /// units of 2^-48 frame further than the schedule advances over it, which
     /// is by `scheduled` units of 2^-32 frame: the step that does so, brought
     /// within the limit of the pace.
-    fn step(&self, wanted: i64, frames: u32, scheduled: i64) -> i64 {
+    fn step(&self, wanted: i64, frames: u32, scheduled: i64) -> Step {
         let reach = self.reach();
         // How much further than one frame for each output frame the cycle is
         // to read, in units of 2^-48 frame. 64 bits and 16, 64 bits, 32 bits
@@ -195,19 +194,26 @@ impl Player {
             .wrapping_add(wanted as i128)
             .wrapping_sub((frames as i128).wrapping_mul(FRAME_IN_CORRECTIONS));
         let step = div_floor(beyond.wrapping_mul(SIXTEEN_BITS), frames as i64);
-        if step > reach {
+        let limited = if step > reach {
             saturate(reach)
         } else if step < 0i128.wrapping_sub(reach) {
             saturate(0i128.wrapping_sub(reach))
         } else {
             saturate(step)
-        }
+        };
+        Step::clamped(limited)
     }
 
     /// Plays `frames` output frames from the position on, when the schedule
     /// advances by `scheduled` over them and the position is `behind` it,
     /// both in units of 2^-32 frame.
-    fn play(&mut self, frames: u32, scheduled: i64, behind: i64, duration: i64) -> (Position, i64) {
+    fn play(
+        &mut self,
+        frames: u32,
+        scheduled: i64,
+        behind: i64,
+        duration: i64,
+    ) -> (Position, Step) {
         let start = self.position;
         let step = self.step(self.regulate(behind, duration), frames, scheduled);
         // The correction is what the cycle reads further than scheduled with
@@ -216,10 +222,14 @@ impl Player {
         // bits and 49, 32 bits and 64, 64 bits and 16: no wrapping.
         let read = (frames as i128)
             .wrapping_mul(FRAME_IN_CORRECTIONS)
-            .wrapping_add((frames as i128).wrapping_mul(step as i128).wrapping_shr(16));
+            .wrapping_add(
+                (frames as i128)
+                    .wrapping_mul(step.offset() as i128)
+                    .wrapping_shr(16),
+            );
         self.correction =
             saturate(read.wrapping_sub((scheduled as i128).wrapping_mul(SIXTEEN_BITS)));
-        self.position = advance(start, frames, step);
+        self.position = advance(start, frames, step.offset());
         (start, step)
     }
 
@@ -248,7 +258,7 @@ impl Player {
             return Plan {
                 frames: 0,
                 start: self.position,
-                step: 0,
+                step: Step::UNITY,
                 jumped: false,
             };
         }
@@ -272,7 +282,7 @@ impl Player {
 #[cfg(test)]
 mod tests {
     use super::{Plan, Player, Regulation};
-    use crate::timing::{Position, advance, distance};
+    use crate::timing::{Position, Step, advance, distance};
 
     /// A regulator with a gain of four per second, a limit of a thousandth
     /// and a jump beyond 240 frames.
@@ -334,7 +344,7 @@ mod tests {
             Plan {
                 frames: FRAMES,
                 start: at(1_000),
-                step: 0,
+                step: Step::UNITY,
                 jumped: true
             }
         );
@@ -351,7 +361,7 @@ mod tests {
         // A unit is 2^-32 frame; the schedule itself is known to one unit.
         assert!(worst <= 4, "worst distance {worst}");
         let last = plans.last().expect("plans");
-        assert!((last.step - step_for(100_000)).abs() < 1 << 30);
+        assert!((last.step.offset() - step_for(100_000)).abs() < 1 << 30);
     }
 
     #[test]
@@ -376,10 +386,10 @@ mod tests {
         // (4 per second * 5.33 ms)^2 * 100 frames, spread over 256 frames,
         // which is 178 parts per million.
         let limit = step_for(1_000_000);
-        assert!(plans.iter().all(|plan| plan.step.abs() <= limit));
+        assert!(plans.iter().all(|plan| plan.step.offset().abs() <= limit));
         let roughest = plans
             .windows(2)
-            .map(|pair| (pair[1].step - pair[0].step).abs())
+            .map(|pair| (pair[1].step.offset() - pair[0].step.offset()).abs())
             .max()
             .unwrap_or(0);
         assert!(
@@ -388,7 +398,7 @@ mod tests {
         );
         // It is the limit that holds the pace for most of the way: a cycle
         // removes a quarter of a frame.
-        assert!(limit - plans[150].step < 1 << 16);
+        assert!(limit - plans[150].step.offset() < 1 << 16);
         assert!(behind[300] < 30 << 32 && behind[300] > 20 << 32);
     }
 
@@ -397,7 +407,10 @@ mod tests {
         let mut player = player();
         player.cycle(at(10_000), at(10_256), FRAMES, DURATION);
         let plan = player.cycle(at(10_256 + 241), at(10_512 + 241), FRAMES, DURATION);
-        assert_eq!((plan.start, plan.step, plan.jumped), (at(10_497), 0, true));
+        assert_eq!(
+            (plan.start, plan.step, plan.jumped),
+            (at(10_497), Step::UNITY, true)
+        );
         // Back as well: what was played already is behind the receiver's
         // playhead and is not played again.
         let plan = player.cycle(at(9_000), at(9_256), FRAMES, DURATION);
@@ -407,7 +420,7 @@ mod tests {
         player.cycle(at(10_000), at(10_256), FRAMES, DURATION);
         let plan = player.cycle(at(10_256 + 240), at(10_512 + 240), FRAMES, DURATION);
         assert_eq!((plan.start, plan.jumped), (at(10_256), false));
-        assert!(plan.step > 0);
+        assert!(plan.step.offset() > 0);
     }
 
     #[test]
@@ -437,7 +450,7 @@ mod tests {
         assert!(
             plans
                 .iter()
-                .all(|plan| (plan.step - limit).abs() <= 1 << 20)
+                .all(|plan| (plan.step.offset() - limit).abs() <= 1 << 20)
         );
     }
 
@@ -458,14 +471,14 @@ mod tests {
             let mut player = player();
             let plan = player.cycle(at(1_000), at(1_000 + scheduled), frames, DURATION);
             assert!(
-                plan.step.abs() <= limit,
+                plan.step.offset().abs() <= limit,
                 "{frames} frames over {scheduled}: step {}",
-                plan.step
+                plan.step.offset()
             );
             // The position moves by the frames at that pace and no further.
             assert_eq!(
                 player.position(),
-                Some(advance(plan.start, frames, plan.step))
+                Some(advance(plan.start, frames, plan.step.offset()))
             );
         }
     }

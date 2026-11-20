@@ -474,7 +474,7 @@ impl Scene {
             // What a shell does with a plan: it needs the frames around the
             // positions it reads, drops what a jump leaves behind, and takes
             // the rest in runs.
-            let end = advance(plan.start, plan.frames, plan.step);
+            let end = advance(plan.start, plan.frames, plan.step.offset());
             if plan.jumped {
                 listener
                     .core

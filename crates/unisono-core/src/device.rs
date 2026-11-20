@@ -223,27 +223,13 @@ impl<const W: usize> Device<W> {
         }
     }
 
-    /// The reading of the host's clock that belongs to `position`, by the
-    /// line that fits the kept reports best. With one report, or reports of
-    /// one position only, the line has the nominal rate. `None` before the
-    /// first report.
-    #[must_use]
-    pub fn when(&self, position: u64) -> Option<i64> {
-        let Some(newest) = self.newest() else {
-            return None;
-        };
-        let sums = self.sums(newest);
-        if sums.count <= 0 {
-            return None;
-        }
+    /// Evaluates the fitted line at `position` from precomputed `sums` and
+    /// `spread`.
+    fn eval_at(&self, newest: Reading, sums: Sums, spread: i128, position: u64) -> i64 {
         let ahead = within((position as i128).wrapping_sub(newest.position as i128));
         // With at most 2^12 reports and each value within 2^28: sums of x and
         // y are at most 2^40, sums of products at most 2^68, spread and tilt
         // at most 2^81, and the numerator below 2^123. No operation wraps.
-        let spread = sums
-            .count
-            .wrapping_mul(sums.xx)
-            .wrapping_sub(sums.x.wrapping_mul(sums.x));
         let beyond = if spread > 0 {
             let tilt = sums
                 .count
@@ -259,11 +245,72 @@ impl<const W: usize> Device<W> {
         } else {
             div_floor_wide(sums.y, sums.count)
         };
-        Some(saturate(
+        saturate(
             (newest.time as i128)
                 .wrapping_add(self.nominal(ahead))
                 .wrapping_add(beyond),
-        ))
+        )
+    }
+
+    /// The reading of the host's clock that belongs to `position`, by the
+    /// line that fits the kept reports best. With one report, or reports of
+    /// one position only, the line has the nominal rate. `None` before the
+    /// first report.
+    #[must_use]
+    pub fn when(&self, position: u64) -> Option<i64> {
+        let Some(newest) = self.newest() else {
+            return None;
+        };
+        let sums = self.sums(newest);
+        if sums.count <= 0 {
+            return None;
+        }
+        let spread = sums
+            .count
+            .wrapping_mul(sums.xx)
+            .wrapping_sub(sums.x.wrapping_mul(sums.x));
+        Some(self.eval_at(newest, sums, spread, position))
+    }
+
+    /// The fitted start time in nanoseconds and cycle duration in units of
+    /// 2^-16 nanosecond for a cycle of `frames` frames beginning at
+    /// `position`, computed in a single pass over the kept reports.
+    ///
+    /// Returning the cycle duration with 16 fractional bits lets a caller
+    /// carry the sub-nanosecond remainder from one cycle to the next so that
+    /// whole-nanosecond cycle lengths are unbiased on average. Returns `None`
+    /// before the first report.
+    #[must_use]
+    pub fn when_cycle(&self, position: u64, frames: u32) -> Option<(i64, i64)> {
+        let Some(newest) = self.newest() else {
+            return None;
+        };
+        let sums = self.sums(newest);
+        if sums.count <= 0 {
+            return None;
+        }
+        let spread = sums
+            .count
+            .wrapping_mul(sums.xx)
+            .wrapping_sub(sums.x.wrapping_mul(sums.x));
+        let start = self.eval_at(newest, sums, spread, position);
+        let span = within(frames as i128);
+        // `span <= 2^28`, so `span_q16 <= 2^44`: `span_q16 * BILLION < 2^74`
+        // and `|span_q16 * tilt| <= 2^44 * 2^81 = 2^125`, so no operation
+        // wraps in `i128`.
+        let span_q16 = span.wrapping_shl(16);
+        let nominal_q16 = div_floor(span_q16.wrapping_mul(BILLION), self.rate as i64);
+        let beyond_q16 = if spread > 0 {
+            let tilt = sums
+                .count
+                .wrapping_mul(sums.xy)
+                .wrapping_sub(sums.x.wrapping_mul(sums.y));
+            div_floor_wide(span_q16.wrapping_mul(tilt), spread)
+        } else {
+            0
+        };
+        let duration_q16 = saturate(nominal_q16.wrapping_add(beyond_q16));
+        Some((start, duration_q16))
     }
 }
 
@@ -453,5 +500,35 @@ mod tests {
         device.observe(6, 6);
         assert!(device.kept() <= 4);
         assert!(device.when(7).is_some());
+        assert!(device.when_cycle(7, u32::MAX).is_some());
+    }
+
+    #[test]
+    fn when_cycle_matches_when_and_tracks_subnanosecond_duration() {
+        // 50,000 frames/s nominally, running 1,000 ppm fast: 250 frames take
+        // 4,995,004.995005 ns.
+        let mut device = Device::<64>::new(50_000);
+        assert_eq!(device.when_cycle(0, 250), None);
+        let at =
+            |position: u64| i64::try_from(u128::from(position) * 20_000_000 / 1_001).unwrap_or(0);
+        device.observe(0, at(0));
+        assert_eq!(device.when_cycle(0, 250), Some((0, 5_000_000 << 16)));
+        let mut carried = 0i128;
+        let mut sum = 0i64;
+        for cycle in 1..=1_000u64 {
+            let position = cycle * 250;
+            device.observe(position, at(position));
+            let (start, duration_q16) = device.when_cycle(position, 250).expect("a line");
+            assert_eq!(Some(start), device.when(position));
+            let exact = i128::from(duration_q16) + carried;
+            carried = exact & 0xffff;
+            let duration = i64::try_from(exact >> 16).unwrap_or(i64::MAX);
+            assert!(
+                (duration - 4_995_005).abs() <= 1,
+                "cycle {cycle}: {duration}"
+            );
+            sum += duration;
+        }
+        assert!((sum - 4_995_004_995).abs() <= 40, "sum {sum}");
     }
 }

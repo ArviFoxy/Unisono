@@ -481,3 +481,222 @@ fn the_size_of_the_pump_s_blocks_does_not_change_the_output() {
     let same = small.recorded() == large.recorded();
     assert!(same, "the outputs differ");
 }
+
+fn tone_header(index: u64, rate: u32) -> unisono_core::packet::Audio {
+    let capture = i64::try_from(index).unwrap_or(0) * 20_833;
+    unisono_core::packet::Audio {
+        stream: 1,
+        timeline: 1,
+        index,
+        frames: 240,
+        rate,
+        channels: 2,
+        format: unisono_core::packet::Format::Signed24,
+        flags: 0,
+        protection: 0,
+        window: 2400,
+        span: 2000,
+        capture,
+        drift: 0,
+        level: LEVEL,
+        level_slope: 0,
+        stamped_index: 0,
+        stamped_departure: 0,
+        clock: 1,
+    }
+}
+
+/// Stopping abruptly into idle cycles (`plan.frames == 0`) fades out smoothly
+/// through the concealment instead of hard-cutting to zero, reaches exact
+/// silence, and resumes from silence without any ghost continuation of the
+/// previous signal.
+#[test]
+fn idle_cycles_fade_out_without_click_and_resume_cleanly() {
+    use unisono_core::packet::Format;
+    use unisono_core::player::{Plan, Regulation};
+    use unisono_core::receiver::{Receiver, Settings as ReceiverSettings};
+    use unisono_dsp::format::to_signed24;
+    use unisono_dsp::{Position, Step};
+    use unisono_runtime::pump::Pump;
+    use unisono_runtime::store::Store;
+
+    let rate = 48_000u32;
+    let params = Parameters::for_rate(rate);
+    let mut receiver = Receiver::<64, 64, 8>::new(ReceiverSettings {
+        stream: 1,
+        identity: 1,
+        silence: 1_000_000_000,
+        limit: 200_000,
+        regulation: Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 240,
+        },
+    });
+    let mut store = Store::for_stretch(64, CHANNELS);
+    let mut pump = Pump::new(Filter::for_rate(rate), CHANNELS, params, 256);
+
+    // Feed 3,600 frames of 1 kHz / 7 kHz tones so the pump is well past fade-in.
+    let mut payload = vec![0u8; 240 * CHANNELS * 3];
+    let mut samples = vec![0.0f32; 240 * CHANNELS];
+    for p in 0..15u64 {
+        let index = p * 240;
+        for f in 0..240usize {
+            samples[f * 2] = tones(index + f as u64, 0);
+            samples[f * 2 + 1] = tones(index + f as u64, 1);
+        }
+        to_signed24(&samples, &mut payload);
+        let header = tone_header(index, rate);
+        let heard = receiver.packet(&header, header.capture);
+        assert!(!heard.ignored);
+        store.write_packet(index, Format::Signed24, &payload, |i| receiver.covers(i));
+    }
+
+    // Play 8 active cycles (2,048 frames), ending well into the 1 kHz wave.
+    let mut last_active = vec![0.0f32; 256 * CHANNELS];
+    for c in 0..8u64 {
+        let plan = Plan {
+            frames: 256,
+            start: Position::at_frame(c * 256),
+            step: Step::UNITY,
+            jumped: c == 0,
+        };
+        pump.play(&mut receiver, &store, &plan, &mut last_active);
+    }
+    let last_ch0 = last_active[255 * CHANNELS];
+    assert!(
+        last_ch0.abs() > 0.1,
+        "expected active tone at stop boundary, got {last_ch0}"
+    );
+
+    // Feed 10 idle cycles (~53 ms, longer than fade_out + filter taps).
+    let idle = Plan {
+        frames: 0,
+        start: Position::at_frame(0),
+        step: Step::UNITY,
+        jumped: false,
+    };
+    let mut idle_out = Vec::new();
+    let mut buf = vec![0.0f32; 256 * CHANNELS];
+    for _ in 0..10 {
+        let done = pump.play(&mut receiver, &store, &idle, &mut buf);
+        assert_eq!((done.played, done.silent), (0, 256));
+        idle_out.extend_from_slice(&buf);
+    }
+
+    // Transition across the stop boundary must be continuous (no hard cut
+    // to 0.0 and no phase-reversal jump). For a 1 kHz tone of amplitude 0.5
+    // at 48 kHz, max natural sample-to-sample step is 0.5 * 2*pi/48 ≈ 0.065.
+    let boundary_step = (idle_out[0] - last_ch0).abs();
+    assert!(
+        boundary_step < 0.08,
+        "click across stop boundary: last={last_ch0}, first_idle={}, step={boundary_step}",
+        idle_out[0]
+    );
+    assert!(
+        idle_out[..256 * CHANNELS].iter().any(|s| *s != 0.0),
+        "expected smooth fade-out in first idle cycle"
+    );
+    assert!(
+        idle_out[7 * 256 * CHANNELS..].iter().all(|s| *s == 0.0),
+        "expected exact silence after fade-out completes"
+    );
+
+    // Resuming on a zero-valued segment must stay silent (no ghost continuation
+    // from the tone played before the idle period).
+    let zero_payload = vec![0u8; 240 * CHANNELS * 3];
+    for p in 15..18u64 {
+        let index = p * 240;
+        let header = tone_header(index, rate);
+        receiver.packet(&header, header.capture);
+        store.write_packet(index, Format::Signed24, &zero_payload, |i| {
+            receiver.covers(i)
+        });
+    }
+    let resume = Plan {
+        frames: 256,
+        start: Position::at_frame(15 * 240 + 64),
+        step: Step::UNITY,
+        jumped: true,
+    };
+    pump.play(&mut receiver, &store, &resume, &mut buf);
+    let max_ghost = buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    assert!(
+        max_ghost < 1e-6,
+        "ghost continuation after idle silence: max={max_ghost}"
+    );
+}
+
+/// Exchanging reports and echoes through `ReceiverPlayback` measures the path
+/// delay without manual configuration, and the device line keeps a drifting
+/// device locked on schedule.
+#[test]
+fn report_and_echo_exchange_measures_path_delay_on_receiver_playback() {
+    let mut line = Line::new(48_000, 240, LEVEL, tones);
+    line.delay = 2_000_000;
+    line.skew = 30_000;
+    let mut listener = Listener::new(&settings(48_000, Parameters::for_rate(48_000)));
+    // Do NOT call `listener.path(...)`: let reports and echoes measure it.
+    assert_eq!(listener.receiver().delay(), 0);
+    let device = Device {
+        rate: 48_000,
+        channels: CHANNELS,
+        cycle: 256,
+        drift: 200_000,
+        start: line.offset + 777,
+        lead: 4_000_000,
+        hidden: 0,
+    };
+    let mut output = Output::new(device, 8 * 48_100 + 1_000);
+    let until = line.offset + 8_000_000_000;
+    // Send a report every 10th packet (every 50 ms = 20 Hz) and echo it back
+    // after the symmetric one-way path delay.
+    let mut next_report_packet = 10u64;
+    loop {
+        if line.under_way.is_none() {
+            let sent = line.send();
+            line.under_way = Some(sent);
+        }
+        let next_packet = line
+            .under_way
+            .as_ref()
+            .map_or(i64::MAX, |sent| sent.arrival);
+        let next_cycle = output.due();
+        if next_packet > until && next_cycle > until {
+            break;
+        }
+        if next_packet <= next_cycle {
+            let sent = line.under_way.take().expect("packet under way");
+            listener.packet(&sent.header, &sent.payload, sent.arrival);
+            if sent.number >= next_report_packet {
+                next_report_packet += 10;
+                if let Some(report) = listener.report() {
+                    let sender_now = line.captured((sent.number + 1) * u64::from(line.packet))
+                        + line.send
+                        + line.delay;
+                    let departure = line.receiver_clock(sender_now);
+                    listener.reported(report.sequence, departure);
+                    let arrival_at_sender = sender_now + line.delay;
+                    if let Some(echo) = line.sender.answer(&report, arrival_at_sender) {
+                        listener.echo(&echo);
+                    }
+                }
+            }
+        } else {
+            output.cycle(&mut listener);
+        }
+    }
+    let measured = listener.receiver().delay();
+    assert!(
+        (measured - line.delay).abs() <= 5,
+        "measured path {measured} vs expected {}",
+        line.delay
+    );
+    // `measure_path` yields the one-way delay in sender-clock nanoseconds,
+    // which differs from receiver-clock nanoseconds by `delay * skew` (60 ns).
+    let skew_residual = line.delay * line.skew / 1_000_000_000;
+    let error = largest_error(&line, &output, 6, skew_residual);
+    assert!(error < TONE_BOUND, "largest error {error}");
+    let raw_error = largest_error(&line, &output, 6, 0);
+    assert!(raw_error < 3e-3, "largest raw error {raw_error}");
+}

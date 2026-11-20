@@ -105,6 +105,24 @@ pub extern "C" fn realtime_device_when(device: &Device<64>, position: u64, time:
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn realtime_device_when_cycle(
+    device: &Device<64>,
+    position: u64,
+    frames: u32,
+    start: &mut i64,
+    duration_q16: &mut i64,
+) -> bool {
+    match device.when_cycle(position, frames) {
+        Some((s, d)) => {
+            *start = s;
+            *duration_q16 = d;
+            true
+        }
+        None => false,
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn realtime_sender_packet(sender: &mut Sender, frames: u16, capture: i64, drift: i32) -> Audio {
     sender.packet(frames, capture, drift)
 }

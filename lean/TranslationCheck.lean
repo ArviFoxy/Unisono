@@ -45,6 +45,12 @@ def triples : List Int → Option (List (Int × Int × Int))
   | a :: b :: c :: rest => (triples rest).map ((a, b, c) :: ·)
   | _ => none
 
+/-- Groups a flat list into quadruples; `none` if its length is not a multiple of four. -/
+def quads : List Int → Option (List (Int × Int × Int × Int))
+  | [] => some []
+  | a :: b :: c :: d :: rest => (quads rest).map ((a, b, c, d) :: ·)
+  | _ => none
+
 /-- A slice of bytes with the given values. -/
 def byteSlice (values : List Int) : Slice Std.U8 :=
   let bytes := values.map (unsigned .U8)
@@ -163,7 +169,7 @@ abbrev CheckedReceiver := receiver.Receiver 2#usize 4#usize 2#usize
 /-- A plan as numbers: its frames, the frame and fraction of its start, its
 step and whether it jumped. -/
 def planNumbers (plan : player.Plan) : List Int :=
-  [plan.frames.val, plan.start.frame.val, plan.start.fraction.val, plan.step.val,
+  [plan.frames.val, plan.start.frame.val, plan.start.fraction.val, plan.step.offset.val,
     if plan.jumped then 1 else 0]
 
 /-- Applies one cycle of six numbers to a regulator and collects the plan;
@@ -332,18 +338,23 @@ def runWriteEcho (stream receiver number arrival : Int) : Result (List Int) := d
     | none => 0
   pure (written :: out.2.val.map (·.val))
 
-/-- Runs reports, each a position, a time and a position to ask for, through
-the line of a device; see `device_cases` in the Rust program. -/
-def runDevice (rate : Int) (reports : List (Int × Int × Int)) : Result (List Int) := do
+/-- Runs reports, each a position, a time, a queried position and a cycle frame
+count, through the line of a device; see `device_cases` in the Rust program. -/
+def runDevice (rate : Int) (reports : List (Int × Int × Int × Int)) : Result (List Int) := do
   let start ← device.Device.new 4#usize (unsigned .U32 rate)
   let final ← reports.foldlM
-    (fun (state : device.Device 4#usize × List Int) (report : Int × Int × Int) => do
+    (fun (state : device.Device 4#usize × List Int) (report : Int × Int × Int × Int) => do
       let next ← device.Device.observe state.1 (unsigned .U64 report.1) (signed .I64 report.2.1)
-      let found ← device.Device.when next (unsigned .U64 report.2.2)
-      let numbers : List Int := match found with
+      let found ← device.Device.when next (unsigned .U64 report.2.2.1)
+      let cycle ← device.Device.when_cycle next (unsigned .U64 report.2.2.1)
+        (unsigned .U32 report.2.2.2)
+      let numbers1 : List Int := match found with
         | some time => [1, time.val]
         | none => [0, 0]
-      pure (next, state.2 ++ numbers))
+      let numbers2 : List Int := match cycle with
+        | some (begins, dur) => [1, begins.val, dur.val]
+        | none => [0, 0, 0]
+      pure (next, state.2 ++ numbers1 ++ numbers2))
     (start, [])
   pure final.2
 
@@ -410,11 +421,11 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       else .error "the number of cycles is not the stated one"
     | none => .error "cycles are not groups of six"
   | "device", rate :: count :: rest =>
-    match triples rest with
+    match quads rest with
     | some reports =>
       if reports.length = count then result (runDevice rate reports) id
       else .error "the number of reports is not the stated one"
-    | none => .error "reports are not triples"
+    | none => .error "reports are not quads"
   | "parse_report", bytes => result (runParseReport bytes) id
   | "parse_echo", bytes => result (runParseEcho bytes) id
   | "write_report", [stream, timeline, receiver, number, length] =>

@@ -261,6 +261,13 @@ impl Concealment {
         &self.fade_in
     }
 
+    /// Whether the concealment is currently in a gap whose continuation has
+    /// faded all the way to silence.
+    #[must_use]
+    pub fn is_silent(&self) -> bool {
+        self.in_gap && self.gain() == 0.0
+    }
+
     /// Takes frames that have arrived. They are left as they are, except
     /// for the first `fade_in` frames after a gap, which are faded in and
     /// mixed with what is left of the continuation.

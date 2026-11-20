@@ -33,7 +33,7 @@ use crate::packet::{Audio, Echo, FLAG_STAMPED, Report};
 use crate::player::{Plan, Player, Regulation};
 use crate::presence::{Marked, Presence};
 use crate::relation::{Estimator, Line, Sample};
-use crate::timing::{Position, Schedule, due, sender_time};
+use crate::timing::{Position, Schedule, Step, due, sender_time};
 
 /// The number of nanoseconds in a millisecond.
 const MILLISECOND: i64 = 1_000_000;
@@ -528,7 +528,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
                 frame: 0,
                 fraction: 0,
             },
-            step: 0,
+            step: Step::UNITY,
             jumped: false,
         };
         if !self.following {

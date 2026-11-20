@@ -618,6 +618,196 @@ def beyondZ (rate : Std.U32) (newest : device.Reading) (rs : List device.Reading
   else
     sy / n
 
+/-- Nominal cycle duration in units of `2^-16` nanosecond for `span` frames,
+or zero when `rate = 0`. -/
+def nominalQ16Z (rate : Std.U32) (span : ℤ) : ℤ :=
+  if rate.val = 0 then 0 else (span * 2 ^ 16 * 10 ^ 9) / rate.val
+
+/-- Residual cycle duration in units of `2^-16` nanosecond from the fitted
+slope over `rs`, or zero when all reports share one position. -/
+def beyondSlopeQ16Z (rate : Std.U32) (newest : device.Reading) (rs : List device.Reading)
+    (span : ℤ) : ℤ :=
+  let n : ℤ := rs.length
+  let sx := sumX newest rs
+  let sy := sumY rate newest rs
+  let sxx := sumXX newest rs
+  let sxy := sumXY rate newest rs
+  let spread := n * sxx - sx * sx
+  if 0 < spread then
+    let tilt := n * sxy - sx * sy
+    (span * 2 ^ 16 * tilt) / spread
+  else
+    0
+
+/-- Exact integer specification of `Device::eval_at` from precomputed sums and
+spread. -/
+theorem eval_at_spec (d : device.Device W) (newest : device.Reading)
+    (s : device.Sums) (spread : Std.I128) (position : Std.U64)
+    (hc : s.count.val = ((keptList d).length : ℤ))
+    (hcnt_pos : (0 : ℤ) < s.count.val)
+    (hle : (keptList d).length ≤ 4096)
+    (hx : s.x.val = sumX newest (keptList d))
+    (hy : s.y.val = sumY d.rate newest (keptList d))
+    (hxx : s.xx.val = sumXX newest (keptList d))
+    (hxy : s.xy.val = sumXY d.rate newest (keptList d))
+    (hspv : spread.val = s.count.val * s.xx.val - s.x.val * s.x.val) :
+    device.Device.eval_at d newest s spread position ⦃ t =>
+      let ahead := clampReach ((position.val : ℤ) - (newest.position.val : ℤ))
+      t.val = Fixed.clamp64
+        (newest.time.val + nominalZ d.rate ahead + beyondZ d.rate newest (keptList d) ahead) ⦄ := by
+  unfold device.Device.eval_at
+  obtain ⟨hx1, hx2, hy1, hy2, hxx1, hxx2, hxy1, hxy2⟩ :=
+    sums_bounds_cap d.rate newest (keptList d) hle
+  have hR : reachZ = 2 ^ 28 := rfl
+  have hN : (s.count.val : ℤ) = ((keptList d).length : ℤ) := hc
+  have hcnt_b : -(4096 : ℤ) ≤ s.count.val ∧ s.count.val ≤ 4096 := by omega
+  have hsx_b : -(4096 * reachZ) ≤ s.x.val ∧ s.x.val ≤ 4096 * reachZ := by
+    rw [hx]; exact ⟨hx1, hx2⟩
+  have hsy_b : -(4096 * reachZ) ≤ s.y.val ∧ s.y.val ≤ 4096 * reachZ := by
+    rw [hy]; exact ⟨hy1, hy2⟩
+  have hsxx_b : -(4096 * reachZ ^ 2) ≤ s.xx.val ∧ s.xx.val ≤ 4096 * reachZ ^ 2 := by
+    rw [hxx]; exact ⟨hxx1, hxx2⟩
+  have hsxy_b : -(4096 * reachZ ^ 2) ≤ s.xy.val ∧ s.xy.val ≤ 4096 * reachZ ^ 2 := by
+    rw [hxy]; exact ⟨hxy1, hxy2⟩
+  have hcx_b := prod_bounds hcnt_b hsxx_b
+  have hsx2_b := prod_bounds hsx_b hsx_b
+  have hsp_b : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ s.count.val * s.xx.val - s.x.val * s.x.val
+      ∧ s.count.val * s.xx.val - s.x.val * s.x.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
+    rw [hR] at hcx_b hsx2_b ⊢; omega
+  step as ⟨i, hi⟩
+  step as ⟨i1, hi1⟩
+  have hiv : i.val = position.val := by rw [hi, U64.hcast_I128_val]
+  have hi1v : i1.val = newest.position.val := by rw [hi1, U64.hcast_I128_val]
+  step as ⟨i2, hi2⟩
+  have hi2v : i2.val = (position.val : ℤ) - (newest.position.val : ℤ) := by
+    rw [hi2, I128.wrapping_sub_val _ _ (by rw [hiv, hi1v]; scalar_tac), hiv, hi1v]
+  step as ⟨ahead, haheadv, halo, hahi⟩
+  have haeq : ahead.val = clampReach ((position.val : ℤ) - (newest.position.val : ℤ)) := by
+    rw [haheadv, hi2v]
+  have hbeyond_spec :
+      (if spread > 0#i128 then do
+          let i3 ← lift (core.num.I128.wrapping_mul s.count s.xy)
+          let i4 ← lift (core.num.I128.wrapping_mul s.x s.y)
+          let tilt ← lift (core.num.I128.wrapping_sub i3 i4)
+          let i5 ← lift (core.num.I128.wrapping_mul s.count ahead)
+          let lever ← lift (core.num.I128.wrapping_sub i5 s.x)
+          let i6 ← lift (core.num.I128.wrapping_mul s.y spread)
+          let i7 ← lift (core.num.I128.wrapping_mul tilt lever)
+          let i8 ← lift (core.num.I128.wrapping_add i6 i7)
+          let i9 ← lift (core.num.I128.wrapping_mul s.count spread)
+          fixed.div_floor_wide i8 i9
+        else fixed.div_floor_wide s.y s.count)
+      ⦃ beyond =>
+        beyond.val = beyondZ d.rate newest (keptList d) ahead.val
+        ∧ -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 ⦄ := by
+    split
+    · rename_i hsp_gt
+      have hsp_pos : 0 < spread.val := by scalar_tac
+      step as ⟨i3, hi3⟩
+      step as ⟨i4, hi4⟩
+      step as ⟨tilt, htilt⟩
+      step as ⟨i5, hi5⟩
+      step as ⟨lever, hlever⟩
+      step as ⟨i6, hi6⟩
+      step as ⟨i7, hi7⟩
+      step as ⟨i8, hi8⟩
+      step as ⟨i9, hi9⟩
+      have hcxy_b := prod_bounds hcnt_b hsxy_b
+      have hsxsy_b := prod_bounds hsx_b hsy_b
+      have hi3v : i3.val = s.count.val * s.xy.val := by
+        rw [hi3, I128.wrapping_mul_val _ _ (by rw [hR] at hcxy_b; omega)]
+      have hi4v : i4.val = s.x.val * s.y.val := by
+        rw [hi4, I128.wrapping_mul_val _ _ (by rw [hR] at hsxsy_b; omega)]
+      have htilt_b : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ s.count.val * s.xy.val - s.x.val * s.y.val
+          ∧ s.count.val * s.xy.val - s.x.val * s.y.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
+        rw [hR] at hcxy_b hsxsy_b ⊢; omega
+      have htiltv : tilt.val = s.count.val * s.xy.val - s.x.val * s.y.val := by
+        rw [htilt, I128.wrapping_sub_val _ _ (by rw [hi3v, hi4v]; rw [hR] at htilt_b; omega),
+          hi3v, hi4v]
+      have hca_b := prod_bounds hcnt_b ⟨halo, hahi⟩
+      have hi5v : i5.val = s.count.val * ahead.val := by
+        rw [hi5, I128.wrapping_mul_val _ _ (by rw [hR] at hca_b; omega)]
+      have hlever_b : -(2 * 4096 * reachZ) ≤ s.count.val * ahead.val - s.x.val
+          ∧ s.count.val * ahead.val - s.x.val ≤ 2 * 4096 * reachZ := by
+        rw [hR] at hca_b hsx_b ⊢; omega
+      have hleverv : lever.val = s.count.val * ahead.val - s.x.val := by
+        rw [hlever, I128.wrapping_sub_val _ _ (by rw [hi5v]; rw [hR] at hlever_b; omega), hi5v]
+      have hsp_abs : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ spread.val
+          ∧ spread.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
+        rw [hspv]; exact hsp_b
+      have hi6_b := prod_bounds hsy_b hsp_abs
+      have hi6v : i6.val = s.y.val * spread.val := by
+        rw [hi6, I128.wrapping_mul_val _ _ (by rw [hR] at hi6_b; omega)]
+      have htilt_b' : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ tilt.val
+          ∧ tilt.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by rw [htiltv]; exact htilt_b
+      have hlever_b' : -(2 * 4096 * reachZ) ≤ lever.val
+          ∧ lever.val ≤ 2 * 4096 * reachZ := by rw [hleverv]; exact hlever_b
+      have hi7_b := prod_bounds htilt_b' hlever_b'
+      have hi7v : i7.val = tilt.val * lever.val := by
+        rw [hi7, I128.wrapping_mul_val _ _ (by rw [hR] at hi7_b; omega)]
+      have hi8_b : -(6 * 4096 ^ 3 * reachZ ^ 3) ≤ i6.val + i7.val
+          ∧ i6.val + i7.val ≤ 6 * 4096 ^ 3 * reachZ ^ 3 := by
+        rw [hi6v, hi7v]; rw [hR] at hi6_b hi7_b ⊢; omega
+      have hi8v : i8.val = i6.val + i7.val := by
+        rw [hi8, I128.wrapping_add_val _ _ (by rw [hR] at hi8_b; omega)]
+      have hi9_b := prod_bounds hcnt_b hsp_abs
+      have hi9_pos : 0 < s.count.val * spread.val := mul_pos hcnt_pos hsp_pos
+      have hi9v : i9.val = s.count.val * spread.val := by
+        rw [hi9, I128.wrapping_mul_val _ _ (by rw [hR] at hi9_b; omega)]
+      step with Fixed.div_floor_wide_spec as ⟨beyond, hbd_pos, _⟩
+      have hbd_eq : beyond.val = i8.val / i9.val := hbd_pos (by rw [hi9v]; exact hi9_pos)
+      have hbd_bounds : -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 := by
+        rw [hbd_eq]
+        exact ediv_abs_bound (by rw [hi9v]; omega) (by norm_num)
+          (by rw [hi8v]; rw [hR] at hi8_b; omega)
+      have hbz : beyond.val = beyondZ d.rate newest (keptList d) ahead.val := by
+        unfold beyondZ
+        dsimp only
+        have hsp_eq' : ((keptList d).length : ℤ) * sumXX newest (keptList d)
+            - sumX newest (keptList d) * sumX newest (keptList d) = spread.val := by
+          rw [hspv, hN, hxx, hx]
+        rw [hsp_eq']
+        simp only [hsp_pos, ↓reduceIte]
+        rw [hbd_eq, hi8v, hi6v, hi7v, hi9v, htiltv, hleverv, hN, hx, hy, hxy]
+      exact ⟨hbz, hbd_bounds.1, hbd_bounds.2⟩
+    · rename_i hsp_le
+      have hsp_nonpos : spread.val ≤ 0 := by scalar_tac
+      step with Fixed.div_floor_wide_spec as ⟨beyond, hbd_pos, _⟩
+      have hbd_eq : beyond.val = s.y.val / s.count.val := hbd_pos hcnt_pos
+      have hbd_bounds : -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 := by
+        rw [hbd_eq]
+        exact ediv_abs_bound (by omega) (by norm_num) (by rw [hR] at hsy_b; omega)
+      have hbz : beyond.val = beyondZ d.rate newest (keptList d) ahead.val := by
+        unfold beyondZ
+        dsimp only
+        have hsp_eq' : ((keptList d).length : ℤ) * sumXX newest (keptList d)
+            - sumX newest (keptList d) * sumX newest (keptList d) = spread.val := by
+          rw [hspv, hN, hxx, hx]
+        rw [hsp_eq']
+        have hnot : ¬ (0 < spread.val) := by omega
+        simp only [hnot, ↓reduceIte]
+        rw [hbd_eq, hN, hy]
+      exact ⟨hbz, hbd_bounds.1, hbd_bounds.2⟩
+  apply WP.spec_bind hbeyond_spec
+  intro beyond ⟨hbz, hbdlo, hbdhi⟩
+  step as ⟨i3, hi3⟩
+  have hi3v : i3.val = newest.time.val := by rw [hi3, I64.cast_I128_val]
+  step with nominal_spec d ahead ⟨halo, hahi⟩ as ⟨i4, hi4v, hi4lo, hi4hi⟩
+  step as ⟨i5, hi5⟩
+  have hi5v : i5.val = newest.time.val + nominalZ d.rate ahead.val := by
+    rw [hi5, I128.wrapping_add_val _ _ (by rw [hi3v, hR] at *; scalar_tac), hi3v, hi4v]
+  step as ⟨i6, hi6⟩
+  have hi6v : i6.val = newest.time.val + nominalZ d.rate ahead.val + beyond.val := by
+    rw [hi6, I128.wrapping_add_val _ _ (by
+      rw [hi5v]
+      have hnt := newest.time.hBounds
+      simp at hnt
+      have hnb := nominalZ_bounds d.rate ahead.val ⟨halo, hahi⟩
+      rw [hR] at hnb
+      omega), hi5v]
+  step with Fixed.saturate_spec as ⟨t, ht⟩
+  rw [ht, hi6v, hbz, haeq]
+
 /-- Exact integer specification of `Device::when`: for any window size `W`,
 any device state, and any queried position, no intermediate 128-bit arithmetic
 wraps, and when reports are held the returned timestamp equals
@@ -648,7 +838,72 @@ theorem when_spec (d : device.Device W) (position : Std.U64) :
     have hkl_pos : 0 < (keptList d).length := by
       rw [keptList_length]; omega
     have hcnt_pos : (0 : ℤ) < s.count.val := by omega
-    have hcnt_le : s.count.val ≤ 4096 := by omega
+    split
+    · rename_i hle0
+      have : s.count.val ≤ 0 := by scalar_tac
+      omega
+    · obtain ⟨hx1, hx2, _, _, hxx1, hxx2, _, _⟩ :=
+        sums_bounds_cap d.rate newest (keptList d) hle
+      have hR : reachZ = 2 ^ 28 := rfl
+      have hcnt_b : -(4096 : ℤ) ≤ s.count.val ∧ s.count.val ≤ 4096 := by omega
+      have hsx_b : -(4096 * reachZ) ≤ s.x.val ∧ s.x.val ≤ 4096 * reachZ := by
+        rw [hx]; exact ⟨hx1, hx2⟩
+      have hsxx_b : -(4096 * reachZ ^ 2) ≤ s.xx.val ∧ s.xx.val ≤ 4096 * reachZ ^ 2 := by
+        rw [hxx]; exact ⟨hxx1, hxx2⟩
+      step as ⟨i, hi⟩
+      step as ⟨i1, hi1⟩
+      step as ⟨spread, hspread⟩
+      have hcx_b := prod_bounds hcnt_b hsxx_b
+      have hsx2_b := prod_bounds hsx_b hsx_b
+      have hi_v : i.val = s.count.val * s.xx.val := by
+        rw [hi, I128.wrapping_mul_val _ _ (by rw [hR] at hcx_b; omega)]
+      have hi1_v : i1.val = s.x.val * s.x.val := by
+        rw [hi1, I128.wrapping_mul_val _ _ (by rw [hR] at hsx2_b; omega)]
+      have hsp_b : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ s.count.val * s.xx.val - s.x.val * s.x.val
+          ∧ s.count.val * s.xx.val - s.x.val * s.x.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
+        rw [hR] at hcx_b hsx2_b ⊢; omega
+      have hspv : spread.val = s.count.val * s.xx.val - s.x.val * s.x.val := by
+        rw [hspread, I128.wrapping_sub_val _ _ (by rw [hi_v, hi1_v]; rw [hR] at hsp_b; omega),
+          hi_v, hi1_v]
+      step with eval_at_spec d newest s spread position hc hcnt_pos hle hx hy hxx hxy hspv as ⟨t, ht⟩
+      simp only [← ho]
+      exact ⟨t, rfl, ht⟩
+
+/-- Exact integer specification of `Device::when_cycle`: for any window size
+`W`, any device state, any queried position, and any cycle frame count, no
+intermediate 128-bit arithmetic wraps, the returned start time matches
+`Device::when`, and the returned sub-nanosecond cycle duration equals
+`clamp64 (nominalQ16Z + beyondSlopeQ16Z)`. -/
+theorem when_cycle_spec (d : device.Device W) (position : Std.U64) (frames : Std.U32) :
+    device.Device.when_cycle d position frames ⦃ out =>
+      match newestReading d with
+      | none => out = none
+      | some newest =>
+          ∃ start dur, out = some (start, dur)
+            ∧ let ahead := clampReach ((position.val : ℤ) - (newest.position.val : ℤ))
+              let span := clampReach (frames.val : ℤ)
+              start.val = Fixed.clamp64
+                (newest.time.val + nominalZ d.rate ahead
+                  + beyondZ d.rate newest (keptList d) ahead)
+              ∧ dur.val = Fixed.clamp64
+                (nominalQ16Z d.rate span + beyondSlopeQ16Z d.rate newest (keptList d) span) ⦄ := by
+  unfold device.Device.when_cycle
+  step with newest_spec d as ⟨o, ho, hnone⟩
+  cases o with
+  | none =>
+    simp [ho.symm]
+  | some newest =>
+    simp only
+    have hne : ¬ (d.len.val = 0 ∨ W.val = 0) := by
+      intro hc
+      have := hnone.mpr hc
+      cases this
+    have hlen_pos : 0 < d.len.val := by omega
+    have hW_pos : 0 < W.val := by omega
+    step with sums_spec d newest as ⟨s, hc, hx, hy, hxx, hxy, hle⟩
+    have hkl_pos : 0 < (keptList d).length := by
+      rw [keptList_length]; omega
+    have hcnt_pos : (0 : ℤ) < s.count.val := by omega
     split
     · rename_i hle0
       have : s.count.val ≤ 0 := by scalar_tac
@@ -668,45 +923,63 @@ theorem when_spec (d : device.Device W) (position : Std.U64) :
         rw [hxy]; exact ⟨hxy1, hxy2⟩
       step as ⟨i, hi⟩
       step as ⟨i1, hi1⟩
-      have hiv : i.val = position.val := by rw [hi, U64.hcast_I128_val]
-      have hi1v : i1.val = newest.position.val := by rw [hi1, U64.hcast_I128_val]
-      step as ⟨i2, hi2⟩
-      have hi2v : i2.val = (position.val : ℤ) - (newest.position.val : ℤ) := by
-        rw [hi2, I128.wrapping_sub_val _ _ (by rw [hiv, hi1v]; scalar_tac), hiv, hi1v]
-      step as ⟨ahead, haheadv, halo, hahi⟩
-      have haeq : ahead.val = clampReach ((position.val : ℤ) - (newest.position.val : ℤ)) := by
-        rw [haheadv, hi2v]
-      step as ⟨i3, hi3⟩
-      step as ⟨i4, hi4⟩
       step as ⟨spread, hspread⟩
       have hcx_b := prod_bounds hcnt_b hsxx_b
       have hsx2_b := prod_bounds hsx_b hsx_b
-      have hi3v : i3.val = s.count.val * s.xx.val := by
-        rw [hi3, I128.wrapping_mul_val _ _ (by rw [hR] at hcx_b; omega)]
-      have hi4v : i4.val = s.x.val * s.x.val := by
-        rw [hi4, I128.wrapping_mul_val _ _ (by rw [hR] at hsx2_b; omega)]
+      have hi_v : i.val = s.count.val * s.xx.val := by
+        rw [hi, I128.wrapping_mul_val _ _ (by rw [hR] at hcx_b; omega)]
+      have hi1_v : i1.val = s.x.val * s.x.val := by
+        rw [hi1, I128.wrapping_mul_val _ _ (by rw [hR] at hsx2_b; omega)]
       have hsp_b : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ s.count.val * s.xx.val - s.x.val * s.x.val
           ∧ s.count.val * s.xx.val - s.x.val * s.x.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
         rw [hR] at hcx_b hsx2_b ⊢; omega
       have hspv : spread.val = s.count.val * s.xx.val - s.x.val * s.x.val := by
-        rw [hspread, I128.wrapping_sub_val _ _ (by rw [hi3v, hi4v]; rw [hR] at hsp_b; omega),
-          hi3v, hi4v]
-      have hbeyond_spec :
+        rw [hspread, I128.wrapping_sub_val _ _ (by rw [hi_v, hi1_v]; rw [hR] at hsp_b; omega),
+          hi_v, hi1_v]
+      step with eval_at_spec d newest s spread position hc hcnt_pos hle hx hy hxx hxy hspv as ⟨start, hstart⟩
+      step as ⟨i2, hi2⟩
+      have hi2v : i2.val = (frames.val : ℤ) := by rw [hi2, U32.hcast_I128_val]
+      step as ⟨span, hspan_eq, hspan_lo, hspan_hi⟩
+      have hspanv : span.val = clampReach (frames.val : ℤ) := by rw [hspan_eq, hi2v]
+      step as ⟨span_q16, hsq⟩
+      have hsq_v : span_q16.val = span.val * 2 ^ 16 := by
+        have h16 : (16#u32).val = 16 := rfl
+        rw [hsq, I128.wrapping_shl_val span 16#u32 (by rw [h16]; omega)
+          (by rw [h16]; rw [hR] at hspan_lo hspan_hi; omega), h16]
+      have hsq_b : -(reachZ * 2 ^ 16) ≤ span_q16.val ∧ span_q16.val ≤ reachZ * 2 ^ 16 := by
+        rw [hsq_v, hR] at *; omega
+      have hb : device.BILLION.val = 10 ^ 9 := by simp [device.BILLION]
+      step as ⟨i3, hi3⟩
+      have hi3v : i3.val = span.val * 2 ^ 16 * 10 ^ 9 := by
+        rw [hi3, I128.wrapping_mul_val _ _ (by rw [hsq_v, hb, hR] at *; omega), hsq_v, hb]
+      step as ⟨i4, hi4⟩
+      have hi4v : i4.val = (d.rate.val : ℤ) := by rw [hi4, U32.hcast_I64_val]
+      step with Fixed.div_floor_spec i3 i4 as ⟨nominal_q16, hnq_pos, hnq_zero⟩
+      have hnq_eq : nominal_q16.val = nominalQ16Z d.rate span.val := by
+        unfold nominalQ16Z
+        by_cases hr0 : d.rate.val = 0
+        · simp only [hr0, ↓reduceIte]
+          exact hnq_zero (by omega)
+        · simp only [hr0, ↓reduceIte]
+          rw [hnq_pos (by omega), hi3v, hi4v]
+      have hnq_b : -(2 ^ 75 : ℤ) ≤ nominal_q16.val ∧ nominal_q16.val ≤ 2 ^ 75 := by
+        rw [hnq_eq]
+        unfold nominalQ16Z
+        by_cases hr0 : d.rate.val = 0
+        · simp [hr0]
+        · simp only [hr0, ↓reduceIte]
+          exact ediv_abs_bound (by omega) (by norm_num) (by rw [hR] at hspan_lo hspan_hi; omega)
+      have hbeyond_q16_spec :
           (if spread > 0#i128 then do
               let i5 ← lift (core.num.I128.wrapping_mul s.count s.xy)
               let i6 ← lift (core.num.I128.wrapping_mul s.x s.y)
               let tilt ← lift (core.num.I128.wrapping_sub i5 i6)
-              let i7 ← lift (core.num.I128.wrapping_mul s.count ahead)
-              let lever ← lift (core.num.I128.wrapping_sub i7 s.x)
-              let i8 ← lift (core.num.I128.wrapping_mul s.y spread)
-              let i9 ← lift (core.num.I128.wrapping_mul tilt lever)
-              let i10 ← lift (core.num.I128.wrapping_add i8 i9)
-              let i11 ← lift (core.num.I128.wrapping_mul s.count spread)
-              fixed.div_floor_wide i10 i11
-            else fixed.div_floor_wide s.y s.count)
-          ⦃ beyond =>
-            beyond.val = beyondZ d.rate newest (keptList d) ahead.val
-            ∧ -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 ⦄ := by
+              let i7 ← lift (core.num.I128.wrapping_mul span_q16 tilt)
+              fixed.div_floor_wide i7 spread
+            else ok 0#i128)
+          ⦃ bq =>
+            bq.val = beyondSlopeQ16Z d.rate newest (keptList d) span.val
+            ∧ -(2 ^ 126 : ℤ) ≤ bq.val ∧ bq.val ≤ 2 ^ 126 ⦄ := by
         split
         · rename_i hsp_gt
           have hsp_pos : 0 < spread.val := by scalar_tac
@@ -714,11 +987,6 @@ theorem when_spec (d : device.Device W) (position : Std.U64) :
           step as ⟨i6, hi6⟩
           step as ⟨tilt, htilt⟩
           step as ⟨i7, hi7⟩
-          step as ⟨lever, hlever⟩
-          step as ⟨i8, hi8⟩
-          step as ⟨i9, hi9⟩
-          step as ⟨i10, hi10⟩
-          step as ⟨i11, hi11⟩
           have hcxy_b := prod_bounds hcnt_b hsxy_b
           have hsxsy_b := prod_bounds hsx_b hsy_b
           have hi5v : i5.val = s.count.val * s.xy.val := by
@@ -731,90 +999,47 @@ theorem when_spec (d : device.Device W) (position : Std.U64) :
           have htiltv : tilt.val = s.count.val * s.xy.val - s.x.val * s.y.val := by
             rw [htilt, I128.wrapping_sub_val _ _ (by rw [hi5v, hi6v]; rw [hR] at htilt_b; omega),
               hi5v, hi6v]
-          have hca_b := prod_bounds hcnt_b ⟨halo, hahi⟩
-          have hi7v : i7.val = s.count.val * ahead.val := by
-            rw [hi7, I128.wrapping_mul_val _ _ (by rw [hR] at hca_b; omega)]
-          have hlever_b : -(2 * 4096 * reachZ) ≤ s.count.val * ahead.val - s.x.val
-              ∧ s.count.val * ahead.val - s.x.val ≤ 2 * 4096 * reachZ := by
-            rw [hR] at hca_b hsx_b ⊢; omega
-          have hleverv : lever.val = s.count.val * ahead.val - s.x.val := by
-            rw [hlever, I128.wrapping_sub_val _ _ (by rw [hi7v]; rw [hR] at hlever_b; omega), hi7v]
-          have hsp_abs : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ spread.val
-              ∧ spread.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by
-            rw [hspv]; exact hsp_b
-          have hi8_b := prod_bounds hsy_b hsp_abs
-          have hi8v : i8.val = s.y.val * spread.val := by
-            rw [hi8, I128.wrapping_mul_val _ _ (by rw [hR] at hi8_b; omega)]
           have htilt_b' : -(2 * 4096 * 4096 * reachZ ^ 2) ≤ tilt.val
               ∧ tilt.val ≤ 2 * 4096 * 4096 * reachZ ^ 2 := by rw [htiltv]; exact htilt_b
-          have hlever_b' : -(2 * 4096 * reachZ) ≤ lever.val
-              ∧ lever.val ≤ 2 * 4096 * reachZ := by rw [hleverv]; exact hlever_b
-          have hi9_b := prod_bounds htilt_b' hlever_b'
-          have hi9v : i9.val = tilt.val * lever.val := by
-            rw [hi9, I128.wrapping_mul_val _ _ (by rw [hR] at hi9_b; omega)]
-          have hi10_b : -(6 * 4096 ^ 3 * reachZ ^ 3) ≤ i8.val + i9.val
-              ∧ i8.val + i9.val ≤ 6 * 4096 ^ 3 * reachZ ^ 3 := by
-            rw [hi8v, hi9v]; rw [hR] at hi8_b hi9_b ⊢; omega
-          have hi10v : i10.val = i8.val + i9.val := by
-            rw [hi10, I128.wrapping_add_val _ _ (by rw [hR] at hi10_b; omega)]
-          have hi11_b := prod_bounds hcnt_b hsp_abs
-          have hi11_pos : 0 < s.count.val * spread.val := mul_pos hcnt_pos hsp_pos
-          have hi11v : i11.val = s.count.val * spread.val := by
-            rw [hi11, I128.wrapping_mul_val _ _ (by rw [hR] at hi11_b; omega)]
-          step with Fixed.div_floor_wide_spec as ⟨beyond, hbd_pos, _⟩
-          have hbd_eq : beyond.val = i10.val / i11.val := hbd_pos (by rw [hi11v]; exact hi11_pos)
-          have hbd_bounds : -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 := by
-            rw [hbd_eq]
-            exact ediv_abs_bound (by rw [hi11v]; omega) (by norm_num)
-              (by rw [hi10v]; rw [hR] at hi10_b; omega)
-          have hbz : beyond.val = beyondZ d.rate newest (keptList d) ahead.val := by
-            unfold beyondZ
+          have hi7_b := prod_bounds hsq_b htilt_b'
+          have hi7v : i7.val = span_q16.val * tilt.val := by
+            rw [hi7, I128.wrapping_mul_val _ _ (by rw [hR] at hi7_b; omega)]
+          step with Fixed.div_floor_wide_spec i7 spread as ⟨bq, hbq_pos, _⟩
+          have hbq_eq : bq.val = i7.val / spread.val := hbq_pos hsp_pos
+          have hbq_b : -(2 ^ 126 : ℤ) ≤ bq.val ∧ bq.val ≤ 2 ^ 126 := by
+            rw [hbq_eq]
+            exact ediv_abs_bound (by omega) (by norm_num) (by rw [hi7v]; rw [hR] at hi7_b; omega)
+          have hbq_z : bq.val = beyondSlopeQ16Z d.rate newest (keptList d) span.val := by
+            unfold beyondSlopeQ16Z
             dsimp only
             have hsp_eq' : ((keptList d).length : ℤ) * sumXX newest (keptList d)
                 - sumX newest (keptList d) * sumX newest (keptList d) = spread.val := by
               rw [hspv, hN, hxx, hx]
             rw [hsp_eq']
             simp only [hsp_pos, ↓reduceIte]
-            rw [hbd_eq, hi10v, hi8v, hi9v, hi11v, htiltv, hleverv, hN, hx, hy, hxy]
-          exact ⟨hbz, hbd_bounds.1, hbd_bounds.2⟩
+            rw [hbq_eq, hi7v, hsq_v, htiltv, hN, hx, hy, hxy]
+          exact ⟨hbq_z, hbq_b.1, hbq_b.2⟩
         · rename_i hsp_le
           have hsp_nonpos : spread.val ≤ 0 := by scalar_tac
-          step with Fixed.div_floor_wide_spec as ⟨beyond, hbd_pos, _⟩
-          have hbd_eq : beyond.val = s.y.val / s.count.val := hbd_pos hcnt_pos
-          have hbd_bounds : -2 ^ 124 ≤ beyond.val ∧ beyond.val ≤ 2 ^ 124 := by
-            rw [hbd_eq]
-            exact ediv_abs_bound (by omega) (by norm_num) (by rw [hR] at hsy_b; omega)
-          have hbz : beyond.val = beyondZ d.rate newest (keptList d) ahead.val := by
-            unfold beyondZ
-            dsimp only
-            have hsp_eq' : ((keptList d).length : ℤ) * sumXX newest (keptList d)
-                - sumX newest (keptList d) * sumX newest (keptList d) = spread.val := by
-              rw [hspv, hN, hxx, hx]
-            rw [hsp_eq']
-            have hnot : ¬ (0 < spread.val) := by omega
-            simp only [hnot, ↓reduceIte]
-            rw [hbd_eq, hN, hy]
-          exact ⟨hbz, hbd_bounds.1, hbd_bounds.2⟩
-      apply WP.spec_bind hbeyond_spec
-      intro beyond ⟨hbz, hbdlo, hbdhi⟩
+          rw [WP.spec_ok]
+          have h0 : (0#i128).val = 0 := by rfl
+          have hsp_eq' : ((keptList d).length : ℤ) * sumXX newest (keptList d)
+              - sumX newest (keptList d) * sumX newest (keptList d) = spread.val := by
+            rw [hspv, hN, hxx, hx]
+          have hnot : ¬ (0 < spread.val) := by omega
+          refine ⟨?_, by rw [h0]; norm_num, by rw [h0]; norm_num⟩
+          unfold beyondSlopeQ16Z
+          dsimp only
+          rw [hsp_eq']
+          simp only [hnot, ↓reduceIte, h0]
+      apply WP.spec_bind hbeyond_q16_spec
+      intro beyond_q16 ⟨hbqz, hbq_lo, hbq_hi⟩
       step as ⟨i5, hi5⟩
-      have hi5v : i5.val = newest.time.val := by rw [hi5, I64.cast_I128_val]
-      step with nominal_spec d ahead ⟨halo, hahi⟩ as ⟨i6, hi6v, hi6lo, hi6hi⟩
-      step as ⟨i7, hi7⟩
-      have hi7v : i7.val = newest.time.val + nominalZ d.rate ahead.val := by
-        rw [hi7, I128.wrapping_add_val _ _ (by rw [hi5v, hR] at *; scalar_tac), hi5v, hi6v]
-      step as ⟨i8, hi8⟩
-      have hi8v : i8.val = newest.time.val + nominalZ d.rate ahead.val + beyond.val := by
-        rw [hi8, I128.wrapping_add_val _ _ (by
-          rw [hi7v]
-          have hnt := newest.time.hBounds
-          simp at hnt
-          have hnb := nominalZ_bounds d.rate ahead.val ⟨halo, hahi⟩
-          rw [hR] at hnb
-          omega), hi7v]
-      step with Fixed.saturate_spec as ⟨i9, hi9⟩
+      have hi5v : i5.val = nominal_q16.val + beyond_q16.val := by
+        rw [hi5, I128.wrapping_add_val _ _ (by omega)]
+      step with Fixed.saturate_spec as ⟨dur, hdur⟩
       simp only [← ho]
-      exact ⟨i9, rfl, by rw [hi9, hi8v, hbz, haeq]⟩
+      exact ⟨start, dur, rfl, hstart, by rw [hdur, hi5v, hnq_eq, hbqz, hspanv]⟩
 
 /-- Asking when a position's frame leaves the device returns for every state
 and every position. -/
@@ -919,6 +1144,58 @@ theorem beyondZ_eq_floor_lineFit (rate : Std.U32) (newest : device.Reading)
     exact this
   field_simp [hnr, hspr]
   ring
+
+/-- For any kept report list with positive spread, `beyondSlopeQ16Z` is the
+exact integer floor of `2^16 * span` times the least-squares optimal residual
+slope from `Unisono.Model.LineFit`. -/
+theorem beyondSlopeQ16Z_eq_floor_lineFit (rate : Std.U32) (newest : device.Reading)
+    (rs : List device.Reading) (span : ℤ)
+    (hspread : 0 < (rs.length : ℤ) * sumXX newest rs - sumX newest rs * sumX newest rs) :
+    let s := Finset.range rs.length
+    let w : ℕ → ℝ := fun _ => 1
+    let t : ℕ → ℝ := fun i => (relX newest (rs.getD i ⟨0#u64, 0#i64⟩) : ℝ)
+    let z : ℕ → ℝ := fun i => (relY rate newest (rs.getD i ⟨0#u64, 0#i64⟩) : ℝ)
+    beyondSlopeQ16Z rate newest rs span
+      = ⌊((span * 2 ^ 16 : ℤ) : ℝ) * Unisono.Model.LineFit.slope s w t z 0⌋ := by
+  intro s w t z
+  have hm0 : Unisono.Model.LineFit.moment s w t 0 0 = (rs.length : ℝ) := by
+    simp [Unisono.Model.LineFit.moment, s, w]
+  have hm1 : Unisono.Model.LineFit.moment s w t 0 1 = (sumX newest rs : ℝ) := by
+    simp only [Unisono.Model.LineFit.moment, s, w, t, one_mul, sub_zero, pow_one]
+    exact finset_range_sum_eq_list_sum rs (relX newest)
+  have hm2 : Unisono.Model.LineFit.moment s w t 0 2 = (sumXX newest rs : ℝ) := by
+    simp only [Unisono.Model.LineFit.moment, s, w, t, one_mul, sub_zero, sq]
+    have h := finset_range_sum_eq_list_sum rs (fun r => relX newest r * relX newest r)
+    simpa [sumXX] using h
+  have hsz : Unisono.Model.LineFit.sumZ s w z = (sumY rate newest rs : ℝ) := by
+    simp only [Unisono.Model.LineFit.sumZ, s, w, z, one_mul]
+    exact finset_range_sum_eq_list_sum rs (relY rate newest)
+  have hstz : Unisono.Model.LineFit.sumTZ s w t z 0 = (sumXY rate newest rs : ℝ) := by
+    simp only [Unisono.Model.LineFit.sumTZ, s, w, t, z, one_mul, sub_zero]
+    have h := finset_range_sum_eq_list_sum rs (fun r => relX newest r * relY rate newest r)
+    simpa [sumXY] using h
+  have hdet : Unisono.Model.LineFit.det s w t 0
+      = (((rs.length : ℤ) * sumXX newest rs - sumX newest rs * sumX newest rs : ℤ) : ℝ) := by
+    unfold Unisono.Model.LineFit.det
+    rw [hm0, hm1, hm2]
+    push_cast
+    ring
+  have hsp_pos_r : (0 : ℝ) < (((rs.length : ℤ) * sumXX newest rs
+      - sumX newest rs * sumX newest rs : ℤ) : ℝ) := by exact_mod_cast hspread
+  unfold beyondSlopeQ16Z
+  simp only [hspread, ↓reduceIte]
+  rw [int_ediv_eq_floor_real _ _ hspread]
+  congr 1
+  unfold Unisono.Model.LineFit.slope
+  rw [hm0, hm1, hsz, hstz, hdet]
+  push_cast
+  have hspr : (rs.length : ℝ) * (sumXX newest rs : ℝ)
+      - (sumX newest rs : ℝ) * (sumX newest rs : ℝ) ≠ 0 := by
+    have : (((rs.length : ℤ) * sumXX newest rs - sumX newest rs * sumX newest rs : ℤ) : ℝ) ≠ 0 :=
+      ne_of_gt hsp_pos_r
+    push_cast at this
+    exact this
+  field_simp [hspr]
 
 end
 
