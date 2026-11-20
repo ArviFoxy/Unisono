@@ -106,15 +106,16 @@ fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
 /// Runs of packets through the estimator of a clock relation. Times mostly
 /// increase and sometimes stand still or go back; values scatter above a
 /// line; windows hold one to four packets. A line of output is the span, the
-/// number of packets, each packet's window, time and value, and after `->`
+/// limit of the slope, the number of packets, each packet's window, time and value, and after `->`
 /// whether there is a line, the line and the number of samples kept.
 fn relation_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(2);
     for case in 0..400u64 {
         let span = [900, 60_000, i64::MAX][usize::try_from(case % 3).unwrap_or(0)];
         let packets = 1 + sequence.next() % 48;
-        let mut estimator = relation::Estimator::<8>::new(span);
-        write!(out, "relation {span} {packets}")?;
+        let limit = [5, 200_000, i64::MAX][usize::try_from(case / 3 % 3).unwrap_or(0)];
+        let mut estimator = relation::Estimator::<8>::new(span, limit);
+        write!(out, "relation {span} {limit} {packets}")?;
         let (mut window, mut time) = (sequence.next() % 5, sequence.signed() % 1_000_000);
         let slope = sequence.signed() % 2000;
         for _ in 0..packets {

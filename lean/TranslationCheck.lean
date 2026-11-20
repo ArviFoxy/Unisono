@@ -24,8 +24,9 @@ def unsigned (ty : UScalarTy) (x : Int) : UScalar ty := ⟨BitVec.ofInt ty.numBi
 /-- Feeds packets, each a window, a time and a value, to an estimator that
 remembers eight samples, and returns whether it has a line, the line and the
 number of samples it keeps. -/
-def runRelation (span : Int) (packets : List (Int × Int × Int)) : Result (List Int) := do
-  let start ← relation.Estimator.new 8#usize (signed .I64 span)
+def runRelation (span limit : Int) (packets : List (Int × Int × Int)) :
+    Result (List Int) := do
+  let start ← relation.Estimator.new 8#usize (signed .I64 span) (signed .I64 limit)
   let fed ← packets.foldlM
     (fun estimator (window, time, value) =>
       relation.Estimator.observe estimator (unsigned .U64 window)
@@ -53,10 +54,10 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       (fun r => [r.val])
   | "div_floor", [a, b] =>
     result (fixed.div_floor (signed .I128 a) (signed .I64 b)) (fun r => [r.val])
-  | "relation", span :: count :: rest =>
+  | "relation", span :: limit :: count :: rest =>
     match triples rest with
     | some packets =>
-      if packets.length = count then result (runRelation span packets) id
+      if packets.length = count then result (runRelation span limit packets) id
       else .error "the number of packets is not the stated one"
     | none => .error "packets are not triples"
   | _, _ => .error s!"no function {function} with {args.length} arguments"

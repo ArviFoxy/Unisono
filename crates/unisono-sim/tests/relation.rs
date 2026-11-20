@@ -19,6 +19,10 @@ use unisono_sim::random::Generator;
 const WINDOW: u64 = 64;
 const SPAN: i64 = 11_000_000_000;
 
+/// The largest slope the estimate may take: 200 parts per million, twice what
+/// an oscillator may be off by.
+const LIMIT: i64 = 200_000;
+
 /// What an estimator under test does with a packet: it returns its estimate
 /// of the undelayed relation at the packet's time, once it has one.
 trait UnderTest {
@@ -112,7 +116,7 @@ fn largest_error(
 fn undisturbed(_: &mut OneWay, _: u64) {}
 
 fn core() -> Core {
-    Core(Estimator::new(SPAN))
+    Core(Estimator::new(SPAN, LIMIT))
 }
 
 #[test]
@@ -124,7 +128,7 @@ fn on_a_calm_wired_link_the_error_stays_under_a_microsecond() {
 #[test]
 fn the_calm_wired_bound_fails_for_an_estimator_that_averages() {
     let mut defective = MeanOfWindow {
-        estimator: Estimator::new(SPAN),
+        estimator: Estimator::new(SPAN, LIMIT),
         sum: 0,
     };
     let error = largest_error(&WIRED_CALM, 1, 600.0, &mut defective, &mut undisturbed);
@@ -160,7 +164,7 @@ fn on_a_wireless_link_with_pauses_the_error_stays_under_fifty_microseconds() {
 
 #[test]
 fn the_wireless_bound_fails_for_an_estimator_that_does_not_select() {
-    let mut defective = FirstOfWindow(Estimator::new(SPAN));
+    let mut defective = FirstOfWindow(Estimator::new(SPAN, LIMIT));
     let error = largest_error(&WIRELESS, 4, 1800.0, &mut defective, &mut undisturbed);
     assert!(
         error > 50_000.0,

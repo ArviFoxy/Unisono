@@ -53,6 +53,24 @@ impl Line {
     }
 }
 
+/// The number of nanoseconds in a second: the `run` of a line whose slope is
+/// given in nanoseconds per second.
+const SECOND: i64 = 1_000_000_000;
+
+/// Whether a slope of `rise` over `run` is at most `limit` nanoseconds per
+/// second in size. `run` is positive.
+fn slope_within(rise: i64, run: i64, limit: i64) -> bool {
+    let wide = rise as i128;
+    let size = if wide < 0 {
+        0i128.wrapping_sub(wide)
+    } else {
+        wide
+    };
+    // A 64-bit number times a second, and a product of two 64-bit numbers:
+    // neither wraps.
+    size.wrapping_mul(SECOND as i128) <= (limit as i128).wrapping_mul(run as i128)
+}
+
 /// How sample `c` lies relative to the line from sample `a` to sample `b`:
 /// positive when `c` is above the line, zero when on it, negative when below.
 /// `a` is taken to be earlier than `b`.
@@ -76,6 +94,12 @@ fn side(a: Sample, b: Sample, c: Sample) -> i128 {
 /// that lies lowest against its current line. Kept samples older than `span`
 /// are forgotten. After every window the estimate is the line under all kept
 /// samples that is highest at the middle of the time they cover.
+///
+/// Two clocks differ in rate by little, so a steeper line means that
+/// something other than the clocks shaped the samples: a first sample that
+/// was delayed, or a stamp that is wrong. The slope is therefore held within
+/// `limit`, and where the highest line is steeper, the estimate is the
+/// highest line of the limiting slope that lies under all kept samples.
 #[derive(Clone, Copy)]
 #[cfg_attr(test, derive(Debug))]
 pub struct Estimator<const M: usize> {
@@ -84,6 +108,8 @@ pub struct Estimator<const M: usize> {
     len: usize,
     /// How long a kept sample is remembered, on the sender's clock.
     span: i64,
+    /// The largest size of the line's slope, in nanoseconds per second.
+    limit: i64,
     /// The window that `lowest` belongs to.
     window: u64,
     /// The lowest sample of the current window so far, with its height above
@@ -93,14 +119,16 @@ pub struct Estimator<const M: usize> {
 }
 
 impl<const M: usize> Estimator<M> {
-    /// An estimator that has seen nothing and remembers samples for `span`
-    /// nanoseconds.
+    /// An estimator that has seen nothing, remembers samples for `span`
+    /// nanoseconds, and holds the slope of its line within `limit`
+    /// nanoseconds per second.
     #[must_use]
-    pub fn new(span: i64) -> Self {
+    pub fn new(span: i64, limit: i64) -> Self {
         Estimator {
             kept: [Sample { time: 0, value: 0 }; M],
             len: 0,
             span,
+            limit,
             window: 0,
             lowest: None,
             line: None,
@@ -268,16 +296,63 @@ impl<const M: usize> Estimator<M> {
         }
         let half = div_floor(last.time.saturating_sub(first.time) as i128, 2);
         let middle = first.time.saturating_add(saturate(half));
-        if let Some((from, to)) = self.bridge(middle)
-            && self.is_under(from, to)
-        {
+        let Some((from, to)) = self.bridge(middle) else {
+            return;
+        };
+        if !self.is_under(from, to) {
+            return;
+        }
+        let rise = to.value.saturating_sub(from.value);
+        let run = to.time.saturating_sub(from.time);
+        if slope_within(rise, run, self.limit) {
             self.line = Some(Line {
                 time: from.time,
                 value: from.value,
-                rise: to.value.saturating_sub(from.value),
-                run: to.time.saturating_sub(from.time),
+                rise,
+                run,
+            });
+            return;
+        }
+        // Too steep: the limiting slope, through the sample that lies lowest
+        // against it.
+        let rise = if rise < 0 {
+            0i64.saturating_sub(self.limit)
+        } else {
+            self.limit
+        };
+        let lowest = self.lowest_against(first, rise);
+        let ahead = Sample {
+            time: lowest.time.saturating_add(SECOND),
+            value: lowest.value.saturating_add(rise),
+        };
+        if self.is_under(lowest, ahead) {
+            self.line = Some(Line {
+                time: lowest.time,
+                value: lowest.value,
+                rise,
+                run: SECOND,
             });
         }
+    }
+
+    /// The kept sample that lies lowest against lines that rise by `rise` per
+    /// second, starting the search from the kept sample `start`.
+    fn lowest_against(&self, start: Sample, rise: i64) -> Sample {
+        let mut lowest = start;
+        let mut index = 0usize;
+        while index < self.len {
+            let ahead = Sample {
+                time: lowest.time.saturating_add(SECOND),
+                value: lowest.value.saturating_add(rise),
+            };
+            if let Some(sample) = self.sample(index)
+                && side(lowest, ahead, sample) < 0
+            {
+                lowest = sample;
+            }
+            index = index.saturating_add(1);
+        }
+        lowest
     }
 
     /// The two kept samples through which the highest line under all kept
@@ -351,6 +426,9 @@ mod tests {
         Sample { time, value }
     }
 
+    /// A limit on the slope that the lines of these tests do not reach.
+    const STEEP: i64 = i64::MAX;
+
     /// Gives each sample its own window.
     fn feed<const M: usize>(estimator: &mut Estimator<M>, samples: &[Sample]) {
         for (window, &s) in (1u64..).zip(samples) {
@@ -386,7 +464,7 @@ mod tests {
 
     #[test]
     fn samples_on_a_line_give_that_line() {
-        let mut estimator = Estimator::<8>::new(1_000_000);
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
         let samples: Vec<Sample> = (0..6).map(|k| sample(k * 100, 50 + k * 3)).collect();
         feed(&mut estimator, &samples);
         let line = estimator.line().expect("a line");
@@ -399,7 +477,7 @@ mod tests {
     #[test]
     fn delayed_samples_do_not_move_the_line() {
         // The relation is value = 1000 + time / 100. Half of the samples carry a delay.
-        let mut estimator = Estimator::<16>::new(1_000_000);
+        let mut estimator = Estimator::<16>::new(1_000_000, STEEP);
         let delays = [0, 700, 0, 0, 90_000, 3, 0, 12_000, 0, 0, 450, 0];
         let samples: Vec<Sample> = delays
             .iter()
@@ -415,7 +493,7 @@ mod tests {
 
     #[test]
     fn the_lowest_sample_of_each_window_is_the_one_kept() {
-        let mut estimator = Estimator::<8>::new(1_000_000);
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
         // Two windows of three packets; the undelayed ones are (10, 100) and (40, 130).
         for (window, s) in [
             (1, sample(0, 500)),
@@ -436,7 +514,7 @@ mod tests {
     #[test]
     fn selection_within_a_window_is_against_the_line_and_not_the_raw_value() {
         // A steep relation: value falls by 100 per unit of time.
-        let mut estimator = Estimator::<8>::new(1_000_000);
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
         feed(&mut estimator, &[sample(0, 10_000), sample(10, 9_000)]);
         // In the next window the later packet has the smaller value but was
         // delayed by 50; the earlier one was not delayed.
@@ -450,7 +528,7 @@ mod tests {
 
     #[test]
     fn samples_older_than_the_span_are_forgotten() {
-        let mut estimator = Estimator::<8>::new(250);
+        let mut estimator = Estimator::<8>::new(250, STEEP);
         // An early sample far below the later ones would hold the line down.
         feed(
             &mut estimator,
@@ -469,7 +547,7 @@ mod tests {
 
     #[test]
     fn a_full_memory_drops_its_oldest_sample() {
-        let mut estimator = Estimator::<4>::new(1_000_000);
+        let mut estimator = Estimator::<4>::new(1_000_000, STEEP);
         let samples: Vec<Sample> = (0..10).map(|k| sample(k * 10, k * k)).collect();
         feed(&mut estimator, &samples);
         assert_eq!(estimator.kept(), 4);
@@ -481,7 +559,7 @@ mod tests {
 
     #[test]
     fn a_time_far_in_the_past_starts_the_memory_anew() {
-        let mut estimator = Estimator::<8>::new(500);
+        let mut estimator = Estimator::<8>::new(500, STEEP);
         feed(
             &mut estimator,
             &[sample(1000, 5), sample(2000, 6), sample(3000, 7)],
@@ -494,7 +572,7 @@ mod tests {
 
     #[test]
     fn a_sample_that_was_overtaken_is_left_out() {
-        let mut estimator = Estimator::<8>::new(5_000);
+        let mut estimator = Estimator::<8>::new(5_000, STEEP);
         feed(
             &mut estimator,
             &[sample(1000, 5), sample(2000, 6), sample(3000, 7)],
@@ -508,11 +586,51 @@ mod tests {
 
     #[test]
     fn an_impossible_count_of_kept_samples_is_dropped_at_once() {
-        let mut estimator = Estimator::<4>::new(1_000_000);
+        let mut estimator = Estimator::<4>::new(1_000_000, STEEP);
         estimator.len = usize::MAX;
         feed(&mut estimator, &[sample(10, 1), sample(20, 2)]);
         assert_eq!(estimator.kept(), 2);
         assert_eq!(estimator.line().expect("a line").eval(20), 2);
+    }
+
+    #[test]
+    fn a_line_steeper_than_the_limit_is_replaced_by_one_of_the_limiting_slope() {
+        // Two clocks 100 parts per million apart, a limit of 200, and a
+        // second sample that was delayed by a millisecond.
+        let mut estimator = Estimator::<8>::new(i64::MAX, 200_000);
+        feed(
+            &mut estimator,
+            &[sample(0, 5_000), sample(100_000_000, 15_000 + 1_000_000)],
+        );
+        let line = estimator.line().expect("a line");
+        // The highest line under both that rises by 200 ns per millisecond
+        // passes through the first sample.
+        assert_eq!((line.rise, line.run), (200_000, 1_000_000_000));
+        assert_eq!(line.eval(0), 5_000);
+        assert_eq!(line.eval(100_000_000), 25_000);
+    }
+
+    #[test]
+    fn a_falling_line_steeper_than_the_limit_is_limited_too() {
+        // The first sample was delayed by a millisecond.
+        let mut estimator = Estimator::<8>::new(i64::MAX, 200_000);
+        feed(
+            &mut estimator,
+            &[sample(0, 5_000 + 1_000_000), sample(100_000_000, 15_000)],
+        );
+        let line = estimator.line().expect("a line");
+        assert_eq!((line.rise, line.run), (-200_000, 1_000_000_000));
+        // The highest falling line of that slope under both passes through the second.
+        assert_eq!(line.eval(100_000_000), 15_000);
+        assert_eq!(line.eval(0), 35_000);
+    }
+
+    #[test]
+    fn a_slope_at_the_limit_is_kept() {
+        let mut estimator = Estimator::<8>::new(i64::MAX, 200_000);
+        feed(&mut estimator, &[sample(0, 0), sample(1_000_000, 200)]);
+        let line = estimator.line().expect("a line");
+        assert_eq!((line.rise, line.run), (200, 1_000_000));
     }
 
     /// The fitted line against every pair of samples: it must lie under all
@@ -537,7 +655,7 @@ mod tests {
                     sample(time, i64::try_from(draw(5000)).unwrap_or(0) - 2500)
                 })
                 .collect();
-            let mut estimator = Estimator::<16>::new(i64::MAX);
+            let mut estimator = Estimator::<16>::new(i64::MAX, STEEP);
             feed(&mut estimator, &samples);
             let line = estimator.line().expect("a line");
             let (first, last) = (samples[0], samples[count - 1]);

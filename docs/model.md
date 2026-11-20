@@ -291,9 +291,9 @@ That a stored line passes through two kept samples around the middle and lies
 under all of them is *not yet stated in Lean*.
 
 **Limits of the slope.** A slope beyond what $y_{\max}$ allows for two
-oscillators means an assumption has failed. The estimate then takes the nearest
-allowed slope and the highest line of that slope under the samples.
-*Not yet built.*
+oscillators means an assumption has failed, as when the first sample of all
+was a delayed one. The estimate then takes the nearest allowed slope and the
+highest line of that slope under the samples. *Not stated in Lean.*
 
 **What breaks it.** A sample that is too low, which the stamp assumption
 excludes, lowers the line by its full error until it is forgotten. A smallest
