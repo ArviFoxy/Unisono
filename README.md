@@ -1,10 +1,10 @@
 # unisono
 
-unisono streams uncompressed audio over IP to multiple receivers and synchronizes playback. It stochastic optimal control to deliver best possible mix of synchronization, low latency and reliability, over a variety of links (wired or WiFi). It is designed for small processing quanta and supports realtime scheduling.
+unisono streams uncompressed audio over IP to multiple receivers and synchronizes playback. It uses stochastic optimal control to deliver best possible mix of synchronization, low latency and reliability; over a variety of links (wired or WiFi). It is designed for small processing quanta and supports realtime scheduling.
 
 **Status: early development. Nothing here can be used yet.**
 
-It is written in Rust. The properties of its core are proved in Lean 4: the
+Unisono is written in Rust and formally verified. The properties of its core are proved in Lean 4: the
 core is translated to Lean by [Aeneas](https://github.com/AeneasVerif/aeneas),
 and the theorems are statements about that translation.
 
