@@ -805,4 +805,242 @@ theorem fit_spec {M : Std.Usize} (e : relation.Estimator M)
                   exact ⟨l, rfl, ho3 l rfl⟩
           · simp
 
+/-! ## Nothing fails, whatever the state
+
+The statements above say what the functions compute for an estimator in good
+order. The ones below ask nothing of the state: each function returns, for
+every estimator and every argument. -/
+
+theorem is_under_total {M : Std.Usize} (e : relation.Estimator M) (a b : relation.Sample) :
+    relation.Estimator.is_under e a b ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.is_under relation.Estimator.is_under_loop
+  apply loop.spec_decr_nat (measure := fun i : Std.Usize => e.len.val - i.val)
+    (inv := fun _ : Std.Usize => True)
+  · intro i _
+    unfold relation.Estimator.is_under_loop.body
+    split
+    · have hlt : i.val < e.len.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i 1#usize).val = i.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨o, ho⟩
+      split
+      · step as ⟨i1, hi1⟩
+        rw [hi1]; omega
+      · step with side_total as ⟨r⟩
+        split
+        · simp
+        · step as ⟨i1, hi1⟩
+          rw [hi1]; omega
+    · simp
+  · trivial
+
+theorem put_total {M : Std.Usize} (e : relation.Estimator M) (i : Std.Usize)
+    (x : relation.Sample) : relation.Estimator.put e i x ⦃ _ => True ⦄ := by
+  have h := put_spec e i x
+  exact WP.spec_mono h (fun _ _ => trivial)
+
+theorem drop_oldest_total {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize) :
+    relation.Estimator.drop_oldest e count ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.drop_oldest
+  split
+  · simp
+  · have hloop : relation.Estimator.drop_oldest_loop e 0#usize count ⦃ _ => True ⦄ := by
+      unfold relation.Estimator.drop_oldest_loop
+      apply loop.spec_decr_nat
+        (measure := fun x : relation.Estimator M × Std.Usize × Std.Usize =>
+          x.1.len.val - x.2.2.val)
+        (inv := fun _ => True)
+      · rintro ⟨self1, to1, from1⟩ _
+        unfold relation.Estimator.drop_oldest_loop.body
+        simp only
+        split
+        · have hlt : from1.val < self1.len.val := by scalar_tac
+          have hnext : (core.num.Usize.saturating_add from1 1#usize).val = from1.val + 1 :=
+            Usize.saturating_add_val _ _ (by scalar_tac)
+          step as ⟨o, ho⟩
+          cases o with
+          | none =>
+            simp only [bind_ok]
+            step as ⟨to2, hto2⟩
+            step as ⟨from2, hfrom2⟩
+            show self1.len.val - from2.val < self1.len.val - from1.val
+            rw [hfrom2]; omega
+          | some x =>
+            simp only
+            rw [Aeneas.Std.bind_assoc]
+            step as ⟨r, hr1, hr2, hr3, hr4⟩
+            obtain ⟨b, self2⟩ := r
+            simp only [uncurry, bind_ok] at hr3 ⊢
+            step as ⟨to2, hto2⟩
+            step as ⟨from2, hfrom2⟩
+            show self2.len.val - from2.val < self1.len.val - from1.val
+            rw [hfrom2, hr3]; omega
+        · simp
+      · trivial
+    step with hloop as ⟨r⟩
+
+theorem forget_before_total {M : Std.Usize} (e : relation.Estimator M) (time : Std.I64) :
+    relation.Estimator.forget_before e time ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.forget_before
+  step as ⟨a, len, sp, lim, wi, lo, li, old⟩
+  exact drop_oldest_total _ _
+
+theorem limited_total {M : Std.Usize} (e : relation.Estimator M) (start : relation.Sample)
+    (rise : Std.I64) : relation.Estimator.limited e start rise ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.limited
+  step as ⟨lowest⟩
+  step as ⟨i, hi⟩
+  step as ⟨i1, hi1⟩
+  step with is_under_total as ⟨b⟩
+  split <;> simp
+
+theorem saturate_total (x : Std.I128) : fixed.saturate x ⦃ _ => True ⦄ :=
+  WP.spec_mono (Unisono.Fixed.saturate_spec x) (fun _ _ => trivial)
+
+theorem fit_total {M : Std.Usize} (e : relation.Estimator M) :
+    relation.Estimator.fit e ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.fit
+  step as ⟨o, ho⟩
+  step as ⟨i, hi⟩
+  step as ⟨o1, ho1⟩
+  split
+  · simp
+  · split
+    · simp
+    · split
+      · split <;> simp
+      · step as ⟨i1, hi1⟩
+        step as ⟨i2, hi2⟩
+        step with div_floor_total as ⟨half⟩
+        step with saturate_total as ⟨i3⟩
+        step as ⟨middle, hmiddle⟩
+        step as ⟨o2, ho2⟩
+        split
+        · simp
+        · rename_i _ p
+          obtain ⟨a, b⟩ := p
+          simp only [uncurry]
+          step with is_under_total as ⟨u⟩
+          split
+          · step as ⟨rise, hrise⟩
+            step as ⟨run, hrun⟩
+            step with slope_within_total as ⟨b1⟩
+            split
+            · simp
+            · split
+              · simp only [bind_ok]
+                step with limited_total as ⟨o3⟩
+                split <;> simp
+              · simp only [bind_ok]
+                step with limited_total as ⟨o3⟩
+                split <;> simp
+          · simp
+
+theorem append_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.Sample) :
+    relation.Estimator.append e x ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.append
+  split
+  · step with drop_oldest_total as ⟨e1⟩
+    step with put_total as ⟨r⟩
+    split
+    · step as ⟨i, hi⟩
+    · simp
+  · simp only [bind_ok]
+    step with put_total as ⟨r⟩
+    split
+    · step as ⟨i, hi⟩
+    · simp
+
+theorem keep_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.Sample) :
+    relation.Estimator.keep e x ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.keep relation.Estimator.clear
+  split
+  all_goals
+    simp only [bind_ok]
+    step as ⟨o, ho⟩
+    cases o with
+    | none =>
+      simp only [bind_ok]
+      exact append_total _ _
+    | some index =>
+      simp only
+      step as ⟨last, hlast⟩
+      split
+      · exact append_total _ _
+      · split
+        · step as ⟨i, hi⟩
+          split
+          · simp
+          · exact append_total _ _
+        · exact append_total _ _
+
+theorem end_window_total {M : Std.Usize} (e : relation.Estimator M) :
+    relation.Estimator.end_window e ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.end_window
+  simp only [core.option.Option.take]
+  cases e.lowest with
+  | none => simp
+  | some p =>
+    obtain ⟨x, h⟩ := p
+    simp only [uncurry]
+    step with keep_total as ⟨e1⟩
+    step as ⟨i, hi⟩
+    step with forget_before_total as ⟨e2⟩
+    exact fit_total _
+
+theorem eval_total (l : relation.Line) (time : Std.I64) :
+    relation.Line.eval l time ⦃ _ => True ⦄ := by
+  unfold relation.Line.eval
+  step as ⟨elapsed, h1⟩
+  step as ⟨i, h2⟩
+  step as ⟨i1, h3⟩
+  step as ⟨product, h4⟩
+  step with div_floor_total as ⟨change⟩
+  step as ⟨i2, h5⟩
+  step as ⟨i3, h6⟩
+  exact saturate_total _
+
+/-- Taking in a packet returns, for every state of the estimator and every
+packet. With `end_window_total`, no call into the estimator can fail. -/
+theorem observe_total {M : Std.Usize} (e : relation.Estimator M) (window : Std.U64)
+    (x : relation.Sample) : relation.Estimator.observe e window x ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.observe
+  split
+  · rw [Aeneas.Std.bind_assoc]
+    step with end_window_total as ⟨e1⟩
+    simp only [uncurry]
+    cases e1.line with
+    | none =>
+      simp only [bind_ok]
+      cases e1.lowest with
+      | none => simp
+      | some p =>
+        simp only [bind_ok, uncurry]
+        split <;> simp
+    | some line =>
+      rw [Aeneas.Std.bind_assoc]
+      step with eval_total as ⟨i4⟩
+      cases e1.lowest with
+      | none => simp
+      | some p =>
+        simp only [bind_ok, uncurry]
+        split <;> simp
+  · simp only [bind_ok, uncurry]
+    cases e.line with
+    | none =>
+      simp only [bind_ok]
+      cases e.lowest with
+      | none => simp
+      | some p =>
+        simp only [bind_ok, uncurry]
+        split <;> simp
+    | some line =>
+      rw [Aeneas.Std.bind_assoc]
+      step with eval_total as ⟨i4⟩
+      cases e.lowest with
+      | none => simp
+      | some p =>
+        simp only [bind_ok, uncurry]
+        split <;> simp
+
 end Unisono.Relation

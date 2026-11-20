@@ -220,8 +220,7 @@ impl<const M: usize> Estimator<M> {
     /// samples; it is treated the same way.
     fn keep(&mut self, sample: Sample) {
         if self.len > M {
-            self.len = 0;
-            self.line = None;
+            self.clear();
         }
         let last = match self.len.checked_sub(1) {
             Some(index) => self.sample(index),
@@ -233,9 +232,20 @@ impl<const M: usize> Estimator<M> {
             if last.time.saturating_sub(sample.time) <= self.span {
                 return;
             }
-            self.len = 0;
-            self.line = None;
+            self.clear();
         }
+        self.append(sample);
+    }
+
+    /// Forgets every kept sample, and the line with them.
+    fn clear(&mut self) {
+        self.len = 0;
+        self.line = None;
+    }
+
+    /// Adds `sample` after the kept samples, at the cost of the oldest when
+    /// there is no room left.
+    fn append(&mut self, sample: Sample) {
         if self.len >= M {
             self.drop_oldest(1);
         }

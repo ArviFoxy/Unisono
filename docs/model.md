@@ -294,9 +294,13 @@ passes through a kept sample and has no kept sample below it. The statements
 hold for times and values within an eighth of the 64-bit range, which is 36
 years in nanoseconds.
 
+For every state of the estimator, in range or not, and every packet, taking
+in a packet and ending a window return: `observe_total`, `end_window_total`.
+Nothing in the estimator can fail or run forever.
+
 Not stated in Lean: that the fit always finds a line when there are two kept
 samples, which needs the hull to be built correctly and is covered by tests;
-and what taking in a packet and ending a window do as a whole.
+and what the kept samples are after a packet, in terms of the packets before.
 
 **Limits of the slope.** A slope beyond what $y_{\max}$ allows for two
 oscillators means an assumption has failed, as when the first sample of all
