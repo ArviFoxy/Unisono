@@ -10,6 +10,7 @@ public import Unisono.Model.LineFit
 public import Unisono.Model.SupportLine
 public import Unisono.Packet
 public import Unisono.Presence
+public import Unisono.Receiver
 public import Unisono.Relation
 
 /-!
@@ -156,3 +157,27 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Presence.restart_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Presence.restart_spec
+
+/-- info: 'Unisono.Receiver.packet_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.packet_spec
+
+/-- info: 'Unisono.Receiver.follows_after_silence' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.follows_after_silence
+
+/-- info: 'Unisono.Receiver.take_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.take_spec
+
+/-- info: 'Unisono.Receiver.take_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.take_idle
+
+/-- info: 'Unisono.Receiver.skip_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.skip_spec
+
+/-- info: 'Unisono.Receiver.new_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.new_spec

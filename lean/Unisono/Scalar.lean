@@ -63,6 +63,11 @@ theorem U64.cast_U32_val (x : U64) (h : x.val ≤ U32.max) :
   rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
   scalar_tac
 
+/-- A 16-bit number keeps its value when cast to 32 bits. -/
+theorem U16.cast_U32_val (x : U16) : (UScalar.cast UScalarTy.U32 x).val = x.val := by
+  rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
+  scalar_tac
+
 /-- A 32-bit number keeps its value when cast to 64 bits. -/
 theorem U32.cast_U64_val (x : U32) : (UScalar.cast UScalarTy.U64 x).val = x.val := by
   rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
@@ -252,6 +257,15 @@ theorem U64.saturating_add_one_val (x : U64) (bound : ℕ) (h : x.val < bound)
     rw [this]
     simp
     omega
+
+/-- A saturating addition of 64-bit numbers stops at the largest. -/
+theorem U64.saturating_add_val (x y : U64) :
+    (core.num.U64.saturating_add x y).val = min U64.max (x.val + y.val) := by
+  have := UScalar.saturating_add_val x y
+  simp only [core.num.U64.saturating_add]
+  rw [this]
+  have : UScalar.max UScalarTy.U64 = U64.max := by scalar_tac
+  rw [this]
 
 @[step]
 theorem I64.saturating_sub_step (x y : I64) :
