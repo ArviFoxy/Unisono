@@ -5,6 +5,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Aeneas
+import all Aeneas.Std.Scalar.SaturatingOps
 
 /-!
 # Machine integers whose operations do not wrap
@@ -75,5 +76,106 @@ theorem I128.wrapping_shl_one_val (s : U32) (h : s.val < 127) :
   simp [hmod, BitVec.toInt_shiftLeft]
   rw [Int.shiftLeft_eq, one_mul]
   exact Int.bmod_pow2_eq_of_inBounds' 128 _ (by norm_num) (by omega) (by omega)
+
+/-! ## Saturating operations
+
+The library gives these operations as bit patterns. Here are their values,
+and the facts that let a proof step over a call of one of them. -/
+
+theorem clamp_bmod (n : ℕ) (hn : n ≠ 0) (v : ℤ) :
+    (max (-2^(n-1)) (min (2^(n-1) - 1) v)).bmod (2^n)
+      = max (-2^(n-1)) (min (2^(n-1) - 1) v) := by
+  apply Int.bmod_pow2_eq_of_inBounds' n _ hn
+  · exact le_max_left _ _
+  · have h1 : min (2^(n-1) - 1) v ≤ (2:ℤ)^(n-1) - 1 := min_le_left _ _
+    have h2 : (0:ℤ) < 2^(n-1) := by positivity
+    have h3 : max (-2^(n-1)) (min (2^(n-1) - 1) v) ≤ (2:ℤ)^(n-1) - 1 := max_le (by omega) h1
+    omega
+
+theorem I64.saturating_sub_val (x y : I64) :
+    (core.num.I64.saturating_sub x y).val = max (-2^63) (min (2^63 - 1) (x.val - y.val)) := by
+  simp only [core.num.I64.saturating_sub, IScalar.saturating_sub, IScalar.val, BitVec.toInt_ofInt]
+  have := clamp_bmod 64 (by norm_num) (x.bv.toInt - y.bv.toInt)
+  simpa [IScalar.min, IScalar.max, I64.min, I64.max, I64.numBits] using this
+
+theorem I64.saturating_add_val (x y : I64) :
+    (core.num.I64.saturating_add x y).val = max (-2^63) (min (2^63 - 1) (x.val + y.val)) := by
+  simp only [core.num.I64.saturating_add, IScalar.saturating_add, IScalar.val, BitVec.toInt_ofInt]
+  have := clamp_bmod 64 (by norm_num) (x.bv.toInt + y.bv.toInt)
+  simpa [IScalar.min, IScalar.max, I64.min, I64.max, I64.numBits] using this
+
+theorem I128.saturating_sub_val (x y : I128) :
+    (core.num.I128.saturating_sub x y).val
+      = max (-2^127) (min (2^127 - 1) (x.val - y.val)) := by
+  simp only [core.num.I128.saturating_sub, IScalar.saturating_sub, IScalar.val,
+    BitVec.toInt_ofInt]
+  have := clamp_bmod 128 (by norm_num) (x.bv.toInt - y.bv.toInt)
+  simpa [IScalar.min, IScalar.max, I128.min, I128.max, I128.numBits] using this
+
+theorem I128.saturating_add_val (x y : I128) :
+    (core.num.I128.saturating_add x y).val
+      = max (-2^127) (min (2^127 - 1) (x.val + y.val)) := by
+  simp only [core.num.I128.saturating_add, IScalar.saturating_add, IScalar.val,
+    BitVec.toInt_ofInt]
+  have := clamp_bmod 128 (by norm_num) (x.bv.toInt + y.bv.toInt)
+  simpa [IScalar.min, IScalar.max, I128.min, I128.max, I128.numBits] using this
+
+theorem usize_max_succ : UScalar.max UScalarTy.Usize + 1 = 2 ^ UScalarTy.Usize.numBits := by
+  rw [UScalar.max_def]
+  have h : 0 < 2 ^ UScalarTy.Usize.numBits := by positivity
+  omega
+
+theorem usize_max_eq : UScalar.max UScalarTy.Usize = Usize.max := by
+  rw [UScalar.max_def, Usize.max_def, Usize.numBits_def]
+
+/-- A saturating addition that stays in range is the addition. -/
+theorem Usize.saturating_add_val (x y : Usize) (h : x.val + y.val ≤ Usize.max) :
+    (core.num.Usize.saturating_add x y).val = x.val + y.val := by
+  have hm := usize_max_succ
+  simp only [core.num.Usize.saturating_add, UScalar.saturating_add, UScalar.val] at *
+  rw [BitVec.toNat_ofNat, usize_max_eq, min_eq_right h]
+  apply Nat.mod_eq_of_lt
+  rw [usize_max_eq] at hm
+  omega
+
+/-- A saturating subtraction of unsigned numbers is the subtraction of
+natural numbers, which stops at zero. -/
+theorem Usize.saturating_sub_val (x y : Usize) :
+    (core.num.Usize.saturating_sub x y).val = x.val - y.val := by
+  have hx := x.bv.isLt
+  simp only [core.num.Usize.saturating_sub, UScalar.saturating_sub, UScalar.val] at *
+  rw [BitVec.toNat_ofNat, Nat.zero_max]
+  apply Nat.mod_eq_of_lt
+  omega
+
+@[step]
+theorem I64.saturating_sub_step (x y : I64) :
+    lift (core.num.I64.saturating_sub x y) ⦃ r => r = core.num.I64.saturating_sub x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem I64.saturating_add_step (x y : I64) :
+    lift (core.num.I64.saturating_add x y) ⦃ r => r = core.num.I64.saturating_add x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem I128.saturating_sub_step (x y : I128) :
+    lift (core.num.I128.saturating_sub x y) ⦃ r => r = core.num.I128.saturating_sub x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem I128.saturating_add_step (x y : I128) :
+    lift (core.num.I128.saturating_add x y) ⦃ r => r = core.num.I128.saturating_add x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem Usize.saturating_add_step (x y : Usize) :
+    lift (core.num.Usize.saturating_add x y) ⦃ r => r = core.num.Usize.saturating_add x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem Usize.saturating_sub_step (x y : Usize) :
+    lift (core.num.Usize.saturating_sub x y) ⦃ r => r = core.num.Usize.saturating_sub x y ⦄ := by
+  simp [lift]
 
 end Unisono

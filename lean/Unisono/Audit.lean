@@ -7,6 +7,8 @@ module
 public import Unisono.Fixed
 public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
+public import Unisono.Model.SupportLine
+public import Unisono.Relation
 
 /-!
 # The axioms the theorems rest on
@@ -40,3 +42,19 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.LineFit.error_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.LineFit.error_bound
+
+/-- info: 'Unisono.Model.SupportLine.highest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.SupportLine.highest
+
+/-- info: 'Unisono.Model.SupportLine.error_at_centre' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.SupportLine.error_at_centre
+
+/-- info: 'Unisono.Relation.side_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.side_spec
+
+/-- info: 'Unisono.Relation.is_under_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.is_under_spec
