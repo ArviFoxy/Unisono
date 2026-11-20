@@ -24,11 +24,27 @@ use unisono_core::sender::Sender;
 /// A receiver of the sizes that a program would use.
 type Listener = Receiver<64, 64, 8>;
 
-/// The handler of a panic. No function below may reach it; the inspection
-/// checks that none of the machinery that leads here is left in the library.
+unsafe extern "C" {
+    /// Never defined: if any panic path survives dead-code elimination, the
+    /// linker leaves this symbol undefined and `tools/realtime.sh` fails.
+    fn unisono_realtime_code_panicked() -> !;
+}
+
+/// The handler of a panic. No function below may reach it; calling an
+/// undefined external symbol prevents the compiler from silently folding a
+/// panic path into an infinite loop and lets the inspection catch it by name.
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {}
+    // SAFETY: never called in a valid build; exists solely as a link-time trap.
+    unsafe { unisono_realtime_code_panicked() }
+}
+
+/// An intentionally panicking entry point built only under `panic-probe`, so
+/// `tools/realtime.sh` can confirm that the link-time panic trap fires.
+#[cfg(feature = "panic-probe")]
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_panic_probe(fail: bool) {
+    assert!(!fail);
 }
 
 #[unsafe(no_mangle)]

@@ -79,12 +79,98 @@ fi
 # trait object and no pointer to a function, so every call in it is to a
 # function that the compiler knows, and all of those are in the library that
 # was inspected.
-pointers="$(for file in "$root"/crates/unisono-core/src/*.rs; do
-    awk '/^#\[cfg\(test\)\]/ { exit } { print FILENAME ": " $0 }' "$file"
-done | grep -v -E '^[^ ]*: *//' | grep -E '\bdyn\b|\bfn *\(' || true)"
+pointers="$(find "$root/crates/unisono-core/src" -type f -name '*.rs' | sort | while IFS= read -r file; do
+    awk '
+        function strip(line,    out, i, c, nextc, n, in_str, esc) {
+            out = ""
+            n = length(line)
+            in_str = 0
+            esc = 0
+            for (i = 1; i <= n; i++) {
+                c = substr(line, i, 1)
+                nextc = (i < n) ? substr(line, i + 1, 1) : ""
+                if (blk_depth > 0) {
+                    if (c == "/" && nextc == "*") { blk_depth++; i++ }
+                    else if (c == "*" && nextc == "/") { blk_depth--; i++ }
+                } else if (in_str) {
+                    if (esc) { esc = 0 }
+                    else if (c == "\\") { esc = 1 }
+                    else if (c == "\"") { in_str = 0 }
+                } else {
+                    if (c == "/" && nextc == "/") {
+                        break
+                    } else if (c == "/" && nextc == "*") {
+                        blk_depth++
+                        i++
+                    } else if (c == "\"") {
+                        in_str = 1
+                        out = out " "
+                    } else {
+                        out = out c
+                    }
+                }
+            }
+            return out
+        }
+        function brace_delta(s,    t, opens, closes) {
+            t = s; opens = gsub(/\{/, "", t)
+            t = s; closes = gsub(/\}/, "", t)
+            return opens - closes
+        }
+        BEGIN { skip_pending = 0; skip_depth = 0; blk_depth = 0 }
+        {
+            code = strip($0)
+            if (skip_depth > 0) {
+                skip_depth += brace_delta(code)
+                if (skip_depth < 0) skip_depth = 0
+                next
+            }
+            if (skip_pending) {
+                if (code ~ /^[[:space:]]*$/ || code ~ /^[[:space:]]*#\[/) next
+                if (code ~ /\{/) {
+                    skip_depth = brace_delta(code)
+                    if (skip_depth < 0) skip_depth = 0
+                    skip_pending = 0
+                } else if (code ~ /;/) {
+                    skip_pending = 0
+                }
+                next
+            }
+            if (code ~ /^[[:space:]]*#\[cfg\(test\)\]/) {
+                rest = code
+                sub(/^[[:space:]]*#\[cfg\(test\)\]/, "", rest)
+                if (rest ~ /\{/) {
+                    skip_depth = brace_delta(rest)
+                    if (skip_depth < 0) skip_depth = 0
+                } else if (rest ~ /;/) {
+                    # single-line test item
+                } else {
+                    skip_pending = 1
+                }
+                next
+            }
+            print FILENAME ":" FNR ": " code
+        }
+    ' "$file"
+done | grep -E '\bdyn\b|\bfn[[:space:]]*\(' || true)"
 if [ -n "$pointers" ]; then
     echo "the core calls through a pointer:" >&2
     echo "$pointers" >&2
+    failed=1
+fi
+
+# Self-test: confirm that a reachable panic path actually fails the check by
+# leaving `unisono_realtime_code_panicked` undefined after dead-code elimination.
+probe_target="$target/probe"
+probe_lib="$probe_target/release/libunisono_realtime_check.a"
+probe_so="$probe_target/probe.so"
+cargo build --quiet --release --features panic-probe \
+    --manifest-path "$root/tools/realtime-check/Cargo.toml" --target-dir "$probe_target"
+printf '{ global:\n  realtime_panic_probe;\nlocal: *; };\n' > "$probe_target/exports.map"
+cc -shared -nostdlib -Wl,--gc-sections "-Wl,--version-script=$probe_target/exports.map" \
+    -Wl,-u,realtime_panic_probe -o "$probe_so" "$probe_lib"
+if ! nm -D --undefined-only "$probe_so" | awk '{ print $2 }' | grep -qx 'unisono_realtime_code_panicked'; then
+    echo "the panic self-test did not catch realtime_panic_probe" >&2
     failed=1
 fi
 

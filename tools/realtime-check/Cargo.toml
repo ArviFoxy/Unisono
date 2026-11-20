@@ -9,6 +9,11 @@ publish = false
 [lib]
 crate-type = ["staticlib"]
 
+[features]
+# Exports a function that panics so tools/realtime.sh can verify that a
+# surviving panic path causes the check to fail.
+panic-probe = []
+
 [dependencies]
 unisono-core = { path = "../../crates/unisono-core" }
 
