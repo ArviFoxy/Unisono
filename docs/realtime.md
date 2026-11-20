@@ -31,21 +31,40 @@ They hold for the code as compiled for the machine that runs the check.
 ## What the proofs add
 
 Every loop of the core has, in its proof, a quantity that decreases with each
-round and cannot go below zero. So every function ends, and the number of
-rounds of each loop is bounded by numbers of the configuration: the frames of
-a cycle, the words of the stretch, the samples of an estimate. *The bounds are
-not yet stated as theorems of their own.*
+round and cannot go below zero. So every function ends.
+
+For the loops over the frames a receiver holds, over the arrivals it keeps and
+over the reports of a device, the number of rounds is a theorem of its own
+(`Unisono/Rounds.lean`): marking the frames of a packet takes one round for
+each frame, counting held or missing frames one for each frame up to the limit
+asked for, moving the playhead one for each frame passed, clearing the stretch
+one for each of its words, finding an arrival one for each arrival kept, and
+fitting the line of a device one for each report kept. None of these depends
+on the state or on what arrived. *The loops of the estimator and of reading
+and writing a packet are proved to end; their bounds are not yet stated.*
 
 ## What is not known
 
 **How long a cycle takes.** A bound in seconds that holds for every input
 needs a model of the processor's timing: its caches, its pipeline and its
 prediction of branches. Tools that have such models cover microcontrollers,
-not the processors that unisono runs on. What can be had instead is a bound on
-the work, as above, a count of instructions on the inputs that the bound shows
-to be the worst, which is the same on every run and can be held against a
-budget, and measurement on the machine that is used. *None of the three is
-built.*
+not the processors that unisono runs on. Three things stand in for it:
+
+- the bound on the work, above;
+- a count of the instructions that a cycle and the taking in of a packet
+  execute on the inputs that cost most: a cycle whose frames are all held, a
+  cycle in which a gap begins, a cycle inside a gap, a packet, a packet that
+  ends a window of the estimator, and a report of a device. The program in
+  `crates/cycle-cost` runs each under single-stepping and counts. The count is
+  the same on every run, each case has a budget about a quarter above what it
+  counted when the budget was set, and `just check` fails when a case goes
+  over;
+- the time of the same calls on the machine that runs the program, which it
+  prints and does not judge.
+
+A count of instructions is not a time: an instruction that misses the cache
+costs a hundred that do not. The count catches a change that makes a cycle do
+more work; it says nothing about the machine.
 
 **The code outside the core.** The resampler, the concealment and the code
 that turns a plan into frames use floating point and slices. They are tested

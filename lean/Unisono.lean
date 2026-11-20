@@ -13,4 +13,5 @@ public import Unisono.Player
 public import Unisono.Presence
 public import Unisono.Receiver
 public import Unisono.Relation
+public import Unisono.Rounds
 public import Unisono.Sender
