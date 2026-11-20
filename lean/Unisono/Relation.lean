@@ -981,47 +981,37 @@ theorem eval_total (l : relation.Line) (time : Std.I64) :
   step as ⟨i3, h6⟩
   exact saturate_total _
 
+theorem consider_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.Sample) :
+    relation.Estimator.consider e x ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.consider
+  cases e.line with
+  | none =>
+    simp only [bind_ok]
+    cases e.lowest with
+    | none => simp
+    | some p =>
+      simp only [bind_ok, uncurry]
+      split <;> simp
+  | some line =>
+    rw [Aeneas.Std.bind_assoc]
+    step with eval_total as ⟨i4⟩
+    cases e.lowest with
+    | none => simp [lift]
+    | some p =>
+      simp only [lift, bind_ok, uncurry]
+      split <;> simp
+
 /-- Taking in a packet returns, for every state of the estimator and every
 packet. With `end_window_total`, no call into the estimator can fail. -/
 theorem observe_total {M : Std.Usize} (e : relation.Estimator M) (window : Std.U64)
     (x : relation.Sample) : relation.Estimator.observe e window x ⦃ _ => True ⦄ := by
   unfold relation.Estimator.observe
   split
-  · rw [Aeneas.Std.bind_assoc]
-    step with end_window_total as ⟨e1⟩
-    simp only [uncurry]
-    cases e1.line with
-    | none =>
-      simp only [bind_ok]
-      cases e1.lowest with
-      | none => simp
-      | some p =>
-        simp only [bind_ok, uncurry]
-        split <;> simp
-    | some line =>
-      rw [Aeneas.Std.bind_assoc]
-      step with eval_total as ⟨i4⟩
-      cases e1.lowest with
-      | none => simp
-      | some p =>
-        simp only [bind_ok, uncurry]
-        split <;> simp
-  · simp only [bind_ok, uncurry]
-    cases e.line with
-    | none =>
-      simp only [bind_ok]
-      cases e.lowest with
-      | none => simp
-      | some p =>
-        simp only [bind_ok, uncurry]
-        split <;> simp
-    | some line =>
-      rw [Aeneas.Std.bind_assoc]
-      step with eval_total as ⟨i4⟩
-      cases e.lowest with
-      | none => simp
-      | some p =>
-        simp only [bind_ok, uncurry]
-        split <;> simp
+  · step as ⟨i, hi⟩
+    split
+    · simp
+    · step with end_window_total as ⟨e1⟩
+      exact consider_total _ x
+  · exact consider_total e x
 
 end Unisono.Relation

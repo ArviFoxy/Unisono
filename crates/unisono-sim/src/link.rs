@@ -7,7 +7,8 @@
 //! A packet's delay is the link's smallest delay plus an excess that is never
 //! negative. Most packets pass with a small excess; some meet a queue and a
 //! larger one. Now and then the link pauses: nothing arrives until the pause
-//! ends, and then everything held back arrives at once.
+//! ends, and then everything held back arrives at once. A link can also hold
+//! up single packets without the packets after them, which then arrive first.
 
 use crate::TrueTime;
 use crate::random::Generator;
@@ -27,12 +28,18 @@ pub struct LinkModel {
     pub pause_rate: f64,
     /// Mean length of a pause.
     pub pause_length: f64,
+    /// Probability that a packet is held up on its own, so that packets
+    /// sent after it arrive before it.
+    pub overtaken: f64,
+    /// Mean time for which such a packet is held up.
+    pub overtaken_excess: f64,
 }
 
 /// A simulated link in one direction.
 ///
-/// Packets are sent at true times that do not go backwards, and arrive in the
-/// order they were sent.
+/// Packets are sent at true times that do not go backwards. They arrive in
+/// the order they were sent, except those that the link holds up on their
+/// own.
 #[derive(Clone, Debug)]
 pub struct Link {
     model: LinkModel,
@@ -79,6 +86,11 @@ impl Link {
         };
         let unhindered = sent.plus_seconds(self.model.minimum + excess);
         let arrival = unhindered.max(self.paused_until).max(self.last_arrival);
+        if self.generator.chance(self.model.overtaken) {
+            // The packets after this one do not wait for it.
+            let held = self.generator.exponential(self.model.overtaken_excess);
+            return arrival.plus_seconds(held);
+        }
         self.last_arrival = arrival;
         arrival
     }
@@ -97,6 +109,8 @@ mod tests {
         queued_excess: 200e-6,
         pause_rate: 0.0,
         pause_length: 0.0,
+        overtaken: 0.0,
+        overtaken_excess: 0.0,
     };
 
     #[test]
@@ -125,6 +139,29 @@ mod tests {
         #[allow(clippy::cast_precision_loss)]
         let mean = total as f64 / n as f64 * 1e-9;
         assert!((mean - 24.5e-6).abs() < 1e-6, "mean excess {mean}");
+    }
+
+    #[test]
+    fn a_packet_held_up_on_its_own_is_overtaken() {
+        let model = LinkModel {
+            overtaken: 0.05,
+            overtaken_excess: 10e-3,
+            ..MODEL
+        };
+        let mut link = Link::new(model, Generator::new(8));
+        // One packet per millisecond: about 500 of 10,000 are held up, for
+        // about ten packets each.
+        let arrivals: Vec<i64> = (0..10_000)
+            .map(|k| link.arrival(TrueTime(k * 1_000_000)).0)
+            .collect();
+        let overtaken = arrivals.windows(2).filter(|pair| pair[1] < pair[0]).count();
+        assert!((300..700).contains(&overtaken), "overtaken {overtaken}");
+        for (k, arrival) in (0i64..).zip(&arrivals) {
+            assert!(
+                arrival - k * 1_000_000 >= 100_000,
+                "delay below the minimum"
+            );
+        }
     }
 
     #[test]

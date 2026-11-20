@@ -202,12 +202,24 @@ impl<const M: usize> Estimator<M> {
     /// Takes in the sample of one packet of window `window`.
     ///
     /// A window ends when a sample of another window is given, or when
-    /// [`Estimator::end_window`] is called.
+    /// [`Estimator::end_window`] is called. A sample of the window just
+    /// before the current one does not end it: such a sample comes from a
+    /// packet that a packet of the current window overtook, and it is left
+    /// out. Its own window has ended and kept its lowest sample already.
     pub fn observe(&mut self, window: u64, sample: Sample) {
         if window != self.window {
+            if self.window.wrapping_sub(window) == 1 {
+                return;
+            }
             self.end_window();
             self.window = window;
         }
+        self.consider(sample);
+    }
+
+    /// Makes `sample` the lowest of the current window so far if it lies
+    /// lower against the line than the lowest before it.
+    fn consider(&mut self, sample: Sample) {
         let height = match self.line {
             Some(line) => sample.value.saturating_sub(line.eval(sample.time)),
             None => sample.value,
@@ -552,6 +564,45 @@ mod tests {
         assert_eq!(estimator.kept(), 2);
         let line = estimator.line().expect("a line");
         assert_eq!((line.eval(10), line.eval(40)), (100, 130));
+    }
+
+    #[test]
+    fn a_sample_of_the_window_before_does_not_end_the_current_window() {
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
+        // The second packet of window 1 arrives after the first of window 2,
+        // which is a delayed one.
+        for (window, s) in [
+            (1, sample(0, 100)),
+            (2, sample(30, 900)),
+            (1, sample(10, 400)),
+            (2, sample(40, 130)),
+            (2, sample(50, 141)),
+            (3, sample(60, 150)),
+        ] {
+            estimator.observe(window, s);
+        }
+        estimator.end_window();
+        // One sample of each window, and of window 2 its lowest.
+        assert_eq!(estimator.kept(), 3);
+        // The line under the three that is highest at the middle, 30, goes
+        // through the first two, with three quarters for each unit of time.
+        let line = estimator.line().expect("a line");
+        assert_eq!(
+            (line.eval(0), line.eval(40), line.eval(60)),
+            (100, 130, 145)
+        );
+    }
+
+    #[test]
+    fn a_sample_of_a_window_further_back_starts_a_window() {
+        // A sender that started anew numbers its windows from the start.
+        let mut estimator = Estimator::<8>::new(1_000_000, STEEP);
+        estimator.observe(7, sample(0, 100));
+        estimator.observe(7, sample(10, 110));
+        estimator.observe(2, sample(20, 120));
+        assert_eq!(estimator.kept(), 1);
+        estimator.observe(3, sample(30, 130));
+        assert_eq!(estimator.kept(), 2);
     }
 
     #[test]

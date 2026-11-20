@@ -183,6 +183,21 @@ fn on_a_wireless_link_with_pauses_receivers_play_within_twenty_five_microseconds
 }
 
 #[test]
+fn packets_that_overtake_each_other_do_not_disturb_the_estimate() {
+    // One packet in twenty is held up on its own for about 10 ms, so that
+    // the packets after it arrive first, also across the end of a window of
+    // the estimate. The bound is that of the same link without this.
+    let mut assumptions = WIRED_BUSY;
+    assumptions.link.overtaken = 0.05;
+    assumptions.link.overtaken_excess = 10e-3;
+    let mut scene = scene(&assumptions, 60, |_| {});
+    scene.run(TrueTime::from_seconds(60.0));
+    let (worst, apart) = worst_and_apart(&scene, 20.0);
+    assert!(worst < 1.5 * MICROSECOND, "worst {worst}");
+    assert!(apart < 1.5 * MICROSECOND, "apart {apart}");
+}
+
+#[test]
 fn receivers_on_one_host_play_within_fifty_nanoseconds_of_each_other() {
     // They have the same estimate of the sender's clock, so only their
     // devices and regulators differ.
