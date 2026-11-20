@@ -367,6 +367,13 @@ const MARKS: usize = 32;
 /// is an earlier report, and when the reports give a rate more than a
 /// hundredth from the nominal one, the nominal rate is used.
 ///
+/// The core takes the length of a cycle in whole nanoseconds, and a length
+/// that is always rounded the same way is a rate that is always off the same
+/// way: by up to one part in the nanoseconds of a cycle, which the core's
+/// regulator answers with a constant error in time. The part of a nanosecond
+/// that one cycle's length leaves out is therefore carried into the next, so
+/// that the lengths are right on average.
+///
 /// This stands in for an estimate of the device's rate by the core, which
 /// does not have one yet.
 #[derive(Clone, Copy, Debug)]
@@ -378,6 +385,9 @@ struct Pace {
     /// The count that the next cycle begins with if the device goes on
     /// without a break.
     expected: Option<u64>,
+    /// What the lengths given so far leave out, in units of 2^-32
+    /// nanosecond.
+    carried: i128,
 }
 
 impl Pace {
@@ -388,6 +398,7 @@ impl Pace {
             filled: 0,
             next: 0,
             expected: None,
+            carried: 0,
         }
     }
 
@@ -399,9 +410,12 @@ impl Pace {
             // say nothing about this cycle.
             self.filled = 0;
             self.next = 0;
+            self.carried = 0;
         }
         let frames = frames as u64;
-        let nominal = i128::from(frames) * 1_000_000_000 / i128::from(self.rate.max(1));
+        // Lengths in units of 2^-32 nanosecond. A cycle of 2^32 frames at one
+        // frame a second is below 2^94 of them.
+        let nominal = (i128::from(frames) << 32) * 1_000_000_000 / i128::from(self.rate.max(1));
         let oldest = if self.filled < MARKS { 0 } else { self.next };
         let measured = self
             .marks
@@ -410,7 +424,7 @@ impl Pace {
             .and_then(|(then_position, then_time)| {
                 let counted = position.checked_sub(*then_position).filter(|c| *c > 0)?;
                 let elapsed = time.checked_sub(*then_time).filter(|e| *e > 0)?;
-                Some(i128::from(elapsed) * i128::from(frames) / i128::from(counted))
+                Some(((i128::from(elapsed) * i128::from(frames)) << 32) / i128::from(counted))
             })
             .filter(|measured| (measured - nominal).abs() * 100 <= nominal);
         if let Some(mark) = self.marks.get_mut(self.next) {
@@ -419,7 +433,9 @@ impl Pace {
         self.next = (self.next + 1) % MARKS;
         self.filled = (self.filled + 1).min(MARKS);
         self.expected = position.checked_add(frames);
-        i64::try_from(measured.unwrap_or(nominal)).unwrap_or(i64::MAX)
+        let exact = measured.unwrap_or(nominal) + self.carried;
+        self.carried = exact & ((1 << 32) - 1);
+        i64::try_from(exact >> 32).unwrap_or(i64::MAX)
     }
 }
 
@@ -569,7 +585,50 @@ impl<const N: usize, const M: usize, const K: usize> Playback for ReceiverPlayba
 
 #[cfg(test)]
 mod tests {
+    use unisono_core::timing;
+    use unisono_dsp::{Position, Step};
+
     use super::Pace;
+
+    /// The pump computes positions with the resampler's arithmetic and the
+    /// core plans with its own. If the two did not agree to the last unit, a
+    /// cycle would end where the next does not begin.
+    #[test]
+    fn the_resampler_and_the_core_advance_a_position_alike() {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut draw = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let largest = Step::LARGEST_OFFSET;
+        for round in 0..20_000 {
+            let frame = draw() >> (draw() % 40);
+            let fraction = match round % 4 {
+                0 => 0,
+                1 => u64::MAX,
+                _ => draw(),
+            };
+            let offset = match round % 5 {
+                0 => largest,
+                1 => -largest,
+                2 => 0,
+                _ => i64::try_from(draw() % (2 * largest.unsigned_abs())).unwrap_or(0) - largest,
+            };
+            let frames = u32::try_from(draw() % 100_000).unwrap_or(0);
+            let core = timing::advance(timing::Position { frame, fraction }, frames, offset);
+            let step = Step::new(offset).expect("within the largest offset");
+            let resampler = Position::new(frame, fraction)
+                .advance(step, u64::from(frames))
+                .expect("far from the largest position");
+            assert_eq!(
+                (core.frame, core.fraction),
+                (resampler.frame(), resampler.fraction()),
+                "frame {frame}, fraction {fraction}, offset {offset}, {frames} frames"
+            );
+        }
+    }
 
     /// A device at 50,000 frames a second, whose frames last 20,000
     /// nanoseconds exactly, running a thousandth fast: 250 frames take
@@ -581,13 +640,19 @@ mod tests {
             |position: u64| i64::try_from(u128::from(position) * 20_000_000 / 1_001).unwrap_or(0);
         // Without an earlier report, the nominal length.
         assert_eq!(pace.duration(0, at(0), 250), 5_000_000);
-        for cycle in 1..100u64 {
+        let mut sum = 0;
+        for cycle in 1..=1_000u64 {
             let duration = pace.duration(cycle * 250, at(cycle * 250), 250);
             assert!(
                 (duration - 4_995_005).abs() <= 1,
                 "cycle {cycle}: {duration}"
             );
+            sum += duration;
         }
+        // The lengths are whole nanoseconds, and what one leaves out the
+        // next ones make up: a thousand of them are a thousand cycles long,
+        // to within what the rounding of the reports allows.
+        assert!((sum - 4_995_004_995).abs() <= 40, "sum {sum}");
     }
 
     /// After a break in the device's count the reports before it are not
