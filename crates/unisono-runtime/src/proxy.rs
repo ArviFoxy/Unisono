@@ -230,6 +230,7 @@ impl Proxy {
             backward: Direction::new(backward, seeds.next()),
             waiting: BinaryHeap::new(),
             held: Vec::new(),
+            free: Vec::new(),
             count: 0,
             buffer: vec![0; 65_536],
         };
@@ -286,12 +287,28 @@ struct Running {
     waiting: BinaryHeap<Reverse<(i64, u64, usize)>>,
     /// The held datagrams, by their place; a delivered one leaves `None`.
     held: Vec<Option<(Held, u8)>>,
+    /// Empty places in `held` available for reuse without growing the vector.
+    free: Vec<usize>,
     count: u64,
     /// Room for the largest datagram there is.
     buffer: Vec<u8>,
 }
 
 impl Running {
+    /// Stores a held datagram in a freed slot if one is available, or appends
+    /// a new slot, and returns its index.
+    fn store_held(&mut self, item: (Held, u8)) -> usize {
+        if let Some(place) = self.free.pop()
+            && let Some(slot) = self.held.get_mut(place)
+        {
+            *slot = Some(item);
+            return place;
+        }
+        let place = self.held.len();
+        self.held.push(Some(item));
+        place
+    }
+
     /// Takes in the datagram in the first `length` bytes of the buffer,
     /// which arrived just now.
     fn take(&mut self, forward: bool, length: usize) {
@@ -305,9 +322,8 @@ impl Running {
         if copies == 0 {
             return;
         }
-        let place = self.held.len();
         let bytes = self.buffer.get(..length).unwrap_or(&[]).to_vec();
-        self.held.push(Some((Held { forward, bytes }, copies)));
+        let place = self.store_held((Held { forward, bytes }, copies));
         for time in [fate.first, fate.second].into_iter().flatten() {
             self.waiting.push(Reverse((time, self.count, place)));
             self.count += 1;
@@ -353,6 +369,7 @@ impl Running {
             let delivered = *copies == 0;
             if delivered {
                 *slot = None;
+                self.free.push(place);
             }
         }
     }
@@ -364,6 +381,7 @@ impl Running {
             if self.waiting.is_empty() {
                 // Nothing is held, so the places can be used from the start.
                 self.held.clear();
+                self.free.clear();
             }
             let sleep = next.map_or(LONGEST_SLEEP * 1_000_000, |time| {
                 time.saturating_sub(clock::raw())
@@ -723,5 +741,60 @@ mod tests {
             .map(|(number, _, _)| *number)
             .collect();
         assert_eq!(seen, expected);
+    }
+
+    #[test]
+    fn held_slots_are_reused_while_traffic_remains_in_flight() {
+        let front = party();
+        let back = party();
+        let target = party().local_addr().expect("an address");
+        let mut running = super::Running {
+            front,
+            back,
+            target,
+            client: None,
+            forward: Direction::new(
+                Impairment {
+                    delay: 5_000_000,
+                    ..Impairment::NONE
+                },
+                1,
+            ),
+            backward: Direction::new(Impairment::NONE, 2),
+            waiting: std::collections::BinaryHeap::new(),
+            held: Vec::new(),
+            free: Vec::new(),
+            count: 0,
+            buffer: vec![0; 64],
+        };
+        // Keep one datagram permanently in flight so `waiting` is never empty,
+        // while churning through 200 immediate deliveries.
+        let keep = running.store_held((
+            super::Held {
+                forward: true,
+                bytes: vec![1],
+            },
+            1,
+        ));
+        running.waiting.push(std::cmp::Reverse((i64::MAX, 0, keep)));
+        running.count = 1;
+        for step in 0..200u64 {
+            let place = running.store_held((
+                super::Held {
+                    forward: true,
+                    bytes: vec![2],
+                },
+                1,
+            ));
+            running
+                .waiting
+                .push(std::cmp::Reverse((0, step + 1, place)));
+            running.deliver();
+        }
+        assert!(
+            running.held.len() <= 2,
+            "held slots grew to {}",
+            running.held.len()
+        );
     }
 }

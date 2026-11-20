@@ -60,8 +60,10 @@ const REFRESH: i64 = 100_000;
 pub const WAITING: usize = 64;
 
 /// After how many datagrams with a stamp of the packet scheduler and none of
-/// the device the socket concludes that the device gives none.
-const PATIENCE: u32 = 3;
+/// the device the socket concludes that the device gives none. Large enough
+/// not to trip on brief transmit-queue bursts while still settling well within
+/// [`WAITING`].
+const PATIENCE: u32 = 16;
 
 /// With how many datagrams sent and no report waiting for any of them the
 /// socket concludes that the kernel gives none.
@@ -836,33 +838,57 @@ mod sys {
             stamped: None,
             report: None,
         };
+        #[allow(clippy::unnecessary_cast)]
+        let control_len = (header.msg_controllen as usize).min(control.0.len());
+        let control_start = control.0.as_ptr() as usize;
+        let control_end = control_start.saturating_add(control_len);
         // SAFETY: the header is the one `recvmsg` filled, so its control
         // area holds whole control messages up to `msg_controllen`.
         let mut control_message = unsafe { libc::CMSG_FIRSTHDR(&raw const header) };
         while !control_message.is_null() {
             // SAFETY: the pointer is not null and comes from the kernel's
             // chain of control messages in an area aligned for them.
-            let (level, kind) =
-                unsafe { ((*control_message).cmsg_level, (*control_message).cmsg_type) };
+            #[allow(clippy::unnecessary_cast)]
+            let (level, kind, cmsg_len) = unsafe {
+                (
+                    (*control_message).cmsg_level,
+                    (*control_message).cmsg_type,
+                    (*control_message).cmsg_len as usize,
+                )
+            };
             // SAFETY: the data of a control message follows its header
             // inside the control area.
             let data = unsafe { libc::CMSG_DATA(control_message) };
+            let data_addr = data as usize;
+            let available = control_end.saturating_sub(data_addr);
             if level == libc::SOL_SOCKET && kind == libc::SCM_TIMESTAMPING {
-                // SAFETY: a message of this kind carries three `timespec`,
-                // of which the first is the software stamp; it need not be
-                // aligned, so it is read byte by byte.
-                let software = unsafe { ptr::read_unaligned(data.cast::<libc::timespec>()) };
-                found.stamped = Some(nanos(&software));
+                // SAFETY: `CMSG_LEN` is a pure size calculation on a small struct.
+                let needed = unsafe { libc::CMSG_LEN(length_of::<libc::timespec>()) } as usize;
+                if cmsg_len >= needed && available >= size_of::<libc::timespec>() {
+                    // SAFETY: `cmsg_len` and `control_end` both confirm that a
+                    // full `timespec` (the first of the three in
+                    // `SCM_TIMESTAMPING`) lies inside the control buffer; it
+                    // need not be aligned, so it is read unaligned.
+                    let software = unsafe { ptr::read_unaligned(data.cast::<libc::timespec>()) };
+                    found.stamped = Some(nanos(&software));
+                }
             } else if (level == libc::SOL_IP && kind == libc::IP_RECVERR)
                 || (level == libc::SOL_IPV6 && kind == libc::IPV6_RECVERR)
             {
-                // SAFETY: a message of this kind starts with a
-                // `sock_extended_err`, read byte by byte as above.
-                let report = unsafe { ptr::read_unaligned(data.cast::<libc::sock_extended_err>()) };
-                let is_stamp = report.ee_errno == libc::ENOMSG as u32
-                    && report.ee_origin == libc::SO_EE_ORIGIN_TIMESTAMPING;
-                if is_stamp {
-                    found.report = Some((report.ee_info, report.ee_data));
+                // SAFETY: `CMSG_LEN` is a pure size calculation on a small struct.
+                let needed =
+                    unsafe { libc::CMSG_LEN(length_of::<libc::sock_extended_err>()) } as usize;
+                if cmsg_len >= needed && available >= size_of::<libc::sock_extended_err>() {
+                    // SAFETY: `cmsg_len` and `control_end` both confirm that a
+                    // full `sock_extended_err` lies inside the control buffer;
+                    // read unaligned as above.
+                    let report =
+                        unsafe { ptr::read_unaligned(data.cast::<libc::sock_extended_err>()) };
+                    let is_stamp = report.ee_errno == libc::ENOMSG as u32
+                        && report.ee_origin == libc::SO_EE_ORIGIN_TIMESTAMPING;
+                    if is_stamp {
+                        found.report = Some((report.ee_info, report.ee_data));
+                    }
                 }
             }
             // SAFETY: both pointers are the ones this loop got from the
