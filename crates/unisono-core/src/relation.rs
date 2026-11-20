@@ -138,6 +138,18 @@ impl<const M: usize> Estimator<M> {
         }
     }
 
+    /// Puts `sample` at `index` of the room for kept samples, and says
+    /// whether there is such a place.
+    fn put(&mut self, index: usize, sample: Sample) -> bool {
+        match self.kept.get_mut(index) {
+            Some(place) => {
+                *place = sample;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Takes in the sample of one packet of window `window`.
     ///
     /// A window ends when a sample of another window is given, or when
@@ -199,8 +211,7 @@ impl<const M: usize> Estimator<M> {
         if self.len >= M {
             self.drop_oldest(1);
         }
-        if let Some(place) = self.kept.get_mut(self.len) {
-            *place = sample;
+        if self.put(self.len, sample) {
             self.len = self.len.saturating_add(1);
         }
     }
@@ -225,10 +236,8 @@ impl<const M: usize> Estimator<M> {
         let mut to = 0usize;
         let mut from = count;
         while from < self.len {
-            if let Some(sample) = self.sample(from)
-                && let Some(place) = self.kept.get_mut(to)
-            {
-                *place = sample;
+            if let Some(sample) = self.sample(from) {
+                self.put(to, sample);
             }
             to = to.saturating_add(1);
             from = from.saturating_add(1);

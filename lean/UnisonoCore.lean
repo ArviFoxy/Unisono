@@ -396,8 +396,29 @@ def relation.Estimator.hull_sample
   | none => ok none
   | some index => relation.Estimator.sample self index
 
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::put]:
+    Source: 'crates/unisono-core/src/relation.rs', lines 143:4-151:5 -/
+def relation.Estimator.put
+  {M : Std.Usize} (self : relation.Estimator M) (index : Std.Usize)
+  (sample : relation.Sample) :
+  Result (Bool × (relation.Estimator M))
+  := do
+  let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.kept)
+  let (o, get_mut_back) ←
+    core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+      relation.Sample) s index
+  match o with
+  | none =>
+    let s1 := get_mut_back none
+    let a := to_slice_mut_back s1
+    ok (false, { self with kept := a })
+  | some _ =>
+    let s1 := get_mut_back (some sample)
+    let a := to_slice_mut_back s1
+    ok (true, { self with kept := a })
+
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 323:8-332:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 332:8-341:5 -/
 @[rust_loop_body]
 def relation.Estimator.is_under_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -421,7 +442,7 @@ def relation.Estimator.is_under_loop.body
   else ok (done true)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 323:8-332:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 332:8-341:5 -/
 @[rust_loop]
 def relation.Estimator.is_under_loop
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -434,7 +455,7 @@ def relation.Estimator.is_under_loop
     index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 321:4-332:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 330:4-341:5 -/
 @[reducible]
 def relation.Estimator.is_under
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -444,7 +465,7 @@ def relation.Estimator.is_under
   relation.Estimator.is_under_loop self «from» «to» 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 288:12-297:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 297:12-306:13 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0_loop0.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -492,7 +513,7 @@ def relation.Estimator.bridge_loop0_loop0.body
   else ok (done size)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 288:12-297:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 297:12-306:13 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0_loop0
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -507,7 +528,7 @@ def relation.Estimator.bridge_loop0_loop0
     size
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 282:8-303:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 291:8-312:9 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0.body
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
@@ -551,7 +572,7 @@ def relation.Estimator.bridge_loop0.body
       self.line, hull, size))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 282:8-303:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 291:8-312:9 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
@@ -566,7 +587,7 @@ def relation.Estimator.bridge_loop0
     (hull, size, next)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 306:8-318:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 315:8-327:5 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop1.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -627,7 +648,7 @@ def relation.Estimator.bridge_loop1.body
   else ok (done none)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 306:8-318:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 315:8-327:5 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop1
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -642,7 +663,7 @@ def relation.Estimator.bridge_loop1
     edge
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 277:4-318:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 286:4-327:5 -/
 def relation.Estimator.bridge
   {M : Std.Usize} (self : relation.Estimator M) (middle : Std.I64) :
   Result (Option (relation.Sample × relation.Sample))
@@ -653,7 +674,7 @@ def relation.Estimator.bridge
   relation.Estimator.bridge_loop1 a i i1 i2 o o1 middle hull1 size 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::fit]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 240:4-272:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 249:4-281:5 -/
 def relation.Estimator.fit
   {M : Std.Usize} (self : relation.Estimator M) :
   Result (relation.Estimator M)
@@ -726,7 +747,7 @@ def relation.Estimator.fit
           else ok self
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 227:8-235:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 238:8-244:9 -/
 @[rust_loop_body]
 def relation.Estimator.drop_oldest_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
@@ -738,29 +759,22 @@ def relation.Estimator.drop_oldest_loop.body
   if «from» < self.len
   then
     let o ← relation.Estimator.sample self «from»
-    let a ←
+    let self1 ←
       match o with
-      | none => ok self.kept
-      | some _ =>
+      | none => ok self
+      | some sample =>
         do
-        let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.kept)
-        let (o1, get_mut_back) ←
-          core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
-            relation.Sample) s «to»
-        match o1 with
-        | none => let s1 := get_mut_back none
-                  ok (to_slice_mut_back s1)
-        | some _ => let s1 := get_mut_back o
-                    ok (to_slice_mut_back s1)
+        let (_, self2) ← relation.Estimator.put self «to» sample
+        ok self2
     let to1 ← lift (core.num.Usize.saturating_add «to» 1#usize)
     let from1 ← lift (core.num.Usize.saturating_add «from» 1#usize)
-    ok (cont ({ self with kept := a }, to1, from1))
+    ok (cont (self1, to1, from1))
   else
     ok (done (self.kept, self.span, self.window, self.lowest, self.line,
       «to»))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 227:8-235:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 238:8-244:9 -/
 @[rust_loop]
 def relation.Estimator.drop_oldest_loop
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
@@ -774,7 +788,7 @@ def relation.Estimator.drop_oldest_loop
     (self, «to», «from»)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 221:4-237:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 232:4-246:5 -/
 def relation.Estimator.drop_oldest
   {M : Std.Usize} (self : relation.Estimator M) (count : Std.Usize) :
   Result (relation.Estimator M)
@@ -795,7 +809,7 @@ def relation.Estimator.drop_oldest
       }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 211:8-216:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 222:8-227:9 -/
 @[rust_loop_body]
 def relation.Estimator.forget_before_loop.body
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
@@ -824,7 +838,7 @@ def relation.Estimator.forget_before_loop.body
       self.line, old))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 211:8-216:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 222:8-227:9 -/
 @[rust_loop]
 def relation.Estimator.forget_before_loop
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
@@ -838,7 +852,7 @@ def relation.Estimator.forget_before_loop
     old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 209:4-218:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 220:4-229:5 -/
 def relation.Estimator.forget_before
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64) :
   Result (relation.Estimator M)
@@ -850,7 +864,7 @@ def relation.Estimator.forget_before
     old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::keep]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 181:4-206:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 193:4-217:5 -/
 def relation.Estimator.keep
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -873,20 +887,12 @@ def relation.Estimator.keep
         relation.Estimator.drop_oldest { self with len := i, line := o }
           1#usize
       else ok { self with len := i, line := o }
-    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self1.kept)
-    let (o2, get_mut_back) ←
-      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
-        relation.Sample) s self1.len
-    match o2 with
-    | none =>
-      let s1 := get_mut_back none
-      let a := to_slice_mut_back s1
-      ok { self1 with kept := a }
-    | some _ =>
-      let i1 ← lift (core.num.Usize.saturating_add self1.len 1#usize)
-      let s1 := get_mut_back (some sample)
-      let a := to_slice_mut_back s1
-      ok { self1 with kept := a, len := i1 }
+    let (b, self2) ← relation.Estimator.put self1 self1.len sample
+    if b
+    then
+      let i1 ← lift (core.num.Usize.saturating_add self2.len 1#usize)
+      ok { self2 with len := i1 }
+    else ok self2
   | some last1 =>
     if sample.time <= last1.time
     then
@@ -900,20 +906,12 @@ def relation.Estimator.keep
             relation.Estimator.drop_oldest
               { self with len := 0#usize, line := none } 1#usize
           else ok { self with len := 0#usize, line := none }
-        let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self1.kept)
-        let (o2, get_mut_back) ←
-          core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
-            relation.Sample) s self1.len
-        match o2 with
-        | none =>
-          let s1 := get_mut_back none
-          let a := to_slice_mut_back s1
-          ok { self1 with kept := a }
-        | some _ =>
-          let i2 ← lift (core.num.Usize.saturating_add self1.len 1#usize)
-          let s1 := get_mut_back (some sample)
-          let a := to_slice_mut_back s1
-          ok { self1 with kept := a, len := i2 }
+        let (b, self2) ← relation.Estimator.put self1 self1.len sample
+        if b
+        then
+          let i2 ← lift (core.num.Usize.saturating_add self2.len 1#usize)
+          ok { self2 with len := i2 }
+        else ok self2
     else
       let self1 ←
         if i >= M
@@ -921,23 +919,15 @@ def relation.Estimator.keep
           relation.Estimator.drop_oldest { self with len := i, line := o }
             1#usize
         else ok { self with len := i, line := o }
-      let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self1.kept)
-      let (o2, get_mut_back) ←
-        core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
-          relation.Sample) s self1.len
-      match o2 with
-      | none =>
-        let s1 := get_mut_back none
-        let a := to_slice_mut_back s1
-        ok { self1 with kept := a }
-      | some _ =>
-        let i1 ← lift (core.num.Usize.saturating_add self1.len 1#usize)
-        let s1 := get_mut_back (some sample)
-        let a := to_slice_mut_back s1
-        ok { self1 with kept := a, len := i1 }
+      let (b, self2) ← relation.Estimator.put self1 self1.len sample
+      if b
+      then
+        let i1 ← lift (core.num.Usize.saturating_add self2.len 1#usize)
+        ok { self2 with len := i1 }
+      else ok self2
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::end_window]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 165:4-171:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 177:4-183:5
     Visibility: public -/
 def relation.Estimator.end_window
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -954,7 +944,7 @@ def relation.Estimator.end_window
     relation.Estimator.fit self2
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::observe]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 145:4-161:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 157:4-173:5
     Visibility: public -/
 def relation.Estimator.observe
   {M : Std.Usize} (self : relation.Estimator M) (window : Std.U64)

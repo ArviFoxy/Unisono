@@ -166,4 +166,160 @@ theorem is_under_spec {M : Std.Usize} (e : relation.Estimator M) (a b : relation
   · intro k hk
     simp at hk
 
+theorem set_opt_some {α : Type} (l : List α) (i : ℕ) (x : α) :
+    l.set_opt i (some x) = l.set i x := by
+  induction l generalizing i with
+  | nil => simp
+  | cons hd tl ih =>
+    cases i with
+    | zero => simp
+    | succ n => simp [ih]
+
+theorem set_opt_none {α : Type} (l : List α) (i : ℕ) : l.set_opt i none = l := by
+  induction l generalizing i with
+  | nil => simp
+  | cons hd tl ih =>
+    cases i with
+    | zero => simp
+    | succ n => simp [ih]
+
+/-- `put` writes a sample at a place of the room for kept samples, if the
+place exists, and changes nothing else. -/
+@[step]
+theorem put_spec {M : Std.Usize} (e : relation.Estimator M) (i : Std.Usize)
+    (x : relation.Sample) :
+    relation.Estimator.put e i x ⦃ r =>
+      r.1 = decide (i.val < M.val)
+      ∧ r.2.kept.val = (if i.val < M.val then e.kept.val.set i.val x else e.kept.val)
+      ∧ r.2.len = e.len ∧ r.2.span = e.span ∧ r.2.window = e.window
+      ∧ r.2.lowest = e.lowest ∧ r.2.line = e.line ⦄ := by
+  unfold relation.Estimator.put
+  simp only [Array.to_slice_mut, lift, core.slice.Slice.get_mut,
+    core.slice.index.Usize.get_mut, bind_ok, Std.uncurry]
+  have hlen : e.kept.val.length = M.val := by scalar_tac
+  have hsl : (Array.to_slice e.kept).val = e.kept.val := by simp [Array.to_slice]
+  by_cases hi : i.val < M.val
+  · have hget : (Array.to_slice e.kept)[i]? = some (e.kept.val[i.val]'(by omega)) := by
+      rw [Slice.getElem?_Usize_eq, hsl]
+      exact List.getElem?_eq_getElem (by omega)
+    simp only [hget, WP.spec_ok, hi, decide_true, ite_true, true_and, and_true]
+    rw [Array.from_slice_val _ _ (by simp [Slice.set_opt, hsl, hlen])]
+    simp [Slice.set_opt, hsl, set_opt_some]
+  · have hget : (Array.to_slice e.kept)[i]? = none := by
+      rw [Slice.getElem?_Usize_eq, hsl]
+      exact List.getElem?_eq_none (by omega)
+    simp only [hget, WP.spec_ok, hi, decide_false, ite_false, true_and, and_true]
+    rw [Array.from_slice_val _ _ (by simp [Slice.set_opt, hsl, hlen])]
+    simp [Slice.set_opt, hsl, set_opt_none]
+
+/-- The state of the loop of `drop_oldest` after some rounds, against the
+estimator `e` it started from: the places before `to` hold what was `count`
+places further on, the places from `to` on are as they were, and nothing else
+of the estimator has changed. -/
+def DropInv {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize)
+    (x : relation.Estimator M × Std.Usize × Std.Usize) : Prop :=
+  x.2.2.val = x.2.1.val + count.val
+  ∧ (x.2.2.val ≤ e.len.val ∨ x.2.1.val = 0)
+  ∧ x.1.len = e.len ∧ x.1.span = e.span ∧ x.1.window = e.window
+  ∧ x.1.lowest = e.lowest ∧ x.1.line = e.line
+  ∧ (∀ k, k < x.2.1.val → x.1.kept.val[k]? = e.kept.val[k + count.val]?)
+  ∧ (∀ k, x.2.1.val ≤ k → x.1.kept.val[k]? = e.kept.val[k]?)
+
+@[step]
+theorem drop_oldest_loop_spec {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize)
+    (hfit : e.len.val ≤ M.val) :
+    relation.Estimator.drop_oldest_loop e 0#usize count ⦃ r =>
+      (r.2.2.2.2.2.val = e.len.val - count.val)
+      ∧ r.1.val.take r.2.2.2.2.2.val = (keptList e).drop count.val
+      ∧ r.2.1 = e.span ∧ r.2.2.1 = e.window ∧ r.2.2.2.1 = e.lowest ∧ r.2.2.2.2.1 = e.line ⦄ := by
+  unfold relation.Estimator.drop_oldest_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : relation.Estimator M × Std.Usize × Std.Usize => e.len.val - x.2.2.val)
+    (inv := DropInv e count)
+  · rintro ⟨self1, to1, from1⟩ ⟨hft, hle, hlen, hspan, hwin, hlow, hline, hshift, hsame⟩
+    simp only at hft hle hlen hspan hwin hlow hline hshift hsame
+    unfold relation.Estimator.drop_oldest_loop.body
+    simp only
+    have hM : e.kept.val.length = M.val := by scalar_tac
+    have hM1 : self1.kept.val.length = M.val := by scalar_tac
+    split
+    · have hfrom : from1.val < e.len.val := by rw [← hlen]; scalar_tac
+      step as ⟨o, ho⟩
+      obtain ⟨x, hx⟩ : ∃ x, e.kept.val[from1.val]? = some x :=
+        ⟨e.kept.val[from1.val]'(by omega), List.getElem?_eq_getElem (by omega)⟩
+      have ho' : o = some x := by
+        rw [ho, keptList, hlen, List.getElem?_take, ite_eq_left hfrom, hsame _ (by omega), hx]
+      subst ho'
+      simp only
+      rw [Aeneas.Std.bind_assoc]
+      step as ⟨r, hr1, hr2, hr3, hr4, hr5, hr6, hr7⟩
+      obtain ⟨b, self2⟩ := r
+      simp only [uncurry, bind_ok] at hr1 hr2 hr3 hr4 hr5 hr6 hr7 ⊢
+      step as ⟨to2, hto2⟩
+      step as ⟨from2, hfrom2⟩
+      have hto2v : to2.val = to1.val + 1 := by
+        rw [hto2]; exact Usize.saturating_add_val _ _ (by scalar_tac)
+      have hfrom2v : from2.val = from1.val + 1 := by
+        rw [hfrom2]; exact Usize.saturating_add_val _ _ (by scalar_tac)
+      have hto1M : to1.val < M.val := by omega
+      rw [ite_eq_left hto1M] at hr2
+      refine ⟨⟨?_, Or.inl ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩, ?_⟩
+      · show from2.val = to2.val + count.val
+        omega
+      · show from2.val ≤ e.len.val
+        omega
+      · show self2.len = e.len
+        rw [hr3, hlen]
+      · show self2.span = e.span
+        rw [hr4, hspan]
+      · show self2.window = e.window
+        rw [hr5, hwin]
+      · show self2.lowest = e.lowest
+        rw [hr6, hlow]
+      · show self2.line = e.line
+        rw [hr7, hline]
+      · intro k hk
+        show self2.kept.val[k]? = e.kept.val[k + count.val]?
+        have hk' : k < to2.val := hk
+        rw [hr2, List.getElem?_set]
+        by_cases hkt : to1.val = k
+        · subst hkt
+          rw [ite_eq_left rfl, ite_eq_left (by omega), ← hft, hx]
+        · rw [ite_eq_right hkt]
+          exact hshift k (by omega)
+      · intro k hk
+        show self2.kept.val[k]? = e.kept.val[k]?
+        have hk' : to2.val ≤ k := hk
+        rw [hr2, List.getElem?_set, ite_eq_right (by omega)]
+        exact hsame k (by omega)
+      · show e.len.val - from2.val < e.len.val - from1.val
+        omega
+    · have hge : e.len.val ≤ from1.val := by rw [← hlen]; scalar_tac
+      simp only [WP.spec_ok]
+      have hto : to1.val = e.len.val - count.val := by omega
+      refine ⟨hto, ?_, hspan, hwin, hlow, hline⟩
+      apply List.ext_getElem?
+      intro k
+      simp only [keptList, List.getElem?_take, List.getElem?_drop]
+      by_cases hk : k < to1.val
+      · rw [ite_eq_left hk, ite_eq_left (by omega), hshift k hk, Nat.add_comm]
+      · rw [ite_eq_right hk, ite_eq_right (by omega)]
+  · simp [DropInv]
+
+/-- `drop_oldest` removes the `count` oldest kept samples and changes nothing
+else, for an estimator whose count of kept samples fits its room. -/
+@[step]
+theorem drop_oldest_spec {M : Std.Usize} (e : relation.Estimator M) (count : Std.Usize)
+    (hfit : e.len.val ≤ M.val) :
+    relation.Estimator.drop_oldest e count ⦃ e' =>
+      keptList e' = (keptList e).drop count.val
+      ∧ e'.len.val = e.len.val - count.val
+      ∧ e'.span = e.span ∧ e'.window = e.window ∧ e'.lowest = e.lowest ∧ e'.line = e.line ⦄ := by
+  unfold relation.Estimator.drop_oldest
+  split
+  · have h0 : count.val = 0 := by scalar_tac
+    simp [h0]
+  · step as ⟨a, sp, wi, lo, li, left, p1, p2, p3, p4, p5, p6⟩
+    exact ⟨p2, p1, p3, p4, p5, p6⟩
+
 end Unisono.Relation
