@@ -13,7 +13,7 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{fixed, relation};
+use unisono_core::{fixed, packet, relation};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -155,11 +155,149 @@ fn relation_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// The fields of a header as numbers, in the order of the layout.
+fn fields(header: &packet::Audio) -> [i128; 16] {
+    [
+        i128::from(header.stream),
+        i128::from(header.timeline),
+        i128::from(header.index),
+        i128::from(header.capture),
+        i128::from(header.rate),
+        i128::from(header.frames),
+        i128::from(header.channels),
+        match header.format {
+            packet::Format::Signed16 => 1,
+            packet::Format::Signed24 => 2,
+        },
+        i128::from(header.level),
+        i128::from(header.level_slope),
+        i128::from(header.span),
+        i128::from(header.window),
+        i128::from(header.flags),
+        i128::from(header.protection),
+        i128::from(header.stamped_index),
+        i128::from(header.stamped_departure),
+    ]
+}
+
+/// What parsing gives, as numbers: 0 and the fields, or the number of the
+/// reason for rejection, its detail, and zeros.
+fn parsed(bytes: &[u8]) -> [i128; 17] {
+    let mut numbers = [0i128; 17];
+    match packet::parse_audio(bytes) {
+        Ok(header) => numbers[1..].copy_from_slice(&fields(&header)),
+        Err(reason) => {
+            let (code, detail) = match reason {
+                packet::Rejected::TooShort => (1, 0),
+                packet::Rejected::NotUnisono => (2, 0),
+                packet::Rejected::Version(version) => (3, version),
+                packet::Rejected::Kind(kind) => (4, kind),
+                packet::Rejected::Format(format) => (5, format),
+                packet::Rejected::Length => (6, 0),
+            };
+            numbers[0] = code;
+            numbers[1] = i128::from(detail);
+        }
+    }
+    numbers
+}
+
+fn join(numbers: &[i128]) -> String {
+    numbers
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn bytes_of(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Headers drawn at random, written and read back, and the same packets with
+/// one byte changed, one byte more, and one byte less.
+fn packet_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(3);
+    for _ in 0..150 {
+        // Each cast keeps the low bits of a random number, which is the intent.
+        #[allow(clippy::cast_possible_truncation)]
+        let header = packet::Audio {
+            stream: sequence.next() as u16,
+            timeline: sequence.next(),
+            index: sequence.next(),
+            capture: sequence.signed(),
+            rate: sequence.next() as u32,
+            frames: (sequence.next() % 4) as u16,
+            channels: (sequence.next() % 4) as u8,
+            format: if sequence.next().is_multiple_of(2) {
+                packet::Format::Signed16
+            } else {
+                packet::Format::Signed24
+            },
+            level: sequence.signed(),
+            level_slope: sequence.signed() as i32,
+            span: sequence.next() as u32,
+            window: sequence.next() as u32,
+            flags: sequence.next() as u16,
+            protection: sequence.next() as u16,
+            stamped_index: sequence.next(),
+            stamped_departure: sequence.signed(),
+        };
+        let mut buffer = [0u8; 256];
+        let Some(length) = packet::write_audio(&header, &mut buffer) else {
+            continue;
+        };
+        let good = &buffer[..length];
+        writeln!(
+            out,
+            "write_audio {} -> {length} {}",
+            join(&fields(&header)),
+            bytes_of(&buffer[..packet::HEADER])
+        )?;
+        writeln!(
+            out,
+            "parse_audio {} -> {}",
+            bytes_of(good),
+            join(&parsed(good))
+        )?;
+        let mut changed = good.to_vec();
+        let place = usize::try_from(sequence.next() % 64).unwrap_or(0);
+        changed[place] ^= 1 << (sequence.next() % 8);
+        writeln!(
+            out,
+            "parse_audio {} -> {}",
+            bytes_of(&changed),
+            join(&parsed(&changed))
+        )?;
+        let mut longer = good.to_vec();
+        longer.push(0);
+        writeln!(
+            out,
+            "parse_audio {} -> {}",
+            bytes_of(&longer),
+            join(&parsed(&longer))
+        )?;
+        let shorter = &good[..length - 1];
+        writeln!(
+            out,
+            "parse_audio {} -> {}",
+            bytes_of(shorter),
+            join(&parsed(shorter))
+        )?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
     mul_shift_cases(&mut out)?;
     div_floor_cases(&mut out)?;
     relation_cases(&mut out)?;
+    packet_cases(&mut out)?;
     out.flush()
 }

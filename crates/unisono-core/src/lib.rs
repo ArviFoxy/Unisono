@@ -30,12 +30,14 @@
     )
 )]
 // A cast written with `as` translates to Lean directly; `From` and `TryFrom`
-// between integer types do not. Neither do `Option::copied` and a closure
-// that returns a reference, so an `Option` is taken apart with `match`.
-#![allow(clippy::cast_lossless, clippy::manual_map)]
+// between integer types do not. Neither do `Option::copied`, a closure that
+// returns a reference, and `?` on an `Option`, so an `Option` is taken apart
+// with `match` or `let ... else`.
+#![allow(clippy::cast_lossless, clippy::manual_map, clippy::question_mark)]
 
 #[cfg(test)]
 extern crate std;
 
 pub mod fixed;
+pub mod packet;
 pub mod relation;

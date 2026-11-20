@@ -81,6 +81,934 @@ def fixed.div_floor (a : Std.I128) (b : Std.I64) : Result Std.I128 := do
         then ok (core.num.I128.wrapping_sub quotient 1#i128)
         else ok quotient
 
+/-- [unisono_core::packet::MAGIC]
+    Source: 'crates/unisono-core/src/packet.rs', lines 12:0-12:35
+    Visibility: public -/
+@[global_simps, irreducible] def packet.MAGIC : Std.U64 := 1936289397#u64
+
+/-- [unisono_core::packet::VERSION]
+    Source: 'crates/unisono-core/src/packet.rs', lines 15:0-15:26
+    Visibility: public -/
+@[global_simps, irreducible] def packet.VERSION : Std.U8 := 1#u8
+
+/-- [unisono_core::packet::KIND_AUDIO]
+    Source: 'crates/unisono-core/src/packet.rs', lines 18:0-18:29
+    Visibility: public -/
+@[global_simps, irreducible] def packet.KIND_AUDIO : Std.U8 := 1#u8
+
+/-- [unisono_core::packet::HEADER]
+    Source: 'crates/unisono-core/src/packet.rs', lines 21:0-21:29
+    Visibility: public -/
+@[global_simps, irreducible] def packet.HEADER : Std.Usize := 80#usize
+
+/-- [unisono_core::packet::Format]
+    Source: 'crates/unisono-core/src/packet.rs', lines 25:0-30:1
+    Visibility: public -/
+@[discriminant isize]
+inductive packet.Format where
+| Signed16 : packet.Format
+| Signed24 : packet.Format
+
+/-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Format}::clone]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:9-24:14
+    Visibility: public -/
+def packet.Format.Insts.CoreCloneClone.clone
+  (self : packet.Format) : Result packet.Format := do
+  ok self
+
+/-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:9-24:14 -/
+@[reducible]
+def packet.Format.Insts.CoreCloneClone : core.clone.Clone packet.Format := {
+  clone := packet.Format.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:16-24:20 -/
+@[reducible]
+def packet.Format.Insts.CoreMarkerCopy : core.marker.Copy packet.Format := {
+  cloneInst := packet.Format.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:22-24:31 -/
+@[reducible]
+def packet.Format.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq packet.Format := {
+}
+
+/-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Format> for unisono_core::packet::Format}::eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:22-24:31
+    Visibility: public -/
+def packet.Format.Insts.CoreCmpPartialEqFormat.eq
+  (self : packet.Format) (other : packet.Format) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Format> for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:22-24:31 -/
+@[reducible]
+def packet.Format.Insts.CoreCmpPartialEqFormat : core.cmp.PartialEq
+  packet.Format packet.Format := {
+  eq := packet.Format.Insts.CoreCmpPartialEqFormat.eq
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:33-24:35 -/
+@[reducible]
+impl_def packet.Format.Insts.CoreCmpEq : core.cmp.Eq packet.Format := {
+  partialEqInst := packet.Format.Insts.CoreCmpPartialEqFormat
+  assert_fields_are_eq := core.cmp.Eq.assert_fields_are_eq.default
+    packet.Format.Insts.CoreCmpEq
+}
+
+/-- [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Format}::fmt]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:37-24:42
+    Visibility: public -/
+def packet.Format.Insts.CoreFmtDebug.fmt
+  (self : packet.Format) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | packet.Format.Signed16 => core.fmt.Formatter.write_str f (toStr "Signed16")
+  | packet.Format.Signed24 => core.fmt.Formatter.write_str f (toStr "Signed24")
+
+/-- Trait implementation: [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Format}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 24:37-24:42 -/
+@[reducible]
+def packet.Format.Insts.CoreFmtDebug : core.fmt.Debug packet.Format := {
+  fmt := packet.Format.Insts.CoreFmtDebug.fmt
+}
+
+/-- [unisono_core::packet::{unisono_core::packet::Format}::bytes]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 35:4-40:5
+    Visibility: public -/
+def packet.Format.bytes (self : packet.Format) : Result Std.Usize := do
+  match self with
+  | packet.Format.Signed16 => ok 2#usize
+  | packet.Format.Signed24 => ok 3#usize
+
+/-- [unisono_core::packet::{unisono_core::packet::Format}::code]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 42:4-47:5 -/
+def packet.Format.code (self : packet.Format) : Result Std.U8 := do
+  match self with
+  | packet.Format.Signed16 => ok 1#u8
+  | packet.Format.Signed24 => ok 2#u8
+
+/-- [unisono_core::packet::{unisono_core::packet::Format}::from_code]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 49:4-55:5 -/
+def packet.Format.from_code
+  (code : Std.U8) : Result (Option packet.Format) := do
+  match code with
+  | 1#uscalar => ok (some packet.Format.Signed16)
+  | 2#uscalar => ok (some packet.Format.Signed24)
+  | _ => ok none
+
+/-- [unisono_core::packet::Audio]
+    Source: 'crates/unisono-core/src/packet.rs', lines 63:0-99:1
+    Visibility: public -/
+structure packet.Audio where
+  stream : Std.U16
+  timeline : Std.U64
+  index : Std.U64
+  capture : Std.I64
+  rate : Std.U32
+  frames : Std.U16
+  channels : Std.U8
+  format : packet.Format
+  level : Std.I64
+  level_slope : Std.I32
+  span : Std.U32
+  window : Std.U32
+  flags : Std.U16
+  protection : Std.U16
+  stamped_index : Std.U64
+  stamped_departure : Std.I64
+
+/-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Audio}::clone]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:9-62:14
+    Visibility: public -/
+def packet.Audio.Insts.CoreCloneClone.clone
+  (self : packet.Audio) : Result packet.Audio := do
+  ok self
+
+/-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:9-62:14 -/
+@[reducible]
+def packet.Audio.Insts.CoreCloneClone : core.clone.Clone packet.Audio := {
+  clone := packet.Audio.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:16-62:20 -/
+@[reducible]
+def packet.Audio.Insts.CoreMarkerCopy : core.marker.Copy packet.Audio := {
+  cloneInst := packet.Audio.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:22-62:31 -/
+@[reducible]
+def packet.Audio.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq packet.Audio := {
+}
+
+/-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Audio> for unisono_core::packet::Audio}::eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:22-62:31
+    Visibility: public -/
+def packet.Audio.Insts.CoreCmpPartialEqAudio.eq
+  (self : packet.Audio) (other : packet.Audio) : Result Bool := do
+  if self.stream = other.stream
+  then
+    if self.timeline = other.timeline
+    then
+      if self.index = other.index
+      then
+        if self.capture = other.capture
+        then
+          if self.rate = other.rate
+          then
+            if self.frames = other.frames
+            then
+              if self.channels = other.channels
+              then
+                if self.level = other.level
+                then
+                  if self.level_slope = other.level_slope
+                  then
+                    if self.span = other.span
+                    then
+                      if self.window = other.window
+                      then
+                        if self.flags = other.flags
+                        then
+                          if self.protection = other.protection
+                          then
+                            if self.stamped_index = other.stamped_index
+                            then
+                              if self.stamped_departure =
+                                other.stamped_departure
+                              then
+                                packet.Format.Insts.CoreCmpPartialEqFormat.eq
+                                  self.format other.format
+                              else ok false
+                            else ok false
+                          else ok false
+                        else ok false
+                      else ok false
+                    else ok false
+                  else ok false
+                else ok false
+              else ok false
+            else ok false
+          else ok false
+        else ok false
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Audio> for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:22-62:31 -/
+@[reducible]
+def packet.Audio.Insts.CoreCmpPartialEqAudio : core.cmp.PartialEq packet.Audio
+  packet.Audio := {
+  eq := packet.Audio.Insts.CoreCmpPartialEqAudio.eq
+}
+
+/-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Audio}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:33-62:35
+    Visibility: public -/
+def packet.Audio.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : packet.Audio) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:33-62:35 -/
+@[reducible]
+def packet.Audio.Insts.CoreCmpEq : core.cmp.Eq packet.Audio := {
+  partialEqInst := packet.Audio.Insts.CoreCmpPartialEqAudio
+  assert_fields_are_eq := packet.Audio.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Audio}::fmt]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:37-62:42
+    Visibility: public -/
+def packet.Audio.Insts.CoreFmtDebug.fmt
+  (self : packet.Audio) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  let dyn := Dyn.mk _ core.fmt.DebugU16 self.stream
+  let dyn1 := Dyn.mk _ core.fmt.DebugU64 self.timeline
+  let dyn2 := Dyn.mk _ core.fmt.DebugU64 self.index
+  let dyn3 := Dyn.mk _ core.fmt.DebugI64 self.capture
+  let dyn4 := Dyn.mk _ core.fmt.DebugU32 self.rate
+  let dyn5 := Dyn.mk _ core.fmt.DebugU16 self.frames
+  let dyn6 := Dyn.mk _ core.fmt.DebugU8 self.channels
+  let dyn7 := Dyn.mk _ packet.Format.Insts.CoreFmtDebug self.format
+  let dyn8 := Dyn.mk _ core.fmt.DebugI64 self.level
+  let dyn9 := Dyn.mk _ core.fmt.DebugI32 self.level_slope
+  let dyn10 := Dyn.mk _ core.fmt.DebugU32 self.span
+  let dyn11 := Dyn.mk _ core.fmt.DebugU32 self.window
+  let dyn12 := Dyn.mk _ core.fmt.DebugU16 self.flags
+  let dyn13 := Dyn.mk _ core.fmt.DebugU16 self.protection
+  let dyn14 := Dyn.mk _ core.fmt.DebugU64 self.stamped_index
+  let dyn15 :=
+    Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugI64) self.stamped_departure
+  let values :=
+    Array.to_slice
+      (Array.make 16#usize [
+        dyn, dyn1, dyn2, dyn3, dyn4, dyn5, dyn6, dyn7, dyn8, dyn9, dyn10,
+        dyn11, dyn12, dyn13, dyn14, dyn15
+        ])
+  let s ←
+    lift (Array.to_slice
+      (Array.make 16#usize [
+        toStr "stream", toStr "timeline", toStr "index", toStr "capture", toStr
+        "rate", toStr "frames", toStr "channels", toStr "format", toStr
+        "level", toStr "level_slope", toStr "span", toStr "window", toStr
+        "flags", toStr "protection", toStr "stamped_index", toStr
+        "stamped_departure"
+        ]))
+  core.fmt.Formatter.debug_struct_fields_finish f (toStr "Audio") s values
+
+/-- Trait implementation: [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Audio}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:37-62:42 -/
+@[reducible]
+def packet.Audio.Insts.CoreFmtDebug : core.fmt.Debug packet.Audio := {
+  fmt := packet.Audio.Insts.CoreFmtDebug.fmt
+}
+
+/-- [unisono_core::packet::Rejected]
+    Source: 'crates/unisono-core/src/packet.rs', lines 103:0-116:1
+    Visibility: public -/
+@[discriminant isize]
+inductive packet.Rejected where
+| TooShort : packet.Rejected
+| NotUnisono : packet.Rejected
+| Version : Std.U8 → packet.Rejected
+| Kind : Std.U8 → packet.Rejected
+| Format : Std.U8 → packet.Rejected
+| Length : packet.Rejected
+
+/-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Rejected}::clone]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:9-102:14
+    Visibility: public -/
+def packet.Rejected.Insts.CoreCloneClone.clone
+  (self : packet.Rejected) : Result packet.Rejected := do
+  ok self
+
+/-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:9-102:14 -/
+@[reducible]
+def packet.Rejected.Insts.CoreCloneClone : core.clone.Clone packet.Rejected
+  := {
+  clone := packet.Rejected.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:16-102:20 -/
+@[reducible]
+def packet.Rejected.Insts.CoreMarkerCopy : core.marker.Copy packet.Rejected
+  := {
+  cloneInst := packet.Rejected.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:22-102:31 -/
+@[reducible]
+def packet.Rejected.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq packet.Rejected := {
+}
+
+/-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Rejected> for unisono_core::packet::Rejected}::eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:22-102:31
+    Visibility: public -/
+def packet.Rejected.Insts.CoreCmpPartialEqRejected.eq
+  (self : packet.Rejected) (other : packet.Rejected) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  if self1 = other1
+  then
+    match self with
+    | packet.Rejected.TooShort => ok true
+    | packet.Rejected.NotUnisono => ok true
+    | packet.Rejected.Version __self_0 =>
+      match other with
+      | packet.Rejected.TooShort => ok true
+      | packet.Rejected.NotUnisono => ok true
+      | packet.Rejected.Version __arg1_0 =>
+        lift (core.cmp.impls.PartialEqU8.eq __self_0 __arg1_0)
+      | packet.Rejected.Kind _ => ok true
+      | packet.Rejected.Format _ => ok true
+      | packet.Rejected.Length => ok true
+    | packet.Rejected.Kind __self_0 =>
+      match other with
+      | packet.Rejected.TooShort => ok true
+      | packet.Rejected.NotUnisono => ok true
+      | packet.Rejected.Version _ => ok true
+      | packet.Rejected.Kind __arg1_0 =>
+        lift (core.cmp.impls.PartialEqU8.eq __self_0 __arg1_0)
+      | packet.Rejected.Format _ => ok true
+      | packet.Rejected.Length => ok true
+    | packet.Rejected.Format __self_0 =>
+      match other with
+      | packet.Rejected.TooShort => ok true
+      | packet.Rejected.NotUnisono => ok true
+      | packet.Rejected.Version _ => ok true
+      | packet.Rejected.Kind _ => ok true
+      | packet.Rejected.Format __arg1_0 =>
+        lift (core.cmp.impls.PartialEqU8.eq __self_0 __arg1_0)
+      | packet.Rejected.Length => ok true
+    | packet.Rejected.Length => ok true
+  else ok false
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Rejected> for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:22-102:31 -/
+@[reducible]
+def packet.Rejected.Insts.CoreCmpPartialEqRejected : core.cmp.PartialEq
+  packet.Rejected packet.Rejected := {
+  eq := packet.Rejected.Insts.CoreCmpPartialEqRejected.eq
+}
+
+/-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Rejected}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:33-102:35
+    Visibility: public -/
+def packet.Rejected.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : packet.Rejected) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:33-102:35 -/
+@[reducible]
+def packet.Rejected.Insts.CoreCmpEq : core.cmp.Eq packet.Rejected := {
+  partialEqInst := packet.Rejected.Insts.CoreCmpPartialEqRejected
+  assert_fields_are_eq := packet.Rejected.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Rejected}::fmt]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:37-102:42
+    Visibility: public -/
+def packet.Rejected.Insts.CoreFmtDebug.fmt
+  (self : packet.Rejected) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  match self with
+  | packet.Rejected.TooShort =>
+    core.fmt.Formatter.write_str f (toStr "TooShort")
+  | packet.Rejected.NotUnisono =>
+    core.fmt.Formatter.write_str f (toStr "NotUnisono")
+  | packet.Rejected.Version __self_0 =>
+    let __self_01 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugU8) __self_0
+    core.fmt.Formatter.debug_tuple_field1_finish f (toStr "Version") __self_01
+  | packet.Rejected.Kind __self_0 =>
+    let __self_01 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugU8) __self_0
+    core.fmt.Formatter.debug_tuple_field1_finish f (toStr "Kind") __self_01
+  | packet.Rejected.Format __self_0 =>
+    let __self_01 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugU8) __self_0
+    core.fmt.Formatter.debug_tuple_field1_finish f (toStr "Format") __self_01
+  | packet.Rejected.Length => core.fmt.Formatter.write_str f (toStr "Length")
+
+/-- Trait implementation: [unisono_core::packet::{impl core::fmt::Debug for unisono_core::packet::Rejected}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 102:37-102:42 -/
+@[reducible]
+def packet.Rejected.Insts.CoreFmtDebug : core.fmt.Debug packet.Rejected := {
+  fmt := packet.Rejected.Insts.CoreFmtDebug.fmt
+}
+
+/-- [unisono_core::packet::read]: loop body 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 123:4-137:1 -/
+@[rust_loop_body]
+def packet.read_loop.body
+  (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
+  (value : Std.U64) (i : Std.Usize) :
+  Result (ControlFlow (Std.U64 × Std.Usize) (Option Std.U64))
+  := do
+  if i < count
+  then
+    let o ← lift (Usize.checked_add «at» i)
+    match o with
+    | none => ok (done none)
+    | some place =>
+      let o1 ←
+        core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.U8)
+          bytes place
+      match o1 with
+      | none => ok (done none)
+      | some byte =>
+        let i1 ← lift (UScalar.cast .U32 i)
+        let shift ← lift (core.num.U32.wrapping_mul i1 8#u32)
+        let i2 ← lift (UScalar.cast .U64 byte)
+        let i3 ← lift (core.num.U64.wrapping_shl i2 shift)
+        let value1 ← lift (value ||| i3)
+        let i4 ← lift (core.num.Usize.saturating_add i 1#usize)
+        ok (cont (value1, i4))
+  else ok (done (some value))
+
+/-- [unisono_core::packet::read]: loop 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 123:4-137:1 -/
+@[rust_loop]
+def packet.read_loop
+  (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
+  (value : Std.U64) (i : Std.Usize) :
+  Result (Option Std.U64)
+  := do
+  loop
+    (fun (value1, i1) => packet.read_loop.body bytes «at» count value1 i1)
+    (value, i)
+
+/-- [unisono_core::packet::read]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 120:0-137:1 -/
+@[reducible]
+def packet.read
+  (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize) :
+  Result (Option Std.U64)
+  := do
+  packet.read_loop bytes «at» count 0#u64 0#usize
+
+/-- [unisono_core::packet::write]: loop body 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 144:4-161:1 -/
+@[rust_loop_body]
+def packet.write_loop.body
+  («at» : Std.Usize) (count : Std.Usize) (value : Std.U64)
+  (bytes : Slice Std.U8) (i : Std.Usize) :
+  Result (ControlFlow ((Slice Std.U8) × Std.Usize) (Bool × (Slice Std.U8)))
+  := do
+  if i < count
+  then
+    let o ← lift (Usize.checked_add «at» i)
+    match o with
+    | none => ok (done (false, bytes))
+    | some place =>
+      let (o1, get_mut_back) ←
+        core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice Std.U8)
+          bytes place
+      match o1 with
+      | none => let bytes1 := get_mut_back none
+                ok (done (false, bytes1))
+      | some _ =>
+        let i1 ← lift (UScalar.cast .U32 i)
+        let shift ← lift (core.num.U32.wrapping_mul i1 8#u32)
+        let i2 ← lift (core.num.U64.wrapping_shr value shift)
+        let byte ← lift (UScalar.cast .U8 i2)
+        let i3 ← lift (core.num.Usize.saturating_add i 1#usize)
+        let bytes1 := get_mut_back (some byte)
+        ok (cont (bytes1, i3))
+  else ok (done (true, bytes))
+
+/-- [unisono_core::packet::write]: loop 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 144:4-161:1 -/
+@[rust_loop]
+def packet.write_loop
+  (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
+  (value : Std.U64) (i : Std.Usize) :
+  Result (Bool × (Slice Std.U8))
+  := do
+  loop
+    (fun (bytes1, i1) => packet.write_loop.body «at» count value bytes1 i1)
+    (bytes, i)
+
+/-- [unisono_core::packet::write]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 142:0-161:1 -/
+@[reducible]
+def packet.write
+  (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
+  (value : Std.U64) :
+  Result (Bool × (Slice Std.U8))
+  := do
+  packet.write_loop bytes «at» count value 0#usize
+
+/-- [unisono_core::packet::payload]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 164:0-169:1 -/
+def packet.payload (header : packet.Audio) : Result Std.Usize := do
+  let i ← lift (UScalar.cast .Usize header.frames)
+  let i1 ← lift (UScalar.cast .Usize header.channels)
+  let i2 ← lift (core.num.Usize.wrapping_mul i i1)
+  let i3 ← packet.Format.bytes header.format
+  ok (core.num.Usize.wrapping_mul i2 i3)
+
+/-- [unisono_core::packet::parse_audio]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 181:0-268:1
+    Visibility: public -/
+def packet.parse_audio
+  (bytes : Slice Std.U8) :
+  Result (core.result.Result packet.Audio packet.Rejected)
+  := do
+  let i := Slice.len bytes
+  if i < packet.HEADER
+  then ok (core.result.Result.Err packet.Rejected.TooShort)
+  else
+    let o ← packet.read bytes 0#usize 4#usize
+    let o1 ← packet.read bytes 4#usize 1#usize
+    let o2 ← packet.read bytes 5#usize 1#usize
+    let o3 ← packet.read bytes 6#usize 2#usize
+    let o4 ← packet.read bytes 8#usize 8#usize
+    let o5 ← packet.read bytes 16#usize 8#usize
+    let o6 ← packet.read bytes 24#usize 8#usize
+    let o7 ← packet.read bytes 32#usize 4#usize
+    match o with
+    | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+    | some magic =>
+      match o1 with
+      | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+      | some version =>
+        match o2 with
+        | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+        | some kind =>
+          match o3 with
+          | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+          | some stream =>
+            match o4 with
+            | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+            | some timeline =>
+              match o5 with
+              | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+              | some index =>
+                match o6 with
+                | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+                | some capture =>
+                  match o7 with
+                  | none =>
+                    ok (core.result.Result.Err packet.Rejected.TooShort)
+                  | some rate =>
+                    let o8 ← packet.read bytes 36#usize 2#usize
+                    let o9 ← packet.read bytes 38#usize 1#usize
+                    let o10 ← packet.read bytes 39#usize 1#usize
+                    let o11 ← packet.read bytes 40#usize 8#usize
+                    let o12 ← packet.read bytes 48#usize 4#usize
+                    let o13 ← packet.read bytes 52#usize 4#usize
+                    let o14 ← packet.read bytes 56#usize 4#usize
+                    let o15 ← packet.read bytes 60#usize 2#usize
+                    match o8 with
+                    | none =>
+                      ok (core.result.Result.Err packet.Rejected.TooShort)
+                    | some frames =>
+                      match o9 with
+                      | none =>
+                        ok (core.result.Result.Err packet.Rejected.TooShort)
+                      | some channels =>
+                        match o10 with
+                        | none =>
+                          ok (core.result.Result.Err packet.Rejected.TooShort)
+                        | some format =>
+                          match o11 with
+                          | none =>
+                            ok (core.result.Result.Err
+                              packet.Rejected.TooShort)
+                          | some level =>
+                            match o12 with
+                            | none =>
+                              ok (core.result.Result.Err
+                                packet.Rejected.TooShort)
+                            | some level_slope =>
+                              match o13 with
+                              | none =>
+                                ok (core.result.Result.Err
+                                  packet.Rejected.TooShort)
+                              | some span =>
+                                match o14 with
+                                | none =>
+                                  ok (core.result.Result.Err
+                                    packet.Rejected.TooShort)
+                                | some window =>
+                                  match o15 with
+                                  | none =>
+                                    ok (core.result.Result.Err
+                                      packet.Rejected.TooShort)
+                                  | some flags =>
+                                    let o16 ←
+                                      packet.read bytes 62#usize 2#usize
+                                    let o17 ←
+                                      packet.read bytes 64#usize 8#usize
+                                    let o18 ←
+                                      packet.read bytes 72#usize 8#usize
+                                    match o16 with
+                                    | none =>
+                                      ok (core.result.Result.Err
+                                        packet.Rejected.TooShort)
+                                    | some protection =>
+                                      match o17 with
+                                      | none =>
+                                        ok (core.result.Result.Err
+                                          packet.Rejected.TooShort)
+                                      | some stamped_index =>
+                                        match o18 with
+                                        | none =>
+                                          ok (core.result.Result.Err
+                                            packet.Rejected.TooShort)
+                                        | some stamped_departure =>
+                                          if magic != packet.MAGIC
+                                          then
+                                            ok (core.result.Result.Err
+                                              packet.Rejected.NotUnisono)
+                                          else
+                                            let i1 ←
+                                              lift (UScalar.cast .U64
+                                                packet.VERSION)
+                                            if version != i1
+                                            then
+                                              let i2 ←
+                                                lift (UScalar.cast .U8 version)
+                                              ok (core.result.Result.Err
+                                                (packet.Rejected.Version i2))
+                                            else
+                                              let i2 ←
+                                                lift (UScalar.cast .U64
+                                                  packet.KIND_AUDIO)
+                                              if kind != i2
+                                              then
+                                                let i3 ←
+                                                  lift (UScalar.cast .U8 kind)
+                                                ok (core.result.Result.Err
+                                                  (packet.Rejected.Kind i3))
+                                              else
+                                                let i3 ←
+                                                  lift (UScalar.cast .U8
+                                                    format)
+                                                let o19 ←
+                                                  packet.Format.from_code i3
+                                                match o19 with
+                                                | none =>
+                                                  let i4 ←
+                                                    lift (UScalar.cast .U8
+                                                      format)
+                                                  ok (core.result.Result.Err
+                                                    (packet.Rejected.Format
+                                                    i4))
+                                                | some format1 =>
+                                                  let i4 ←
+                                                    lift (UScalar.cast .U16
+                                                      stream)
+                                                  let i5 ←
+                                                    lift (UScalar.hcast .I64
+                                                      capture)
+                                                  let i6 ←
+                                                    lift (UScalar.cast .U32
+                                                      rate)
+                                                  let i7 ←
+                                                    lift (UScalar.cast .U16
+                                                      frames)
+                                                  let i8 ←
+                                                    lift (UScalar.cast .U8
+                                                      channels)
+                                                  let i9 ←
+                                                    lift (UScalar.hcast .I64
+                                                      level)
+                                                  let i10 ←
+                                                    lift (UScalar.cast .U32
+                                                      level_slope)
+                                                  let i11 ←
+                                                    lift (UScalar.hcast .I32
+                                                      i10)
+                                                  let i12 ←
+                                                    lift (UScalar.cast .U32
+                                                      span)
+                                                  let i13 ←
+                                                    lift (UScalar.cast .U32
+                                                      window)
+                                                  let i14 ←
+                                                    lift (UScalar.cast .U16
+                                                      flags)
+                                                  let i15 ←
+                                                    lift (UScalar.cast .U16
+                                                      protection)
+                                                  let i16 ←
+                                                    lift (UScalar.hcast .I64
+                                                      stamped_departure)
+                                                  let i17 := Slice.len bytes
+                                                  let i18 ←
+                                                    lift
+                                                      (core.num.Usize.wrapping_sub
+                                                      i17 packet.HEADER)
+                                                  let i19 ←
+                                                    packet.payload
+                                                      {
+                                                        stream := i4,
+                                                        timeline,
+                                                        index,
+                                                        capture := i5,
+                                                        rate := i6,
+                                                        frames := i7,
+                                                        channels := i8,
+                                                        format := format1,
+                                                        level := i9,
+                                                        level_slope := i11,
+                                                        span := i12,
+                                                        window := i13,
+                                                        flags := i14,
+                                                        protection := i15,
+                                                        stamped_index,
+                                                        stamped_departure :=
+                                                          i16
+                                                      }
+                                                  if i18 != i19
+                                                  then
+                                                    ok (core.result.Result.Err
+                                                      packet.Rejected.Length)
+                                                  else
+                                                    ok (core.result.Result.Ok
+                                                      {
+                                                        stream := i4,
+                                                        timeline,
+                                                        index,
+                                                        capture := i5,
+                                                        rate := i6,
+                                                        frames := i7,
+                                                        channels := i8,
+                                                        format := format1,
+                                                        level := i9,
+                                                        level_slope := i11,
+                                                        span := i12,
+                                                        window := i13,
+                                                        flags := i14,
+                                                        protection := i15,
+                                                        stamped_index,
+                                                        stamped_departure :=
+                                                          i16
+                                                      })
+
+/-- [unisono_core::packet::write_audio]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 275:0-303:1
+    Visibility: public -/
+def packet.write_audio
+  (header : packet.Audio) (bytes : Slice Std.U8) :
+  Result ((Option Std.Usize) × (Slice Std.U8))
+  := do
+  let i := Slice.len bytes
+  if i < packet.HEADER
+  then ok (none, bytes)
+  else
+    let (b, bytes1) ← packet.write bytes 0#usize 4#usize packet.MAGIC
+    let (header1, bytes2, written) ←
+      if b
+      then
+        do
+        let i1 ← lift (UScalar.cast .U64 packet.VERSION)
+        let (b1, bytes3) ← packet.write bytes1 4#usize 1#usize i1
+        if b1
+        then
+          let i2 ← lift (UScalar.cast .U64 packet.KIND_AUDIO)
+          let (b2, bytes4) ← packet.write bytes3 5#usize 1#usize i2
+          if b2
+          then
+            let i3 ← lift (UScalar.cast .U64 header.stream)
+            let (b3, bytes5) ← packet.write bytes4 6#usize 2#usize i3
+            let (s, b4) ←
+              if b3
+              then
+                do
+                let (b5, bytes6) ←
+                  packet.write bytes5 8#usize 8#usize header.timeline
+                if b5
+                then
+                  let (b6, bytes7) ←
+                    packet.write bytes6 16#usize 8#usize header.index
+                  if b6
+                  then
+                    let i4 ← lift (IScalar.hcast .U64 header.capture)
+                    let (b7, bytes8) ←
+                      packet.write bytes7 24#usize 8#usize i4
+                    if b7
+                    then
+                      let i5 ← lift (UScalar.cast .U64 header.rate)
+                      let (b8, bytes9) ←
+                        packet.write bytes8 32#usize 4#usize i5
+                      if b8
+                      then
+                        let i6 ← lift (UScalar.cast .U64 header.frames)
+                        let (b9, bytes10) ←
+                          packet.write bytes9 36#usize 2#usize i6
+                        if b9
+                        then
+                          let i7 ← lift (UScalar.cast .U64 header.channels)
+                          let (b10, bytes11) ←
+                            packet.write bytes10 38#usize 1#usize i7
+                          if b10
+                          then
+                            let i8 ← packet.Format.code header.format
+                            let i9 ← lift (UScalar.cast .U64 i8)
+                            let (b11, bytes12) ←
+                              packet.write bytes11 39#usize 1#usize i9
+                            if b11
+                            then
+                              let i10 ←
+                                lift (IScalar.hcast .U64 header.level)
+                              let (b12, bytes13) ←
+                                packet.write bytes12 40#usize 8#usize i10
+                              if b12
+                              then
+                                let i11 ←
+                                  lift (IScalar.hcast .U32 header.level_slope)
+                                let i12 ← lift (UScalar.cast .U64 i11)
+                                let (b13, bytes14) ←
+                                  packet.write bytes13 48#usize 4#usize i12
+                                if b13
+                                then
+                                  let i13 ←
+                                    lift (UScalar.cast .U64 header.span)
+                                  let (b14, bytes15) ←
+                                    packet.write bytes14 52#usize 4#usize i13
+                                  if b14
+                                  then
+                                    let i14 ←
+                                      lift (UScalar.cast .U64 header.window)
+                                    let (b15, bytes16) ←
+                                      packet.write bytes15 56#usize 4#usize i14
+                                    if b15
+                                    then
+                                      let i15 ←
+                                        lift (UScalar.cast .U64 header.flags)
+                                      let (b16, bytes17) ←
+                                        packet.write bytes16 60#usize 2#usize
+                                          i15
+                                      if b16
+                                      then
+                                        let i16 ←
+                                          lift (UScalar.cast .U64
+                                            header.protection)
+                                        let (b17, bytes18) ←
+                                          packet.write bytes17 62#usize 2#usize
+                                            i16
+                                        if b17
+                                        then
+                                          let (b18, bytes19) ←
+                                            packet.write bytes18 64#usize
+                                              8#usize header.stamped_index
+                                          if b18
+                                          then
+                                            let i17 ←
+                                              lift (IScalar.hcast .U64
+                                                header.stamped_departure)
+                                            let (written1, bytes20) ←
+                                              packet.write bytes19 72#usize
+                                                8#usize i17
+                                            ok (bytes20, written1)
+                                          else ok (bytes19, false)
+                                        else ok (bytes18, false)
+                                      else ok (bytes17, false)
+                                    else ok (bytes16, false)
+                                  else ok (bytes15, false)
+                                else ok (bytes14, false)
+                              else ok (bytes13, false)
+                            else ok (bytes12, false)
+                          else ok (bytes11, false)
+                        else ok (bytes10, false)
+                      else ok (bytes9, false)
+                    else ok (bytes8, false)
+                  else ok (bytes7, false)
+                else ok (bytes6, false)
+              else ok (bytes5, false)
+            ok (header, s, b4)
+          else ok (header, bytes4, false)
+        else ok (header, bytes3, false)
+      else ok (header, bytes1, false)
+    if written
+    then
+      let i1 ← packet.payload header1
+      let i2 ← lift (core.num.Usize.wrapping_add packet.HEADER i1)
+      ok (some i2, bytes2)
+    else ok (none, bytes2)
+
 /-- [unisono_core::relation::Sample]
     Source: 'crates/unisono-core/src/relation.rs', lines 23:0-28:1
     Visibility: public -/
