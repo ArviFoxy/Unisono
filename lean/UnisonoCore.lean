@@ -868,7 +868,7 @@ def packet.parse_audio
                                                       })
 
 /-- [unisono_core::packet::write_audio]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 275:0-303:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 275:0-305:1
     Visibility: public -/
 def packet.write_audio
   (header : packet.Audio) (bytes : Slice Std.U8) :
@@ -878,136 +878,51 @@ def packet.write_audio
   if i < packet.HEADER
   then ok (none, bytes)
   else
-    let (b, bytes1) ← packet.write bytes 0#usize 4#usize packet.MAGIC
-    let (header1, bytes2, written) ←
-      if b
-      then
-        do
-        let i1 ← lift (UScalar.cast .U64 packet.VERSION)
-        let (b1, bytes3) ← packet.write bytes1 4#usize 1#usize i1
-        if b1
-        then
-          let i2 ← lift (UScalar.cast .U64 packet.KIND_AUDIO)
-          let (b2, bytes4) ← packet.write bytes3 5#usize 1#usize i2
-          if b2
-          then
-            let i3 ← lift (UScalar.cast .U64 header.stream)
-            let (b3, bytes5) ← packet.write bytes4 6#usize 2#usize i3
-            let (s, b4) ←
-              if b3
-              then
-                do
-                let (b5, bytes6) ←
-                  packet.write bytes5 8#usize 8#usize header.timeline
-                if b5
-                then
-                  let (b6, bytes7) ←
-                    packet.write bytes6 16#usize 8#usize header.index
-                  if b6
-                  then
-                    let i4 ← lift (IScalar.hcast .U64 header.capture)
-                    let (b7, bytes8) ←
-                      packet.write bytes7 24#usize 8#usize i4
-                    if b7
-                    then
-                      let i5 ← lift (UScalar.cast .U64 header.rate)
-                      let (b8, bytes9) ←
-                        packet.write bytes8 32#usize 4#usize i5
-                      if b8
-                      then
-                        let i6 ← lift (UScalar.cast .U64 header.frames)
-                        let (b9, bytes10) ←
-                          packet.write bytes9 36#usize 2#usize i6
-                        if b9
-                        then
-                          let i7 ← lift (UScalar.cast .U64 header.channels)
-                          let (b10, bytes11) ←
-                            packet.write bytes10 38#usize 1#usize i7
-                          if b10
-                          then
-                            let i8 ← packet.Format.code header.format
-                            let i9 ← lift (UScalar.cast .U64 i8)
-                            let (b11, bytes12) ←
-                              packet.write bytes11 39#usize 1#usize i9
-                            if b11
-                            then
-                              let i10 ←
-                                lift (IScalar.hcast .U64 header.level)
-                              let (b12, bytes13) ←
-                                packet.write bytes12 40#usize 8#usize i10
-                              if b12
-                              then
-                                let i11 ←
-                                  lift (IScalar.hcast .U32 header.level_slope)
-                                let i12 ← lift (UScalar.cast .U64 i11)
-                                let (b13, bytes14) ←
-                                  packet.write bytes13 48#usize 4#usize i12
-                                if b13
-                                then
-                                  let i13 ←
-                                    lift (UScalar.cast .U64 header.span)
-                                  let (b14, bytes15) ←
-                                    packet.write bytes14 52#usize 4#usize i13
-                                  if b14
-                                  then
-                                    let i14 ←
-                                      lift (UScalar.cast .U64 header.window)
-                                    let (b15, bytes16) ←
-                                      packet.write bytes15 56#usize 4#usize i14
-                                    if b15
-                                    then
-                                      let i15 ←
-                                        lift (UScalar.cast .U64 header.flags)
-                                      let (b16, bytes17) ←
-                                        packet.write bytes16 60#usize 2#usize
-                                          i15
-                                      if b16
-                                      then
-                                        let i16 ←
-                                          lift (UScalar.cast .U64
-                                            header.protection)
-                                        let (b17, bytes18) ←
-                                          packet.write bytes17 62#usize 2#usize
-                                            i16
-                                        if b17
-                                        then
-                                          let (b18, bytes19) ←
-                                            packet.write bytes18 64#usize
-                                              8#usize header.stamped_index
-                                          if b18
-                                          then
-                                            let i17 ←
-                                              lift (IScalar.hcast .U64
-                                                header.stamped_departure)
-                                            let (written1, bytes20) ←
-                                              packet.write bytes19 72#usize
-                                                8#usize i17
-                                            ok (bytes20, written1)
-                                          else ok (bytes19, false)
-                                        else ok (bytes18, false)
-                                      else ok (bytes17, false)
-                                    else ok (bytes16, false)
-                                  else ok (bytes15, false)
-                                else ok (bytes14, false)
-                              else ok (bytes13, false)
-                            else ok (bytes12, false)
-                          else ok (bytes11, false)
-                        else ok (bytes10, false)
-                      else ok (bytes9, false)
-                    else ok (bytes8, false)
-                  else ok (bytes7, false)
-                else ok (bytes6, false)
-              else ok (bytes5, false)
-            ok (header, s, b4)
-          else ok (header, bytes4, false)
-        else ok (header, bytes3, false)
-      else ok (header, bytes1, false)
-    if written
+    let (written, bytes1) ← packet.write bytes 0#usize 4#usize packet.MAGIC
+    let i1 ← lift (UScalar.cast .U64 packet.VERSION)
+    let (b, bytes2) ← packet.write bytes1 4#usize 1#usize i1
+    let i2 ← lift (UScalar.cast .U64 packet.KIND_AUDIO)
+    let (b1, bytes3) ← packet.write bytes2 5#usize 1#usize i2
+    let i3 ← lift (UScalar.cast .U64 header.stream)
+    let (b2, bytes4) ← packet.write bytes3 6#usize 2#usize i3
+    let (b3, bytes5) ← packet.write bytes4 8#usize 8#usize header.timeline
+    let (b4, bytes6) ← packet.write bytes5 16#usize 8#usize header.index
+    let i4 ← lift (IScalar.hcast .U64 header.capture)
+    let (b5, bytes7) ← packet.write bytes6 24#usize 8#usize i4
+    let i5 ← lift (UScalar.cast .U64 header.rate)
+    let (b6, bytes8) ← packet.write bytes7 32#usize 4#usize i5
+    let i6 ← lift (UScalar.cast .U64 header.frames)
+    let (b7, bytes9) ← packet.write bytes8 36#usize 2#usize i6
+    let i7 ← lift (UScalar.cast .U64 header.channels)
+    let (b8, bytes10) ← packet.write bytes9 38#usize 1#usize i7
+    let i8 ← packet.Format.code header.format
+    let i9 ← lift (UScalar.cast .U64 i8)
+    let (b9, bytes11) ← packet.write bytes10 39#usize 1#usize i9
+    let i10 ← lift (IScalar.hcast .U64 header.level)
+    let (b10, bytes12) ← packet.write bytes11 40#usize 8#usize i10
+    let i11 ← lift (IScalar.hcast .U32 header.level_slope)
+    let i12 ← lift (UScalar.cast .U64 i11)
+    let (b11, bytes13) ← packet.write bytes12 48#usize 4#usize i12
+    let i13 ← lift (UScalar.cast .U64 header.span)
+    let (b12, bytes14) ← packet.write bytes13 52#usize 4#usize i13
+    let i14 ← lift (UScalar.cast .U64 header.window)
+    let (b13, bytes15) ← packet.write bytes14 56#usize 4#usize i14
+    let i15 ← lift (UScalar.cast .U64 header.flags)
+    let (b14, bytes16) ← packet.write bytes15 60#usize 2#usize i15
+    let i16 ← lift (UScalar.cast .U64 header.protection)
+    let (b15, bytes17) ← packet.write bytes16 62#usize 2#usize i16
+    let (b16, bytes18) ←
+      packet.write bytes17 64#usize 8#usize header.stamped_index
+    let i17 ← lift (IScalar.hcast .U64 header.stamped_departure)
+    let (b17, bytes19) ← packet.write bytes18 72#usize 8#usize i17
+    if (((((((((((((((((written && b) && b1) && b2) && b3) && b4) && b5) && b6)
+      && b7) && b8) && b9) && b10) && b11) && b12) && b13) && b14) && b15) &&
+      b16) && b17
     then
-      let i1 ← packet.payload header1
-      let i2 ← lift (core.num.Usize.wrapping_add packet.HEADER i1)
-      ok (some i2, bytes2)
-    else ok (none, bytes2)
+      let i18 ← packet.payload header
+      let i19 ← lift (core.num.Usize.wrapping_add packet.HEADER i18)
+      ok (some i19, bytes19)
+    else ok (none, bytes19)
 
 /-- [unisono_core::relation::Sample]
     Source: 'crates/unisono-core/src/relation.rs', lines 23:0-28:1

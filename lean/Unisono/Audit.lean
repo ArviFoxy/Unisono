@@ -8,6 +8,7 @@ public import Unisono.Fixed
 public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
 public import Unisono.Model.SupportLine
+public import Unisono.Packet
 public import Unisono.Relation
 
 /-!
@@ -94,3 +95,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Relation.end_window_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Relation.end_window_total
+
+/-- info: 'Unisono.Packet.parse_audio_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_audio_total
+
+/-- info: 'Unisono.Packet.write_audio_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_audio_total

@@ -276,25 +276,27 @@ pub fn write_audio(header: &Audio, bytes: &mut [u8]) -> Option<usize> {
     if bytes.len() < HEADER {
         return None;
     }
-    let written = write(bytes, 0, 4, MAGIC)
-        && write(bytes, 4, 1, VERSION as u64)
-        && write(bytes, 5, 1, KIND_AUDIO as u64)
-        && write(bytes, 6, 2, header.stream as u64)
-        && write(bytes, 8, 8, header.timeline)
-        && write(bytes, 16, 8, header.index)
-        && write(bytes, 24, 8, header.capture as u64)
-        && write(bytes, 32, 4, header.rate as u64)
-        && write(bytes, 36, 2, header.frames as u64)
-        && write(bytes, 38, 1, header.channels as u64)
-        && write(bytes, 39, 1, header.format.code() as u64)
-        && write(bytes, 40, 8, header.level as u64)
-        && write(bytes, 48, 4, header.level_slope as u32 as u64)
-        && write(bytes, 52, 4, header.span as u64)
-        && write(bytes, 56, 4, header.window as u64)
-        && write(bytes, 60, 2, header.flags as u64)
-        && write(bytes, 62, 2, header.protection as u64)
-        && write(bytes, 64, 8, header.stamped_index)
-        && write(bytes, 72, 8, header.stamped_departure as u64);
+    // Every field is written whether or not an earlier one found room, so
+    // that the function is a plain sequence of writes.
+    let mut written = write(bytes, 0, 4, MAGIC);
+    written &= write(bytes, 4, 1, VERSION as u64);
+    written &= write(bytes, 5, 1, KIND_AUDIO as u64);
+    written &= write(bytes, 6, 2, header.stream as u64);
+    written &= write(bytes, 8, 8, header.timeline);
+    written &= write(bytes, 16, 8, header.index);
+    written &= write(bytes, 24, 8, header.capture as u64);
+    written &= write(bytes, 32, 4, header.rate as u64);
+    written &= write(bytes, 36, 2, header.frames as u64);
+    written &= write(bytes, 38, 1, header.channels as u64);
+    written &= write(bytes, 39, 1, header.format.code() as u64);
+    written &= write(bytes, 40, 8, header.level as u64);
+    written &= write(bytes, 48, 4, header.level_slope as u32 as u64);
+    written &= write(bytes, 52, 4, header.span as u64);
+    written &= write(bytes, 56, 4, header.window as u64);
+    written &= write(bytes, 60, 2, header.flags as u64);
+    written &= write(bytes, 62, 2, header.protection as u64);
+    written &= write(bytes, 64, 8, header.stamped_index);
+    written &= write(bytes, 72, 8, header.stamped_departure as u64);
     if written {
         Some(HEADER.wrapping_add(payload(header)))
     } else {
