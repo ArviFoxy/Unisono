@@ -48,6 +48,9 @@ if [ "$(git -C charon rev-parse HEAD)" != "$charon_rev" ]; then
     git -C charon fetch --quiet origin
     git -C charon checkout --quiet "$charon_rev"
 fi
+# Charon's build formats its sources, and its toolchain file does not ask for
+# the formatter, which a minimal installation of Rust lacks.
+(cd charon/charon && rustup component add rustfmt)
 make -C charon build-charon-rust charon-ml/src/CharonVersion.ml
 
 if [ ! -d "${OPAMROOT:-$HOME/.opam}" ]; then
