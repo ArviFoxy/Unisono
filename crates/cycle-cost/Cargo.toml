@@ -1,0 +1,18 @@
+[package]
+name = "cycle-cost"
+description = "Counts the instructions and measures the time that unisono's real-time functions take in one cycle, on the inputs that cost most."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+unisono-core = { path = "../unisono-core" }
+unisono-dsp = { path = "../unisono-dsp" }
+unisono-runtime = { path = "../unisono-runtime" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true

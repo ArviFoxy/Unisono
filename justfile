@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: format-check lint test targets realtime translation prove translation-check
+check: format-check lint test targets realtime cost translation prove translation-check
 
 # Rewrite the Rust sources in the standard format.
 format:
@@ -53,3 +53,9 @@ translation-check:
 # no kernel entry, no allocator, no panic.
 realtime:
     tools/realtime.sh
+
+# Count the instructions of the real-time functions on the inputs that cost
+# most, against their budgets, and time them.
+cost:
+    cargo run --quiet --release --package cycle-cost
+
