@@ -1,0 +1,12 @@
+[package]
+name = "unisono-runtime"
+description = "The shell around unisono's core: clocks, sockets with packet timestamps, threads and the rings between them."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libc = "0.2"
+
+[lints]
+workspace = true
