@@ -75,6 +75,38 @@ audio packet meets; a receiver reads only the first 32 bytes.
 What a receiver tells the sender about its margin, for the level, is not in
 the report yet.
 
+## What a receiver does with an audio packet
+
+These rules are part of the protocol, because a sender relies on them.
+
+- **Stream.** A receiver is set up for one stream identifier and leaves out
+  every packet and every answer of another.
+- **Timeline.** A receiver follows one timeline. A packet of another timeline
+  is left out, and its timeline is remembered. The next packet makes the
+  receiver follow that timeline if it is of that timeline too and either its
+  number is larger than that of the followed one, or the followed one has
+  been silent for the receiver's time of silence. So one stray packet does
+  not move a receiver, and two packets of a sender that started again do.
+  A sender that starts again takes a larger timeline number, so that
+  receivers follow it at the second packet and not after the silence.
+- **Clock.** When the new timeline carries the clock identifier of the one
+  before, the receiver keeps its estimate of the sender's clock, since it is
+  the same clock. Otherwise it drops the estimate and learns the clock anew.
+  It keeps its estimate of the delay of the path in both cases.
+- **The index going back.** When every frame of the followed timeline's
+  packets has been behind the receiver's playhead for the time of silence,
+  the receiver starts anew at the arriving packet.
+
+Where the two numbers come from is the sender's business, under two
+conditions. The clock identifier is the same for as long as the sender's
+clock runs on, and different after the host has started again and for
+another host: a number made from the identity that the system gives each
+start of the host serves. The timeline number grows from one start of the
+sender's program to the next, also across a start of the host: the time of
+day at the start serves, or a number kept on disk. Two senders that share
+both numbers cost a receiver that hears both up to one memory span of wrong
+timing; they cannot make it stop.
+
 ## The answer to a report
 
 The sender answers every report of its stream with a datagram of exactly 32

@@ -186,17 +186,25 @@ The cost per second, for a stream with $N$ receivers, is
 
 $$w_{\mathrm{lat}}\,\bar\ell
 \;+\; w_{\mathrm{tgt}}\,(\bar\ell - L_0)^2
+\;+\; w_{\mathrm{gap}}\cdot(\text{gaps of the group per second})
+\;+\; w_{\mathrm{miss}}\cdot(\text{fraction of frames the group misses})
 \;+\; \sum_{r}\Bigl[\,w_{\mathrm{sync}}\,e_r^2
-\;+\; w_{\mathrm{rough}}\,\dot u_r^2
-\;+\; w_{\mathrm{gap}}\cdot(\text{gaps per second})
-\;+\; w_{\mathrm{miss}}\cdot(\text{fraction of frames missed})\Bigr],$$
+\;+\; w_{\mathrm{rough}}\,\dot u_r^2\Bigr],$$
 
 subject to $|u_r| \le u_{\max}$. Here $\bar\ell$ is the level, $L_0$ a target
 latency, $e_r$ the timing error of receiver $r$ against the common schedule,
-and $u_r$ the amount by which receiver $r$ plays fast (section 6.4). Summing
-the per-receiver terms rather than averaging by $1/N$ ensures that adding
-quiet wired receivers does not dilute the gap cost of a wireless receiver in
-the same group.
+and $u_r$ the amount by which receiver $r$ plays fast (section 6.4).
+
+Gaps are counted on the group. The group misses a frame when at least one
+receiver has nothing to play for it, and a gap of the group is a run of such
+frames: receivers that drop out at the same moment make one gap, which is
+what a listener hears. The two other ways of counting are both wrong. A mean
+over the receivers lets nine receivers on good links make the gaps of a
+tenth count a tenth as much, so the level falls and that receiver drops out
+more, though whoever listens to it hears the same as before. A sum over the
+receivers counts a gap that all of them share $N$ times, so the level rises
+with the number of receivers for a cause that the level of a larger group
+does nothing more against.
 
 The weights, $L_0$ and $u_{\max}$ are parameters of a stream; no value of them
 is built in. A large $w_{\mathrm{tgt}}$ holds the latency at $L_0$, which suits
@@ -366,11 +374,12 @@ the schedule on the calm wired link, within twelve on the busy one and within
 and a half and 25. The estimate of the delay is what the difference comes
 from. It errs high, by the queueing of the best report in the memory, and it
 estimates a constant, which a longer memory than that of the clocks would
-serve better. *That is not built.* Sending 20 full-sized padded reports per
-second per receiver also carries non-trivial airtime cost on shared Wi-Fi
-links; the current 20 Hz rate is kept for now until a simulated Wi-Fi
-environment tests whether contention or airtime stalls require switching to a
-short startup burst followed by a lower-rate, longer-memory path estimator. A
+serve better. Twenty reports a second, each as large as an audio packet,
+from every receiver are also more traffic than a constant deserves, and on a
+shared wireless link they take air time from the audio. The intent is to
+report that often for the first seconds and about once a second after, with
+a memory for the delay that is long enough for that rate. *Neither is
+built.* A
 path that is slower one way shifts the receiver by half the difference, as
 section 2.5 says, and a test shows it.
 
@@ -524,23 +533,33 @@ plays silence until the position reaches the playhead.
 
 ### 6.5 The level
 
-Write $\Gamma_r(\mu)$ for the rate of gaps of receiver $r$, and $\Phi_r(\mu)$
-for the fraction of frames it misses, when its margin above its baseline and
-lead is $\mu$. A level held at $\ell$ costs
+Receiver $r$ has a frame to play when the level is at least what that frame
+needed there: its delay on the way, above the baseline $B_r$, plus the
+receiver's lead $\Lambda_r$. The group has every frame when the level is at
+least the largest of these over the receivers. Write $R(n)$ for that largest
+need of frame $n$. The group misses frame $n$ exactly when $\ell(n) < R(n)$.
+Write $\Gamma(\ell)$ for the rate of gaps of the group, and $\Phi(\ell)$ for
+the fraction of frames it misses, when the level is held at $\ell$: both are
+properties of the one process $R$. A level held at $\ell$ costs
 
 $$J(\ell) \;=\; w_{\mathrm{lat}}\,\ell + w_{\mathrm{tgt}}\,(\ell - L_0)^2
-+ \sum_r \Bigl[w_{\mathrm{gap}}\,\Gamma_r(\ell - B_r - \Lambda_r)
-+ w_{\mathrm{miss}}\,\Phi_r(\ell - B_r - \Lambda_r)\Bigr].$$
++ w_{\mathrm{gap}}\,\Gamma(\ell) + w_{\mathrm{miss}}\,\Phi(\ell).$$
 
 The level is one number and $J$ is minimized over a line, so no convexity is
 needed: pause lengths with several typical values give several local minima.
 A minimizer exists when $w_{\mathrm{lat}}$ or $w_{\mathrm{tgt}}$ is positive
 and $w_{\mathrm{miss}}$ is.
 
-Each receiver estimates $\Gamma_r$ and $\Phi_r$ from the delays it has seen and
-reports them; the sender minimizes. A rate far out in the tail rests on few
-events, so the estimates are posterior means under a prior for the tail, and a
-receiver with little evidence reports high rates at low levels.
+The sender needs $R$ and not a rate from each receiver: rates do not say
+which gaps the receivers share, and the rate of the group lies anywhere
+between the largest of the receivers' rates and their sum. So each receiver
+reports, for each stretch of frame indices, the largest need of a frame in
+it. The stretches are the same for all receivers, because they are counted in
+the index. The sender takes the largest over the receivers for each stretch
+and has the need of the group. A rate far out in the tail rests on few
+events, so $\Gamma$ and $\Phi$ are estimated as posterior means under a prior
+for the tail, and a group with little evidence gets high rates at low levels.
+*None of this is built, and reports do not carry the need yet.*
 
 The level moves to another minimum only when the cost saved, over the time the
 evidence covers, exceeds the cost of the move. It moves along a path that the
