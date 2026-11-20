@@ -332,4 +332,111 @@ theorem drop_oldest_spec {M : Std.Usize} (e : relation.Estimator M) (count : Std
   · step as ⟨a, sp, lim, wi, lo, li, left, p1, p2, p3, p4, p5, p6, p7⟩
     exact ⟨p2, p1, p3, p4, p5, p6, p7⟩
 
+/-- Dropping the first `n` of a list is dropping while a test holds, when the
+first `n` pass the test and the next one, if there is one, does not. -/
+theorem drop_eq_dropWhile {α : Type} (p : α → Bool) (l : List α) (n : ℕ)
+    (h1 : ∀ k, k < n → ∀ s, l[k]? = some s → p s = true)
+    (h2 : ∀ s, l[n]? = some s → p s = false) (hn : n ≤ l.length) :
+    l.drop n = l.dropWhile p := by
+  induction l generalizing n with
+  | nil => simp
+  | cons hd tl ih =>
+    cases n with
+    | zero =>
+      have := h2 hd (by simp)
+      simp [List.dropWhile, this]
+    | succ m =>
+      have hhd := h1 0 (by omega) hd (by simp)
+      rw [List.drop_succ_cons, List.dropWhile_cons, hhd]
+      simp only [ite_true]
+      apply ih m
+      · intro k hk s hs
+        exact h1 (k + 1) (by omega) s (by simpa using hs)
+      · intro s hs
+        exact h2 s (by simpa using hs)
+      · simpa using hn
+
+@[step]
+theorem forget_before_loop_spec {M : Std.Usize} (e : relation.Estimator M) (time : Std.I64) :
+    relation.Estimator.forget_before_loop e time 0#usize ⦃ r =>
+      r.1 = e.kept ∧ r.2.1 = e.len ∧ r.2.2.1 = e.span ∧ r.2.2.2.1 = e.limit
+      ∧ r.2.2.2.2.1 = e.window ∧ r.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.1 = e.line
+      ∧ r.2.2.2.2.2.2.2.val ≤ (keptList e).length
+      ∧ (∀ k, k < r.2.2.2.2.2.2.2.val → ∀ s, (keptList e)[k]? = some s → s.time.val < time.val)
+      ∧ (∀ s, (keptList e)[r.2.2.2.2.2.2.2.val]? = some s → ¬ s.time.val < time.val) ⦄ := by
+  unfold relation.Estimator.forget_before_loop
+  apply loop.spec_decr_nat (measure := fun old : Std.Usize => e.len.val - old.val)
+    (inv := fun old : Std.Usize => old.val ≤ (keptList e).length
+      ∧ ∀ k, k < old.val → ∀ s, (keptList e)[k]? = some s → s.time.val < time.val)
+  · rintro old ⟨hold, hbefore⟩
+    unfold relation.Estimator.forget_before_loop.body
+    split
+    · have hlt : old.val < e.len.val := by scalar_tac
+      step as ⟨o, ho⟩
+      split
+      · -- no sample here: stop
+        simp only [WP.spec_ok, true_and]
+        refine ⟨hold, hbefore, ?_⟩
+        intro s hs
+        rw [← ho] at hs
+        cases hs
+      · rename_i _ sample
+        split
+        · -- an old sample: go on
+          step as ⟨old1, hold1⟩
+          have hv : old1.val = old.val + 1 := by
+            rw [hold1]; exact Usize.saturating_add_val _ _ (by scalar_tac)
+          have hlen : old.val < (keptList e).length := by
+            by_contra hcon
+            rw [List.getElem?_eq_none (by omega)] at ho
+            cases ho
+          refine ⟨by omega, ?_, by omega⟩
+          intro k hk s hs
+          by_cases hko : k < old.val
+          · exact hbefore k hko s hs
+          · have : k = old.val := by omega
+            subst this
+            rw [← ho] at hs
+            cases hs
+            scalar_tac
+        · -- a sample that stays: stop
+          simp only [WP.spec_ok, true_and]
+          refine ⟨hold, hbefore, ?_⟩
+          intro s hs
+          rw [← ho] at hs
+          cases hs
+          scalar_tac
+    · -- past the kept samples: stop
+      have hge : e.len.val ≤ old.val := by scalar_tac
+      simp only [WP.spec_ok, true_and]
+      refine ⟨hold, hbefore, ?_⟩
+      intro s hs
+      rw [List.getElem?_eq_none (by simp only [keptList, List.length_take]; omega)] at hs
+      cases hs
+  · simp
+
+/-- `forget_before` removes the kept samples at the old end whose time is
+before `time`, and changes nothing else. -/
+@[step]
+theorem forget_before_spec {M : Std.Usize} (e : relation.Estimator M) (time : Std.I64)
+    (hfit : e.len.val ≤ M.val) :
+    relation.Estimator.forget_before e time ⦃ e' =>
+      keptList e' = (keptList e).dropWhile (fun s => decide (s.time.val < time.val))
+      ∧ e'.len.val = (keptList e').length
+      ∧ SameBesidesKept e' e ⦄ := by
+  unfold relation.Estimator.forget_before
+  step as ⟨a, len, sp, lim, wi, lo, li, old, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10⟩
+  subst p1 p2 p3 p4 p5 p6 p7
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+      relation.Estimator M) = e := rfl
+  rw [he]
+  step as ⟨e', q1, q2, q3⟩
+  refine ⟨?_, ?_, q3⟩
+  · rw [q1]
+    exact drop_eq_dropWhile _ _ _ (fun k hk s hs => by simpa using p9 k hk s hs)
+      (fun s hs => by simpa using p10 s hs) p8
+  · have hM : e'.kept.val.length = M.val := by scalar_tac
+    simp only [keptList, List.length_take]
+    omega
+
 end Unisono.Relation
