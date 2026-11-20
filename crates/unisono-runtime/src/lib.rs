@@ -21,7 +21,9 @@
 //!   its user sets;
 //! - [`store`]: the samples of the frames that a receiver holds;
 //! - [`pump`]: what turns the core's plan for a cycle into the frames that
-//!   the device plays.
+//!   the device plays;
+//! - [`receive`]: the two threads of a receiver, one for the network and one
+//!   for audio, and what passes between them.
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
@@ -29,6 +31,7 @@ pub mod audio;
 pub mod clock;
 pub mod proxy;
 pub mod pump;
+pub mod receive;
 pub mod ring;
 pub mod socket;
 pub mod software;

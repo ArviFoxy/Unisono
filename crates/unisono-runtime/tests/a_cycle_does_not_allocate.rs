@@ -15,7 +15,9 @@ use std::cell::Cell;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use common::{CHANNELS, Line, Listener, ramp, settings};
+use unisono_core::packet::{HEADER, write_audio};
 use unisono_dsp::Parameters;
+use unisono_runtime::receive::{Intake, ReceiverAudio, Sizes, link};
 use unisono_runtime::software::{Device, Output};
 
 thread_local! {
@@ -124,4 +126,56 @@ fn packets_and_cycles_call_the_allocator_never() {
     assert_eq!(totals.concealed, 750);
     assert_eq!(totals.jumps, 2);
     assert_eq!(output.unrecorded(), 0);
+}
+
+/// The same through the audio end of a receiver's two threads: the cycles,
+/// which take the packets in from the ring and hand their buffers back, are
+/// counted. Handing the packets over is the network thread's and is not.
+#[test]
+fn the_audio_end_calls_the_allocator_never() {
+    const RATE: u32 = 50_000;
+    let mut line = Line::new(RATE, 250, 30_000_000, ramp);
+    let mut datagrams = Vec::new();
+    for _ in 0..100u64 {
+        let sent = line.send();
+        let mut bytes = vec![0u8; HEADER + sent.payload.len()];
+        write_audio(&sent.header, &mut bytes);
+        bytes[HEADER..].copy_from_slice(&sent.payload);
+        datagrams.push((bytes, sent.arrival));
+    }
+    let sizes = Sizes {
+        buffers: 8,
+        datagram: 2_048,
+        messages: 8,
+    };
+    let (mut network, end) = link(sizes);
+    let mut playback = Listener::new(&settings(RATE, Parameters::for_rate(RATE)));
+    playback.path(line.delay);
+    let intake = Intake {
+        items: 4,
+        report_period: 50_000_000,
+    };
+    let mut audio = ReceiverAudio::new(playback, end, intake);
+    let device = Device {
+        rate: RATE,
+        channels: CHANNELS,
+        cycle: 100,
+        drift: 150_000,
+        start: line.offset,
+        lead: 4_000_000,
+        hidden: 0,
+    };
+    let mut output = Output::new(device, 30_000);
+
+    let mut calls = 0;
+    for (bytes, arrival) in &datagrams {
+        while output.due() < *arrival {
+            calls += calls_during(|| output.cycle(&mut audio));
+        }
+        assert!(network.hand_over(bytes, *arrival));
+    }
+    assert_eq!(calls, 0);
+    let totals = audio.playback().totals();
+    assert!(totals.played > 15_000, "played {}", totals.played);
+    assert_eq!(totals.concealed, 0);
 }
