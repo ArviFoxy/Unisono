@@ -23,7 +23,9 @@
 //! - [`pump`]: what turns the core's plan for a cycle into the frames that
 //!   the device plays;
 //! - [`receive`]: the two threads of a receiver, one for the network and one
-//!   for audio, and what passes between them.
+//!   for audio, and what passes between them;
+//! - [`send`]: the two threads of a sender, one for capture and one for the
+//!   network.
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
@@ -33,6 +35,7 @@ pub mod proxy;
 pub mod pump;
 pub mod receive;
 pub mod ring;
+pub mod send;
 pub mod socket;
 pub mod software;
 pub mod store;
