@@ -20,6 +20,7 @@
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 
+use unisono_core::device::Device;
 use unisono_core::packet::{Audio, Echo, Format, Report};
 use unisono_core::player::Regulation;
 use unisono_core::receiver::{Receiver, Settings as ReceiverSettings};
@@ -80,6 +81,10 @@ pub enum CycleLength {
     /// From the nominal rate alone, as if the device ran exactly at it. This
     /// is a mistake that a receiver could make.
     Nominal,
+    /// From the line fitted to the reports of its audio system, which give
+    /// the time of each cycle's first frame with an error of up to this
+    /// many nanoseconds either way.
+    Fitted(i64),
 }
 
 /// How a receiver learns the smallest delay of the link from the sender.
@@ -163,6 +168,9 @@ struct Listener {
     model: ReceiverModel,
     core: SimReceiver,
     device: Course,
+    /// The line fitted to the reports of the audio system.
+    line: Device<64>,
+    noise: Generator,
     trace: Trace,
 }
 
@@ -244,6 +252,8 @@ impl Scene {
                     hosts.get(model.host).map_or(0, |host| host.path),
                 ),
                 device: Course::new(model.device, generator.fork(300 + number)),
+                line: Device::new(sender.rate),
+                noise: generator.fork(500 + number),
                 trace: Trace::default(),
             })
             .collect();
@@ -433,10 +443,24 @@ impl Scene {
         let first = (cycle * u64::from(frames)) as f64;
         let leaves = listener.device.when(first / rate);
         let ends = listener.device.when((first + f64::from(frames)) / rate);
-        let time = host.clock.read(leaves);
-        let duration = match listener.model.cycle_length {
-            CycleLength::Measured => host.clock.read(ends) - time,
-            CycleLength::Nominal => seconds_to_nanos(f64::from(frames) / rate),
+        let exact = host.clock.read(leaves);
+        let (time, duration) = match listener.model.cycle_length {
+            CycleLength::Measured => (exact, host.clock.read(ends) - exact),
+            CycleLength::Nominal => (exact, seconds_to_nanos(f64::from(frames) / rate)),
+            CycleLength::Fitted(error) => {
+                // A count below 2^53 is exact as a float, and the error is
+                // a small whole number.
+                #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
+                let off = ((listener.noise.uniform() * 2.0 - 1.0) * error as f64).round() as i64;
+                let position = cycle * u64::from(frames);
+                listener.line.observe(position, exact + off);
+                let start = listener.line.when(position).unwrap_or(exact);
+                let end = listener
+                    .line
+                    .when(position + u64::from(frames))
+                    .unwrap_or(start);
+                (start, end - start)
+            }
         };
         let plan = listener.core.cycle(time, duration, frames);
         if plan.frames == 0 {

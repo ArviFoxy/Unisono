@@ -45,6 +45,7 @@
 extern crate std;
 
 pub mod arrivals;
+pub mod device;
 pub mod fixed;
 pub mod packet;
 pub mod player;

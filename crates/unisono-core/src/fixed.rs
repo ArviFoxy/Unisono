@@ -67,9 +67,29 @@ pub fn div_floor(a: i128, b: i64) -> i128 {
     }
 }
 
+/// Returns `a / b` rounded toward negative infinity, for a positive `b` of
+/// any size.
+///
+/// For a `b` that is not positive the result is 0.
+#[must_use]
+pub fn div_floor_wide(a: i128, b: i128) -> i128 {
+    if b <= 0 {
+        return 0;
+    }
+    // The divisor is positive, so neither operation can fail.
+    let (Some(quotient), Some(remainder)) = (a.checked_div(b), a.checked_rem(b)) else {
+        return 0;
+    };
+    if remainder < 0 {
+        quotient.wrapping_sub(1)
+    } else {
+        quotient
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SHIFT, div_floor, mul_shift, saturate};
+    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, saturate};
 
     #[test]
     fn div_floor_rounds_toward_negative_infinity() {
@@ -139,5 +159,15 @@ mod tests {
         let expected = mul_shift(i64::MAX, i64::MIN, MAX_SHIFT);
         assert_eq!(mul_shift(i64::MAX, i64::MIN, MAX_SHIFT + 1), expected);
         assert_eq!(mul_shift(i64::MAX, i64::MIN, u32::MAX), expected);
+    }
+
+    #[test]
+    fn div_floor_wide_rounds_toward_negative_infinity() {
+        let big = 1i128 << 100;
+        assert_eq!(div_floor_wide(7 * big + 5, big), 7);
+        assert_eq!(div_floor_wide(-7 * big - 5, big), -8);
+        assert_eq!(div_floor_wide(-8 * big, big), -8);
+        assert_eq!(div_floor_wide(5, 0), 0);
+        assert_eq!(div_floor_wide(5, -3), 0);
     }
 }

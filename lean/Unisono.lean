@@ -1,6 +1,7 @@
 module
 public import Unisono.Arrivals
 public import Unisono.Audit
+public import Unisono.Device
 public import Unisono.Fixed
 public import Unisono.Lists
 public import Unisono.Model.Exchange

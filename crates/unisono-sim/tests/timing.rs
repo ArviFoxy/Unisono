@@ -374,3 +374,31 @@ fn a_link_that_is_slower_one_way_shifts_playback_by_half_the_difference() {
     // The receiver on a link that is the same both ways is on time.
     assert!(worst(traces[1], 20.0) < MICROSECOND);
 }
+
+/// A scene in which every receiver fits the line of its device to reports
+/// that are off by up to `error` nanoseconds either way.
+fn fitting(error: i64) -> Scene {
+    scene(&WIRED_CALM, 20, |receivers| {
+        for receiver in receivers.iter_mut() {
+            receiver.cycle_length = CycleLength::Fitted(error);
+        }
+    })
+}
+
+#[test]
+fn reports_of_a_device_that_are_off_either_way_average_out() {
+    // The line is fitted to 64 reports. For errors spread evenly within 20
+    // microseconds, the fit at the newest report has a standard deviation
+    // of 2 * (20 / sqrt 3) / sqrt 64, which is 2.9 microseconds; the bound
+    // is four of them, and a single report can be off by 20.
+    let mut scene = fitting(20_000);
+    scene.run(TrueTime::from_seconds(60.0));
+    let (worst, apart) = worst_and_apart(&scene, 20.0);
+    assert!(worst < 12.0 * MICROSECOND, "worst {worst}");
+    assert!(apart < 20.0 * MICROSECOND, "apart {apart}");
+    // With reports twenty times better, so is the timing.
+    let mut scene = fitting(1_000);
+    scene.run(TrueTime::from_seconds(60.0));
+    let (worst, _) = worst_and_apart(&scene, 20.0);
+    assert!(worst < 0.6 * MICROSECOND + CALM_BOUND, "worst {worst}");
+}

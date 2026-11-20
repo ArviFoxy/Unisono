@@ -304,6 +304,21 @@ def runWriteEcho (stream receiver number arrival : Int) : Result (List Int) := d
     | none => 0
   pure (written :: out.2.val.map (·.val))
 
+/-- Runs reports, each a position, a time and a position to ask for, through
+the line of a device; see `device_cases` in the Rust program. -/
+def runDevice (rate : Int) (reports : List (Int × Int × Int)) : Result (List Int) := do
+  let start ← device.Device.new 4#usize (unsigned .U32 rate)
+  let final ← reports.foldlM
+    (fun (state : device.Device 4#usize × List Int) (report : Int × Int × Int) => do
+      let next ← device.Device.observe state.1 (unsigned .U64 report.1) (signed .I64 report.2.1)
+      let found ← device.Device.when next (unsigned .U64 report.2.2)
+      let numbers : List Int := match found with
+        | some time => [1, time.val]
+        | none => [0, 0]
+      pure (next, state.2 ++ numbers))
+    (start, [])
+  pure final.2
+
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
@@ -364,6 +379,12 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       if cycles.length = count then result (runPlayer gain limit jump cycles) id
       else .error "the number of cycles is not the stated one"
     | none => .error "cycles are not groups of six"
+  | "device", rate :: count :: rest =>
+    match triples rest with
+    | some reports =>
+      if reports.length = count then result (runDevice rate reports) id
+      else .error "the number of reports is not the stated one"
+    | none => .error "reports are not triples"
   | "parse_report", bytes => result (runParseReport bytes) id
   | "parse_echo", bytes => result (runParseEcho bytes) id
   | "write_report", [stream, timeline, receiver, number, length] =>

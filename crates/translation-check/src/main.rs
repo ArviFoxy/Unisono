@@ -13,7 +13,7 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{fixed, packet, player, presence, receiver, relation, sender, timing};
+use unisono_core::{device, fixed, packet, player, presence, receiver, relation, sender, timing};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -864,6 +864,53 @@ fn echo_numbers(bytes: &[u8]) -> [i128; 5] {
     }
 }
 
+/// Runs of reports through the line of a device with room for four. Each
+/// report is a position and a time. After every report the line is asked
+/// for the time of a position; the results are 1 and that time, or 0 and 0.
+fn device_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(10);
+    for _ in 0..300 {
+        let rate =
+            [48_000u32, 44_100, 0, u32::MAX][usize::try_from(sequence.next() % 4).unwrap_or(0)];
+        let mut line = device::Device::<4>::new(rate);
+        let reports = 1 + sequence.next() % 12;
+        write!(out, "device {rate} {reports}")?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut position = sequence.next() >> (sequence.next() % 64);
+        let mut time = sequence.signed();
+        for _ in 0..reports {
+            // Mostly a device that goes on, at times one that starts anew
+            // or reports something wild.
+            match sequence.next() % 10 {
+                0 => {
+                    position = sequence.next() >> (sequence.next() % 64);
+                    time = sequence.signed();
+                }
+                1 => position = position.saturating_sub(sequence.next() % 1_000),
+                _ => {
+                    let frames = 1 + sequence.next() % 2_048;
+                    position = position.saturating_add(frames);
+                    let noise = i64::try_from(sequence.next() % 40_001).unwrap_or(0) - 20_000;
+                    time = time
+                        .saturating_add(i64::try_from(frames).unwrap_or(0) * 20_833)
+                        .saturating_add(noise);
+                }
+            }
+            line.observe(position, time);
+            let asked = position
+                .saturating_add(sequence.next() % 4_096)
+                .saturating_sub(1_024);
+            write!(out, " {position} {time} {asked}")?;
+            match line.when(asked) {
+                Some(found) => results.extend([1, i128::from(found)]),
+                None => results.extend([0, 0]),
+            }
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -877,5 +924,6 @@ fn main() -> io::Result<()> {
     timing_cases(&mut out)?;
     player_cases(&mut out)?;
     report_cases(&mut out)?;
+    device_cases(&mut out)?;
     out.flush()
 }
