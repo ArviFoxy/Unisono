@@ -134,6 +134,67 @@ theorem error_at_centre (e truth : Line) (rel : ι → ℝ) (b ε c : ℝ)
       simp only [Line.eval] at *
       linarith
 
+/-- The error of the highest line under the samples at a time `x` after the
+time `c` where it is highest, which is where a schedule needs it.
+
+Under the hypotheses of `error_at_centre`, with the two samples near the true
+relation strictly before and after `c`, the error at `c` grows by the lever of
+the extrapolation: by `(ε + 2 * b)` for every length `c - t p'` (on the low
+side) or `t q' - c` (on the high side) that `x` lies beyond `c`. -/
+theorem error_ahead (e truth : Line) (rel : ι → ℝ) (b ε c x : ℝ)
+    (he : Under s t z e)
+    (hbest : ∀ l, Under s t z l → l.eval c ≤ e.eval c)
+    (hnear : ∀ j ∈ s, |rel j - truth.eval (t j)| ≤ b)
+    (habove : ∀ j ∈ s, rel j ≤ z j)
+    (p' q' : ι) (hp' : p' ∈ s) (hq' : q' ∈ s)
+    (hpc : t p' < c) (hcq : c < t q')
+    (hcleanp : z p' ≤ rel p' + ε) (hcleanq : z q' ≤ rel q' + ε)
+    (hx : c ≤ x) :
+    truth.eval x - b - (ε + 2 * b) * (x - c) / (c - t p') ≤ e.eval x
+    ∧ e.eval x ≤ truth.eval x + (ε + b) + (ε + 2 * b) * (x - c) / (t q' - c) := by
+  obtain ⟨hlo, hhi⟩ := error_at_centre s t z e truth rel b ε c he hbest hnear habove
+    p' q' hp' hq' hpc.le hcq.le (by linarith) hcleanp hcleanq
+  have hdq : 0 < t q' - c := by linarith
+  have hdp : 0 < c - t p' := by linarith
+  -- the difference of two lines is a line: its value at `x` from its values at two times
+  have hq : e.eval x - truth.eval x
+      = (e.eval c - truth.eval c)
+        + ((e.eval (t q') - truth.eval (t q')) - (e.eval c - truth.eval c)) * (x - c)
+          / (t q' - c) := by
+    simp only [Line.eval]
+    field_simp
+    ring
+  have hp : e.eval x - truth.eval x
+      = (e.eval c - truth.eval c)
+        + ((e.eval c - truth.eval c) - (e.eval (t p') - truth.eval (t p'))) * (x - c)
+          / (c - t p') := by
+    simp only [Line.eval]
+    field_simp
+    ring
+  -- at the two samples near the true relation the estimate is not far above the line
+  have hgq : e.eval (t q') - truth.eval (t q') ≤ ε + b := by
+    have h1 := he q' hq'
+    have h2 := (abs_le.mp (hnear q' hq')).2
+    linarith
+  have hgp : e.eval (t p') - truth.eval (t p') ≤ ε + b := by
+    have h1 := he p' hp'
+    have h2 := (abs_le.mp (hnear p' hp')).2
+    linarith
+  constructor
+  · have : -((ε + 2 * b) * (x - c) / (c - t p'))
+        ≤ ((e.eval c - truth.eval c) - (e.eval (t p') - truth.eval (t p'))) * (x - c)
+          / (c - t p') := by
+      rw [← neg_div]
+      apply div_le_div_of_nonneg_right _ hdp.le
+      nlinarith
+    linarith
+  · have : ((e.eval (t q') - truth.eval (t q')) - (e.eval c - truth.eval c)) * (x - c)
+          / (t q' - c)
+        ≤ (ε + 2 * b) * (x - c) / (t q' - c) := by
+      apply div_le_div_of_nonneg_right _ hdq.le
+      nlinarith
+    linarith
+
 /-- Adding a line to every value, and to a line under the values, keeps it
 under them. With `highest`, this is why a change of the sender's clock by an
 offset and a rate moves every receiver's estimate by the same line. -/

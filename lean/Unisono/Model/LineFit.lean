@@ -331,8 +331,11 @@ Let the values lie on a line through `(t₀, θ₀)` up to two errors: a noise
 `n j` of magnitude at most `ε`, and a departure `c j` of the true relation
 from the line of at most `a / 2 * (t j - t₀) ^ 2`, which is what a rate that
 changes by at most `a` per unit of time gives. Then the fitted value at `t₀`
-is within the stated distance of `θ₀`. The first term falls and the second
-grows as older samples keep more weight. -/
+is within the stated distance of `θ₀`.
+
+The bound is for errors that may all have one sign, so averaging does not
+shrink its first term: that term is at least `ε` whatever the weights. The
+second term grows as older samples keep more weight. -/
 theorem error_bound (hw : ∀ j ∈ s, 0 ≤ w j) (hdet : 0 < det s w t t₀)
     (θ₀ ρ₀ ε a : ℝ) (hε : 0 ≤ ε) (ha : 0 ≤ a) (n c : ι → ℝ)
     (hz : ∀ j ∈ s, z j = θ₀ + ρ₀ * (t j - t₀) + (n j + c j))
