@@ -11,5 +11,6 @@
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 pub mod clock;
+pub mod proxy;
 pub mod ring;
 pub mod socket;
