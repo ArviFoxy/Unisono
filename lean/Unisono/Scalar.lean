@@ -138,6 +138,17 @@ theorem Usize.saturating_add_val (x y : Usize) (h : x.val + y.val ≤ Usize.max)
   rw [usize_max_eq] at hm
   omega
 
+/-- The value of a saturating addition: the sum, or the largest number. -/
+theorem Usize.saturating_add_val_min (x y : Usize) :
+    (core.num.Usize.saturating_add x y).val = min Usize.max (x.val + y.val) := by
+  have hm := usize_max_succ
+  simp only [core.num.Usize.saturating_add, UScalar.saturating_add, UScalar.val] at *
+  rw [BitVec.toNat_ofNat, usize_max_eq]
+  apply Nat.mod_eq_of_lt
+  rw [usize_max_eq] at hm
+  have : min Usize.max (x.bv.toNat + y.bv.toNat) ≤ Usize.max := min_le_left _ _
+  omega
+
 /-- A saturating subtraction of unsigned numbers is the subtraction of
 natural numbers, which stops at zero. -/
 theorem Usize.saturating_sub_val (x y : Usize) :

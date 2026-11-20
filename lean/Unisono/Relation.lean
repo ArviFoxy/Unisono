@@ -439,4 +439,166 @@ theorem forget_before_spec {M : Std.Usize} (e : relation.Estimator M) (time : St
     simp only [keptList, List.length_take]
     omega
 
+/-- Whatever `hull_sample` returns is one of the kept samples. -/
+@[step]
+theorem hull_sample_spec {M : Std.Usize} (e : relation.Estimator M)
+    (hull : Std.Array Std.Usize M) (position : Std.Usize) :
+    relation.Estimator.hull_sample e hull position
+      ⦃ o => ∀ s, o = some s → s ∈ keptList e ⦄ := by
+  unfold relation.Estimator.hull_sample
+  simp only [lift, bind_ok, core.slice.Slice.get, core.slice.index.Usize.get]
+  cases (Array.to_slice hull)[position]? with
+  | none => simp
+  | some index =>
+    simp only
+    step as ⟨o, ho⟩
+    rename_i s hs
+    rw [hs] at ho
+    exact List.mem_of_getElem? ho.symm
+
+/-- The search for the hull's edge around `middle` ends, and a pair it returns
+are two kept samples, the first not after `middle`, the second not before it,
+and the first earlier than the second. -/
+@[step]
+theorem bridge_loop1_spec {M : Std.Usize} (e : relation.Estimator M) (middle : Std.I64)
+    (hull : Std.Array Std.Usize M) (size edge : Std.Usize) :
+    relation.Estimator.bridge_loop1 e.kept e.len e.span e.limit e.window e.lowest e.line
+        middle hull size edge
+      ⦃ r => ∀ a b, r = some (a, b) →
+        a ∈ keptList e ∧ b ∈ keptList e ∧ a.time.val ≤ middle.val
+        ∧ middle.val ≤ b.time.val ∧ a.time.val < b.time.val ⦄ := by
+  unfold relation.Estimator.bridge_loop1
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+      relation.Estimator M) = e := rfl
+  apply loop.spec_decr_nat (measure := fun edge1 : Std.Usize => size.val - edge1.val)
+    (inv := fun _ : Std.Usize => True)
+  · intro edge1 _
+    unfold relation.Estimator.bridge_loop1.body
+    rw [he]
+    step as ⟨i4, hi4⟩
+    have hi4v : i4.val = min Usize.max (edge1.val + 1) := by
+      rw [hi4, Usize.saturating_add_val_min]
+      simp
+    split
+    · have hsz : size.val ≤ Usize.max := by scalar_tac
+      have hi4lt : i4.val < size.val := by scalar_tac
+      have hnext : edge1.val + 1 < size.val := by
+        rcases Nat.le_total Usize.max (edge1.val + 1) with h | h
+        · rw [min_eq_left h] at hi4v; omega
+        · rw [min_eq_right h] at hi4v; omega
+      have hstep : ∀ edge2 : Std.Usize, edge2 = core.num.Usize.saturating_add edge1 1#usize →
+          size.val - edge2.val < size.val - edge1.val := by
+        intro edge2 h2
+        have : edge2.val = edge1.val + 1 := by
+          rw [h2]; exact Usize.saturating_add_val _ _ (by scalar_tac)
+        omega
+      step as ⟨o2, ho2⟩
+      split
+      · step as ⟨edge2, h2⟩
+        exact hstep edge2 h2
+      · rename_i _ a
+        step as ⟨i5, hi5⟩
+        step as ⟨o3, ho3⟩
+        split
+        · step as ⟨edge2, h2⟩
+          exact hstep edge2 h2
+        · rename_i _ b
+          split
+          · split
+            · split
+              · simp only [WP.spec_ok]
+                intro a' b' hab
+                cases hab
+                exact ⟨ho2 a rfl, ho3 b rfl, by scalar_tac, by scalar_tac, by scalar_tac⟩
+              · step as ⟨edge2, h2⟩
+                exact hstep edge2 h2
+            · step as ⟨edge2, h2⟩
+              exact hstep edge2 h2
+          · step as ⟨edge2, h2⟩
+            exact hstep edge2 h2
+    · simp
+  · trivial
+
+/-- The loop that removes samples from the end of the hull ends. -/
+@[step]
+theorem bridge_loop0_loop0_spec {M : Std.Usize} (e : relation.Estimator M)
+    (hull : Std.Array Std.Usize M) (size : Std.Usize) (candidate : relation.Sample) :
+    relation.Estimator.bridge_loop0_loop0 e.kept e.len e.span e.limit e.window e.lowest
+        e.line hull size candidate ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.bridge_loop0_loop0
+  have he : (⟨e.kept, e.len, e.span, e.limit, e.window, e.lowest, e.line⟩ :
+      relation.Estimator M) = e := rfl
+  apply loop.spec_decr_nat (measure := fun size1 : Std.Usize => size1.val)
+    (inv := fun _ : Std.Usize => True)
+  · intro size1 _
+    unfold relation.Estimator.bridge_loop0_loop0.body
+    rw [he]
+    split
+    · have h2 : 2 ≤ size1.val := by scalar_tac
+      step as ⟨i4, hi4⟩
+      step as ⟨before, hbefore⟩
+      step as ⟨i5, hi5⟩
+      step as ⟨last, hlast⟩
+      split
+      · simp
+      · split
+        · simp
+        · step with side_total as ⟨i6⟩
+          split
+          · step as ⟨size2, hsize2⟩
+            have : size2.val = size1.val - 1 := by
+              rw [hsize2]; exact Usize.saturating_sub_val _ _
+            scalar_tac
+          · simp
+    · simp
+  · trivial
+
+/-- The loop that builds the hull ends, and hands the estimator back as it was. -/
+@[step]
+theorem bridge_loop0_spec {M : Std.Usize} (e : relation.Estimator M)
+    (hull : Std.Array Std.Usize M) (size next : Std.Usize) :
+    relation.Estimator.bridge_loop0 e hull size next ⦃ r =>
+      r.1 = e.kept ∧ r.2.1 = e.len ∧ r.2.2.1 = e.span ∧ r.2.2.2.1 = e.limit
+      ∧ r.2.2.2.2.1 = e.window ∧ r.2.2.2.2.2.1 = e.lowest ∧ r.2.2.2.2.2.2.1 = e.line ⦄ := by
+  unfold relation.Estimator.bridge_loop0
+  apply loop.spec_decr_nat
+    (measure := fun x : Std.Array Std.Usize M × Std.Usize × Std.Usize => e.len.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨hull1, size1, next1⟩ _
+    unfold relation.Estimator.bridge_loop0.body
+    simp only
+    split
+    · have hlt : next1.val < e.len.val := by scalar_tac
+      step as ⟨o, ho⟩
+      split
+      · simp
+      · rename_i _ candidate
+        step as ⟨size2⟩
+        simp only [Array.to_slice_mut, lift, core.slice.Slice.get_mut,
+          core.slice.index.Usize.get_mut, bind_ok, Std.uncurry]
+        have hnext : (core.num.Usize.saturating_add next1 1#usize).val = next1.val + 1 :=
+          Usize.saturating_add_val _ _ (by scalar_tac)
+        split
+        · simp only [bind_ok, Std.uncurry, WP.spec_ok]
+          omega
+        · simp only [bind_ok, Std.uncurry, WP.spec_ok]
+          omega
+    · simp
+  · trivial
+
+/-- `bridge` ends, and a pair it returns are two kept samples, the first not
+after `middle`, the second not before it, and the first earlier than the
+second. -/
+@[step]
+theorem bridge_spec {M : Std.Usize} (e : relation.Estimator M) (middle : Std.I64) :
+    relation.Estimator.bridge e middle
+      ⦃ r => ∀ a b, r = some (a, b) →
+        a ∈ keptList e ∧ b ∈ keptList e ∧ a.time.val ≤ middle.val
+        ∧ middle.val ≤ b.time.val ∧ a.time.val < b.time.val ⦄ := by
+  unfold relation.Estimator.bridge
+  simp only
+  step as ⟨a, len, sp, lim, wi, lo, li, hull1, size, p1, p2, p3, p4, p5, p6, p7⟩
+  subst p1 p2 p3 p4 p5 p6 p7
+  exact bridge_loop1_spec e middle hull1 size 0#usize
+
 end Unisono.Relation
