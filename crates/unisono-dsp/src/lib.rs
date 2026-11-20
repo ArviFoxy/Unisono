@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod filter;
+pub mod format;
 pub mod position;
 pub mod resample;
 
