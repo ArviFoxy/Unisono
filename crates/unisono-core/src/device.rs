@@ -20,9 +20,20 @@ use crate::fixed::{div_floor, div_floor_wide, saturate};
 const BILLION: i128 = 1_000_000_000;
 
 /// The largest distance in frames, and the largest departure from the
-/// nominal rate in nanoseconds, that enter the sums: 2^32. Beyond them a
-/// report is taken at the bound, so that no sum can exceed its range.
-const REACH: i128 = 4_294_967_296;
+/// nominal rate in nanoseconds, that enter the sums: 2^28. Beyond them a
+/// report is taken at the bound, so that no sum or product in [`Device::when`]
+/// can exceed `i128`.
+const REACH: i128 = 268_435_456;
+
+/// The largest number of reports that enter the sums: 2^12. Together with
+/// [`REACH`], every intermediate value in [`Device::when`] stays below 2^123
+/// for any `W`.
+const MAX_KEPT: usize = 4_096;
+
+/// A departure from what the nominal rate predicts from the newest report, in
+/// nanoseconds, beyond which a report is treated as a restart of the device
+/// rather than jitter of its clock reports: 100 ms.
+const MAX_JUMP: i128 = 100_000_000;
 
 /// One report of a device.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -85,10 +96,17 @@ impl<const W: usize> Device<W> {
         }
     }
 
+    /// The number of reports this device keeps at most: `W`, capped at
+    /// [`MAX_KEPT`] so that the sums never wrap.
+    fn capacity(&self) -> usize {
+        if W > MAX_KEPT { MAX_KEPT } else { W }
+    }
+
     /// The number of reports the line is fitted to.
     #[must_use]
     pub fn kept(&self) -> usize {
-        if self.len > W { W } else { self.len }
+        let cap = self.capacity();
+        if self.len > cap { cap } else { self.len }
     }
 
     /// The report at `place`, if that place exists.
@@ -101,12 +119,13 @@ impl<const W: usize> Device<W> {
 
     /// The newest report, if there is one.
     fn newest(&self) -> Option<Reading> {
-        if self.len == 0 {
+        let cap = self.capacity();
+        if self.len == 0 || cap == 0 {
             return None;
         }
-        // The place before the next one, around the ring.
-        let place = if self.next == 0 {
-            W.saturating_sub(1)
+        // The place before the next one, around the ring of size `cap`.
+        let place = if self.next == 0 || self.next > cap {
+            cap.saturating_sub(1)
         } else {
             self.next.saturating_sub(1)
         };
@@ -116,31 +135,53 @@ impl<const W: usize> Device<W> {
     /// What the nominal rate gives for a distance of `frames`, in
     /// nanoseconds.
     fn nominal(&self, frames: i128) -> i128 {
-        // At most 2^33 times 2^30: no wrapping.
+        // At most 2^28 times 10^9: below 2^58, no wrapping.
         div_floor(frames.wrapping_mul(BILLION), self.rate as i64)
     }
 
-    /// Whether a report shows that the device started anew: it is not after
-    /// the newest report, in position or in time.
+    /// Whether a report shows that the device started anew: its position is
+    /// not after the newest report, its distance in frames exceeds [`REACH`],
+    /// or its time differs from what the nominal rate predicts from the newest
+    /// report by more than [`MAX_JUMP`].
     fn restarted(&self, position: u64, time: i64) -> bool {
-        match self.newest() {
-            Some(newest) => position <= newest.position || time <= newest.time,
-            None => false,
+        let Some(newest) = self.newest() else {
+            return false;
+        };
+        if position <= newest.position {
+            return true;
         }
+        let frames = (position as i128).wrapping_sub(newest.position as i128);
+        if frames > REACH {
+            return true;
+        }
+        let elapsed = (time as i128).wrapping_sub(newest.time as i128);
+        let deviation = elapsed.wrapping_sub(self.nominal(frames));
+        deviation > MAX_JUMP || deviation < 0i128.wrapping_sub(MAX_JUMP)
     }
 
     /// Takes in a report. When it shows that the device started anew, what
     /// was known is dropped first.
     pub fn observe(&mut self, position: u64, time: i64) {
+        let cap = self.capacity();
         if self.restarted(position, time) {
             self.len = 0;
+            self.next = 0;
+        }
+        if self.len > cap {
+            self.len = cap;
+        }
+        if cap == 0 {
+            return;
+        }
+        if self.next >= cap {
             self.next = 0;
         }
         if let Some(place) = self.readings.get_mut(self.next) {
             *place = Reading { position, time };
         }
-        self.next = self.next.saturating_add(1).checked_rem(W).unwrap_or(0);
-        if self.len < W {
+        let next = self.next.saturating_add(1);
+        self.next = if next >= cap { 0 } else { next };
+        if self.len < cap {
             self.len = self.len.saturating_add(1);
         }
     }
@@ -196,9 +237,9 @@ impl<const W: usize> Device<W> {
             return None;
         }
         let ahead = within((position as i128).wrapping_sub(newest.position as i128));
-        // With the reports of up to 2^8 cycles: sums of x and y below 2^40,
-        // of their products below 2^72, the two parts below 2^81, and the
-        // numerator below 2^123.
+        // With at most 2^12 reports and each value within 2^28: sums of x and
+        // y are at most 2^40, sums of products at most 2^68, spread and tilt
+        // at most 2^81, and the numerator below 2^123. No operation wraps.
         let spread = sums
             .count
             .wrapping_mul(sums.xx)
@@ -365,6 +406,35 @@ mod tests {
         // A time that goes back does the same.
         device.observe(512, 5);
         assert_eq!(device.kept(), 1);
+    }
+
+    #[test]
+    fn jitter_that_moves_a_report_earlier_does_not_drop_the_history() {
+        let mut device = Device::<8>::new(48_000);
+        // 64 frames take 1.333 ms nominally; a +/- 2 ms report jitter can make
+        // one report carry a smaller timestamp than the one before.
+        device.observe(1_000, 10_000_000);
+        device.observe(1_064, 12_500_000);
+        device.observe(1_128, 12_000_000);
+        assert_eq!(device.kept(), 3);
+        let at = device.when(1_128).expect("a line");
+        assert!((at - 12_500_000).abs() < 2_000_000, "unexpected fit {at}");
+    }
+
+    #[test]
+    fn a_large_window_does_not_wrap_the_sums() {
+        // 512 reports with a 100 ppm slow device and 256-frame cycles would
+        // wrap `i128` if `REACH` were 2^32 with adversarial spans; even with a
+        // window larger than `MAX_KEPT`, the fit stays accurate and bounded.
+        let mut device = Device::<5_000>::new(48_000);
+        for (position, time) in reports(4_200, 1_000_000_000, 20_835_417, |_| 0) {
+            device.observe(position, time);
+        }
+        assert_eq!(device.kept(), 4_096);
+        let last = 1_000_000 + 4_199 * 256;
+        let expected = 1_000_000_000 + i64::try_from(last).unwrap_or(0) * 20_835_417 / 1_000;
+        let found = device.when(last).expect("a line");
+        assert!((found - expected).abs() <= 2, "{found} against {expected}");
     }
 
     #[test]

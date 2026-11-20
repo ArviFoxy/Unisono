@@ -186,39 +186,47 @@ def arrivals.Arrivals.record
 @[global_simps, irreducible] def device.BILLION : Std.I128 := 1000000000#i128
 
 /-- [unisono_core::device::REACH]
-    Source: 'crates/unisono-core/src/device.rs', lines 25:0-25:34 -/
-@[global_simps, irreducible] def device.REACH : Std.I128 := 4294967296#i128
+    Source: 'crates/unisono-core/src/device.rs', lines 26:0-26:32 -/
+@[global_simps, irreducible] def device.REACH : Std.I128 := 268435456#i128
+
+/-- [unisono_core::device::MAX_KEPT]
+    Source: 'crates/unisono-core/src/device.rs', lines 31:0-31:30 -/
+@[global_simps, irreducible] def device.MAX_KEPT : Std.Usize := 4096#usize
+
+/-- [unisono_core::device::MAX_JUMP]
+    Source: 'crates/unisono-core/src/device.rs', lines 36:0-36:35 -/
+@[global_simps, irreducible] def device.MAX_JUMP : Std.I128 := 100000000#i128
 
 /-- [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Reading}::clone]:
-    Source: 'crates/unisono-core/src/device.rs', lines 28:9-28:14
+    Source: 'crates/unisono-core/src/device.rs', lines 39:9-39:14
     Visibility: public -/
 def device.Reading.Insts.CoreCloneClone.clone
   (self : device.Reading) : Result device.Reading := do
   ok self
 
 /-- Trait implementation: [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Reading}]
-    Source: 'crates/unisono-core/src/device.rs', lines 28:9-28:14 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 39:9-39:14 -/
 @[reducible]
 def device.Reading.Insts.CoreCloneClone : core.clone.Clone device.Reading := {
   clone := device.Reading.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::device::{impl core::marker::Copy for unisono_core::device::Reading}]
-    Source: 'crates/unisono-core/src/device.rs', lines 28:16-28:20 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 39:16-39:20 -/
 @[reducible]
 def device.Reading.Insts.CoreMarkerCopy : core.marker.Copy device.Reading := {
   cloneInst := device.Reading.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::device::{impl core::marker::StructuralPartialEq for unisono_core::device::Reading}]
-    Source: 'crates/unisono-core/src/device.rs', lines 28:22-28:31 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 39:22-39:31 -/
 @[reducible]
 def device.Reading.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq device.Reading := {
 }
 
 /-- [unisono_core::device::{impl core::cmp::PartialEq<unisono_core::device::Reading> for unisono_core::device::Reading}::eq]:
-    Source: 'crates/unisono-core/src/device.rs', lines 28:22-28:31
+    Source: 'crates/unisono-core/src/device.rs', lines 39:22-39:31
     Visibility: public -/
 def device.Reading.Insts.CoreCmpPartialEqReading.eq
   (self : device.Reading) (other : device.Reading) : Result Bool := do
@@ -227,7 +235,7 @@ def device.Reading.Insts.CoreCmpPartialEqReading.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::device::{impl core::cmp::PartialEq<unisono_core::device::Reading> for unisono_core::device::Reading}]
-    Source: 'crates/unisono-core/src/device.rs', lines 28:22-28:31 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 39:22-39:31 -/
 @[reducible]
 def device.Reading.Insts.CoreCmpPartialEqReading : core.cmp.PartialEq
   device.Reading device.Reading := {
@@ -235,14 +243,14 @@ def device.Reading.Insts.CoreCmpPartialEqReading : core.cmp.PartialEq
 }
 
 /-- [unisono_core::device::{impl core::cmp::Eq for unisono_core::device::Reading}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/device.rs', lines 28:33-28:35
+    Source: 'crates/unisono-core/src/device.rs', lines 39:33-39:35
     Visibility: public -/
 def device.Reading.Insts.CoreCmpEq.assert_fields_are_eq
   (self : device.Reading) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::device::{impl core::cmp::Eq for unisono_core::device::Reading}]
-    Source: 'crates/unisono-core/src/device.rs', lines 28:33-28:35 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 39:33-39:35 -/
 @[reducible]
 def device.Reading.Insts.CoreCmpEq : core.cmp.Eq device.Reading := {
   partialEqInst := device.Reading.Insts.CoreCmpPartialEqReading
@@ -250,35 +258,35 @@ def device.Reading.Insts.CoreCmpEq : core.cmp.Eq device.Reading := {
 }
 
 /-- [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Sums}::clone]:
-    Source: 'crates/unisono-core/src/device.rs', lines 40:9-40:14
+    Source: 'crates/unisono-core/src/device.rs', lines 51:9-51:14
     Visibility: public -/
 def device.Sums.Insts.CoreCloneClone.clone
   (self : device.Sums) : Result device.Sums := do
   ok self
 
 /-- Trait implementation: [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Sums}]
-    Source: 'crates/unisono-core/src/device.rs', lines 40:9-40:14 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 51:9-51:14 -/
 @[reducible]
 def device.Sums.Insts.CoreCloneClone : core.clone.Clone device.Sums := {
   clone := device.Sums.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::device::{impl core::marker::Copy for unisono_core::device::Sums}]
-    Source: 'crates/unisono-core/src/device.rs', lines 40:16-40:20 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 51:16-51:20 -/
 @[reducible]
 def device.Sums.Insts.CoreMarkerCopy : core.marker.Copy device.Sums := {
   cloneInst := device.Sums.Insts.CoreCloneClone
 }
 
 /-- [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Device<W>}::clone]:
-    Source: 'crates/unisono-core/src/device.rs', lines 50:9-50:14
+    Source: 'crates/unisono-core/src/device.rs', lines 61:9-61:14
     Visibility: public -/
 def device.Device.Insts.CoreCloneClone.clone
   {W : Std.Usize} (self : device.Device W) : Result (device.Device W) := do
   ok self
 
 /-- Trait implementation: [unisono_core::device::{impl core::clone::Clone for unisono_core::device::Device<W>}]
-    Source: 'crates/unisono-core/src/device.rs', lines 50:9-50:14 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 61:9-61:14 -/
 @[reducible]
 def device.Device.Insts.CoreCloneClone (W : Std.Usize) : core.clone.Clone
   (device.Device W) := {
@@ -286,7 +294,7 @@ def device.Device.Insts.CoreCloneClone (W : Std.Usize) : core.clone.Clone
 }
 
 /-- Trait implementation: [unisono_core::device::{impl core::marker::Copy for unisono_core::device::Device<W>}]
-    Source: 'crates/unisono-core/src/device.rs', lines 50:16-50:20 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 61:16-61:20 -/
 @[reducible]
 def device.Device.Insts.CoreMarkerCopy (W : Std.Usize) : core.marker.Copy
   (device.Device W) := {
@@ -294,7 +302,7 @@ def device.Device.Insts.CoreMarkerCopy (W : Std.Usize) : core.marker.Copy
 }
 
 /-- [unisono_core::device::within]:
-    Source: 'crates/unisono-core/src/device.rs', lines 63:0-71:1 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 74:0-82:1 -/
 def device.within (value : Std.I128) : Result Std.I128 := do
   if value > device.REACH
   then ok device.REACH
@@ -305,24 +313,33 @@ def device.within (value : Std.I128) : Result Std.I128 := do
     else ok value
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::new]:
-    Source: 'crates/unisono-core/src/device.rs', lines 76:4-86:5
+    Source: 'crates/unisono-core/src/device.rs', lines 87:4-97:5
     Visibility: public -/
 def device.Device.new
   (W : Std.Usize) (rate : Std.U32) : Result (device.Device W) := do
   let a := Array.repeat W { position := 0#u64, time := 0#i64 }
   ok { readings := a, len := 0#usize, next := 0#usize, rate }
 
+/-- [unisono_core::device::{unisono_core::device::Device<W>}::capacity]:
+    Source: 'crates/unisono-core/src/device.rs', lines 101:4-103:5 -/
+def device.Device.capacity
+  {W : Std.Usize} (self : device.Device W) : Result Std.Usize := do
+  if W > device.MAX_KEPT
+  then ok device.MAX_KEPT
+  else ok W
+
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::kept]:
-    Source: 'crates/unisono-core/src/device.rs', lines 90:4-92:5
+    Source: 'crates/unisono-core/src/device.rs', lines 107:4-110:5
     Visibility: public -/
 def device.Device.kept
   {W : Std.Usize} (self : device.Device W) : Result Std.Usize := do
-  if self.len > W
-  then ok W
+  let cap ← device.Device.capacity self
+  if self.len > cap
+  then ok cap
   else ok self.len
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::at]:
-    Source: 'crates/unisono-core/src/device.rs', lines 95:4-100:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 113:4-118:5 -/
 def device.Device.at
   {W : Std.Usize} (self : device.Device W) (place : Std.Usize) :
   Result (Option device.Reading)
@@ -336,19 +353,26 @@ def device.Device.at
   | some _ => ok o
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::newest]:
-    Source: 'crates/unisono-core/src/device.rs', lines 103:4-114:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 121:4-133:5 -/
 def device.Device.newest
   {W : Std.Usize} (self : device.Device W) :
   Result (Option device.Reading)
   := do
+  let cap ← device.Device.capacity self
   if self.len = 0#usize
   then ok none
   else
-    let place ←
-      if self.next = 0#usize
-      then ok (core.num.Usize.saturating_sub W 1#usize)
-      else ok (core.num.Usize.saturating_sub self.next 1#usize)
-    device.Device.at self place
+    if cap = 0#usize
+    then ok none
+    else
+      let place ←
+        if self.next = 0#usize
+        then ok (core.num.Usize.saturating_sub cap 1#usize)
+        else
+          if self.next > cap
+          then ok (core.num.Usize.saturating_sub cap 1#usize)
+          else ok (core.num.Usize.saturating_sub self.next 1#usize)
+      device.Device.at self place
 
 /-- [unisono_core::fixed::div_floor]:
     Source: 'crates/unisono-core/src/fixed.rs', lines 53:0-68:1
@@ -371,7 +395,7 @@ def fixed.div_floor (a : Std.I128) (b : Std.I64) : Result Std.I128 := do
         else ok quotient
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::nominal]:
-    Source: 'crates/unisono-core/src/device.rs', lines 118:4-121:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 137:4-140:5 -/
 def device.Device.nominal
   {W : Std.Usize} (self : device.Device W) (frames : Std.I128) :
   Result Std.I128
@@ -381,7 +405,7 @@ def device.Device.nominal
   fixed.div_floor i i1
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::restarted]:
-    Source: 'crates/unisono-core/src/device.rs', lines 125:4-130:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 146:4-160:5 -/
 def device.Device.restarted
   {W : Std.Usize} (self : device.Device W) (position : Std.U64)
   (time : Std.I64) :
@@ -393,43 +417,70 @@ def device.Device.restarted
   | some newest =>
     if position <= newest.position
     then ok true
-    else ok (time <= newest.time)
+    else
+      let i ← lift (UScalar.hcast .I128 position)
+      let i1 ← lift (UScalar.hcast .I128 newest.position)
+      let frames ← lift (core.num.I128.wrapping_sub i i1)
+      if frames > device.REACH
+      then ok true
+      else
+        let i2 ← lift (IScalar.cast .I128 time)
+        let i3 ← lift (IScalar.cast .I128 newest.time)
+        let elapsed ← lift (core.num.I128.wrapping_sub i2 i3)
+        let i4 ← device.Device.nominal self frames
+        let deviation ← lift (core.num.I128.wrapping_sub elapsed i4)
+        if deviation > device.MAX_JUMP
+        then ok true
+        else
+          let i5 ← lift (core.num.I128.wrapping_sub 0#i128 device.MAX_JUMP)
+          ok (deviation < i5)
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::observe]:
-    Source: 'crates/unisono-core/src/device.rs', lines 134:4-146:5
+    Source: 'crates/unisono-core/src/device.rs', lines 164:4-187:5
     Visibility: public -/
 def device.Device.observe
   {W : Std.Usize} (self : device.Device W) (position : Std.U64)
   (time : Std.I64) :
   Result (device.Device W)
   := do
+  let cap ← device.Device.capacity self
   let b ← device.Device.restarted self position time
   let self1 ←
     if b
     then ok { self with len := 0#usize, next := 0#usize }
     else ok self
-  let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self1.readings)
-  let (o, get_mut_back) ←
-    core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
-      device.Reading) s self1.next
-  let a ←
-    match o with
-    | none => let s1 := get_mut_back none
-              ok (to_slice_mut_back s1)
-    | some _ =>
-      let s1 := get_mut_back (some { position, time })
-      ok (to_slice_mut_back s1)
-  let i ← lift (core.num.Usize.saturating_add self1.next 1#usize)
-  let o1 ← lift (Usize.checked_rem i W)
-  let i1 ← lift (core.option.Option.unwrap_or o1 0#usize)
-  if self1.len < W
-  then
-    let i2 ← lift (core.num.Usize.saturating_add self1.len 1#usize)
-    ok { self1 with readings := a, len := i2, next := i1 }
-  else ok { self1 with readings := a, next := i1 }
+  let i ← if self1.len > cap
+            then ok cap
+            else ok self1.len
+  if cap = 0#usize
+  then ok { self1 with len := i }
+  else
+    let i1 ← if self1.next >= cap
+               then ok 0#usize
+               else ok self1.next
+    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self1.readings)
+    let (o, get_mut_back) ←
+      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+        device.Reading) s i1
+    let a ←
+      match o with
+      | none => let s1 := get_mut_back none
+                ok (to_slice_mut_back s1)
+      | some _ =>
+        let s1 := get_mut_back (some { position, time })
+        ok (to_slice_mut_back s1)
+    let next ← lift (core.num.Usize.saturating_add i1 1#usize)
+    let next1 ← if next >= cap
+                  then ok 0#usize
+                  else ok next
+    if i < cap
+    then
+      let i2 ← lift (core.num.Usize.saturating_add i 1#usize)
+      ok { self1 with readings := a, len := i2, next := next1 }
+    else ok { self1 with readings := a, len := i, next := next1 }
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::add]:
-    Source: 'crates/unisono-core/src/device.rs', lines 169:4-183:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 210:4-224:5 -/
 def device.Device.add
   {W : Std.Usize} (self : device.Device W) (sums : device.Sums)
   (newest : device.Reading) (reading : device.Reading) :
@@ -455,7 +506,7 @@ def device.Device.add
   ok { count := i7, x := i8, y := i9, xx := i11, xy := i13 }
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::sums]: loop body 0:
-    Source: 'crates/unisono-core/src/device.rs', lines 159:8-164:9 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 200:8-205:9 -/
 @[rust_loop_body]
 def device.Device.sums_loop.body
   {W : Std.Usize} (self : device.Device W) (newest : device.Reading)
@@ -474,7 +525,7 @@ def device.Device.sums_loop.body
   else ok (done sums)
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::sums]: loop 0:
-    Source: 'crates/unisono-core/src/device.rs', lines 159:8-164:9 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 200:8-205:9 -/
 @[rust_loop]
 def device.Device.sums_loop
   {W : Std.Usize} (self : device.Device W) (newest : device.Reading)
@@ -487,7 +538,7 @@ def device.Device.sums_loop
     (sums, place)
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::sums]:
-    Source: 'crates/unisono-core/src/device.rs', lines 149:4-166:5 -/
+    Source: 'crates/unisono-core/src/device.rs', lines 190:4-207:5 -/
 def device.Device.sums
   {W : Std.Usize} (self : device.Device W) (newest : device.Reading) :
   Result device.Sums
@@ -530,7 +581,7 @@ def fixed.saturate (x : Std.I128) : Result Std.I64 := do
     else ok (IScalar.cast .I64 x)
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::when]:
-    Source: 'crates/unisono-core/src/device.rs', lines 190:4-226:5
+    Source: 'crates/unisono-core/src/device.rs', lines 231:4-267:5
     Visibility: public -/
 def device.Device.when
   {W : Std.Usize} (self : device.Device W) (position : Std.U64) :
