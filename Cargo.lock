@@ -14,6 +14,10 @@ name = "unisono-core"
 version = "0.1.0"
 
 [[package]]
+name = "unisono-metrics"
+version = "0.1.0"
+
+[[package]]
 name = "unisono-sim"
 version = "0.1.0"
 dependencies = [

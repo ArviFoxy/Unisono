@@ -1,0 +1,9 @@
+[package]
+name = "unisono-metrics"
+description = "Counters, gauges and histograms that real-time threads update without waiting, exported in the Prometheus text format."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
