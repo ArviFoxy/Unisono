@@ -156,7 +156,7 @@ fn relation_cases(out: &mut impl Write) -> io::Result<()> {
 }
 
 /// The fields of a header as numbers, in the order of the layout.
-fn fields(header: &packet::Audio) -> [i128; 16] {
+fn fields(header: &packet::Audio) -> [i128; 17] {
     [
         i128::from(header.stream),
         i128::from(header.timeline),
@@ -177,13 +177,14 @@ fn fields(header: &packet::Audio) -> [i128; 16] {
         i128::from(header.protection),
         i128::from(header.stamped_index),
         i128::from(header.stamped_departure),
+        i128::from(header.drift),
     ]
 }
 
 /// What parsing gives, as numbers: 0 and the fields, or the number of the
 /// reason for rejection, its detail, and zeros.
-fn parsed(bytes: &[u8]) -> [i128; 17] {
-    let mut numbers = [0i128; 17];
+fn parsed(bytes: &[u8]) -> [i128; 18] {
+    let mut numbers = [0i128; 18];
     match packet::parse_audio(bytes) {
         Ok(header) => numbers[1..].copy_from_slice(&fields(&header)),
         Err(reason) => {
@@ -246,6 +247,7 @@ fn packet_cases(out: &mut impl Write) -> io::Result<()> {
             protection: sequence.next() as u16,
             stamped_index: sequence.next(),
             stamped_departure: sequence.signed(),
+            drift: sequence.signed() as i32,
         };
         let mut buffer = [0u8; 256];
         let Some(length) = packet::write_audio(&header, &mut buffer) else {
@@ -265,7 +267,7 @@ fn packet_cases(out: &mut impl Write) -> io::Result<()> {
             join(&parsed(good))
         )?;
         let mut changed = good.to_vec();
-        let place = usize::try_from(sequence.next() % 64).unwrap_or(0);
+        let place = usize::try_from(sequence.next() % 84).unwrap_or(0);
         changed[place] ^= 1 << (sequence.next() % 8);
         writeln!(
             out,

@@ -11,7 +11,7 @@ directions, are not specified yet.
 
 ## The audio packet
 
-A header of 80 bytes, then the samples: `frames × channels` samples, each of 2
+A header of 84 bytes, then the samples: `frames × channels` samples, each of 2
 or 3 bytes, frame after frame. A datagram whose length is not exactly that of
 the header and the samples it announces is rejected.
 
@@ -34,14 +34,20 @@ Times are in nanoseconds on the sender's raw clock.
 | 48 | 4 | level slope | how the level changes, in nanoseconds per second of stream (signed) |
 | 52 | 4 | span | how long a receiver remembers samples for its estimate of the sender's clock, in milliseconds |
 | 56 | 4 | window | the number of frames that make up one window of that estimate |
-| 60 | 2 | flags | none defined yet |
+| 60 | 2 | flags | bit 0: the packet carries the departure of an earlier packet |
 | 62 | 2 | protection | the protection against loss that the packet carries; 0 is none |
-| 64 | 8 | stamped index | the index of the first frame of an earlier packet of this timeline |
+| 64 | 8 | stamped index | the index of the first frame of an earlier packet of this timeline, if bit 0 of the flags is set |
 | 72 | 8 | stamped departure | when that earlier packet left the sender (signed) |
+| 80 | 4 | drift | how much faster than the rate the capture device runs against the sender's clock, in parts per billion (signed) |
 
 A sender learns when a packet left only after it has left, so each packet
 carries the departure of an earlier one. A receiver that kept the time of
 arrival of that earlier packet then has both stamps of it.
+
+The capture time and the drift give the capture time of every frame: frame
+`index + k` was captured `k × 10⁹ / (rate × (1 + drift × 10⁻⁹))` nanoseconds
+after the first. They are the sender's own estimate of its capture device
+against its clock.
 
 The level, the span and the window are the same for every receiver of the
 stream. They travel in every packet so that a receiver that has just started,

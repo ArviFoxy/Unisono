@@ -18,7 +18,11 @@ pub const VERSION: u8 = 1;
 pub const KIND_AUDIO: u8 = 1;
 
 /// The size of the header of an audio packet, in bytes.
-pub const HEADER: usize = 80;
+pub const HEADER: usize = 84;
+
+/// The bit of the flags that says the packet carries the departure of an
+/// earlier packet.
+pub const FLAG_STAMPED: u16 = 1;
 
 /// How one sample of one channel is written.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -70,6 +74,9 @@ pub struct Audio {
     pub index: u64,
     /// When the first frame was captured.
     pub capture: i64,
+    /// How much faster than `rate` the capture device runs against the
+    /// sender's clock, in parts per billion.
+    pub drift: i32,
     /// Frames per second.
     pub rate: u32,
     /// The number of frames in the packet.
@@ -88,11 +95,12 @@ pub struct Audio {
     pub span: u32,
     /// The number of frames that make up one window of that estimate.
     pub window: u32,
-    /// Bits that qualify the packet; none is defined yet.
+    /// Bits that qualify the packet: [`FLAG_STAMPED`].
     pub flags: u16,
     /// The protection against loss that the packet carries; 0 is none.
     pub protection: u16,
-    /// The index of the first frame of an earlier packet of this timeline.
+    /// The index of the first frame of an earlier packet of this timeline,
+    /// if the flags say that the packet carries one.
     pub stamped_index: u64,
     /// When that earlier packet left the sender.
     pub stamped_departure: i64,
@@ -226,9 +234,12 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
     else {
         return Err(Rejected::TooShort);
     };
-    let (Some(protection), Some(stamped_index), Some(stamped_departure)) =
-        (read(bytes, 62, 2), read(bytes, 64, 8), read(bytes, 72, 8))
-    else {
+    let (Some(protection), Some(stamped_index), Some(stamped_departure), Some(drift)) = (
+        read(bytes, 62, 2),
+        read(bytes, 64, 8),
+        read(bytes, 72, 8),
+        read(bytes, 80, 4),
+    ) else {
         return Err(Rejected::TooShort);
     };
     if magic != MAGIC {
@@ -248,6 +259,7 @@ pub fn parse_audio(bytes: &[u8]) -> Result<Audio, Rejected> {
         timeline,
         index,
         capture: capture as i64,
+        drift: drift as u32 as i32,
         rate: rate as u32,
         frames: frames as u16,
         channels: channels as u8,
@@ -297,6 +309,7 @@ pub fn write_audio(header: &Audio, bytes: &mut [u8]) -> Option<usize> {
     written &= write(bytes, 62, 2, header.protection as u64);
     written &= write(bytes, 64, 8, header.stamped_index);
     written &= write(bytes, 72, 8, header.stamped_departure as u64);
+    written &= write(bytes, 80, 4, header.drift as u32 as u64);
     if written {
         Some(HEADER.wrapping_add(payload(header)))
     } else {
@@ -317,6 +330,7 @@ mod tests {
             timeline: 0x1112_1314_1516_1718,
             index: 0x2122_2324_2526_2728,
             capture: -0x3132_3334_3536_3738,
+            drift: -0x5152_5354,
             rate: 48_000,
             frames: 4,
             channels: 2,
@@ -354,6 +368,7 @@ mod tests {
         assert_eq!(bytes[36..40], [4, 0, 2, 2]);
         assert_eq!(bytes[48..52], (-7i32).to_le_bytes());
         assert_eq!(bytes[72..80], [0xff; 8]);
+        assert_eq!(bytes[80..84], (-0x5152_5354i32).to_le_bytes());
     }
 
     #[test]
@@ -365,6 +380,7 @@ mod tests {
             channels: 255,
             frames: 1,
             capture: i64::MIN,
+            drift: i32::MIN,
             level_slope: i32::MIN,
             ..original
         };

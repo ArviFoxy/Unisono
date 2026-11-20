@@ -58,7 +58,7 @@ def headerFields (h : packet.Audio) : List Int :=
       | .Signed16 => 1
       | .Signed24 => 2),
     h.level.val, h.level_slope.val, h.span.val, h.window.val, h.flags.val, h.protection.val,
-    h.stamped_index.val, h.stamped_departure.val]
+    h.stamped_index.val, h.stamped_departure.val, h.drift.val]
 
 /-- A reason for rejection as two numbers: which reason, and its detail. -/
 def rejection : packet.Rejected → List Int
@@ -75,14 +75,14 @@ def runParse (values : List Int) : Result (List Int) := do
   let parsed ← packet.parse_audio (byteSlice values)
   match parsed with
   | .Ok header => pure (0 :: headerFields header)
-  | .Err reason => pure (rejection reason ++ List.replicate 15 0)
+  | .Err reason => pure (rejection reason ++ List.replicate 16 0)
 
 /-- Writes a header given by its fields into 256 zero bytes, and returns the
-length that writing reports and the first 80 bytes. -/
+length that writing reports and the first 84 bytes. -/
 def runWrite (f : List Int) : Result (List Int) := do
   match f with
   | [stream, timeline, index, capture, rate, frames, channels, format, level, slope, span,
-      window, flags, protection, stampedIndex, stampedDeparture] =>
+      window, flags, protection, stampedIndex, stampedDeparture, drift] =>
     let header : packet.Audio := {
       stream := unsigned .U16 stream, timeline := unsigned .U64 timeline,
       index := unsigned .U64 index, capture := signed .I64 capture,
@@ -93,10 +93,11 @@ def runWrite (f : List Int) : Result (List Int) := do
       span := unsigned .U32 span, window := unsigned .U32 window,
       flags := unsigned .U16 flags, protection := unsigned .U16 protection,
       stamped_index := unsigned .U64 stampedIndex,
-      stamped_departure := signed .I64 stampedDeparture }
+      stamped_departure := signed .I64 stampedDeparture,
+      drift := signed .I32 drift }
     let (length, bytes) ← packet.write_audio header (byteSlice (List.replicate 256 0))
     match length with
-    | some n => pure (n.val :: (bytes.val.take 80).map (·.val))
+    | some n => pure (n.val :: (bytes.val.take 84).map (·.val))
     | none => pure [-1]
   | _ => pure [-2]
 

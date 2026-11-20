@@ -199,6 +199,12 @@ impl<const N: usize> Presence<N> {
         }
     }
 
+    /// Starts the stretch anew at `base`, holding nothing.
+    pub fn restart(&mut self, base: u64) {
+        self.clear();
+        self.base = base;
+    }
+
     /// Moves the start of the stretch forward to `to`, and forgets the
     /// frames before it. A `to` that is not ahead of the start does nothing.
     pub fn advance(&mut self, to: u64) {
@@ -225,6 +231,20 @@ impl<const N: usize> Presence<N> {
         let mut count = 0u32;
         while count < limit {
             if !self.held_at(from, count) {
+                break;
+            }
+            count = count.saturating_add(1);
+        }
+        count
+    }
+
+    /// The number of frames not held without a break from index `from` on,
+    /// up to `limit`.
+    #[must_use]
+    pub fn gap(&self, from: u64, limit: u32) -> u32 {
+        let mut count = 0u32;
+        while count < limit {
+            if self.held_at(from, count) {
                 break;
             }
             count = count.saturating_add(1);
@@ -362,6 +382,26 @@ mod tests {
         assert_eq!(presence.mark_frame(10), Outcome::Duplicate);
         assert_eq!(presence.mark_frame(74), Outcome::Early);
         assert!(presence.covers(73) && !presence.covers(74) && !presence.covers(9));
+    }
+
+    #[test]
+    fn runs_and_gaps_alternate() {
+        let mut presence = Presence::<2>::new();
+        presence.mark(3, 4);
+        assert_eq!((presence.gap(0, 100), presence.run(0, 100)), (3, 0));
+        assert_eq!((presence.gap(3, 100), presence.run(3, 100)), (0, 4));
+        // Beyond the stretch nothing is held, so a gap goes on to the limit.
+        assert_eq!(presence.gap(7, 500), 500);
+        assert_eq!(presence.gap(u64::MAX, 3), 3);
+    }
+
+    #[test]
+    fn a_restart_holds_nothing_at_the_new_start() {
+        let mut presence = Presence::<2>::new();
+        presence.mark(0, 128);
+        presence.restart(1_000_000);
+        assert_eq!(presence.base(), 1_000_000);
+        assert_eq!(presence.gap(1_000_000, 128), 128);
     }
 
     #[test]

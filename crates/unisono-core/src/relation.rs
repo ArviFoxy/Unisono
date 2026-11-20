@@ -135,6 +135,11 @@ impl<const M: usize> Estimator<M> {
         }
     }
 
+    /// Sets how long a kept sample is remembered, in nanoseconds.
+    pub fn remember(&mut self, span: i64) {
+        self.span = span;
+    }
+
     /// The current estimate, once a sample has been kept.
     #[must_use]
     pub fn line(&self) -> Option<Line> {
