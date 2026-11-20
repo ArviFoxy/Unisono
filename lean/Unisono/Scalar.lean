@@ -33,6 +33,41 @@ theorem U32.wrapping_sub_val (x y : U32) (h : y.val ≤ x.val) :
   simp at *
   omega
 
+theorem U64.wrapping_sub_val (x y : U64) (h : y.val ≤ x.val) :
+    (core.num.U64.wrapping_sub x y).val = x.val - y.val := by
+  have hx := x.hBounds
+  simp only [core.num.U64.wrapping_sub_val_eq, UScalar.size] at *
+  simp at *
+  omega
+
+/-- A machine-word number keeps its value when cast to 64 bits. -/
+theorem Usize.cast_U64_val (x : Usize) : (UScalar.cast UScalarTy.U64 x).val = x.val := by
+  rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
+  have hx : x.val ≤ Usize.max := by scalar_tac
+  have hmax : Usize.max ≤ U64.max := by
+    rcases Usize.bounds_eq with h | h
+    · rw [h]; scalar_tac
+    · exact le_of_eq h
+  have : U64.max < 2 ^ UScalarTy.U64.numBits := by scalar_tac
+  omega
+
+/-- A 64-bit number that fits a machine word keeps its value when cast. -/
+theorem U64.cast_Usize_val (x : U64) (h : x.val ≤ Usize.max) :
+    (UScalar.cast UScalarTy.Usize x).val = x.val := by
+  rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
+  scalar_tac
+
+/-- A 64-bit number below `2^32` keeps its value when cast to 32 bits. -/
+theorem U64.cast_U32_val (x : U64) (h : x.val ≤ U32.max) :
+    (UScalar.cast UScalarTy.U32 x).val = x.val := by
+  rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
+  scalar_tac
+
+/-- A 32-bit number keeps its value when cast to 64 bits. -/
+theorem U32.cast_U64_val (x : U32) : (UScalar.cast UScalarTy.U64 x).val = x.val := by
+  rw [UScalar.cast_val_mod_pow_of_inBounds_eq]
+  scalar_tac
+
 /-- The product of two 64-bit integers is at most `2^126` in magnitude. -/
 theorem I64.mul_val_bounds (a b : I64) :
     -2^126 ≤ a.val * b.val ∧ a.val * b.val ≤ 2^126 := by
@@ -158,6 +193,65 @@ theorem Usize.saturating_sub_val (x y : Usize) :
   rw [BitVec.toNat_ofNat, Nat.zero_max]
   apply Nat.mod_eq_of_lt
   omega
+
+/-- The value of a saturating addition of unsigned numbers of any width. -/
+theorem UScalar.saturating_add_val {ty : UScalarTy} (x y : UScalar ty) :
+    (UScalar.saturating_add x y).val = min (UScalar.max ty) (x.val + y.val) := by
+  simp only [UScalar.saturating_add, UScalar.val]
+  rw [BitVec.toNat_ofNat]
+  apply Nat.mod_eq_of_lt
+  have h1 : min (UScalar.max ty) (x.bv.toNat + y.bv.toNat) ≤ UScalar.max ty := min_le_left _ _
+  have h2 : UScalar.max ty < 2 ^ ty.numBits := by
+    rw [UScalar.max_def]
+    have : 0 < 2 ^ ty.numBits := by positivity
+    omega
+  omega
+
+/-- A saturating addition is at least its first argument. -/
+theorem UScalar.le_saturating_add {ty : UScalarTy} (x y : UScalar ty) :
+    x.val ≤ (UScalar.saturating_add x y).val := by
+  rw [UScalar.saturating_add_val]
+  have hx : x.val ≤ UScalar.max ty := by
+    have := x.hBounds
+    rw [UScalar.max_def]
+    simp only [UScalar.val] at *
+    omega
+  exact le_min hx (Nat.le_add_right _ _)
+
+@[step]
+theorem U32.saturating_add_step (x y : U32) :
+    lift (core.num.U32.saturating_add x y) ⦃ r => r = core.num.U32.saturating_add x y ⦄ := by
+  simp [lift]
+
+@[step]
+theorem U64.saturating_add_step (x y : U64) :
+    lift (core.num.U64.saturating_add x y) ⦃ r => r = core.num.U64.saturating_add x y ⦄ := by
+  simp [lift]
+
+/-- Adding one with saturation to a number below another keeps it at most that other. -/
+theorem U32.saturating_add_one_val (x : U32) (bound : ℕ) (h : x.val < bound)
+    (hb : bound ≤ U32.max) :
+    (core.num.U32.saturating_add x 1#u32).val = x.val + 1 := by
+  have := UScalar.saturating_add_val x 1#u32
+  simp only [core.num.U32.saturating_add]
+  rw [this, min_eq_right]
+  · simp
+  · have : UScalar.max UScalarTy.U32 = U32.max := by scalar_tac
+    rw [this]
+    simp
+    omega
+
+theorem U64.saturating_add_one_val (x : U64) (bound : ℕ) (h : x.val < bound)
+    (hb : bound ≤ U64.max) :
+    (core.num.U64.saturating_add x 1#u64).val = x.val + 1 := by
+  have := UScalar.saturating_add_val x 1#u64
+  simp only [core.num.U64.saturating_add]
+  rw [this, min_eq_right]
+  · simp
+  · have : UScalar.max UScalarTy.U64 = U64.max := by scalar_tac
+    rw [this]
+    simp
+    omega
 
 @[step]
 theorem I64.saturating_sub_step (x y : I64) :

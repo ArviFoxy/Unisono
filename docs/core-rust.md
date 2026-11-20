@@ -12,12 +12,12 @@ again whenever that commit changes.
 
 - Integers of every width, including 128 bits: comparisons, `as` casts, bit
   operations, shifts, and the methods `checked_add`, `checked_sub`,
-  `checked_mul`, `wrapping_add`, `wrapping_sub`, `wrapping_mul`,
+  `checked_mul`, `checked_rem`, `wrapping_add`, `wrapping_sub`, `wrapping_mul`,
   `wrapping_shl`, `wrapping_shr`, `saturating_add`, `saturating_sub`,
   `leading_zeros`, `min`, `max`, `from_le_bytes` and `to_le_bytes`.
 - Structs, tuple structs and enums with data; `match` with guards and nested
   patterns, `if let`, `let … else` and `matches!`.
-- `Option` and `Result`, and `?` on a `Result`.
+- `Option` and `Result`, `?` on a `Result`, and `Option::unwrap_or`.
 - Traits with associated constants and default methods, generic functions
   with trait bounds, and const generics.
 - Arrays and slices: `len`, `get`, `get_mut`, `split_at`, `fill`, a sub-range

@@ -10,7 +10,21 @@
 //! arrived. Presence is a property of each index by itself, so the order in
 //! which packets arrive, and whether one arrives twice, makes no difference.
 
-/// What became of the frames of one packet.
+/// What became of one frame.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
+pub enum Outcome {
+    /// The frame is now held and was not before.
+    Stored,
+    /// The frame was held already.
+    Duplicate,
+    /// The frame is before the stretch: its time has passed.
+    Late,
+    /// The frame is beyond the stretch: there is no room for it yet.
+    Early,
+}
+
+/// What became of the frames of one packet: how many had each outcome.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct Marked {
     /// Frames that are now held and were not before.
@@ -21,6 +35,18 @@ pub struct Marked {
     pub late: u32,
     /// Frames beyond the stretch: there is no room for them yet.
     pub early: u32,
+}
+
+impl Marked {
+    /// Counts one more frame with this outcome.
+    fn count(&mut self, outcome: Outcome) {
+        match outcome {
+            Outcome::Stored => self.stored = self.stored.saturating_add(1),
+            Outcome::Duplicate => self.duplicate = self.duplicate.saturating_add(1),
+            Outcome::Late => self.late = self.late.saturating_add(1),
+            Outcome::Early => self.early = self.early.saturating_add(1),
+        }
+    }
 }
 
 /// One bit for each of `64 * N` consecutive indices, from `base` on.
@@ -56,15 +82,16 @@ impl<const N: usize> Presence<N> {
         self.base
     }
 
-    /// The number of indices in the stretch.
+    /// The number of indices in the stretch: 64 for each word. With so many
+    /// words that this number does not fit in 64 bits, the stretch is empty.
     #[must_use]
     pub fn width(&self) -> u64 {
-        // An array has fewer than 2^58 places of eight bytes, so no wrapping.
-        (N as u64).wrapping_mul(64)
+        (N as u64).checked_mul(64).unwrap_or(0)
     }
 
     /// Whether `index` lies in the stretch.
-    fn covers(&self, index: u64) -> bool {
+    #[must_use]
+    pub fn covers(&self, index: u64) -> bool {
         index >= self.base && index.wrapping_sub(self.base) < self.width()
     }
 
@@ -80,17 +107,25 @@ impl<const N: usize> Presence<N> {
         Some((word, 1u64.wrapping_shl(bit)))
     }
 
-    /// Whether the frame at `index` is held.
-    #[must_use]
-    pub fn held(&self, index: u64) -> bool {
-        if !self.covers(index) {
-            return false;
-        }
-        let Some((word, mask)) = Self::place(index) else {
-            return false;
-        };
+    /// The word at place `word`, or zero if there is none.
+    fn word(&self, word: usize) -> u64 {
         match self.words.get(word) {
-            Some(bits) => *bits & mask != 0,
+            Some(bits) => *bits,
+            None => 0,
+        }
+    }
+
+    /// Replaces the word at place `word`, if there is one.
+    fn set_word(&mut self, word: usize, bits: u64) {
+        if let Some(old) = self.words.get_mut(word) {
+            *old = bits;
+        }
+    }
+
+    /// Whether the bit of `index` is set, wherever the stretch is.
+    fn bit(&self, index: u64) -> bool {
+        match Self::place(index) {
+            Some((word, mask)) => self.word(word) & mask != 0,
             None => false,
         }
     }
@@ -100,13 +135,30 @@ impl<const N: usize> Presence<N> {
         let Some((word, mask)) = Self::place(index) else {
             return false;
         };
-        match self.words.get_mut(word) {
-            Some(bits) => {
-                let was = *bits & mask != 0;
-                *bits = if held { *bits | mask } else { *bits & !mask };
-                was
+        let bits = self.word(word);
+        self.set_word(word, if held { bits | mask } else { bits & !mask });
+        bits & mask != 0
+    }
+
+    /// Whether the frame at `index` is held.
+    #[must_use]
+    pub fn held(&self, index: u64) -> bool {
+        self.covers(index) && self.bit(index)
+    }
+
+    /// Records the arrival of the frame at `index`, and says what became of
+    /// it.
+    pub fn mark_frame(&mut self, index: u64) -> Outcome {
+        if self.covers(index) {
+            if self.put(index, true) {
+                Outcome::Duplicate
+            } else {
+                Outcome::Stored
             }
-            None => false,
+        } else if index < self.base {
+            Outcome::Late
+        } else {
+            Outcome::Early
         }
     }
 
@@ -121,25 +173,30 @@ impl<const N: usize> Presence<N> {
         };
         let mut done = 0u32;
         while done < frames {
-            // Past the largest index there is no frame; such a packet is
-            // counted as beyond the stretch.
-            let index = first.checked_add(done as u64);
-            match index {
-                Some(index) if self.covers(index) => {
-                    if self.put(index, true) {
-                        marked.duplicate = marked.duplicate.saturating_add(1);
-                    } else {
-                        marked.stored = marked.stored.saturating_add(1);
-                    }
-                }
-                Some(index) if index < self.base => {
-                    marked.late = marked.late.saturating_add(1);
-                }
-                _ => marked.early = marked.early.saturating_add(1),
-            }
+            let outcome = self.mark_at(first, done);
+            marked.count(outcome);
             done = done.saturating_add(1);
         }
         marked
+    }
+
+    /// Records the arrival of the frame `offset` frames after index `first`.
+    /// Past the largest index there is no frame; what a packet claims there
+    /// is counted as beyond the stretch.
+    fn mark_at(&mut self, first: u64, offset: u32) -> Outcome {
+        match first.checked_add(offset as u64) {
+            Some(index) => self.mark_frame(index),
+            None => Outcome::Early,
+        }
+    }
+
+    /// Clears every word.
+    fn clear(&mut self) {
+        let mut word = 0usize;
+        while word < N {
+            self.set_word(word, 0);
+            word = word.saturating_add(1);
+        }
     }
 
     /// Moves the start of the stretch forward to `to`, and forgets the
@@ -150,13 +207,7 @@ impl<const N: usize> Presence<N> {
         }
         if to.wrapping_sub(self.base) >= self.width() {
             // Everything held is behind the new start.
-            let mut word = 0usize;
-            while word < N {
-                if let Some(bits) = self.words.get_mut(word) {
-                    *bits = 0;
-                }
-                word = word.saturating_add(1);
-            }
+            self.clear();
         } else {
             let mut index = self.base;
             while index < to {
@@ -173,16 +224,20 @@ impl<const N: usize> Presence<N> {
     pub fn run(&self, from: u64, limit: u32) -> u32 {
         let mut count = 0u32;
         while count < limit {
-            let held = match from.checked_add(count as u64) {
-                Some(index) => self.held(index),
-                None => false,
-            };
-            if !held {
+            if !self.held_at(from, count) {
                 break;
             }
             count = count.saturating_add(1);
         }
         count
+    }
+
+    /// Whether the frame `offset` frames after index `from` is held.
+    fn held_at(&self, from: u64, offset: u32) -> bool {
+        match from.checked_add(offset as u64) {
+            Some(index) => self.held(index),
+            None => false,
+        }
     }
 }
 
@@ -190,7 +245,7 @@ impl<const N: usize> Presence<N> {
 mod tests {
     use std::collections::BTreeSet;
 
-    use super::{Marked, Presence};
+    use super::{Marked, Outcome, Presence};
 
     #[test]
     fn a_new_stretch_holds_nothing() {
@@ -296,6 +351,17 @@ mod tests {
                 ..Marked::default()
             }
         );
+    }
+
+    #[test]
+    fn one_frame_has_one_outcome() {
+        let mut presence = Presence::<1>::new();
+        presence.advance(10);
+        assert_eq!(presence.mark_frame(9), Outcome::Late);
+        assert_eq!(presence.mark_frame(10), Outcome::Stored);
+        assert_eq!(presence.mark_frame(10), Outcome::Duplicate);
+        assert_eq!(presence.mark_frame(74), Outcome::Early);
+        assert!(presence.covers(73) && !presence.covers(74) && !presence.covers(9));
     }
 
     #[test]

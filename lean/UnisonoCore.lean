@@ -924,8 +924,74 @@ def packet.write_audio
       ok (some i19, bytes19)
     else ok (none, bytes19)
 
+/-- [unisono_core::presence::Outcome]
+    Source: 'crates/unisono-core/src/presence.rs', lines 16:0-25:1
+    Visibility: public -/
+@[discriminant isize]
+inductive presence.Outcome where
+| Stored : presence.Outcome
+| Duplicate : presence.Outcome
+| Late : presence.Outcome
+| Early : presence.Outcome
+
+/-- [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Outcome}::clone]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:9-14:14
+    Visibility: public -/
+def presence.Outcome.Insts.CoreCloneClone.clone
+  (self : presence.Outcome) : Result presence.Outcome := do
+  ok self
+
+/-- Trait implementation: [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Outcome}]
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:9-14:14 -/
+@[reducible]
+def presence.Outcome.Insts.CoreCloneClone : core.clone.Clone presence.Outcome
+  := {
+  clone := presence.Outcome.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::presence::{impl core::marker::Copy for unisono_core::presence::Outcome}]
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:16-14:20 -/
+@[reducible]
+def presence.Outcome.Insts.CoreMarkerCopy : core.marker.Copy presence.Outcome
+  := {
+  cloneInst := presence.Outcome.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::presence::{impl core::marker::StructuralPartialEq for unisono_core::presence::Outcome}]
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31 -/
+@[reducible]
+def presence.Outcome.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq presence.Outcome := {
+}
+
+/-- [unisono_core::presence::{impl core::cmp::PartialEq<unisono_core::presence::Outcome> for unisono_core::presence::Outcome}::eq]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31
+    Visibility: public -/
+def presence.Outcome.Insts.CoreCmpPartialEqOutcome.eq
+  (self : presence.Outcome) (other : presence.Outcome) : Result Bool := do
+  let self1 := read_discriminant self
+  let other1 := read_discriminant other
+  ok (self1 = other1)
+
+/-- Trait implementation: [unisono_core::presence::{impl core::cmp::PartialEq<unisono_core::presence::Outcome> for unisono_core::presence::Outcome}]
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31 -/
+@[reducible]
+def presence.Outcome.Insts.CoreCmpPartialEqOutcome : core.cmp.PartialEq
+  presence.Outcome presence.Outcome := {
+  eq := presence.Outcome.Insts.CoreCmpPartialEqOutcome.eq
+}
+
+/-- Trait implementation: [unisono_core::presence::{impl core::cmp::Eq for unisono_core::presence::Outcome}]
+    Source: 'crates/unisono-core/src/presence.rs', lines 14:33-14:35 -/
+@[reducible]
+impl_def presence.Outcome.Insts.CoreCmpEq : core.cmp.Eq presence.Outcome := {
+  partialEqInst := presence.Outcome.Insts.CoreCmpPartialEqOutcome
+  assert_fields_are_eq := core.cmp.Eq.assert_fields_are_eq.default
+    presence.Outcome.Insts.CoreCmpEq
+}
+
 /-- [unisono_core::presence::Marked]
-    Source: 'crates/unisono-core/src/presence.rs', lines 15:0-24:1
+    Source: 'crates/unisono-core/src/presence.rs', lines 29:0-38:1
     Visibility: public -/
 structure presence.Marked where
   stored : Std.U32
@@ -934,14 +1000,14 @@ structure presence.Marked where
   early : Std.U32
 
 /-- [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Marked}::clone]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:9-14:14
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:9-28:14
     Visibility: public -/
 def presence.Marked.Insts.CoreCloneClone.clone
   (self : presence.Marked) : Result presence.Marked := do
   ok self
 
 /-- Trait implementation: [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:9-14:14 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:9-28:14 -/
 @[reducible]
 def presence.Marked.Insts.CoreCloneClone : core.clone.Clone presence.Marked
   := {
@@ -949,7 +1015,7 @@ def presence.Marked.Insts.CoreCloneClone : core.clone.Clone presence.Marked
 }
 
 /-- Trait implementation: [unisono_core::presence::{impl core::marker::Copy for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:16-14:20 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:16-28:20 -/
 @[reducible]
 def presence.Marked.Insts.CoreMarkerCopy : core.marker.Copy presence.Marked
   := {
@@ -957,14 +1023,14 @@ def presence.Marked.Insts.CoreMarkerCopy : core.marker.Copy presence.Marked
 }
 
 /-- Trait implementation: [unisono_core::presence::{impl core::marker::StructuralPartialEq for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:22-28:31 -/
 @[reducible]
 def presence.Marked.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq presence.Marked := {
 }
 
 /-- [unisono_core::presence::{impl core::cmp::PartialEq<unisono_core::presence::Marked> for unisono_core::presence::Marked}::eq]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:22-28:31
     Visibility: public -/
 def presence.Marked.Insts.CoreCmpPartialEqMarked.eq
   (self : presence.Marked) (other : presence.Marked) : Result Bool := do
@@ -979,7 +1045,7 @@ def presence.Marked.Insts.CoreCmpPartialEqMarked.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::presence::{impl core::cmp::PartialEq<unisono_core::presence::Marked> for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:22-14:31 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:22-28:31 -/
 @[reducible]
 def presence.Marked.Insts.CoreCmpPartialEqMarked : core.cmp.PartialEq
   presence.Marked presence.Marked := {
@@ -987,14 +1053,14 @@ def presence.Marked.Insts.CoreCmpPartialEqMarked : core.cmp.PartialEq
 }
 
 /-- [unisono_core::presence::{impl core::cmp::Eq for unisono_core::presence::Marked}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:33-14:35
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:33-28:35
     Visibility: public -/
 def presence.Marked.Insts.CoreCmpEq.assert_fields_are_eq
   (self : presence.Marked) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::presence::{impl core::cmp::Eq for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:33-14:35 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:33-28:35 -/
 @[reducible]
 def presence.Marked.Insts.CoreCmpEq : core.cmp.Eq presence.Marked := {
   partialEqInst := presence.Marked.Insts.CoreCmpPartialEqMarked
@@ -1002,7 +1068,7 @@ def presence.Marked.Insts.CoreCmpEq : core.cmp.Eq presence.Marked := {
 }
 
 /-- [unisono_core::presence::{impl core::fmt::Debug for unisono_core::presence::Marked}::fmt]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:37-14:42
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:37-28:42
     Visibility: public -/
 def presence.Marked.Insts.CoreFmtDebug.fmt
   (self : presence.Marked) (f : core.fmt.Formatter) :
@@ -1017,14 +1083,14 @@ def presence.Marked.Insts.CoreFmtDebug.fmt
     dyn3
 
 /-- Trait implementation: [unisono_core::presence::{impl core::fmt::Debug for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:37-14:42 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:37-28:42 -/
 @[reducible]
 def presence.Marked.Insts.CoreFmtDebug : core.fmt.Debug presence.Marked := {
   fmt := presence.Marked.Insts.CoreFmtDebug.fmt
 }
 
 /-- [unisono_core::presence::{impl core::default::Default for unisono_core::presence::Marked}::default]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:44-14:51
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:44-28:51
     Visibility: public -/
 def presence.Marked.Insts.CoreDefaultDefault.default
   : Result presence.Marked := do
@@ -1037,22 +1103,42 @@ def presence.Marked.Insts.CoreDefaultDefault.default
     }
 
 /-- Trait implementation: [unisono_core::presence::{impl core::default::Default for unisono_core::presence::Marked}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 14:44-14:51 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 28:44-28:51 -/
 @[reducible]
 def presence.Marked.Insts.CoreDefaultDefault : core.default.Default
   presence.Marked := {
   default := presence.Marked.Insts.CoreDefaultDefault.default
 }
 
+/-- [unisono_core::presence::{unisono_core::presence::Marked}::count]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 42:4-49:5 -/
+def presence.Marked.count
+  (self : presence.Marked) (outcome : presence.Outcome) :
+  Result presence.Marked
+  := do
+  match outcome with
+  | presence.Outcome.Stored =>
+    let i ← lift (core.num.U32.saturating_add self.stored 1#u32)
+    ok { self with stored := i }
+  | presence.Outcome.Duplicate =>
+    let i ← lift (core.num.U32.saturating_add self.duplicate 1#u32)
+    ok { self with duplicate := i }
+  | presence.Outcome.Late =>
+    let i ← lift (core.num.U32.saturating_add self.late 1#u32)
+    ok { self with late := i }
+  | presence.Outcome.Early =>
+    let i ← lift (core.num.U32.saturating_add self.early 1#u32)
+    ok { self with early := i }
+
 /-- [unisono_core::presence::Presence]
-    Source: 'crates/unisono-core/src/presence.rs', lines 32:0-35:1
+    Source: 'crates/unisono-core/src/presence.rs', lines 58:0-61:1
     Visibility: public -/
 structure presence.Presence (N : Std.Usize) where
   words : Array Std.U64 N
   base : Std.U64
 
 /-- [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Presence<N>}::clone]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 30:9-30:14
+    Source: 'crates/unisono-core/src/presence.rs', lines 56:9-56:14
     Visibility: public -/
 def presence.Presence.Insts.CoreCloneClone.clone
   {N : Std.Usize} (self : presence.Presence N) :
@@ -1061,7 +1147,7 @@ def presence.Presence.Insts.CoreCloneClone.clone
   ok self
 
 /-- Trait implementation: [unisono_core::presence::{impl core::clone::Clone for unisono_core::presence::Presence<N>}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 30:9-30:14 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 56:9-56:14 -/
 @[reducible]
 def presence.Presence.Insts.CoreCloneClone (N : Std.Usize) : core.clone.Clone
   (presence.Presence N) := {
@@ -1069,7 +1155,7 @@ def presence.Presence.Insts.CoreCloneClone (N : Std.Usize) : core.clone.Clone
 }
 
 /-- Trait implementation: [unisono_core::presence::{impl core::marker::Copy for unisono_core::presence::Presence<N>}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 30:16-30:20 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 56:16-56:20 -/
 @[reducible]
 def presence.Presence.Insts.CoreMarkerCopy (N : Std.Usize) : core.marker.Copy
   (presence.Presence N) := {
@@ -1077,21 +1163,21 @@ def presence.Presence.Insts.CoreMarkerCopy (N : Std.Usize) : core.marker.Copy
 }
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::new]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 46:4-51:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 72:4-77:5
     Visibility: public -/
 def presence.Presence.new (N : Std.Usize) : Result (presence.Presence N) := do
   let a := Array.repeat N 0#u64
   ok { words := a, base := 0#u64 }
 
 /-- [unisono_core::presence::{impl core::default::Default for unisono_core::presence::Presence<N>}::default]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 38:4-40:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 64:4-66:5
     Visibility: public -/
 def presence.Presence.Insts.CoreDefaultDefault.default
   (N : Std.Usize) : Result (presence.Presence N) := do
   presence.Presence.new N
 
 /-- Trait implementation: [unisono_core::presence::{impl core::default::Default for unisono_core::presence::Presence<N>}]
-    Source: 'crates/unisono-core/src/presence.rs', lines 37:0-41:1 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 63:0-67:1 -/
 @[reducible]
 def presence.Presence.Insts.CoreDefaultDefault (N : Std.Usize) :
   core.default.Default (presence.Presence N) := {
@@ -1099,22 +1185,24 @@ def presence.Presence.Insts.CoreDefaultDefault (N : Std.Usize) :
 }
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::base]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 55:4-57:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 81:4-83:5
     Visibility: public -/
 def presence.Presence.impl.base
   {N : Std.Usize} (self : presence.Presence N) : Result Std.U64 := do
   ok self.base
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::width]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 61:4-64:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 88:4-90:5
     Visibility: public -/
 def presence.Presence.width
   {N : Std.Usize} (self : presence.Presence N) : Result Std.U64 := do
   let i ← lift (UScalar.cast .U64 N)
-  ok (core.num.U64.wrapping_mul i 64#u64)
+  let o ← lift (U64.checked_mul i 64#u64)
+  ok (core.option.Option.unwrap_or o 0#u64)
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::covers]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 67:4-69:5 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 94:4-96:5
+    Visibility: public -/
 def presence.Presence.covers
   {N : Std.Usize} (self : presence.Presence N) (index : Std.U64) :
   Result Bool
@@ -1127,7 +1215,7 @@ def presence.Presence.covers
   else ok false
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::place]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 73:4-81:5 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 100:4-108:5 -/
 def presence.Presence.place
   (N : Std.Usize) (index : Std.U64) :
   Result (Option (Std.Usize × Std.U64))
@@ -1144,33 +1232,57 @@ def presence.Presence.place
     let i3 ← lift (core.num.U64.wrapping_shl 1#u64 bit)
     ok (some (word1, i3))
 
-/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::held]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 85:4-96:5
-    Visibility: public -/
-def presence.Presence.held
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::word]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 111:4-116:5 -/
+def presence.Presence.word
+  {N : Std.Usize} (self : presence.Presence N) (word : Std.Usize) :
+  Result Std.U64
+  := do
+  let s ← lift (Array.to_slice self.words)
+  let o ←
+    core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.U64) s word
+  match o with
+  | none => ok 0#u64
+  | some bits => ok bits
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::set_word]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 119:4-123:5 -/
+def presence.Presence.set_word
+  {N : Std.Usize} (self : presence.Presence N) (word : Std.Usize)
+  (bits : Std.U64) :
+  Result (presence.Presence N)
+  := do
+  let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.words)
+  let (o, get_mut_back) ←
+    core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice Std.U64) s
+      word
+  match o with
+  | none =>
+    let s1 := get_mut_back none
+    let a := to_slice_mut_back s1
+    ok { self with words := a }
+  | some _ =>
+    let s1 := get_mut_back (some bits)
+    let a := to_slice_mut_back s1
+    ok { self with words := a }
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::bit]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 126:4-131:5 -/
+def presence.Presence.bit
   {N : Std.Usize} (self : presence.Presence N) (index : Std.U64) :
   Result Bool
   := do
-  let b ← presence.Presence.covers self index
-  if b
-  then
-    let o ← presence.Presence.place N index
-    match o with
-    | none => ok false
-    | some p =>
-      let (word, mask) := p
-      let s ← lift (Array.to_slice self.words)
-      let o1 ←
-        core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.U64) s
-          word
-      match o1 with
-      | none => ok false
-      | some bits => let i ← lift (bits &&& mask)
-                     ok (i != 0#u64)
-  else ok false
+  let o ← presence.Presence.place N index
+  match o with
+  | none => ok false
+  | some p =>
+    let (word, mask) := p
+    let i ← presence.Presence.word self word
+    let i1 ← lift (i &&& mask)
+    ok (i1 != 0#u64)
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::put]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 99:4-111:5 -/
+    Source: 'crates/unisono-core/src/presence.rs', lines 134:4-141:5 -/
 def presence.Presence.put
   {N : Std.Usize} (self : presence.Presence N) (index : Std.U64) (held : Bool)
   :
@@ -1181,153 +1293,149 @@ def presence.Presence.put
   | none => ok (false, self)
   | some p =>
     let (word, mask) := p
-    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.words)
-    let (o1, get_mut_back) ←
-      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice Std.U64)
-        s word
-    match o1 with
-    | none =>
-      let s1 := get_mut_back none
-      let a := to_slice_mut_back s1
-      ok (false, { self with words := a })
-    | some bits =>
-      let i ← lift (bits &&& mask)
-      if held
-      then
-        let bits1 ← lift (bits ||| mask)
-        let s1 := get_mut_back (some bits1)
-        let a := to_slice_mut_back s1
-        ok (i != 0#u64, { self with words := a })
-      else
-        let i1 ← lift (~~~ mask)
-        let bits1 ← lift (bits &&& i1)
-        let s1 := get_mut_back (some bits1)
-        let a := to_slice_mut_back s1
-        ok (i != 0#u64, { self with words := a })
+    let bits ← presence.Presence.word self word
+    if held
+    then
+      let i ← lift (bits ||| mask)
+      let self1 ← presence.Presence.set_word self word i
+      let i1 ← lift (bits &&& mask)
+      ok (i1 != 0#u64, self1)
+    else
+      let i ← lift (~~~ mask)
+      let i1 ← lift (bits &&& i)
+      let self1 ← presence.Presence.set_word self word i1
+      let i2 ← lift (bits &&& mask)
+      ok (i2 != 0#u64, self1)
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::held]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 145:4-147:5
+    Visibility: public -/
+def presence.Presence.held
+  {N : Std.Usize} (self : presence.Presence N) (index : Std.U64) :
+  Result Bool
+  := do
+  let b ← presence.Presence.covers self index
+  if b
+  then presence.Presence.bit self index
+  else ok false
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::mark_frame]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 151:4-163:5
+    Visibility: public -/
+def presence.Presence.mark_frame
+  {N : Std.Usize} (self : presence.Presence N) (index : Std.U64) :
+  Result (presence.Outcome × (presence.Presence N))
+  := do
+  let b ← presence.Presence.covers self index
+  if b
+  then
+    let (b1, self1) ← presence.Presence.put self index true
+    if b1
+    then ok (presence.Outcome.Duplicate, self1)
+    else ok (presence.Outcome.Stored, self1)
+  else
+    if index < self.base
+    then ok (presence.Outcome.Late, self)
+    else ok (presence.Outcome.Early, self)
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::mark_at]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 186:4-191:5 -/
+def presence.Presence.mark_at
+  {N : Std.Usize} (self : presence.Presence N) (first : Std.U64)
+  (offset : Std.U32) :
+  Result (presence.Outcome × (presence.Presence N))
+  := do
+  let i ← lift (UScalar.cast .U64 offset)
+  let o ← lift (U64.checked_add first i)
+  match o with
+  | none => ok (presence.Outcome.Early, self)
+  | some index => presence.Presence.mark_frame self index
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::mark]: loop body 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 123:8-141:9
+    Source: 'crates/unisono-core/src/presence.rs', lines 175:8-179:9
     Visibility: public -/
 @[rust_loop_body]
 def presence.Presence.mark_loop.body
   {N : Std.Usize} (first : Std.U64) (frames : Std.U32)
-  (self : presence.Presence N) (i : Std.U32) (i1 : Std.U32) (i2 : Std.U32)
-  (i3 : Std.U32) (done1 : Std.U32) :
-  Result (ControlFlow ((presence.Presence N) × Std.U32 × Std.U32 × Std.U32
-    × Std.U32 × Std.U32) ((presence.Presence N) × Std.U32 × Std.U32 ×
-    Std.U32 × Std.U32))
+  (self : presence.Presence N) (marked : presence.Marked) (done1 : Std.U32) :
+  Result (ControlFlow ((presence.Presence N) × presence.Marked × Std.U32)
+    (presence.Marked × (presence.Presence N)))
   := do
   if done1 < frames
   then
-    let i4 ← lift (UScalar.cast .U64 done1)
-    let index ← lift (U64.checked_add first i4)
-    let (self1, i5, i6, i7, i8) ←
-      match index with
-      | none =>
-        do
-        let i9 ← lift (core.num.U32.saturating_add i3 1#u32)
-        ok (self, i, i1, i2, i9)
-      | some index1 =>
-        do
-        let b ← presence.Presence.covers self index1
-        if b
-        then
-          let (b1, self2) ← presence.Presence.put self index1 true
-          let (i9, i10) ←
-            if b1
-            then
-              do
-              let i11 ← lift (core.num.U32.saturating_add i1 1#u32)
-              ok (i, i11)
-            else
-              do
-              let i11 ← lift (core.num.U32.saturating_add i 1#u32)
-              ok (i11, i1)
-          ok (self2, i9, i10, i2, i3)
-        else
-          let (i9, i10) ←
-            if index1 < self.base
-            then
-              do
-              let i11 ← lift (core.num.U32.saturating_add i2 1#u32)
-              ok (i11, i3)
-            else
-              do
-              let i11 ← lift (core.num.U32.saturating_add i3 1#u32)
-              ok (i2, i11)
-          ok (self, i, i1, i9, i10)
+    let (outcome, self1) ← presence.Presence.mark_at self first done1
+    let marked1 ← presence.Marked.count marked outcome
     let done2 ← lift (core.num.U32.saturating_add done1 1#u32)
-    ok (cont (self1, i5, i6, i7, i8, done2))
-  else ok (done (self, i, i1, i2, i3))
+    ok (cont (self1, marked1, done2))
+  else ok (done (marked, self))
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::mark]: loop 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 123:8-141:9
+    Source: 'crates/unisono-core/src/presence.rs', lines 175:8-179:9
     Visibility: public -/
 @[rust_loop]
 def presence.Presence.mark_loop
   {N : Std.Usize} (self : presence.Presence N) (first : Std.U64)
-  (frames : Std.U32) (i : Std.U32) (i1 : Std.U32) (i2 : Std.U32) (i3 : Std.U32)
-  (done1 : Std.U32) :
-  Result ((presence.Presence N) × Std.U32 × Std.U32 × Std.U32 × Std.U32)
+  (frames : Std.U32) (marked : presence.Marked) (done1 : Std.U32) :
+  Result (presence.Marked × (presence.Presence N))
   := do
   loop
-    (fun (self1, i4, i5, i6, i7, done2) => presence.Presence.mark_loop.body
-      first frames self1 i4 i5 i6 i7 done2)
-    (self, i, i1, i2, i3, done1)
+    (fun (self1, marked1, done2) => presence.Presence.mark_loop.body first
+      frames self1 marked1 done2)
+    (self, marked, done1)
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::mark]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 115:4-143:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 167:4-181:5
     Visibility: public -/
+@[reducible]
 def presence.Presence.mark
   {N : Std.Usize} (self : presence.Presence N) (first : Std.U64)
   (frames : Std.U32) :
   Result (presence.Marked × (presence.Presence N))
   := do
-  let (self1, i, i1, i2, i3) ←
-    presence.Presence.mark_loop self first frames 0#u32 0#u32 0#u32 0#u32 0#u32
-  ok ({ stored := i, duplicate := i1, late := i2, early := i3 }, self1)
+  presence.Presence.mark_loop self first frames
+    { stored := 0#u32, duplicate := 0#u32, late := 0#u32, early := 0#u32 }
+    0#u32
 
-/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop body 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 154:12-159:13
-    Visibility: public -/
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::clear]: loop body 0:
+    Source: 'crates/unisono-core/src/presence.rs', lines 196:8-199:9 -/
 @[rust_loop_body]
-def presence.Presence.advance_loop0.body
-  {N : Std.Usize} (a : Array Std.U64 N) (word : Std.Usize) :
-  Result (ControlFlow ((Array Std.U64 N) × Std.Usize) (Array Std.U64 N))
+def presence.Presence.clear_loop.body
+  {N : Std.Usize} (self : presence.Presence N) (word : Std.Usize) :
+  Result (ControlFlow ((presence.Presence N) × Std.Usize) (presence.Presence
+    N))
   := do
   if word < N
   then
-    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut a)
-    let (o, get_mut_back) ←
-      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice Std.U64)
-        s word
-    let a1 ←
-      match o with
-      | none => let s1 := get_mut_back none
-                ok (to_slice_mut_back s1)
-      | some _ => let s1 := get_mut_back (some 0#u64)
-                  ok (to_slice_mut_back s1)
+    let self1 ← presence.Presence.set_word self word 0#u64
     let word1 ← lift (core.num.Usize.saturating_add word 1#usize)
-    ok (cont (a1, word1))
-  else ok (done a)
+    ok (cont (self1, word1))
+  else ok (done self)
 
-/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 154:12-159:13
-    Visibility: public -/
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::clear]: loop 0:
+    Source: 'crates/unisono-core/src/presence.rs', lines 196:8-199:9 -/
 @[rust_loop]
-def presence.Presence.advance_loop0
-  {N : Std.Usize} (a : Array Std.U64 N) (word : Std.Usize) :
-  Result (Array Std.U64 N)
+def presence.Presence.clear_loop
+  {N : Std.Usize} (self : presence.Presence N) (word : Std.Usize) :
+  Result (presence.Presence N)
   := do
   loop
-    (fun (a1, word1) => presence.Presence.advance_loop0.body a1 word1)
-    (a, word)
+    (fun (self1, word1) => presence.Presence.clear_loop.body self1 word1)
+    (self, word)
 
-/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop body 1:
-    Source: 'crates/unisono-core/src/presence.rs', lines 162:12-165:13
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::clear]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 194:4-200:5 -/
+@[reducible]
+def presence.Presence.clear
+  {N : Std.Usize} (self : presence.Presence N) :
+  Result (presence.Presence N)
+  := do
+  presence.Presence.clear_loop self 0#usize
+
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop body 0:
+    Source: 'crates/unisono-core/src/presence.rs', lines 213:12-216:13
     Visibility: public -/
 @[rust_loop_body]
-def presence.Presence.advance_loop1.body
+def presence.Presence.advance_loop.body
   {N : Std.Usize} («to» : Std.U64) (self : presence.Presence N)
   (index : Std.U64) :
   Result (ControlFlow ((presence.Presence N) × Std.U64) (presence.Presence N))
@@ -1339,22 +1447,22 @@ def presence.Presence.advance_loop1.body
     ok (cont (self1, index1))
   else ok (done self)
 
-/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop 1:
-    Source: 'crates/unisono-core/src/presence.rs', lines 162:12-165:13
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]: loop 0:
+    Source: 'crates/unisono-core/src/presence.rs', lines 213:12-216:13
     Visibility: public -/
 @[rust_loop]
-def presence.Presence.advance_loop1
+def presence.Presence.advance_loop
   {N : Std.Usize} (self : presence.Presence N) («to» : Std.U64)
   (index : Std.U64) :
   Result (presence.Presence N)
   := do
   loop
-    (fun (self1, index1) => presence.Presence.advance_loop1.body «to» self1
+    (fun (self1, index1) => presence.Presence.advance_loop.body «to» self1
       index1)
     (self, index)
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::advance]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 147:4-168:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 204:4-219:5
     Visibility: public -/
 def presence.Presence.advance
   {N : Std.Usize} (self : presence.Presence N) («to» : Std.U64) :
@@ -1367,14 +1475,27 @@ def presence.Presence.advance
     let i1 ← presence.Presence.width self
     if i >= i1
     then
-      let a ← presence.Presence.advance_loop0 self.words 0#usize
-      ok { words := a, base := «to» }
+      let self1 ← presence.Presence.clear self
+      ok { self1 with base := «to» }
     else
-      let self1 ← presence.Presence.advance_loop1 self «to» self.base
+      let self1 ← presence.Presence.advance_loop self «to» self.base
       ok { self1 with base := «to» }
 
+/-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::held_at]:
+    Source: 'crates/unisono-core/src/presence.rs', lines 236:4-241:5 -/
+def presence.Presence.held_at
+  {N : Std.Usize} (self : presence.Presence N) («from» : Std.U64)
+  (offset : Std.U32) :
+  Result Bool
+  := do
+  let i ← lift (UScalar.cast .U64 offset)
+  let o ← lift (U64.checked_add «from» i)
+  match o with
+  | none => ok false
+  | some index => presence.Presence.held self index
+
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::run]: loop body 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 175:8-184:9
+    Source: 'crates/unisono-core/src/presence.rs', lines 226:8-231:9
     Visibility: public -/
 @[rust_loop_body]
 def presence.Presence.run_loop.body
@@ -1384,13 +1505,8 @@ def presence.Presence.run_loop.body
   := do
   if count < limit
   then
-    let i ← lift (UScalar.cast .U64 count)
-    let o ← lift (U64.checked_add «from» i)
-    let held ←
-      match o with
-      | none => ok false
-      | some index => presence.Presence.held self index
-    if held
+    let b ← presence.Presence.held_at self «from» count
+    if b
     then
       let count1 ← lift (core.num.U32.saturating_add count 1#u32)
       ok (cont count1)
@@ -1398,7 +1514,7 @@ def presence.Presence.run_loop.body
   else ok (done count)
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::run]: loop 0:
-    Source: 'crates/unisono-core/src/presence.rs', lines 175:8-184:9
+    Source: 'crates/unisono-core/src/presence.rs', lines 226:8-231:9
     Visibility: public -/
 @[rust_loop]
 def presence.Presence.run_loop
@@ -1411,7 +1527,7 @@ def presence.Presence.run_loop
     count
 
 /-- [unisono_core::presence::{unisono_core::presence::Presence<N>}::run]:
-    Source: 'crates/unisono-core/src/presence.rs', lines 173:4-186:5
+    Source: 'crates/unisono-core/src/presence.rs', lines 224:4-233:5
     Visibility: public -/
 @[reducible]
 def presence.Presence.run

@@ -7,6 +7,7 @@ module
 public import UnisonoCore
 public import Unisono.Scalar
 public import Unisono.Fixed
+public import Unisono.Lists
 
 /-!
 # The estimator of a clock relation
@@ -20,6 +21,8 @@ open Aeneas Aeneas.Std Result
 open unisono_core
 
 namespace Unisono.Relation
+
+open Unisono.Lists
 
 /-- A sample whose time and value are small enough that differences of two
 such numbers, and products of two such differences, are computed without
@@ -166,23 +169,6 @@ theorem is_under_spec {M : Std.Usize} (e : relation.Estimator M) (a b : relation
       exact hinv k (by omega) s (by rw [List.getElem?_eq_getElem hk, hks])
   · intro k hk
     simp at hk
-
-theorem set_opt_some {α : Type} (l : List α) (i : ℕ) (x : α) :
-    l.set_opt i (some x) = l.set i x := by
-  induction l generalizing i with
-  | nil => simp
-  | cons hd tl ih =>
-    cases i with
-    | zero => simp
-    | succ n => simp [ih]
-
-theorem set_opt_none {α : Type} (l : List α) (i : ℕ) : l.set_opt i none = l := by
-  induction l generalizing i with
-  | nil => simp
-  | cons hd tl ih =>
-    cases i with
-    | zero => simp
-    | succ n => simp [ih]
 
 /-- Two estimators that differ at most in the samples they keep and in how
 many. -/
