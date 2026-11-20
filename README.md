@@ -20,6 +20,7 @@ and the theorems are statements about that translation.
 | `lean/TranslationCheck.lean` | Evaluates the translation on the printed inputs and compares the results |
 | `crates/unisono-sim` | A deterministic simulation of clocks and links, for tests without hardware |
 | `crates/unisono-metrics` | Counters, gauges and histograms that real-time threads update without waiting, and their export in the Prometheus text format |
+| `crates/unisono-dsp` | Signal processing: the resampler that corrects clock drift, sample formats, fades and the concealment of gaps |
 | `docs` | The model, the protocol, and which Rust the core may use |
 | `tools` | Scripts that fetch and run the translator |
 

@@ -136,6 +136,21 @@ fn the_documented_figures_hold() {
     }
 }
 
+/// Detects a table of too few fractions of a frame, whose interpolation
+/// would then set the error: with twice as many fractions the error must
+/// be smaller by less than half a decibel.
+#[test]
+fn the_tabulated_fractions_are_enough() {
+    for rate in [44_100u32, 48_000] {
+        let filter = Filter::for_rate(rate);
+        let finer = Filter::kaiser(filter.taps(), filter.beta(), Filter::PHASE_BITS + 1);
+        assert_eq!(finer.phases(), 2 * filter.phases());
+        let kept = 20_000.0 / f64::from(rate);
+        let gained = decibels(largest_error(&filter, kept)) - decibels(largest_error(&finer, kept));
+        assert!(gained < 0.5, "{rate}: {gained:.2} dB");
+    }
+}
+
 /// Detects weights that do not add up to one, which would give a constant
 /// input a gain that changes with the fraction. At a tabulated fraction each
 /// weight is its exact value rounded once to single precision, so the sum
