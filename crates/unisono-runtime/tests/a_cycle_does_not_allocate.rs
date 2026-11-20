@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use common::{CHANNELS, Line, Listener, ramp, settings};
 use unisono_core::packet::{HEADER, write_audio};
 use unisono_dsp::Parameters;
-use unisono_runtime::receive::{Intake, ReceiverAudio, Sizes, link};
+use unisono_runtime::receive::{Intake, ReceiverAudio, Reporting, Sizes, link};
 use unisono_runtime::software::{Device, Output};
 
 thread_local! {
@@ -153,7 +153,7 @@ fn the_audio_end_calls_the_allocator_never() {
     playback.path(line.delay);
     let intake = Intake {
         items: 4,
-        report_period: Some(50_000_000),
+        reports: Some(Reporting::USUAL),
     };
     let mut audio = ReceiverAudio::new(playback, end, intake);
     let device = Device {

@@ -125,7 +125,10 @@ bytes, sent to the address the report came from.
 The receiver knows when the report left, on its own clock, so the answer
 gives it both stamps of the report. Audio packets tell a receiver its clock
 against the sender's, later by the smallest delay of the path from the
-sender; reports tell it the sender's clock against its own, later by the
-smallest delay of the path back. The two add up to the smallest delay there
-and back, and the receiver takes half of it for the path from the sender.
-How long the answer itself takes does not matter: it only carries a number.
+sender; a report tells it the sender's clock against its own, later by the
+delay of that report back. At the same moment the two add up to a time there
+and back in which the clocks cancel. The receiver keeps the shortest of the
+last minute and takes half of it for the path from the sender. How long the
+answer itself takes does not matter: it only carries a number. A receiver
+sends twenty reports a second for its first five seconds and five a second
+after; a receiver that is told the delay of its path sends none.

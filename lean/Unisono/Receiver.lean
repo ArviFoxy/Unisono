@@ -10,6 +10,7 @@ public import Unisono.Arrivals
 public import Unisono.Player
 public import Unisono.Presence
 public import Unisono.Relation
+public import Unisono.Answers
 
 /-!
 # The receiver of a stream
@@ -74,12 +75,6 @@ theorem stamped_arrival_total (r : receiver.Receiver N M K) (h : packet.Audio) :
   unfold receiver.Receiver.stamped_arrival
   step*
 
-@[step]
-theorem middle_total (e : relation.Estimator M) :
-    relation.Estimator.middle e ⦃ _ => True ⦄ := by
-  unfold relation.Estimator.middle
-  run
-
 /-- Giving the estimate a sample changes the estimate and nothing else. -/
 @[step]
 theorem sample_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrived : Std.I64) :
@@ -93,41 +88,8 @@ theorem sample_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrived : 
   step with Unisono.Relation.observe_total as ⟨e⟩
   simp [SameStream]
 
-/-- Taking the delay of the path from the two estimates changes that delay
-and nothing else. -/
-@[step]
-theorem measure_path_spec (r : receiver.Receiver N M K) :
-    receiver.Receiver.measure_path r ⦃ r' =>
-      SameStream r' r ∧ r'.schedule = r.schedule ⦄ := by
-  unfold receiver.Receiver.measure_path relation.Estimator.impl.line
-  simp only [bind_ok]
-  cases r.clock.line with
-  | none => simp [SameStream]
-  | some forward =>
-    simp only
-    cases r.back.line with
-    | none => simp [SameStream]
-    | some back =>
-      simp only
-      step as ⟨o⟩
-      cases o with
-      | none => simp [SameStream]
-      | some time =>
-        simp only
-        step as ⟨sender⟩
-        step as ⟨i⟩
-        step as ⟨i1, hi1⟩
-        step as ⟨i2⟩
-        step as ⟨i3, hi3⟩
-        step as ⟨both, hboth⟩
-        step as ⟨half, hhalf⟩
-        split
-        · simp [SameStream]
-        · step as ⟨i4⟩
-          simp [SameStream]
-
-/-- Taking the clock measurement from a packet changes the estimates, path
-delay, and kept arrivals, and nothing else. -/
+/-- Taking the clock measurement from a packet changes the estimate of the
+sender's clock and the kept arrivals, and nothing else. -/
 @[step]
 theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival : Std.I64) :
     receiver.Receiver.measure r h arrival ⦃ r' =>
@@ -135,7 +97,6 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
   unfold receiver.Receiver.measure
   step as ⟨i⟩
   step as ⟨e⟩
-  step as ⟨e1⟩
   step as ⟨o⟩
   cases o with
   | none =>
@@ -145,11 +106,10 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
   | some arrived =>
     simp only
     step as ⟨r1, hsame1, _, hsched1⟩
-    step as ⟨r2, hsame2, hsched2⟩
     step as ⟨a⟩
-    obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := hsame2.trans hsame1
+    obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩ := hsame1
     simp only [SameStream]
-    exact ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hsched2.trans hsched1⟩
+    exact ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hsched1⟩
 
 /-- Keeping what a packet says about when frames are due changes the schedule
 and nothing else. -/
@@ -243,27 +203,24 @@ theorem adopts_spec (r : receiver.Receiver N M K) (timeline : Std.U64) (t : Std.
 
 /-- Taking up the timeline of a packet: the receiver follows it, holds
 nothing, has no other timeline waiting, and has its playhead at the packet's
-first frame. The delay of the path stays as it is. When the timeline is on
-the clock of the one before, the estimates of that clock and the departures
-of reports stay; on another clock they are dropped. -/
+first frame. What is known about the delay of the path stays as it is, and
+so do the departures of reports. When the timeline is on the clock of the one
+before, the estimate of that clock stays; on another clock it is dropped. -/
 @[step]
 theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.adopt r h ⦃ r' =>
       r'.stream = r.stream ∧ r'.following = true ∧ r'.timeline = h.timeline
       ∧ r'.clock_id = h.clock ∧ r'.has_candidate = false
       ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh ∧ r'.silence = r.silence ∧ r'.limit = r.limit
-      ∧ r'.path = r.path
+      ∧ r'.path = r.path ∧ r'.answers = r.answers ∧ r'.departures = r.departures
       ∧ r'.presence.base = h.index ∧ (∀ j, ¬ Held r'.presence j)
       ∧ (r.following = true → h.clock = r.clock_id →
-          r'.departures = r.departures
-          ∧ r'.back.kept = r.back.kept ∧ r'.back.len = r.back.len ∧ r'.back.line = r.back.line
-          ∧ r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
+          r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
           ∧ (r.clock.lowest = none →
               r'.clock.kept = r.clock.kept ∧ r'.clock.len = r.clock.len
               ∧ r'.clock.line = r.clock.line))
       ∧ (r.following = true → h.clock ≠ r.clock_id →
-          r'.clock.len.val = 0 ∧ r'.clock.line = none
-          ∧ r'.back.len.val = 0 ∧ r'.back.line = none) ⦄ := by
+          r'.clock.len.val = 0 ∧ r'.clock.line = none) ⦄ := by
   unfold receiver.Receiver.adopt
   split
   · rename_i hf
@@ -277,10 +234,9 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       step as ⟨i⟩
       step as ⟨e, _, _, he_kept, he_len, _, _, _, he_low, he_line⟩
       step as ⟨e1, he1_hw, he1_win, he1_keep⟩
-      step as ⟨e2, _, _, he2_kept, he2_len, _, _, _, _, he2_line⟩
       refine ⟨hpb, hph, ?_, ?_⟩
       · intro _ _
-        refine ⟨he2_kept, he2_len, he2_line, he1_hw, he1_win, fun hlo => ?_⟩
+        refine ⟨he1_hw, he1_win, fun hlo => ?_⟩
         obtain ⟨hk, hl, hli⟩ := he1_keep (by rw [he_low]; exact hlo)
         exact ⟨hk.trans he_kept, hl.trans he_len, hli.trans he_line⟩
       · intro _ hne
@@ -290,12 +246,11 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       simp only [hf]
       step as ⟨i1⟩
       step as ⟨e, _, _, _, _, he_len, _, _, he_line⟩
-      step as ⟨e1, _, _, _, _, he1_len, _, _, he1_line⟩
       refine ⟨hpb, hph, ?_, ?_⟩
       · intro heq
         exact absurd heq hclk'
       · intro _
-        exact ⟨he_len, he_line, he1_len, he1_line⟩
+        exact ⟨he_len, he_line⟩
   · rename_i hnf
     have hnf' : r.following = false := by simpa using hnf
     simp only [bind_ok]
@@ -305,7 +260,6 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     simp only [hnf', Bool.false_eq_true, ↓reduceIte]
     step as ⟨i1⟩
     step as ⟨e⟩
-    step as ⟨e1⟩
     refine ⟨hpb, hph, ?_, ?_⟩ <;> (intro hc; cases hc)
 
 /-! ## Keeping the newest frames before the clock is known -/
@@ -730,7 +684,7 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
     split
     · rename_i hyes
       have hA : Adopts r h.timeline t := hiff.mp hyes
-      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, cpath, c10, c11, _, _⟩
+      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, cpath, cround, cdep, c10, c11, _, _⟩
       step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15⟩
       refine ⟨d3.trans c1, d10.trans c8, d11.trans c9,
         fun hne => absurd hsame_s' hne,
@@ -1078,6 +1032,7 @@ theorem new_spec (N M K : Std.Usize) (settings : receiver.Settings) :
   step with Unisono.Presence.new_spec as ⟨p⟩
   step as ⟨e⟩
   step as ⟨a⟩
+  step with Unisono.Answers.new_total as ⟨l⟩
 
 /-! ## A receiver cannot stay behind what arrives -/
 
@@ -1288,12 +1243,17 @@ theorem reported_spec (r : receiver.Receiver N M K) (sequence : Std.U64)
   step as ⟨a⟩
   simp [SameStream]
 
+@[step]
+theorem halved_total (both : Std.I64) : receiver.halved both ⦃ _ => True ⦄ := by
+  unfold receiver.halved
+  run
+
 /-- Taking in the sender's answer to a report returns for every state and
 every answer, and changes nothing about the timeline that is followed or the
-frames that are held: only the estimate of the path. -/
+frames that are held: only what is known about the delay of the path. -/
 theorem echo_spec (r : receiver.Receiver N M K) (echo : packet.Echo) :
     receiver.Receiver.echo r echo ⦃ r' => SameStream r' r ⦄ := by
-  unfold receiver.Receiver.echo
+  unfold receiver.Receiver.echo relation.Estimator.impl.line
   split
   · split
     · simp [SameStream]
@@ -1304,12 +1264,18 @@ theorem echo_spec (r : receiver.Receiver N M K) (echo : packet.Echo) :
         | none => simp [SameStream]
         | some departure =>
           simp only
-          step as ⟨i, hi⟩
-          step as ⟨o1, ho1⟩
-          step as ⟨window, hwindow⟩
-          step with Unisono.Relation.observe_total as ⟨e⟩
-          step as ⟨r1, hsame, _⟩
-          exact hsame
+          cases r.clock.line with
+          | none => simp [SameStream]
+          | some forward =>
+            simp only
+            step with Unisono.Answers.observe_total as ⟨l⟩
+            step with Unisono.Answers.shortest_total as ⟨o2⟩
+            cases o2 with
+            | none => simp [SameStream]
+            | some smallest =>
+              simp only
+              step as ⟨i1⟩
+              simp [SameStream]
   · simp [SameStream]
 
 /-- An echo belonging to another stream is ignored without changing any state. -/

@@ -27,7 +27,7 @@ use unisono_runtime::clock;
 use unisono_runtime::proxy::{Impairment, Proxy};
 use unisono_runtime::pump::ReceiverPlayback;
 use unisono_runtime::receive::{
-    Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Sizes, link,
+    Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes, link,
 };
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Output};
@@ -179,7 +179,7 @@ fn run(seconds: i64, from: i64, path: Option<(Impairment, Impairment)>) -> Outco
         audio_end,
         Intake {
             items: 8,
-            report_period: Some(50_000_000),
+            reports: Some(Reporting::USUAL),
         },
     );
     let device = Device {

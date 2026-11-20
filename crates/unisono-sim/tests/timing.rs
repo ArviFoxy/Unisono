@@ -320,21 +320,23 @@ fn restarts_of_the_sender_and_of_a_receiver_are_followed() {
 
 /// A scene in which every receiver finds the delay of its link from
 /// reports, twenty a second.
+/// Receivers that measure their paths with five reports a second, the rate
+/// that the program keeps to after its first seconds.
 fn measuring(assumptions: &unisono_sim::assumptions::OneWayAssumptions, level_ms: i64) -> Scene {
     scene(assumptions, level_ms, |receivers| {
         for receiver in receivers.iter_mut() {
-            receiver.path = PathDelay::Measured(50_000_000);
+            receiver.path = PathDelay::Measured(200_000_000);
         }
     })
 }
 
 #[test]
-fn receivers_that_measure_their_links_play_within_a_microsecond_on_a_calm_wired_link() {
+fn receivers_that_measure_their_links_play_within_half_a_microsecond_on_a_calm_wired_link() {
     let mut scene = measuring(&WIRED_CALM, 20);
     scene.run(TrueTime::from_seconds(60.0));
     let (worst, apart) = worst_and_apart(&scene, 20.0);
-    assert!(worst < MICROSECOND, "worst {worst}");
-    assert!(apart < MICROSECOND, "apart {apart}");
+    assert!(worst < 0.5 * MICROSECOND, "worst {worst}");
+    assert!(apart < 0.5 * MICROSECOND, "apart {apart}");
     for receiver in 0..4 {
         // The link's smallest delay is 100 microseconds each way.
         let delay = scene.delay(receiver).unwrap_or(0);
@@ -343,21 +345,21 @@ fn receivers_that_measure_their_links_play_within_a_microsecond_on_a_calm_wired_
 }
 
 #[test]
-fn receivers_that_measure_their_links_play_within_twelve_microseconds_on_a_busy_wired_link() {
+fn receivers_that_measure_their_links_play_within_four_microseconds_on_a_busy_wired_link() {
     let mut scene = measuring(&WIRED_BUSY, 60);
     scene.run(TrueTime::from_seconds(60.0));
     let (worst, apart) = worst_and_apart(&scene, 20.0);
-    assert!(worst < 12.0 * MICROSECOND, "worst {worst}");
-    assert!(apart < 12.0 * MICROSECOND, "apart {apart}");
+    assert!(worst < 4.0 * MICROSECOND, "worst {worst}");
+    assert!(apart < 4.0 * MICROSECOND, "apart {apart}");
 }
 
 #[test]
-fn receivers_that_measure_their_links_play_within_150_microseconds_on_a_wireless_link() {
+fn receivers_that_measure_their_links_play_within_50_microseconds_on_a_wireless_link() {
     let mut scene = measuring(&WIRELESS, 60);
     scene.run(TrueTime::from_seconds(120.0));
     let (worst, apart) = worst_and_apart(&scene, 20.0);
-    assert!(worst < 150.0 * MICROSECOND, "worst {worst}");
-    assert!(apart < 150.0 * MICROSECOND, "apart {apart}");
+    assert!(worst < 50.0 * MICROSECOND, "worst {worst}");
+    assert!(apart < 50.0 * MICROSECOND, "apart {apart}");
 }
 
 #[test]

@@ -26,7 +26,7 @@ use unisono_core::sender::Settings as StreamSettings;
 use unisono_dsp::Parameters;
 use unisono_runtime::clock;
 use unisono_runtime::pump::ReceiverPlayback;
-use unisono_runtime::receive::{self, Intake, ReceiverAudio, ReceiverNetwork, Sizes};
+use unisono_runtime::receive::{self, Intake, ReceiverAudio, ReceiverNetwork, Reporting, Sizes};
 use unisono_runtime::send::{self, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input, Output};
@@ -100,7 +100,7 @@ fn frames_play_a_level_after_they_were_captured() {
         audio_end,
         Intake {
             items: 8,
-            report_period: Some(50_000_000),
+            reports: Some(Reporting::USUAL),
         },
     );
     let device = Device {

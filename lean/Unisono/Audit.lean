@@ -7,6 +7,7 @@ module
 public import Unisono.Arrivals
 public import Unisono.Device
 public import Unisono.Fixed
+public import Unisono.Answers
 public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulator
@@ -527,3 +528,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Device.observe_after_aside' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Device.observe_after_aside
+
+/-- info: 'Unisono.Answers.observe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Answers.observe_total
+
+/-- info: 'Unisono.Answers.shortest_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Answers.shortest_total
+
+/-- info: 'Unisono.Answers.new_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Answers.new_total

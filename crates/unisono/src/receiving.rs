@@ -16,7 +16,7 @@ use unisono_dsp::Parameters;
 use unisono_runtime::clock;
 use unisono_runtime::pump::{ReceiverPlayback, Settings};
 use unisono_runtime::receive::{
-    self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Sizes,
+    self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
 };
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Output};
@@ -42,6 +42,7 @@ pub(crate) const OPTIONS: &[&str] = &[
     "lead",
     "path",
     "report-period",
+    "report-period-at-start",
     "seconds",
     "record",
     "metrics",
@@ -65,7 +66,10 @@ Receives a stream and plays it on a software device.
   --path NS           the delay of the path from the sender, if it is known;
                       the receiver then sends no reports, which it otherwise
                       sends to measure the delay
-  --report-period MS  time between reports to the sender (50)
+  --report-period-at-start MS
+                      time between reports to the sender in the first five
+                      seconds (50)
+  --report-period MS  time between reports after that (200)
   --seconds S         stop after this long (0: run until stopped)
   --record FILE       keep what is played, with the device's times (needs
                       --seconds)
@@ -103,23 +107,20 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let (network_end, audio_end) = receive::link(sizes);
     let mut network = ReceiverNetwork::new(socket, network_end, stream, sizes);
     // A receiver that is told the delay of its path does not measure it.
-    let report_period = if options.all("path").is_empty() {
-        Some(
-            options
-                .get::<i64>("report-period", 50)?
+    let reports = if options.all("path").is_empty() {
+        Some(Reporting {
+            at_start: options
+                .get("report-period-at-start", 50i64)?
                 .saturating_mul(1_000_000),
-        )
+            after: options
+                .get("report-period", 200i64)?
+                .saturating_mul(1_000_000),
+            ..Reporting::USUAL
+        })
     } else {
         None
     };
-    let mut audio = ReceiverAudio::new(
-        playback,
-        audio_end,
-        Intake {
-            items: 16,
-            report_period,
-        },
-    );
+    let mut audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
     let start = clock::raw();
     let device = Device {
         rate,

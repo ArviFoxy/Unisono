@@ -22,13 +22,17 @@
 //! The stamps of audio packets give the receiver its clock against the
 //! sender's, but later by the smallest delay of the path from the sender. To
 //! find that delay the receiver sends reports. The sender answers each with
-//! the time at which it arrived, and the two stamps of a report give the
-//! sender's clock against the receiver's, later by the smallest delay of the
-//! path back. The two estimates add up to the smallest delay there and back,
-//! and the receiver takes half of it for the path from the sender.
+//! the time at which it arrived. The report's two stamps give the sender's
+//! clock against the receiver's, later by the delay of that report on the
+//! way back; added to the estimate from audio packets at the same moment,
+//! the clocks cancel, and what is left is the smallest delay from the sender
+//! and the delay of the report back. The smallest such sum over about a
+//! minute is the smallest delay there and back, and the receiver takes half
+//! of it for the path from the sender. The delay of a path is a constant,
+//! so the memory can be long, and reports can be rare.
 
+use crate::answers::{Answer, Answers};
 use crate::arrivals::Arrivals;
-use crate::fixed::saturate;
 use crate::packet::{Audio, Echo, FLAG_STAMPED, Report};
 use crate::player::{Plan, Player, Regulation};
 use crate::presence::{Marked, Presence};
@@ -38,10 +42,13 @@ use crate::timing::{Position, Schedule, Step, due, sender_time};
 /// The number of nanoseconds in a millisecond.
 const MILLISECOND: i64 = 1_000_000;
 
-/// The number of reports that make up one window of the estimate of the
-/// sender's clock from reports: of each window the report with the least
-/// delay is kept.
-const REPORTS_IN_WINDOW: u64 = 8;
+/// The length of a window of the answers to reports: eight seconds. Eight
+/// windows are kept, so the shortest time there and back is that of the
+/// last 56 to 64 seconds.
+const ROUND_WINDOW: i64 = 8_000_000_000;
+
+/// The number of windows of answers that are kept.
+const ROUND_WINDOWS: usize = 8;
 
 /// What a receiver did with a packet.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -140,9 +147,8 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     reports: u64,
     /// When the last reports left, by their numbers.
     departures: Arrivals<K>,
-    /// The sender's clock minus the receiver's, over the receiver's clock,
-    /// from the stamps of reports.
-    back: Estimator<M>,
+    /// The answers to reports that went fastest there and back.
+    answers: Answers<ROUND_WINDOWS>,
 }
 
 /// How long a receiver remembers samples of the sender's clock, in
@@ -150,6 +156,12 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
 fn span_of(header: &Audio) -> i64 {
     // A 32-bit number of milliseconds: no wrapping.
     (header.span as i64).wrapping_mul(MILLISECOND)
+}
+
+/// Half of a delay there and back, and none for one below zero, which comes
+/// from stamps that are wrong.
+fn halved(both: i64) -> i64 {
+    if both < 0 { 0 } else { both.wrapping_shr(1) }
 }
 
 impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
@@ -176,7 +188,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             identity: settings.identity,
             reports: 0,
             departures: Arrivals::new(),
-            back: Estimator::new(0, settings.limit),
+            answers: Answers::new(ROUND_WINDOW),
         }
     }
 
@@ -252,9 +264,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
 
     /// Begins to follow the timeline of `header`, with nothing held. When the
     /// timeline is on the clock of the one before, as after a restart of
-    /// the sender's capture, the estimates of that clock stay and only the
-    /// numbering of their windows starts again. On another clock they are
-    /// dropped. The delay of the path stays in both cases.
+    /// the sender's capture, the estimate of that clock stays and only the
+    /// numbering of its windows starts again. On another clock it is
+    /// dropped. What is known about the delay of the path stays in both
+    /// cases: it is not a matter of the sender's clock.
     fn adopt(&mut self, header: &Audio) {
         let was_following = self.following;
         let same_clock = was_following && header.clock == self.clock_id;
@@ -269,13 +282,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if same_clock {
             self.clock.remember(span_of(header));
             self.clock.reset_window();
-            self.back.remember(span_of(header));
         } else {
-            // The delay of the path is not a matter of the sender's clock:
-            // it stays, until reports to this sender are answered.
             self.clock = Estimator::new(span_of(header), self.limit);
-            self.departures = Arrivals::new();
-            self.back = Estimator::new(span_of(header), self.limit);
         }
     }
 
@@ -308,10 +316,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// sender's clock, and keeps its arrival for a later packet to refer to.
     fn measure(&mut self, header: &Audio, arrival: i64) {
         self.clock.remember(span_of(header));
-        self.back.remember(span_of(header));
         if let Some(arrived) = self.stamped_arrival(header) {
             self.sample(header, arrived);
-            self.measure_path();
         }
         self.arrived.record(header.index, arrival);
     }
@@ -475,11 +481,12 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.departures.record(sequence, departure);
     }
 
-    /// Takes in the sender's answer to a report: with the time at which the
-    /// report left it gives a sample of the sender's clock against the
-    /// receiver's, and with that the delay of the path from the sender.
-    /// An answer to another stream or receiver, or to a report whose departure
-    /// is no longer kept, is left out.
+    /// Takes in the sender's answer to a report. With the time at which the
+    /// report left and the estimate of the sender's clock it gives a delay
+    /// there and back, and the smallest such delay of the last minute, halved,
+    /// is the delay of the path from the sender. An answer to another stream
+    /// or receiver, to a report whose departure is no longer kept, or that
+    /// comes before the sender's clock is known, is left out.
     pub fn echo(&mut self, echo: &Echo) {
         if !self.following || echo.stream != self.stream || echo.receiver != self.identity {
             return;
@@ -487,37 +494,17 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         let Some(departure) = self.departures.find(echo.sequence) else {
             return;
         };
-        let sample = Sample {
-            time: departure,
-            value: echo.arrival.saturating_sub(departure),
-        };
-        let window = echo
-            .sequence
-            .checked_div(REPORTS_IN_WINDOW)
-            .unwrap_or(echo.sequence);
-        self.back.observe(window, sample);
-        self.measure_path();
-    }
-
-    /// Takes half the smallest delay there and back as the delay of the path
-    /// from the sender. The two estimates of the clocks add up to the delay
-    /// there and back at every time; the sum is taken at the middle of the
-    /// time that the reports cover, where an estimate is best.
-    fn measure_path(&mut self) {
         let Some(forward) = self.clock.line() else {
             return;
         };
-        let Some(back) = self.back.line() else {
-            return;
+        let answer = Answer {
+            departure,
+            arrival: echo.arrival,
         };
-        let Some(time) = self.back.middle() else {
-            return;
-        };
-        let sender = sender_time(&forward, 0, time);
-        // A sum of two 64-bit numbers: no wrapping.
-        let both = (forward.eval(sender) as i128).wrapping_add(back.eval(time) as i128);
-        let half = both.wrapping_shr(1);
-        self.path = if half < 0 { 0 } else { saturate(half) };
+        self.answers.observe(answer, &forward);
+        if let Some(shortest) = self.answers.shortest(&forward) {
+            self.path = halved(shortest);
+        }
     }
 
     /// Plans one cycle of the device: `frames` output frames, the first of
@@ -1041,17 +1028,15 @@ mod tests {
     }
 
     #[test]
-    fn the_path_is_measured_once_the_clock_is_known_after_the_answers() {
+    fn answers_before_the_clock_is_known_are_left_out_and_one_after_it_counts() {
         let offset = 3_600_000_000_000i64;
         let mut receiver: Receiver<4, 8, 4> = receiver();
         let period = 10_000_000i64;
         // The first packet makes the receiver follow timeline 7; the
-        // sender's clock is not known yet.
+        // sender's clock is not known yet, so an answer cannot be turned
+        // into a delay there and back.
         receiver.packet(&header(7, 0, 480), offset + 100_000);
-        // Reports and their answers give the estimate of the way back a line
-        // while the sender's clock is still not known.
-        for k in 0..20i64 {
-            let now = offset + k * period + 100_000;
+        let answer = |receiver: &mut Receiver<4, 8, 4>, now: i64| {
             let report = receiver.report().expect("following");
             receiver.reported(report.sequence, now);
             receiver.echo(&Echo {
@@ -1060,11 +1045,56 @@ mod tests {
                 sequence: report.sequence,
                 arrival: now - offset + 140_000,
             });
+        };
+        for k in 0..20i64 {
+            answer(&mut receiver, offset + k * period + 100_000);
         }
         assert_eq!(receiver.delay(), 0);
-        // Audio packets alone, and no more answers, make the sender's clock
-        // known, and with it the delay of the path.
+        // Audio packets make the sender's clock known; one answer then gives
+        // the delay.
         stream(&mut receiver, offset, 1, 60);
+        assert_eq!(receiver.delay(), 0);
+        answer(&mut receiver, offset + 60 * period + 100_000);
         assert_eq!(receiver.delay(), 120_000);
+    }
+
+    #[test]
+    fn the_path_is_the_smallest_delay_there_and_back_of_the_last_minute() {
+        let offset = 3_600_000_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        stream(&mut receiver, offset, 0, 60);
+        let period = 10_000_000i64;
+        let answer = |receiver: &mut Receiver<4, 8, 4>, now: i64, back: i64| {
+            let report = receiver.report().expect("following");
+            receiver.reported(report.sequence, now);
+            receiver.echo(&Echo {
+                stream: 1,
+                receiver: 42,
+                sequence: report.sequence,
+                arrival: now - offset + back,
+            });
+        };
+        // Packets take 100 microseconds from the sender. Reports take 140
+        // back at best, and mostly longer.
+        let start = offset + 60 * period;
+        for (k, back) in (0i64..).zip([900_000, 140_000, 700_000, 2_000_000]) {
+            answer(&mut receiver, start + k * period, back);
+        }
+        assert_eq!(receiver.delay(), 120_000);
+        // A minute and more of slow reports, once a second: the fast one is
+        // forgotten, and the delay is that of the best report since.
+        for k in 1..80i64 {
+            answer(
+                &mut receiver,
+                start + k * 1_000_000_000,
+                300_000 + k * 1_000,
+            );
+        }
+        let best = (100_000 + 300_000 + 17 * 1_000) / 2;
+        assert!(
+            (receiver.delay() - best).abs() <= 8 * 1_000,
+            "{}",
+            receiver.delay()
+        );
     }
 }

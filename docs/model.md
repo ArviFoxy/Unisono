@@ -360,26 +360,35 @@ it. The packets used for this are of one size in both directions.
 
 In the code the packets of the other direction are the receiver's reports,
 padded to the size of an audio packet, and the sender's answers carry their
-arrival times (`docs/protocol.md`). Of every eight reports the one with the
-least delay is kept. The two estimates add up to the delay there and back at
-every time, so the receiver takes the sum where an estimate is best, at the
-middle of the time its reports cover, and uses half of it as the delay of the
-path from the sender. Taking in an answer returns for every state and changes
-nothing about the timeline or the frames held (`Unisono.Receiver.echo_spec`).
+arrival times (`docs/protocol.md`). The receiver does not fit a second line
+to them. An answer says when its report left on the receiver's clock and
+when it arrived on the sender's; the line from audio packets, evaluated at
+that arrival, says the receiver's clock minus the sender's plus the
+smallest delay from the sender. In the sum of the two the clocks cancel, and
+what is left is the smallest delay from the sender plus the delay of that
+report back: a time there and back that depends on neither clock. The delay
+of a path is a constant, so the memory is long: of each window of eight
+seconds the answer with the shortest time there and back is kept, for eight
+windows, and the shortest of those, halved, is the delay of the path from the
+sender (`unisono_core::answers`). The answers themselves are kept, not their
+times, and the times are worked out with the line as it is when the delay is
+taken: a time worked out with an early line, which can be off by
+microseconds, would otherwise stay the shortest for a minute. A clock that
+changes does not touch what is kept, and neither does a new timeline. Taking
+in an answer returns for every state and changes nothing about the timeline
+or the frames held (`Unisono.Receiver.echo_spec`, with `Unisono.Answers`).
 
-In simulation (`crates/unisono-sim/tests/timing.rs`), with twenty reports a
-second, receivers that find their delay this way stay within a microsecond of
-the schedule on the calm wired link, within twelve on the busy one and within
-150 on the wireless one; told the true delay they stay within a quarter, one
-and a half and 25. The estimate of the delay is what the difference comes
-from. It errs high, by the queueing of the best report in the memory, and it
-estimates a constant, which a longer memory than that of the clocks would
-serve better. Twenty reports a second, each as large as an audio packet,
-from every receiver are also more traffic than a constant deserves, and on a
-shared wireless link they take air time from the audio. The intent is to
-report that often for the first seconds and about once a second after, with
-a memory for the delay that is long enough for that rate. *Neither is
-built.* A
+Reports are sent twenty a second for the first five seconds and five a
+second after. In simulation (`crates/unisono-sim/tests/timing.rs`), with five
+reports a second, receivers that find their delay this way stay within half
+a microsecond of the schedule on the calm wired link, within four on the
+busy one and within fifty on the wireless one (measured: 0.3, 3 and 30);
+told the true delay they stay within a quarter, one and a half and 25. With
+twenty reports a second the figures are 0.2, 2 and 16 once settled, and with
+one a second 0.5, 11 and 60. Five reports a second, each as large as an
+audio packet, are a fortieth of the packets of the stream. The estimate errs
+high, by the queueing of the best report in the memory, which is why more
+reports help. A
 path that is slower one way shifts the receiver by half the difference, as
 section 2.5 says, and a test shows it.
 

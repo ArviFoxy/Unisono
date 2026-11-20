@@ -685,17 +685,14 @@ fn report_and_echo_exchange_measures_path_delay_on_receiver_playback() {
             output.cycle(&mut listener);
         }
     }
+    // The delay on the receiver's clock, which runs 30 parts per million
+    // fast: 60 ns more than on the sender's.
     let measured = listener.receiver().delay();
+    let expected = line.delay + line.delay * line.skew / 1_000_000_000;
     assert!(
-        (measured - line.delay).abs() <= 5,
-        "measured path {measured} vs expected {}",
-        line.delay
+        (measured - expected).abs() <= 5,
+        "measured path {measured} against {expected}"
     );
-    // `measure_path` yields the one-way delay in sender-clock nanoseconds,
-    // which differs from receiver-clock nanoseconds by `delay * skew` (60 ns).
-    let skew_residual = line.delay * line.skew / 1_000_000_000;
-    let error = largest_error(&line, &output, 6, skew_residual);
+    let error = largest_error(&line, &output, 6, 0);
     assert!(error < TONE_BOUND, "largest error {error}");
-    let raw_error = largest_error(&line, &output, 6, 0);
-    assert!(raw_error < 3e-3, "largest raw error {raw_error}");
 }

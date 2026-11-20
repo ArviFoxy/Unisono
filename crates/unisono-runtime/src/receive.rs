@@ -325,14 +325,39 @@ impl ReceiverNetwork {
     }
 }
 
+/// When a receiver sends reports. The delay of a path is a constant that the
+/// receiver remembers for about a minute, so reports are sent often only at
+/// the start, to find it soon, and rarely after.
+#[derive(Clone, Copy, Debug)]
+pub struct Reporting {
+    /// The time between two reports at the start, in nanoseconds.
+    pub at_start: i64,
+    /// How long the start lasts, from the first report, in nanoseconds.
+    pub start: i64,
+    /// The time between two reports after the start, in nanoseconds.
+    pub after: i64,
+}
+
+impl Reporting {
+    /// Twenty reports a second for five seconds, then five a second. In
+    /// simulation five a second measure the path within a few microseconds of
+    /// what twenty do, on wired and wireless links alike; one a second is
+    /// four times worse.
+    pub const USUAL: Reporting = Reporting {
+        at_start: 50_000_000,
+        start: 5_000_000_000,
+        after: 200_000_000,
+    };
+}
+
 /// What the audio thread of a receiver is set up with.
 #[derive(Clone, Copy, Debug)]
 pub struct Intake {
     /// The most items taken in at the start of a cycle.
     pub items: usize,
-    /// The time between two reports, in nanoseconds; `None` for a receiver
-    /// that sends no reports, as one that is told the delay of its path.
-    pub report_period: Option<i64>,
+    /// When reports are sent; `None` for a receiver that sends none, as one
+    /// that is told the delay of its path.
+    pub reports: Option<Reporting>,
 }
 
 /// A receiver's playback with the end of the audio thread: what a playback
@@ -341,9 +366,9 @@ pub struct ReceiverAudio<const N: usize, const M: usize, const K: usize, const W
     playback: ReceiverPlayback<N, M, K, W>,
     end: AudioEnd,
     intake: Intake,
-    /// When the next report is made, on the raw clock; `None` before the
-    /// first cycle.
-    next_report: Option<i64>,
+    /// When the first report was made and when the next is due, on the raw
+    /// clock; `None` before the first report.
+    reported: Option<(i64, i64)>,
     /// Reports that found no room in the ring.
     unsent: u64,
 }
@@ -357,7 +382,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
             playback,
             end,
             intake,
-            next_report: None,
+            reported: None,
             unsent: 0,
         }
     }
@@ -405,17 +430,25 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
 
     /// Makes a report when one is due at `time`.
     fn report(&mut self, time: i64) {
-        let Some(period) = self.intake.report_period else {
+        let Some(reporting) = self.intake.reports else {
             return;
         };
-        let due = *self.next_report.get_or_insert(time);
-        if time < due {
+        if let Some((_, due)) = self.reported
+            && time < due
+        {
             return;
         }
-        self.next_report = Some(time.saturating_add(period));
-        if let Some(report) = self.playback.report()
-            && self.end.reports.put(report).is_err()
-        {
+        let Some(report) = self.playback.report() else {
+            return;
+        };
+        let first = self.reported.map_or(time, |(first, _)| first);
+        let period = if time.saturating_sub(first) < reporting.start {
+            reporting.at_start
+        } else {
+            reporting.after
+        };
+        self.reported = Some((first, time.saturating_add(period)));
+        if self.end.reports.put(report).is_err() {
             self.unsent += 1;
         }
     }

@@ -20,6 +20,37 @@ set_option maxRecDepth 2048
 
 namespace unisono_core
 
+/-- [unisono_core::answers::Answer]
+    Source: 'crates/unisono-core/src/answers.rs', lines 30:0-35:1
+    Visibility: public -/
+structure answers.Answer where
+  departure : Std.I64
+  arrival : Std.I64
+
+/-- [unisono_core::relation::Line]
+    Source: 'crates/unisono-core/src/relation.rs', lines 34:0-43:1
+    Visibility: public -/
+structure relation.Line where
+  time : Std.I64
+  value : Std.I64
+  rise : Std.I64
+  run : Std.I64
+
+/-- [unisono_core::answers::Place]
+    Source: 'crates/unisono-core/src/answers.rs', lines 53:0-60:1 -/
+structure answers.Place where
+  held : Bool
+  window : Std.I64
+  answer : answers.Answer
+
+/-- [unisono_core::answers::Answers]
+    Source: 'crates/unisono-core/src/answers.rs', lines 66:0-73:1
+    Visibility: public -/
+structure answers.Answers (R : Std.Usize) where
+  places : Array answers.Place R
+  newest : Std.I64
+  length : Std.I64
+
 /-- [unisono_core::arrivals::Arrival]
     Source: 'crates/unisono-core/src/arrivals.rs', lines 14:0-21:1 -/
 structure arrivals.Arrival where
@@ -192,7 +223,7 @@ structure presence.Presence (N : Std.Usize) where
   base : Std.U64
 
 /-- [unisono_core::receiver::Heard]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 49:0-60:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 56:0-67:1
     Visibility: public -/
 structure receiver.Heard where
   ignored : Bool
@@ -201,7 +232,7 @@ structure receiver.Heard where
   marked : presence.Marked
 
 /-- [unisono_core::receiver::Segment]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 65:0-72:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 72:0-79:1
     Visibility: public -/
 structure receiver.Segment where
   first : Std.U64
@@ -209,7 +240,7 @@ structure receiver.Segment where
   held : Bool
 
 /-- [unisono_core::receiver::Settings]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 77:0-92:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 84:0-99:1
     Visibility: public -/
 structure receiver.Settings where
   stream : Std.U16
@@ -228,15 +259,6 @@ structure timing.Schedule where
   drift : Std.I32
   level : Std.I64
   level_slope : Std.I32
-
-/-- [unisono_core::relation::Line]
-    Source: 'crates/unisono-core/src/relation.rs', lines 34:0-43:1
-    Visibility: public -/
-structure relation.Line where
-  time : Std.I64
-  value : Std.I64
-  rise : Std.I64
-  run : Std.I64
 
 /-- [unisono_core::relation::Sample]
     Source: 'crates/unisono-core/src/relation.rs', lines 24:0-29:1
@@ -259,7 +281,7 @@ structure relation.Estimator (M : Std.Usize) where
   line : Option relation.Line
 
 /-- [unisono_core::receiver::Receiver]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 101:0-146:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 108:0-152:1
     Visibility: public -/
 structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   where
@@ -282,7 +304,7 @@ structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   identity : Std.U64
   reports : Std.U64
   departures : arrivals.Arrivals K
-  back : relation.Estimator M
+  answers : answers.Answers 8#usize
 
 /-- [unisono_core::sender::Settings]
     Source: 'crates/unisono-core/src/sender.rs', lines 15:0-32:1
