@@ -5,6 +5,8 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Fixed
+public import Unisono.Model.Exchange
+public import Unisono.Model.LineFit
 
 /-!
 # The axioms the theorems rest on
@@ -22,3 +24,19 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Fixed.mul_shift_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Fixed.mul_shift_spec
+
+/-- info: 'Unisono.Model.Exchange.error_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Exchange.error_bound
+
+/-- info: 'Unisono.Model.LineFit.cost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.LineFit.cost_le
+
+/-- info: 'Unisono.Model.LineFit.schedule_invariant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.LineFit.schedule_invariant
+
+/-- info: 'Unisono.Model.LineFit.error_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.LineFit.error_bound
