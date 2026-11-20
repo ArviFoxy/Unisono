@@ -44,8 +44,7 @@ const LONGEST_CYCLE: i64 = 1_099_511_627_776;
 const LARGEST_LIMIT: u32 = 3_000_000;
 
 /// The settings of a regulator.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Regulation {
     /// How fast a distance to the schedule is removed: the gain per second,
     /// in units of 2^-16.

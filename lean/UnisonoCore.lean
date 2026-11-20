@@ -1152,7 +1152,7 @@ def player.LONGEST_CYCLE : Std.I64 := 1099511627776#i64
 @[global_simps, irreducible] def player.LARGEST_LIMIT : Std.U32 := 3000000#u32
 
 /-- [unisono_core::player::Regulation]
-    Source: 'crates/unisono-core/src/player.rs', lines 49:0-59:1
+    Source: 'crates/unisono-core/src/player.rs', lines 48:0-58:1
     Visibility: public -/
 structure player.Regulation where
   gain : Std.U32
@@ -1225,6 +1225,27 @@ def player.Regulation.Insts.CoreCmpEq : core.cmp.Eq player.Regulation := {
     player.Regulation.Insts.CoreCmpEq.assert_fields_are_eq
 }
 
+/-- [unisono_core::player::{impl core::fmt::Debug for unisono_core::player::Regulation}::fmt]:
+    Source: 'crates/unisono-core/src/player.rs', lines 47:37-47:42
+    Visibility: public -/
+def player.Regulation.Insts.CoreFmtDebug.fmt
+  (self : player.Regulation) (f : core.fmt.Formatter) :
+  Result ((core.result.Result Unit core.fmt.Error) × core.fmt.Formatter)
+  := do
+  let dyn := Dyn.mk _ core.fmt.DebugU32 self.gain
+  let dyn1 := Dyn.mk _ core.fmt.DebugU32 self.limit
+  let dyn2 := Dyn.mk _ (core.fmt.DebugShared core.fmt.DebugU32) self.jump
+  core.fmt.Formatter.debug_struct_field3_finish f (toStr "Regulation") (toStr
+    "gain") dyn (toStr "limit") dyn1 (toStr "jump") dyn2
+
+/-- Trait implementation: [unisono_core::player::{impl core::fmt::Debug for unisono_core::player::Regulation}]
+    Source: 'crates/unisono-core/src/player.rs', lines 47:37-47:42 -/
+@[reducible]
+def player.Regulation.Insts.CoreFmtDebug : core.fmt.Debug player.Regulation
+  := {
+  fmt := player.Regulation.Insts.CoreFmtDebug.fmt
+}
+
 /-- [unisono_core::timing::Position]
     Source: 'crates/unisono-core/src/timing.rs', lines 22:0-28:1
     Visibility: public -/
@@ -1233,7 +1254,7 @@ structure timing.Position where
   fraction : Std.U64
 
 /-- [unisono_core::player::Plan]
-    Source: 'crates/unisono-core/src/player.rs', lines 64:0-76:1
+    Source: 'crates/unisono-core/src/player.rs', lines 63:0-75:1
     Visibility: public -/
 structure player.Plan where
   frames : Std.U32
@@ -1242,28 +1263,28 @@ structure player.Plan where
   jumped : Bool
 
 /-- [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Plan}::clone]:
-    Source: 'crates/unisono-core/src/player.rs', lines 62:9-62:14
+    Source: 'crates/unisono-core/src/player.rs', lines 61:9-61:14
     Visibility: public -/
 def player.Plan.Insts.CoreCloneClone.clone
   (self : player.Plan) : Result player.Plan := do
   ok self
 
 /-- Trait implementation: [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Plan}]
-    Source: 'crates/unisono-core/src/player.rs', lines 62:9-62:14 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 61:9-61:14 -/
 @[reducible]
 def player.Plan.Insts.CoreCloneClone : core.clone.Clone player.Plan := {
   clone := player.Plan.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::player::{impl core::marker::Copy for unisono_core::player::Plan}]
-    Source: 'crates/unisono-core/src/player.rs', lines 62:16-62:20 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 61:16-61:20 -/
 @[reducible]
 def player.Plan.Insts.CoreMarkerCopy : core.marker.Copy player.Plan := {
   cloneInst := player.Plan.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::player::{impl core::marker::StructuralPartialEq for unisono_core::player::Plan}]
-    Source: 'crates/unisono-core/src/player.rs', lines 62:22-62:31 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 61:22-61:31 -/
 @[reducible]
 def player.Plan.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq player.Plan := {
@@ -1279,7 +1300,7 @@ def timing.Position.Insts.CoreCmpPartialEqPosition.eq
   else ok false
 
 /-- [unisono_core::player::{impl core::cmp::PartialEq<unisono_core::player::Plan> for unisono_core::player::Plan}::eq]:
-    Source: 'crates/unisono-core/src/player.rs', lines 62:22-62:31
+    Source: 'crates/unisono-core/src/player.rs', lines 61:22-61:31
     Visibility: public -/
 def player.Plan.Insts.CoreCmpPartialEqPlan.eq
   (self : player.Plan) (other : player.Plan) : Result Bool := do
@@ -1296,7 +1317,7 @@ def player.Plan.Insts.CoreCmpPartialEqPlan.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::player::{impl core::cmp::PartialEq<unisono_core::player::Plan> for unisono_core::player::Plan}]
-    Source: 'crates/unisono-core/src/player.rs', lines 62:22-62:31 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 61:22-61:31 -/
 @[reducible]
 def player.Plan.Insts.CoreCmpPartialEqPlan : core.cmp.PartialEq player.Plan
   player.Plan := {
@@ -1304,14 +1325,14 @@ def player.Plan.Insts.CoreCmpPartialEqPlan : core.cmp.PartialEq player.Plan
 }
 
 /-- [unisono_core::player::{impl core::cmp::Eq for unisono_core::player::Plan}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/player.rs', lines 62:33-62:35
+    Source: 'crates/unisono-core/src/player.rs', lines 61:33-61:35
     Visibility: public -/
 def player.Plan.Insts.CoreCmpEq.assert_fields_are_eq
   (self : player.Plan) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::player::{impl core::cmp::Eq for unisono_core::player::Plan}]
-    Source: 'crates/unisono-core/src/player.rs', lines 62:33-62:35 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 61:33-61:35 -/
 @[reducible]
 def player.Plan.Insts.CoreCmpEq : core.cmp.Eq player.Plan := {
   partialEqInst := player.Plan.Insts.CoreCmpPartialEqPlan
@@ -1319,7 +1340,7 @@ def player.Plan.Insts.CoreCmpEq : core.cmp.Eq player.Plan := {
 }
 
 /-- [unisono_core::player::Player]
-    Source: 'crates/unisono-core/src/player.rs', lines 81:0-90:1
+    Source: 'crates/unisono-core/src/player.rs', lines 80:0-89:1
     Visibility: public -/
 structure player.Player where
   regulation : player.Regulation
@@ -1328,28 +1349,28 @@ structure player.Player where
   correction : Std.I64
 
 /-- [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Player}::clone]:
-    Source: 'crates/unisono-core/src/player.rs', lines 79:9-79:14
+    Source: 'crates/unisono-core/src/player.rs', lines 78:9-78:14
     Visibility: public -/
 def player.Player.Insts.CoreCloneClone.clone
   (self : player.Player) : Result player.Player := do
   ok self
 
 /-- Trait implementation: [unisono_core::player::{impl core::clone::Clone for unisono_core::player::Player}]
-    Source: 'crates/unisono-core/src/player.rs', lines 79:9-79:14 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 78:9-78:14 -/
 @[reducible]
 def player.Player.Insts.CoreCloneClone : core.clone.Clone player.Player := {
   clone := player.Player.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::player::{impl core::marker::Copy for unisono_core::player::Player}]
-    Source: 'crates/unisono-core/src/player.rs', lines 79:16-79:20 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 78:16-78:20 -/
 @[reducible]
 def player.Player.Insts.CoreMarkerCopy : core.marker.Copy player.Player := {
   cloneInst := player.Player.Insts.CoreCloneClone
 }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::new]:
-    Source: 'crates/unisono-core/src/player.rs', lines 95:4-105:5
+    Source: 'crates/unisono-core/src/player.rs', lines 94:4-104:5
     Visibility: public -/
 def player.Player.new
   (regulation : player.Regulation) : Result player.Player := do
@@ -1362,13 +1383,13 @@ def player.Player.new
     }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::stop]:
-    Source: 'crates/unisono-core/src/player.rs', lines 109:4-112:5
+    Source: 'crates/unisono-core/src/player.rs', lines 108:4-111:5
     Visibility: public -/
 def player.Player.stop (self : player.Player) : Result player.Player := do
   ok { self with running := false, correction := 0#i64 }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::position]:
-    Source: 'crates/unisono-core/src/player.rs', lines 116:4-122:5
+    Source: 'crates/unisono-core/src/player.rs', lines 115:4-121:5
     Visibility: public -/
 def player.Player.impl.position
   (self : player.Player) : Result (Option timing.Position) := do
@@ -1377,7 +1398,7 @@ def player.Player.impl.position
   else ok none
 
 /-- [unisono_core::player::{unisono_core::player::Player}::gain]:
-    Source: 'crates/unisono-core/src/player.rs', lines 125:4-143:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 124:4-142:5 -/
 def player.Player.gain
   (self : player.Player) (duration : Std.I64) : Result Std.I128 := do
   let span ←
@@ -1397,7 +1418,7 @@ def player.Player.gain
   else ok gain
 
 /-- [unisono_core::player::{unisono_core::player::Player}::regulate]:
-    Source: 'crates/unisono-core/src/player.rs', lines 147:4-161:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 146:4-160:5 -/
 def player.Player.regulate
   (self : player.Player) (behind : Std.I64) (duration : Std.I64) :
   Result Std.I64
@@ -1419,7 +1440,7 @@ def player.Player.regulate
   fixed.saturate i8
 
 /-- [unisono_core::player::{unisono_core::player::Player}::limited]:
-    Source: 'crates/unisono-core/src/player.rs', lines 166:4-186:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 165:4-185:5 -/
 def player.Player.limited
   (self : player.Player) (correction : Std.I64) (frames : Std.U32)
   (scheduled : Std.I64) :
@@ -1473,7 +1494,7 @@ def timing.advance
     ok { frame := i8, fraction := i9 }
 
 /-- [unisono_core::player::{unisono_core::player::Player}::play]:
-    Source: 'crates/unisono-core/src/player.rs', lines 191:4-205:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 190:4-204:5 -/
 def player.Player.play
   (self : player.Player) (frames : Std.U32) (scheduled : Std.I64)
   (behind : Std.I64) (duration : Std.I64) :
@@ -1496,7 +1517,7 @@ def player.Player.play
   ok ((self.position, step), { self with position := p, correction })
 
 /-- [unisono_core::player::{unisono_core::player::Player}::jumps]:
-    Source: 'crates/unisono-core/src/player.rs', lines 210:4-218:5 -/
+    Source: 'crates/unisono-core/src/player.rs', lines 209:4-217:5 -/
 def player.Player.jumps
   (self : player.Player) (behind : Std.I64) : Result Bool := do
   if self.running
@@ -1531,7 +1552,7 @@ def timing.distance
   fixed.saturate i7
 
 /-- [unisono_core::player::{unisono_core::player::Player}::cycle]:
-    Source: 'crates/unisono-core/src/player.rs', lines 224:4-250:5
+    Source: 'crates/unisono-core/src/player.rs', lines 223:4-249:5
     Visibility: public -/
 def player.Player.cycle
   (self : player.Player) (now : timing.Position) («then» : timing.Position)

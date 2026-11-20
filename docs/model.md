@@ -359,10 +359,36 @@ and fast enough; published thresholds for pure tones are one to three parts per
 thousand. In steady state the rate moves by far less: the line of section 6.3
 changes by fractions of a microsecond per window.
 
-Claims, for the regulator in steps of the device's cycle, of length $h$: stable
-for $0 < \kappa h < \sqrt2$; with constant $\hat u$ the error tends to zero;
-from any state the rate leaves its bound after a bounded time.
-*Not yet stated in Lean.*
+**In steps of the device's cycle.** The code (`unisono_core::player`) runs the
+law once for each cycle of the device. Let $h$ be the length of a cycle,
+$a = \kappa h$, $E$ the distance by which the position read is behind the
+schedule, in frames, and $v$ the number of frames that a cycle reads beyond
+what the schedule advances. One cycle is
+
+$$v' = (1 - \sqrt2\,a)\,v + a^2 E, \qquad E' = E - v' .$$
+
+The second equation is not computed: the position is advanced by what was
+read, exactly, and $E$ is measured against the schedule again at the next
+cycle. The matrix of the two equations has determinant $1 - \sqrt2\,a$ and
+trace $2 - a^2 - \sqrt2\,a$, so the recursion is stable exactly for
+$0 < a < \sqrt6 - \sqrt2 \approx 1.04$; the code holds $a$ at one half or
+below. The pace as a whole, scheduled and corrected, is held within
+$u_{\max}$ by limiting $v$, and a distance beyond a set number of frames is
+not played away: the position jumps to the schedule.
+
+Stated in Lean so far: planning a cycle returns for every state, schedule and
+reading of the clock (`Unisono.Player.cycle_total`), and changes nothing of a
+receiver but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in
+Lean:* the stability above, that the error tends to zero for a constant
+$\hat u$, that from any state the pace leaves its bound after a bounded time,
+and how far the computation in whole numbers is from the recursion in real
+numbers.
+
+In simulation (`crates/unisono-sim/tests/timing.rs`), with the cycle lengths
+taken from a device that is 120 parts per million off its nominal rate, the
+remaining error is as the formula above says when the receiver ignores that
+rate: $\sqrt2 \cdot 120\cdot10^{-6} / \kappa$, which is 42 microseconds for
+$\kappa = 4$ per second.
 
 **Large errors.** At a start and after a pause the error can be far larger
 than the bound on the rate removes quickly. Slewing at the largest rate left,
@@ -371,6 +397,11 @@ receiver. Jumping costs that receiver one gap, $w_{\mathrm{gap}}/N$, or nothing
 when it is silent. It jumps when the first exceeds the second. An error that
 all receivers share is no error of synchronization, and is not answered by each
 receiver for itself: the sender moves the level.
+
+In the code the threshold is a setting, in frames, and applies to a distance
+either way. A jump back replays nothing: the frames that a receiver has given
+to its device are behind its playhead and are not given again, so the receiver
+plays silence until the position reaches the playhead.
 
 ### 6.5 The level
 
