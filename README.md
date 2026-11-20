@@ -20,7 +20,7 @@ and the theorems are statements about that translation.
 | `crates/unisono-sim` | A deterministic simulation of clocks and links, for tests without hardware |
 | `crates/unisono-metrics` | Counters, gauges and histograms that real-time threads update without waiting, and their export in the Prometheus text format |
 | `crates/unisono-dsp` | Signal processing: the resampler that corrects clock drift, sample formats, fades and the concealment of gaps |
-| `docs` | The model, the protocol, the concealment of gaps, and which Rust the core may use |
+| `docs` | The model, the protocol, the concealment of gaps, the real-time path, and which Rust the core may use |
 | `tools` | Scripts that fetch and run the translator |
 
 ## Checking
@@ -29,12 +29,15 @@ and the theorems are statements about that translation.
 
 1. formatting, lints and tests of the Rust;
 2. compilation for every target platform;
-3. a fresh translation of the core, which must equal `lean/UnisonoCore.lean`;
-4. the proofs;
-5. the comparison of the translation with the Rust on the same inputs.
+3. an inspection of the machine code of the functions that run on real-time
+   threads: it must not enter the kernel, call an allocator, or be able to
+   panic;
+4. a fresh translation of the core, which must equal `lean/UnisonoCore.lean`;
+5. the proofs;
+6. the comparison of the translation with the Rust on the same inputs.
 
 It needs [rustup](https://rustup.rs), [just](https://just.systems),
-[elan](https://github.com/leanprover/elan) and, for step 3,
+[elan](https://github.com/leanprover/elan) and, for step 4,
 [opam](https://opam.ocaml.org). The first run builds Aeneas and its Lean
 library, which takes a while; later runs take about a minute.
 

@@ -10,7 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: extractions/setup-just@v2
-      - run: just format-check lint test targets
+      - run: just format-check lint test targets realtime
 
   proofs:
     runs-on: ubuntu-latest

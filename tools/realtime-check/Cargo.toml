@@ -1,0 +1,22 @@
+[package]
+name = "unisono-realtime-check"
+description = "The functions that unisono calls on its real-time threads, built into one library whose machine code is then inspected."
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+unisono-core = { path = "../../crates/unisono-core" }
+
+[profile.release]
+panic = "abort"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = false
+
+[workspace]

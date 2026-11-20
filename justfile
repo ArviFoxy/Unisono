@@ -6,7 +6,7 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: format-check lint test targets translation prove translation-check
+check: format-check lint test targets realtime translation prove translation-check
 
 # Rewrite the Rust sources in the standard format.
 format:
@@ -48,3 +48,8 @@ translation-check:
     mkdir -p target
     cargo run --quiet --package translation-check > target/translation-check.txt
     cd lean && lake env lean --run TranslationCheck.lean ../target/translation-check.txt
+
+# Inspect the machine code of the functions that run on real-time threads:
+# no kernel entry, no allocator, no panic.
+realtime:
+    tools/realtime.sh
