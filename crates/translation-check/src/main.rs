@@ -9,11 +9,11 @@
 //! computes. `lean/TranslationCheck.lean` reads the lines printed here,
 //! evaluates the translated function on the same inputs and compares.
 //!
-//! Each line is the name of a function, its arguments, `->` and its result.
+//! Each line is the name of a function, its arguments, `->` and its results.
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::fixed;
+use unisono_core::{fixed, relation};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -91,9 +91,74 @@ fn mul_shift_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
+    let divisors = [1, 2, 3, 7, 1 << 32, i64::MAX, 0, -1, i64::MIN];
+    let mut dividends = vec![i128::MAX, i128::MIN, i128::MIN + 1];
+    dividends.extend(boundary_values().into_iter().map(i128::from));
+    for a in dividends {
+        for b in divisors {
+            writeln!(out, "div_floor {a} {b} -> {}", fixed::div_floor(a, b))?;
+        }
+    }
+    Ok(())
+}
+
+/// Runs of packets through the estimator of a clock relation. Times mostly
+/// increase and sometimes stand still or go back; values scatter above a
+/// line; windows hold one to four packets. A line of output is the span, the
+/// number of packets, each packet's window, time and value, and after `->`
+/// whether there is a line, the line and the number of samples kept.
+fn relation_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(2);
+    for case in 0..400u64 {
+        let span = [900, 60_000, i64::MAX][usize::try_from(case % 3).unwrap_or(0)];
+        let packets = 1 + sequence.next() % 48;
+        let mut estimator = relation::Estimator::<8>::new(span);
+        write!(out, "relation {span} {packets}")?;
+        let (mut window, mut time) = (sequence.next() % 5, sequence.signed() % 1_000_000);
+        let slope = sequence.signed() % 2000;
+        for _ in 0..packets {
+            if sequence.next().is_multiple_of(3) {
+                window += 1;
+            }
+            time += match sequence.next() % 40 {
+                0 => -300,
+                1 => 0,
+                _ => 1 + (sequence.signed() % 500).abs(),
+            };
+            let delay = if sequence.next().is_multiple_of(2) {
+                0
+            } else {
+                (sequence.signed() % 4000).abs()
+            };
+            let value = 12_345 + time / 1000 * slope + delay;
+            estimator.observe(window, relation::Sample { time, value });
+            write!(out, " {window} {time} {value}")?;
+        }
+        estimator.end_window();
+        match estimator.line() {
+            Some(line) => {
+                writeln!(
+                    out,
+                    " -> 1 {} {} {} {} {}",
+                    line.time,
+                    line.value,
+                    line.rise,
+                    line.run,
+                    estimator.kept()
+                )?;
+            }
+            None => writeln!(out, " -> 0 0 0 0 0 {}", estimator.kept())?,
+        }
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
     mul_shift_cases(&mut out)?;
+    div_floor_cases(&mut out)?;
+    relation_cases(&mut out)?;
     out.flush()
 }

@@ -1,0 +1,148 @@
+/-
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-/
+module
+public import Mathlib.Algebra.Order.BigOperators.Ring.Finset
+public import Mathlib.Basic.Real.Basic
+public import Mathlib.Tactic.FieldSimp
+public import Mathlib.Tactic.Linarith
+public import Mathlib.Tactic.Positivity
+public import Mathlib.Tactic.Ring
+
+/-!
+# The highest line under a set of samples
+
+A packet is delayed and never early, so the value of a sample is the quantity
+of interest plus an error that is never negative. The samples then lie on or
+above the true relation, and its estimate is a line that lies on or below
+every sample and is as high as it can be at a chosen time `c`. Such a line
+passes through two samples, one on each side of `c`.
+
+Sample `j` of a finite set `s` has a time `t j` and a value `z j`.
+-/
+
+@[expose] public noncomputable section
+
+namespace Unisono.Model.SupportLine
+
+/-- A line, by its value at a time and its slope. -/
+structure Line where
+  /-- The time at which `value` is the line's value. -/
+  time : ℝ
+  /-- The value at `time`. -/
+  value : ℝ
+  /-- The slope. -/
+  slope : ℝ
+
+/-- The value of the line at time `x`. -/
+def Line.eval (l : Line) (x : ℝ) : ℝ := l.value + l.slope * (x - l.time)
+
+variable {ι : Type*} (s : Finset ι) (t z : ι → ℝ)
+
+/-- The line lies on or below every sample. -/
+def Under (l : Line) : Prop := ∀ j ∈ s, l.eval (t j) ≤ z j
+
+/-- The line through samples `p` and `q`. -/
+def through (p q : ι) : Line := ⟨t p, z p, (z q - z p) / (t q - t p)⟩
+
+theorem through_eval_left (p q : ι) : (through t z p q).eval (t p) = z p := by
+  simp [through, Line.eval]
+
+theorem through_eval_right (p q : ι) (h : t p ≠ t q) : (through t z p q).eval (t q) = z q := by
+  have : t q - t p ≠ 0 := sub_ne_zero.mpr (Ne.symm h)
+  simp only [through, Line.eval]
+  field_simp
+  ring
+
+/-- A line's value between two times is at most the larger of two bounds that
+hold at those times, when the bounds are themselves values of a line. This is
+the one fact about lines that the results below use: a line that is at most
+another line at two times is at most that line between them. -/
+theorem eval_le_between (l m : Line) (x₁ x₂ c : ℝ) (h₁ : x₁ ≤ c) (h₂ : c ≤ x₂) (h : x₁ < x₂)
+    (hl₁ : l.eval x₁ ≤ m.eval x₁) (hl₂ : l.eval x₂ ≤ m.eval x₂) :
+    l.eval c ≤ m.eval c := by
+  simp only [Line.eval] at *
+  -- write c as a mixture of x₁ and x₂
+  obtain ⟨μ, hμ0, hμ1, hc⟩ : ∃ μ : ℝ, 0 ≤ μ ∧ μ ≤ 1 ∧ c = (1 - μ) * x₁ + μ * x₂ := by
+    refine ⟨(c - x₁) / (x₂ - x₁), div_nonneg (by linarith) (by linarith), ?_, ?_⟩
+    · rw [div_le_one (by linarith)]; linarith
+    · have : x₂ - x₁ ≠ 0 := by linarith
+      field_simp
+      ring
+  have e : ∀ k : Line, k.value + k.slope * (c - k.time)
+      = (1 - μ) * (k.value + k.slope * (x₁ - k.time))
+        + μ * (k.value + k.slope * (x₂ - k.time)) := by
+    intro k; rw [hc]; ring
+  rw [e l, e m]
+  have h1 : 0 ≤ 1 - μ := by linarith
+  nlinarith [mul_le_mul_of_nonneg_left hl₁ h1, mul_le_mul_of_nonneg_left hl₂ hμ0]
+
+/-- The line through two samples on either side of `c` that lies under all
+samples is the highest at `c` of all lines under the samples. -/
+theorem highest (p q : ι) (hp : p ∈ s) (hq : q ∈ s) (c : ℝ)
+    (hpc : t p ≤ c) (hcq : c ≤ t q) (hpq : t p < t q)
+    (l : Line) (hl : Under s t z l) :
+    l.eval c ≤ (through t z p q).eval c := by
+  refine eval_le_between l (through t z p q) (t p) (t q) c hpc hcq hpq ?_ ?_
+  · rw [through_eval_left]; exact hl p hp
+  · rw [through_eval_right t z p q hpq.ne]; exact hl q hq
+
+/-- The error of the highest line under the samples, at the time `c` where it
+is highest.
+
+`e` is the estimate: a line under all samples that is highest at `c`. `truth`
+is a line that the true relation stays within `b` of, on the times of the
+samples. Every sample is on or above the true relation, which is what a delay
+that is never negative gives. Two samples, `p'` at or before `c` and `q'` at
+or after it, are within `ε` of the true relation. Then the estimate is within
+`ε + b` of the line `truth` at `c`, on the high side, and within `b` on the
+low side. Nothing is assumed about the other samples: a packet that waited in
+a queue, or through a pause, lies above the line and does not move it. -/
+theorem error_at_centre (e truth : Line) (rel : ι → ℝ) (b ε c : ℝ)
+    (he : Under s t z e)
+    (hbest : ∀ l, Under s t z l → l.eval c ≤ e.eval c)
+    (hnear : ∀ j ∈ s, |rel j - truth.eval (t j)| ≤ b)
+    (habove : ∀ j ∈ s, rel j ≤ z j)
+    (p' q' : ι) (hp' : p' ∈ s) (hq' : q' ∈ s)
+    (hpc : t p' ≤ c) (hcq : c ≤ t q') (hpq : t p' < t q')
+    (hcleanp : z p' ≤ rel p' + ε) (hcleanq : z q' ≤ rel q' + ε) :
+    truth.eval c - b ≤ e.eval c ∧ e.eval c ≤ truth.eval c + (ε + b) := by
+  constructor
+  · -- the line `truth` lowered by `b` is under all samples, so the estimate is at least as high
+    have hlow : Under s t z ⟨truth.time, truth.value - b, truth.slope⟩ := by
+      intro j hj
+      have h1 := (abs_le.mp (hnear j hj)).1
+      have h2 := habove j hj
+      simp only [Line.eval] at *
+      linarith
+    have := hbest _ hlow
+    simp only [Line.eval] at *
+    linarith
+  · -- the estimate is under the two clean samples, which are close to `truth`
+    have key := eval_le_between e ⟨truth.time, truth.value + (ε + b), truth.slope⟩
+      (t p') (t q') c hpc hcq hpq ?_ ?_
+    · simp only [Line.eval] at *
+      linarith
+    · have h1 := he p' hp'
+      have h2 := (abs_le.mp (hnear p' hp')).2
+      simp only [Line.eval] at *
+      linarith
+    · have h1 := he q' hq'
+      have h2 := (abs_le.mp (hnear q' hq')).2
+      simp only [Line.eval] at *
+      linarith
+
+/-- Adding a line to every value, and to a line under the values, keeps it
+under them. With `highest`, this is why a change of the sender's clock by an
+offset and a rate moves every receiver's estimate by the same line. -/
+theorem under_add (l m : Line) (hm : m.time = l.time) (hl : Under s t z l) :
+    Under s t (fun j => z j + m.eval (t j))
+      ⟨l.time, l.value + m.value, l.slope + m.slope⟩ := by
+  intro j hj
+  have := hl j hj
+  simp only [Line.eval, hm] at *
+  linarith
+
+end Unisono.Model.SupportLine

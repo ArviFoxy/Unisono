@@ -1,0 +1,12 @@
+[package]
+name = "unisono-sim"
+description = "A deterministic simulation of clocks, links and hosts, for testing unisono without hardware."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dev-dependencies]
+unisono-core = { path = "../unisono-core" }
+
+[lints]
+workspace = true

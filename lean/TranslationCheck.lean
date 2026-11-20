@@ -21,17 +21,49 @@ def signed (ty : IScalarTy) (x : Int) : IScalar ty := ⟨BitVec.ofInt ty.numBits
 /-- The unsigned machine integer with the low bits of `x`. -/
 def unsigned (ty : UScalarTy) (x : Int) : UScalar ty := ⟨BitVec.ofInt ty.numBits x⟩
 
+/-- Feeds packets, each a window, a time and a value, to an estimator that
+remembers eight samples, and returns whether it has a line, the line and the
+number of samples it keeps. -/
+def runRelation (span : Int) (packets : List (Int × Int × Int)) : Result (List Int) := do
+  let start ← relation.Estimator.new 8#usize (signed .I64 span)
+  let fed ← packets.foldlM
+    (fun estimator (window, time, value) =>
+      relation.Estimator.observe estimator (unsigned .U64 window)
+        ⟨signed .I64 time, signed .I64 value⟩)
+    start
+  let ended ← relation.Estimator.end_window fed
+  let line ← relation.Estimator.impl.line ended
+  let kept ← relation.Estimator.impl.kept ended
+  match line with
+  | some l => pure [1, l.time.val, l.value.val, l.rise.val, l.run.val, kept.val]
+  | none => pure [0, 0, 0, 0, 0, kept.val]
+
+/-- Groups a flat list into triples; `none` if its length is not a multiple of three. -/
+def triples : List Int → Option (List (Int × Int × Int))
+  | [] => some []
+  | a :: b :: c :: rest => (triples rest).map ((a, b, c) :: ·)
+  | _ => none
+
 /-- Evaluates the function a line names on the line's arguments. -/
-def evaluate (function : String) (args : List Int) : Except String Int :=
+def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
-  | "saturate", [x] => result (fixed.saturate (signed .I128 x)) (·.val)
+  | "saturate", [x] => result (fixed.saturate (signed .I128 x)) (fun r => [r.val])
   | "mul_shift", [a, b, shift] =>
-    result (fixed.mul_shift (signed .I64 a) (signed .I64 b) (unsigned .U32 shift)) (·.val)
+    result (fixed.mul_shift (signed .I64 a) (signed .I64 b) (unsigned .U32 shift))
+      (fun r => [r.val])
+  | "div_floor", [a, b] =>
+    result (fixed.div_floor (signed .I128 a) (signed .I64 b)) (fun r => [r.val])
+  | "relation", span :: count :: rest =>
+    match triples rest with
+    | some packets =>
+      if packets.length = count then result (runRelation span packets) id
+      else .error "the number of packets is not the stated one"
+    | none => .error "packets are not triples"
   | _, _ => .error s!"no function {function} with {args.length} arguments"
 where
-  result {α : Type} (r : Result α) (value : α → Int) : Except String Int :=
+  result {α : Type} (r : Result α) (values : α → List Int) : Except String (List Int) :=
     match r.match with
-    | .ok v => .ok (value v)
+    | .ok v => .ok (values v)
     | .vis _ _ => .error "the translation fails"
     | .div => .error "the translation does not terminate"
 
@@ -39,8 +71,8 @@ where
 def checkLine (line : String) : Except String Unit := do
   let words := line.splitOn " "
   let (call, expected) ← match words.splitOn "->" with
-    | [call, [expected]] => pure (call, expected)
-    | _ => throw "not of the form: name arguments -> result"
+    | [call, expected] => pure (call, expected)
+    | _ => throw "not of the form: name arguments -> results"
   let number (word : String) : Except String Int :=
     match word.toInt? with
     | some n => pure n
@@ -49,7 +81,7 @@ def checkLine (line : String) : Except String Unit := do
   | [] => throw "no function name"
   | function :: args =>
     let got ← evaluate function (← args.mapM number)
-    let want ← number expected
+    let want ← expected.mapM number
     unless got = want do
       throw s!"the translation gives {got}"
 

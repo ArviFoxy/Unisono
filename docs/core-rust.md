@@ -39,7 +39,13 @@ ones met so far:
   `abs_diff` and `checked_shl`;
 - `TryFrom` between integer types, `Result::ok` and `first` on a slice.
 
-Taking an array apart by value (`let [a, b] = array;`) fails to translate.
+Three constructs fail to translate or bring in such a function:
+
+- taking an array apart by value (`let [a, b] = array;`);
+- a closure that returns a reference, as in `.and_then(|i| slice.get(*i))`,
+  and `Option::copied`; an `Option` is taken apart with `match` instead;
+- a derived `Debug` on a type with a field that is an `Option` or a tuple.
+  Such a type derives `Debug` only in tests.
 
 ## Rules of the core
 

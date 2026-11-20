@@ -11,22 +11,31 @@
 //!
 //! The lints below turn the constructs that can panic into compile errors:
 //! arithmetic that can overflow, indexing that can be out of bounds, and the
-//! panicking macros and methods.
+//! panicking macros and methods. Tests are exempt, since a test fails by
+//! panicking.
 
 #![no_std]
 #![forbid(unsafe_code)]
-#![deny(
-    clippy::arithmetic_side_effects,
-    clippy::expect_used,
-    clippy::indexing_slicing,
-    clippy::panic,
-    clippy::todo,
-    clippy::unimplemented,
-    clippy::unreachable,
-    clippy::unwrap_used
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::arithmetic_side_effects,
+        clippy::expect_used,
+        clippy::indexing_slicing,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::unreachable,
+        clippy::unwrap_used
+    )
 )]
 // A cast written with `as` translates to Lean directly; `From` and `TryFrom`
-// between integer types do not.
-#![allow(clippy::cast_lossless)]
+// between integer types do not. Neither do `Option::copied` and a closure
+// that returns a reference, so an `Option` is taken apart with `match`.
+#![allow(clippy::cast_lossless, clippy::manual_map)]
+
+#[cfg(test)]
+extern crate std;
 
 pub mod fixed;
+pub mod relation;

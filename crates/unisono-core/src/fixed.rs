@@ -46,9 +46,50 @@ pub fn mul_shift(a: i64, b: i64, shift: u32) -> i64 {
     saturate(product.wrapping_add(half).wrapping_shr(shift))
 }
 
+/// Returns `a / b` rounded toward negative infinity, for a positive `b`.
+///
+/// For a `b` that is not positive the result is 0.
+#[must_use]
+pub fn div_floor(a: i128, b: i64) -> i128 {
+    if b <= 0 {
+        return 0;
+    }
+    let divisor = b as i128;
+    // The divisor is positive, so neither operation can fail.
+    let (Some(quotient), Some(remainder)) = (a.checked_div(divisor), a.checked_rem(divisor)) else {
+        return 0;
+    };
+    // Rust rounds a quotient toward zero, which is upward for a negative one.
+    if remainder < 0 {
+        quotient.wrapping_sub(1)
+    } else {
+        quotient
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SHIFT, mul_shift, saturate};
+    use super::{MAX_SHIFT, div_floor, mul_shift, saturate};
+
+    #[test]
+    fn div_floor_rounds_toward_negative_infinity() {
+        assert_eq!(div_floor(7, 2), 3);
+        assert_eq!(div_floor(-7, 2), -4);
+        assert_eq!(div_floor(-8, 2), -4);
+        assert_eq!(div_floor(0, 5), 0);
+        assert_eq!(div_floor(-1, 1_000_000), -1);
+        assert_eq!(div_floor(i128::MIN, 1), i128::MIN);
+        assert_eq!(
+            div_floor(i128::MAX, i64::MAX),
+            i128::MAX / i128::from(i64::MAX)
+        );
+    }
+
+    #[test]
+    fn div_floor_by_a_divisor_that_is_not_positive_is_zero() {
+        assert_eq!(div_floor(100, 0), 0);
+        assert_eq!(div_floor(100, -3), 0);
+    }
 
     #[test]
     fn saturate_keeps_values_in_range_and_limits_the_rest() {
