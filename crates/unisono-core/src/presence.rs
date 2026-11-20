@@ -12,7 +12,7 @@
 
 /// What became of one frame.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub enum Outcome {
     /// The frame is now held and was not before.
     Stored,
@@ -25,7 +25,8 @@ pub enum Outcome {
 }
 
 /// What became of the frames of one packet: how many had each outcome.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Marked {
     /// Frames that are now held and were not before.
     pub stored: u32,
@@ -54,7 +55,7 @@ impl Marked {
 /// The bit of an index is at a place that depends on the index alone, so
 /// moving the stretch forward moves no bits.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Presence<const N: usize> {
     words: [u64; N],
     base: u64,

@@ -44,7 +44,8 @@ const LONGEST_CYCLE: i64 = 1_099_511_627_776;
 const LARGEST_LIMIT: u32 = 3_000_000;
 
 /// The settings of a regulator.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Regulation {
     /// How fast a distance to the schedule is removed: the gain per second,
     /// in units of 2^-16.
@@ -59,7 +60,7 @@ pub struct Regulation {
 
 /// What a receiver plays in one cycle of its device.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Plan {
     /// The number of output frames taken from the stream. It is zero when
     /// nothing is due, and the cycle is silent then.
@@ -76,7 +77,7 @@ pub struct Plan {
 
 /// The regulator of one receiver.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Player {
     regulation: Regulation,
     /// Whether a position is held.

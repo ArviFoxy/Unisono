@@ -26,7 +26,7 @@ const REACH: i128 = 4_294_967_296;
 
 /// One report of a device.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Reading {
     /// A position of the device, in frames.
     pub position: u64,
@@ -48,7 +48,7 @@ struct Sums {
 
 /// The fitted line of a device, from its last `W` reports.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Device<const W: usize> {
     readings: [Reading; W],
     /// How many of the places hold a report.

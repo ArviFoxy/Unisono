@@ -10,7 +10,7 @@
 
 /// The arrival of one packet.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 struct Arrival {
     /// Whether this place holds an arrival.
     used: bool,
@@ -22,7 +22,7 @@ struct Arrival {
 
 /// The arrivals of the last `K` packets.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Arrivals<const K: usize> {
     places: [Arrival; K],
     /// The place that the next arrival is written to.

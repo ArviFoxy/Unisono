@@ -10,7 +10,7 @@ use crate::packet::{Audio, Echo, FLAG_STAMPED, Format, Report};
 /// What stays the same in every packet of a stream until the sender changes
 /// it.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Settings {
     /// Which stream of the sender this is.
     pub stream: u16,
@@ -29,7 +29,7 @@ pub struct Settings {
 
 /// The sender of a stream.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Sender {
     settings: Settings,
     /// The timeline that the indices count in.

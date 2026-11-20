@@ -31,8 +31,8 @@ again whenever that commit changes.
 ## What does not
 
 A function of the standard library that Aeneas has no Lean model for enters
-the translation as an axiom. `tools/extract.sh` fails when that happens. The
-ones met so far:
+the translation as an axiom, or as a definition left for someone to fill in.
+`tools/extract.sh` fails when either happens. The ones met so far:
 
 - `?` on an `Option`; write a `match` or `let … else`;
 - `div_euclid`, `rem_euclid`, `wrapping_neg`, `unsigned_abs`, `is_negative`,
@@ -45,7 +45,11 @@ Three constructs fail to translate or bring in such a function:
 - a closure that returns a reference, as in `.and_then(|i| slice.get(*i))`,
   and `Option::copied`; an `Option` is taken apart with `match` instead;
 - a derived `Debug` on a type with a field that is an `Option` or a tuple.
-  Such a type derives `Debug` only in tests.
+
+`Debug` is therefore not translated at all. The translation is made with the
+configuration `translating` set, and every type of the core derives `Debug`
+with `#[cfg_attr(not(translating), derive(Debug))]`. What `Debug` prints is
+no part of what is proved.
 
 Three things translate into Lean that then does not serve:
 

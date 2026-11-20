@@ -45,7 +45,7 @@ const REPORTS_IN_WINDOW: u64 = 8;
 
 /// What a receiver did with a packet.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Heard {
     /// The packet is of a timeline that the receiver does not follow, and
     /// nothing was done with it.
@@ -61,7 +61,7 @@ pub struct Heard {
 
 /// A run of frames at the playhead that are all held or all absent.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Segment {
     /// The index of the first frame of the run.
     pub first: u64,
@@ -72,7 +72,8 @@ pub struct Segment {
 }
 
 /// The settings of a receiver.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Settings {
     /// A number that tells this receiver from the others of the stream.
     pub identity: u64,
@@ -93,7 +94,7 @@ pub struct Settings {
 /// samples for its estimate of the sender's clock, and keeps the arrivals of
 /// the last `K` packets.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     /// Whether a timeline is followed.
     following: bool,

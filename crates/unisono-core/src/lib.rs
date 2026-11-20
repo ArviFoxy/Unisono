@@ -29,6 +29,10 @@
         clippy::unwrap_used
     )
 )]
+// The translation to Lean is made with the configuration `translating` set,
+// under which no type derives `Debug`: what `Debug` prints is no part of what
+// is proved, and its code would only be carried along.
+//
 // A cast written with `as` translates to Lean directly; `From` and `TryFrom`
 // between integer types do not. Neither do `Option::copied`, a closure that
 // returns a reference, and `?` on an `Option`, so an `Option` is taken apart

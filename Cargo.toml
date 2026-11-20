@@ -11,6 +11,8 @@ license = "MPL-2.0"
 missing_docs = "warn"
 unreachable_pub = "warn"
 unsafe_op_in_unsafe_fn = "deny"
+# `translating` is set when the core is translated to Lean.
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(translating)'] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

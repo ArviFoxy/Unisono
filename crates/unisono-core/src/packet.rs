@@ -45,7 +45,8 @@ pub const ECHO: usize = 32;
 pub const FLAG_STAMPED: u16 = 1;
 
 /// How one sample of one channel is written.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub enum Format {
     /// Two bytes, signed, least significant first.
     Signed16,
@@ -83,7 +84,8 @@ impl Format {
 ///
 /// Times are in nanoseconds on the sender's clock; a frame is one sample of
 /// every channel.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Audio {
     /// Which stream of the sender this is.
     pub stream: u16,
@@ -127,7 +129,8 @@ pub struct Audio {
 }
 
 /// Why a datagram is not an audio packet of this version.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub enum Rejected {
     /// It is shorter than a header.
     TooShort,
@@ -338,7 +341,8 @@ pub fn write_audio(header: &Audio, bytes: &mut [u8]) -> Option<usize> {
 }
 
 /// A report of a receiver to the sender.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Report {
     /// Which stream of the sender the receiver plays.
     pub stream: u16,
@@ -351,7 +355,8 @@ pub struct Report {
 }
 
 /// The sender's answer to a report: when the report arrived.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Echo {
     /// Which stream of the sender this is.
     pub stream: u16,

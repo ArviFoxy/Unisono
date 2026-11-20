@@ -18,7 +18,7 @@ const BILLION: i64 = 1_000_000_000;
 /// A position in a stream: the index of a frame and a fraction of a frame
 /// beyond it, in units of 2^-64 frame.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Position {
     /// The index of the last frame at or before the position.
     pub frame: u64,
@@ -35,7 +35,7 @@ pub struct Position {
 /// which is `level` for the frame `index` and grows by `level_slope`
 /// nanoseconds per second of stream.
 #[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Schedule {
     /// The index of a frame.
     pub index: u64,

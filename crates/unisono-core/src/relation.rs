@@ -19,7 +19,8 @@ use crate::fixed::{div_floor, saturate};
 /// One packet's contribution: a time on the sender's clock and a value, both
 /// in nanoseconds. The value is a reading of the receiver's clock minus the
 /// reading `time` of the sender's.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Sample {
     /// The sender's clock when the packet left.
     pub time: i64,
@@ -28,7 +29,8 @@ pub struct Sample {
 }
 
 /// A line: its value at a time, and its slope as a quotient `rise / run`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Line {
     /// A time at which the line's value is `value`.
     pub time: i64,
@@ -101,7 +103,7 @@ fn side(a: Sample, b: Sample, c: Sample) -> i128 {
 /// `limit`, and where the highest line is steeper, the estimate is the
 /// highest line of the limiting slope that lies under all kept samples.
 #[derive(Clone, Copy)]
-#[cfg_attr(test, derive(Debug))]
+#[cfg_attr(not(translating), derive(Debug))]
 pub struct Estimator<const M: usize> {
     /// The kept samples, oldest first, in the first `len` places.
     kept: [Sample; M],
