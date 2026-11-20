@@ -18,8 +18,12 @@ format-check:
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
 
-test:
+test: interleavings
     cargo test --workspace
+
+# Check the ring between threads under every interleaving of its two threads.
+interleavings:
+    RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test --package unisono-runtime --lib --release ring::
 
 # Compile every crate for every target platform.
 targets:

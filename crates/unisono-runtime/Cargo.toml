@@ -1,13 +1,19 @@
 [package]
 name = "unisono-runtime"
-description = "The shell around unisono's core: audio interfaces, a software audio device, and what turns a receiver's plan into frames."
+description = "The shell around unisono's core: clocks, sockets with packet timestamps, the rings between threads, audio interfaces, a software audio device, and what turns a receiver's plan into frames."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
+libc = "0.2"
 unisono-core = { path = "../unisono-core" }
 unisono-dsp = { path = "../unisono-dsp" }
+
+# The ring is checked under every interleaving of its two threads by loom,
+# which replaces the atomics when the crate is built with `--cfg loom`.
+[target.'cfg(loom)'.dependencies]
+loom = "0.7"
 
 [lints]
 workspace = true
