@@ -4501,7 +4501,7 @@ def relation.Estimator.middle
       ok (some i4)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure_path]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 504:4-519:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 506:4-521:5 -/
 def receiver.Receiver.measure_path
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) :
@@ -4580,9 +4580,9 @@ def receiver.Receiver.note
             })
     }
 
-/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::slide_warmup]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 335:4-356:5 -/
-def receiver.Receiver.slide_warmup
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::keep_newest]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 337:4-358:5 -/
+def receiver.Receiver.keep_newest
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
   Result (receiver.Receiver N M K)
@@ -4619,7 +4619,7 @@ def receiver.Receiver.slide_warmup
       else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stale]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 362:4-372:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 364:4-374:5 -/
 def receiver.Receiver.stale
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (marked : presence.Marked)
@@ -4645,7 +4645,7 @@ def receiver.Receiver.stale
           ok (i1 >= self.silence, { self with fresh := i })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::renew]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 377:4-384:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 379:4-386:5 -/
 def receiver.Receiver.renew
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -4659,7 +4659,7 @@ def receiver.Receiver.renew
   ok (m, { self with presence := p2, clock := e, player := p1 })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::refresh]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 390:4-400:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 392:4-402:5 -/
 def receiver.Receiver.refresh
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio)
@@ -4687,7 +4687,7 @@ def receiver.Receiver.refresh
         else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 403:4-417:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 405:4-419:5 -/
 def receiver.Receiver.accept
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -4695,7 +4695,7 @@ def receiver.Receiver.accept
   Result (receiver.Heard × (receiver.Receiver N M K))
   := do
   let self1 ←
-    receiver.Receiver.slide_warmup { self with heard := arrival } header
+    receiver.Receiver.keep_newest { self with heard := arrival } header
   let self2 ← receiver.Receiver.measure self1 header arrival
   let i ← lift (UScalar.cast .U32 header.frames)
   let (first, p) ← presence.Presence.mark self2.presence header.index i
@@ -4712,7 +4712,7 @@ def receiver.Receiver.accept
   ok ({ ignored := false, adopted, restarted, marked }, self5)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 421:4-452:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 423:4-454:5
     Visibility: public -/
 def receiver.Receiver.packet
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4768,7 +4768,7 @@ def receiver.Receiver.packet
           adopted
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::report]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 456:4-468:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 458:4-470:5
     Visibility: public -/
 def receiver.Receiver.report
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4788,7 +4788,7 @@ def receiver.Receiver.report
   else ok (none, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reported]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 472:4-474:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 474:4-476:5
     Visibility: public -/
 def receiver.Receiver.reported
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4799,7 +4799,7 @@ def receiver.Receiver.reported
   ok { self with departures := a }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::echo]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 481:4-498:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 483:4-500:5
     Visibility: public -/
 def receiver.Receiver.echo
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4885,7 +4885,7 @@ def timing.due
           ok (some { frame := i18, fraction := i20 })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::cycle]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 526:4-554:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 528:4-556:5
     Visibility: public -/
 def receiver.Receiver.cycle
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4954,7 +4954,7 @@ def receiver.Receiver.cycle
        }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 557:4-560:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 559:4-562:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -4967,7 +4967,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 565:4-590:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 567:4-592:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4989,7 +4989,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 596:4-603:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 598:4-605:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}

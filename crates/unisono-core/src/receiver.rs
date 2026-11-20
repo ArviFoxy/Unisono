@@ -234,9 +234,9 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Whether a packet of `timeline` that arrives at `arrival` makes the
     /// receiver follow that timeline instead of what it follows now.
     ///
-    /// When the receiver is already following a timeline, a new timeline must
-    /// be confirmed by a second packet before switching, so a single stray or
-    /// forged packet cannot hijack playback.
+    /// A receiver that follows a timeline takes up another only at its
+    /// second packet in a row, so that one stray or forged packet does not
+    /// move it.
     fn adopts(&self, timeline: u64, arrival: i64) -> bool {
         if !self.following {
             return true;
@@ -328,11 +328,13 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         });
     }
 
-    /// Slides the stretch forward while waiting for the sender's clock to lock,
-    /// keeping the newest frames when warmup outlasts the stretch. Packets
-    /// more than one stretch beyond the current end are left alone so a damaged
-    /// header cannot pull the playhead away.
-    fn slide_warmup(&mut self, header: &Audio) {
+    /// Moves the stretch forward so that it ends at the last frame of the
+    /// packet with `header`, as long as the sender's clock is not known and
+    /// nothing is played: the frames that will be played first are then the
+    /// newest. A packet that lies more than a stretch beyond the end leaves
+    /// the stretch where it is, so that a wrong header does not carry the
+    /// playhead away.
+    fn keep_newest(&mut self, header: &Audio) {
         if self.clock.line().is_some() {
             return;
         }
@@ -384,9 +386,9 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     }
 
     /// Takes in that a packet with `header` arrived at `arrival` and its
-    /// frames were marked as `marked`. A packet with a frame in the stretch
-    /// (or an empty keepalive at a covered index) is part of the stream as
-    /// the receiver holds it, and updates the schedule.
+    /// frames were marked as `marked`. A packet with a frame in the stretch,
+    /// or a packet without frames whose index the stretch covers, is part of
+    /// the stream as the receiver holds it, and updates the schedule.
     fn refresh(&mut self, header: &Audio, marked: &Marked, arrival: i64) {
         if marked.stored > 0
             || marked.duplicate > 0
@@ -402,7 +404,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Takes in a packet of the followed timeline.
     fn accept(&mut self, header: &Audio, arrival: i64, adopted: bool) -> Heard {
         self.heard = arrival;
-        self.slide_warmup(header);
+        self.keep_newest(header);
         self.measure(header, arrival);
         let first = self.presence.mark(header.index, header.frames as u32);
         let restarted = self.stale(&first, arrival);
@@ -742,7 +744,7 @@ mod tests {
     fn a_later_timeline_requires_confirmation_and_an_earlier_one_is_ignored() {
         let mut receiver = receiver();
         receiver.packet(&header(7, 0, 10), 0);
-        // A single stray packet of a later timeline does not hijack playback.
+        // One stray packet of a later timeline does not move the receiver.
         let stray = receiver.packet(&header(9, 100, 10), 1);
         assert!(stray.ignored && !stray.adopted);
         assert_eq!((receiver.timeline(), receiver.playhead()), (Some(7), 0));
@@ -992,7 +994,7 @@ mod tests {
         let mut receiver: Receiver<4, 8, 4> = receiver();
         stream(&mut receiver, offset, 0, 60);
         receiver.path(100_000);
-        let line_before = receiver.clock().expect("clock locked");
+        let line_before = receiver.clock().expect("the clock is known");
 
         // Capture restart on the same sender clock (clock == 1): two packets
         // confirm timeline 9 and preserve the clock line and path estimate.
@@ -1002,7 +1004,7 @@ mod tests {
         assert!(receiver.packet(&p1, offset + 710_000_000).adopted);
         let line_after = receiver
             .clock()
-            .expect("clock stays locked across same-clock restart");
+            .expect("the clock is still known after a timeline on the same clock");
         assert_eq!(line_after.eval(500_000_000), line_before.eval(500_000_000));
         assert_eq!(receiver.delay(), 100_000);
 
@@ -1020,8 +1022,9 @@ mod tests {
     }
 
     #[test]
-    fn warmup_slides_the_stretch_to_keep_the_newest_frames_and_schedule() {
-        // Stretch is 4 * 64 = 256 frames. Feed 600 frames before clock locks.
+    fn before_the_clock_is_known_the_stretch_keeps_the_newest_frames() {
+        // The stretch is 4 * 64 = 256 frames; 600 frames arrive before the
+        // sender's clock is known.
         let mut receiver: Receiver<4, 8, 4> = receiver();
         for n in 0..60u64 {
             let mut h = header(7, n * 10, 10);
@@ -1031,18 +1034,22 @@ mod tests {
             assert_eq!(heard.marked.early, 0, "packet {n} not discarded early");
         }
         assert_eq!(receiver.playhead(), 600 - 256);
-        let schedule = receiver.schedule().expect("schedule tracked during warmup");
+        let schedule = receiver
+            .schedule()
+            .expect("a schedule before the clock is known");
         assert_eq!((schedule.index, schedule.capture), (590, 59_000));
     }
 
     #[test]
-    fn path_updates_when_clock_locks_after_echoes_have_already_arrived() {
+    fn the_path_is_measured_once_the_clock_is_known_after_the_answers() {
         let offset = 3_600_000_000_000i64;
         let mut receiver: Receiver<4, 8, 4> = receiver();
         let period = 10_000_000i64;
-        // First packet adopts timeline 7, before the forward clock has a line.
+        // The first packet makes the receiver follow timeline 7; the
+        // sender's clock is not known yet.
         receiver.packet(&header(7, 0, 480), offset + 100_000);
-        // Send enough reports and echoes to populate `back` while `clock` is still None.
+        // Reports and their answers give the estimate of the way back a line
+        // while the sender's clock is still not known.
         for k in 0..20i64 {
             let now = offset + k * period + 100_000;
             let report = receiver.report().expect("following");
@@ -1055,7 +1062,8 @@ mod tests {
             });
         }
         assert_eq!(receiver.delay(), 0);
-        // Now lock `clock` using audio packets only (no further echoes).
+        // Audio packets alone, and no more answers, make the sender's clock
+        // known, and with it the delay of the path.
         stream(&mut receiver, offset, 1, 60);
         assert_eq!(receiver.delay(), 120_000);
     }

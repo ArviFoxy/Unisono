@@ -440,9 +440,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Receiver.adopt_spec
 
-/-- info: 'Unisono.Receiver.slide_warmup_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Receiver.keep_newest_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Receiver.slide_warmup_spec
+#print axioms Unisono.Receiver.keep_newest_spec
 
 /-- info: 'Unisono.Receiver.wrong_stream_packet_noop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

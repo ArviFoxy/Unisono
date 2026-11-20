@@ -308,15 +308,15 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     step as ⟨e1⟩
     refine ⟨hpb, hph, ?_, ?_⟩ <;> (intro hc; cases hc)
 
-/-! ## Sliding the stretch during warmup -/
+/-! ## Keeping the newest frames before the clock is known -/
 
-/-- Sliding the stretch forward before the clock locks: leaves stream,
-timeline, clock, and settings untouched, never moves the playhead backward,
-does nothing once the clock has locked or when the packet does not start past
-the playhead, and never advances the playhead past the packet's first frame. -/
+/-- Moving the stretch forward to the newest frames: the stream, the
+timeline, the clock and the settings stay; the playhead never goes back, and
+never past the packet's first frame; and nothing moves once the sender's
+clock is known, or when the packet does not begin after the playhead. -/
 @[step]
-theorem slide_warmup_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
-    receiver.Receiver.slide_warmup r h ⦃ r' =>
+theorem keep_newest_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
+    receiver.Receiver.keep_newest r h ⦃ r' =>
       r'.stream = r.stream ∧ r'.following = r.following ∧ r'.timeline = r.timeline
       ∧ r'.clock_id = r.clock_id ∧ r'.has_candidate = r.has_candidate
       ∧ r'.candidate = r.candidate ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh
@@ -325,7 +325,7 @@ theorem slide_warmup_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       ∧ (r.clock.line ≠ none → r' = r)
       ∧ (h.index.val ≤ r.presence.base.val → r' = r)
       ∧ (r.presence.base.val < h.index.val → r'.presence.base.val ≤ h.index.val) ⦄ := by
-  unfold receiver.Receiver.slide_warmup relation.Estimator.impl.line
+  unfold receiver.Receiver.keep_newest relation.Estimator.impl.line
   simp only [bind_ok]
   cases hline : r.clock.line with
   | some line =>
@@ -511,7 +511,8 @@ theorem renew_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
   exact ⟨hwindow, p, hpb, hph, harr⟩
 
 /-- Taking in how a packet's frames were marked: a packet with a frame at or
-ahead of the playhead (or a covered zero-frame keepalive) makes now the time
+ahead of the playhead, or a packet without frames whose index the stretch
+covers, makes now the time
 at which such a frame last arrived, and any non-empty packet whose frames are
 all late leaves that time as it was. -/
 @[step]
@@ -567,7 +568,8 @@ theorem refresh_spec (r : receiver.Receiver N M K) (h : packet.Audio) (m : prese
 /-- Taking in a packet of the followed timeline. The timeline has been heard
 now. If the packet shows that the playhead is wrong, the receiver starts anew
 at it and holds the packet's frames from an empty stretch; otherwise the
-packet's frames arrive at the stretch (slid forward during warmup if needed). -/
+packet's frames arrive at the stretch, moved forward to them first if the
+sender's clock is not known yet. -/
 @[step]
 theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64)
     (adopted : Bool) :
@@ -777,9 +779,9 @@ theorem wrong_stream_packet_noop (r : receiver.Receiver N M K) (h : packet.Audio
   obtain ⟨ha, hi, heq⟩ := hwrong hdiff
   exact ⟨hi, ha, heq⟩
 
-/-- A single stray packet of another timeline while following a timeline with
-no pending candidate is ignored and cannot hijack the timeline or playhead;
-it only records the candidate for confirmation. -/
+/-- One stray packet of another timeline, while a timeline is followed and no
+other is waiting, is left out: the timeline, the playhead and the held frames
+stay. Its timeline is only remembered, for a second packet to confirm. -/
 theorem single_stray_timeline_noop (r : receiver.Receiver N M K) (h : packet.Audio)
     (t : Std.I64) (hstream : h.stream = r.stream) (hf : r.following = true)
     (hnc : r.has_candidate = false) (hdiff : h.timeline ≠ r.timeline) :

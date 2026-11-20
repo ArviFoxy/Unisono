@@ -506,10 +506,9 @@ fn tone_header(index: u64, rate: u32) -> unisono_core::packet::Audio {
     }
 }
 
-/// Stopping abruptly into idle cycles (`plan.frames == 0`) fades out smoothly
-/// through the concealment instead of hard-cutting to zero, reaches exact
-/// silence, and resumes from silence without any ghost continuation of the
-/// previous signal.
+/// Cycles with nothing to play (`plan.frames == 0`) after a tone fade the tone
+/// out through the concealment instead of cutting it, reach exact silence,
+/// and when playing starts again, nothing of the tone before comes back.
 #[test]
 fn idle_cycles_fade_out_without_click_and_resume_cleanly() {
     use unisono_core::packet::Format;
@@ -602,8 +601,8 @@ fn idle_cycles_fade_out_without_click_and_resume_cleanly() {
         "expected exact silence after fade-out completes"
     );
 
-    // Resuming on a zero-valued segment must stay silent (no ghost continuation
-    // from the tone played before the idle period).
+    // Playing starts again on frames of silence; the output must be silent,
+    // with nothing of the tone played before the cycles without frames.
     let zero_payload = vec![0u8; 240 * CHANNELS * 3];
     for p in 15..18u64 {
         let index = p * 240;
@@ -620,10 +619,10 @@ fn idle_cycles_fade_out_without_click_and_resume_cleanly() {
         jumped: true,
     };
     pump.play(&mut receiver, &store, &resume, &mut buf);
-    let max_ghost = buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+    let loudest = buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
     assert!(
-        max_ghost < 1e-6,
-        "ghost continuation after idle silence: max={max_ghost}"
+        loudest < 1e-6,
+        "the tone came back after the silence: {loudest}"
     );
 }
 
