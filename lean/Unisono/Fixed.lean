@@ -130,6 +130,50 @@ theorem div_floor_spec (a : Std.I128) (b : Std.I64) :
         rw [hfloor, hqv]
         simp only [hrpos, ↓reduceIte]
 
+/-- `div_floor_wide` divides by a positive 128-bit number rounding toward
+negative infinity, and gives zero for a divisor that is not positive. -/
+@[step]
+theorem div_floor_wide_spec (a b : Std.I128) :
+    fixed.div_floor_wide a b ⦃ r => (0 < b.val → r.val = a.val / b.val) ∧ (b.val ≤ 0 → r.val = 0) ⦄ := by
+  unfold fixed.div_floor_wide
+  split
+  · simp
+    scalar_tac
+  · have hb : 0 < b.val := by scalar_tac
+    have hq := I128.checked_div_bv_spec a b
+    have hr := I128.checked_rem_bv_spec a b
+    simp only [lift, I128.checked_div_eq, I128.checked_rem_eq]
+    cases hq' : core.num.checked_div_IScalar a b <;>
+      cases hr' : core.num.checked_rem_IScalar a b <;>
+      simp only [hq', hr'] at hq hr ⊢ <;> simp only [bind_ok]
+    · omega
+    · rcases hq with h | ⟨_, h⟩ <;> omega
+    · omega
+    · rename_i q r
+      obtain ⟨-, -, hqv, -⟩ := hq
+      obtain ⟨-, hrv, -⟩ := hr
+      have hfloor := ediv_of_tdiv a.val b.val hb
+      split
+      · have hrneg : a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
+        have hroom : -2^127 < q.val := by
+          have ha : -2^127 ≤ a.val := by scalar_tac
+          have hsum := Int.mul_tdiv_add_tmod a.val b.val
+          rw [hqv]
+          by_contra hcon
+          have : b.val * a.val.tdiv b.val ≤ a.val.tdiv b.val := by nlinarith
+          omega
+        have h1 : (1#i128).val = 1 := by rfl
+        have hv := I128.wrapping_sub_val q 1#i128 (by rw [h1]; scalar_tac)
+        simp only [WP.spec_ok]
+        refine ⟨fun _ => ?_, fun h => by omega⟩
+        rw [hv, h1, hfloor, hqv]
+        simp only [hrneg, ↓reduceIte]
+      · have hrpos : ¬ a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
+        simp only [WP.spec_ok]
+        refine ⟨fun _ => ?_, fun h => by omega⟩
+        rw [hfloor, hqv]
+        simp only [hrpos, ↓reduceIte]
+
 theorem roundShift_zero (x : ℤ) : roundShift x 0 = x := by
   rw [roundShift_eq_ediv]
   omega

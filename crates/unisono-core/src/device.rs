@@ -98,14 +98,14 @@ impl<const W: usize> Device<W> {
 
     /// The number of reports this device keeps at most: `W`, capped at
     /// [`MAX_KEPT`] so that the sums never wrap.
-    fn capacity(&self) -> usize {
+    fn capacity() -> usize {
         if W > MAX_KEPT { MAX_KEPT } else { W }
     }
 
     /// The number of reports the line is fitted to.
     #[must_use]
     pub fn kept(&self) -> usize {
-        let cap = self.capacity();
+        let cap = Self::capacity();
         if self.len > cap { cap } else { self.len }
     }
 
@@ -119,7 +119,7 @@ impl<const W: usize> Device<W> {
 
     /// The newest report, if there is one.
     fn newest(&self) -> Option<Reading> {
-        let cap = self.capacity();
+        let cap = Self::capacity();
         if self.len == 0 || cap == 0 {
             return None;
         }
@@ -162,7 +162,7 @@ impl<const W: usize> Device<W> {
     /// Takes in a report. When it shows that the device started anew, what
     /// was known is dropped first.
     pub fn observe(&mut self, position: u64, time: i64) {
-        let cap = self.capacity();
+        let cap = Self::capacity();
         if self.restarted(position, time) {
             self.len = 0;
             self.next = 0;

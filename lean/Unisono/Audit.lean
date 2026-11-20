@@ -318,3 +318,19 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Fixed.div_floor_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Fixed.div_floor_spec
+
+/-- info: 'Unisono.Fixed.div_floor_wide_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.div_floor_wide_spec
+
+/-- info: 'Unisono.Device.observe_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.observe_spec
+
+/-- info: 'Unisono.Device.when_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.when_spec
+
+/-- info: 'Unisono.Device.beyondZ_eq_floor_lineFit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.beyondZ_eq_floor_lineFit

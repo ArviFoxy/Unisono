@@ -98,6 +98,11 @@ theorem U32.hcast_I128_val (x : U32) : (UScalar.hcast .I128 x).val = x.val := by
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp
   scalar_tac
 
+theorem U64.hcast_I128_val (x : U64) : (UScalar.hcast .I128 x).val = x.val := by
+  simp only [UScalar.hcast_val_eq]
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp
+  scalar_tac
+
 theorem U32.hcast_I64_val (x : U32) : (UScalar.hcast .I64 x).val = x.val := by
   simp only [UScalar.hcast_val_eq]
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp

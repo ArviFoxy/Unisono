@@ -340,13 +340,25 @@ estimates a constant, which a longer memory than that of the clocks would
 serve better. *That is not built.* A path that is slower one way shifts the
 receiver by half the difference, as section 2.5 says, and a test shows it.
 
-**Devices.** The reports of a device have errors of either sign, so its line is
-fitted by least squares with weights that fall with age.
-*Lean:* `Unisono.Model.LineFit.cost_le` (the line computed from the weighted
-sums has the smallest weighted sum of squared residuals), `moment_shift`,
-`moment_scale`, `moment_insert` (the sums can be kept as samples come and age),
-`error_bound` (a bound for errors that are bounded; it does not shrink as more
-samples are averaged, which a bound for random errors would).
+**Devices.** Device reports carry two-sided timing error, so a device's line is
+fitted by least squares. The core (`unisono_core::device::Device<W>`) fits an
+unweighted least-squares line over the last `min(W, 4096)` reports using exact
+128-bit integer sums relative to the newest report and the nominal rate; a
+report resets the history only when the frame counter goes back, jumps beyond
+$2^{28}$ frames, or deviates from the nominal prediction by more than 100 ms,
+so ordinary timestamp jitter never discards the window.
+
+*Lean:*
+- `Unisono.Model.LineFit`: `cost_le` (the line from the weighted sums minimizes
+  weighted squared residuals), `moment_shift`, `moment_scale`, `moment_insert`
+  (incremental sum maintenance), `error_bound` (deterministic worst-case bound
+  from bounded errors).
+- `Unisono.Device`: `observe_spec` (always terminates and keeps state within
+  capacity), `when_spec` (for any window size `W`, no 128-bit intermediate
+  arithmetic wraps), and `beyondZ_eq_floor_lineFit` (whenever the kept reports
+  span at least two distinct positions, `Device::when` adds the exact integer
+  floor of the least-squares optimal residual line from `Unisono.Model.LineFit`
+  to the nominal prediction).
 
 ### 6.4 The regulator
 

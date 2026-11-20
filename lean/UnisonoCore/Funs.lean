@@ -322,8 +322,7 @@ def device.Device.new
 
 /-- [unisono_core::device::{unisono_core::device::Device<W>}::capacity]:
     Source: 'crates/unisono-core/src/device.rs', lines 101:4-103:5 -/
-def device.Device.capacity
-  {W : Std.Usize} (self : device.Device W) : Result Std.Usize := do
+def device.Device.capacity (W : Std.Usize) : Result Std.Usize := do
   if W > device.MAX_KEPT
   then ok device.MAX_KEPT
   else ok W
@@ -333,7 +332,7 @@ def device.Device.capacity
     Visibility: public -/
 def device.Device.kept
   {W : Std.Usize} (self : device.Device W) : Result Std.Usize := do
-  let cap ← device.Device.capacity self
+  let cap ← device.Device.capacity W
   if self.len > cap
   then ok cap
   else ok self.len
@@ -358,7 +357,7 @@ def device.Device.newest
   {W : Std.Usize} (self : device.Device W) :
   Result (Option device.Reading)
   := do
-  let cap ← device.Device.capacity self
+  let cap ← device.Device.capacity W
   if self.len = 0#usize
   then ok none
   else
@@ -443,7 +442,7 @@ def device.Device.observe
   (time : Std.I64) :
   Result (device.Device W)
   := do
-  let cap ← device.Device.capacity self
+  let cap ← device.Device.capacity W
   let b ← device.Device.restarted self position time
   let self1 ←
     if b

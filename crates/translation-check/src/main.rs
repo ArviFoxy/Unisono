@@ -95,9 +95,30 @@ fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
     let divisors = [1, 2, 3, 7, 1 << 32, i64::MAX, 0, -1, i64::MIN];
     let mut dividends = vec![i128::MAX, i128::MIN, i128::MIN + 1];
     dividends.extend(boundary_values().into_iter().map(i128::from));
-    for a in dividends {
+    for &a in &dividends {
         for b in divisors {
             writeln!(out, "div_floor {a} {b} -> {}", fixed::div_floor(a, b))?;
+        }
+    }
+    let wide_divisors = [
+        1i128,
+        2,
+        3,
+        7,
+        1 << 64,
+        1 << 100,
+        i128::MAX,
+        0,
+        -1,
+        i128::MIN,
+    ];
+    for &a in &dividends {
+        for b in wide_divisors {
+            writeln!(
+                out,
+                "div_floor_wide {a} {b} -> {}",
+                fixed::div_floor_wide(a, b)
+            )?;
         }
     }
     Ok(())
@@ -887,6 +908,13 @@ fn device_cases(out: &mut impl Write) -> io::Result<()> {
                     time = sequence.signed();
                 }
                 1 => position = position.saturating_sub(sequence.next() % 1_000),
+                2 => {
+                    // Backwards timestamp jitter within the restart threshold.
+                    let frames = 1 + sequence.next() % 256;
+                    position = position.saturating_add(frames);
+                    let jitter = i64::try_from(sequence.next() % 2_000_000).unwrap_or(0);
+                    time = time.saturating_sub(jitter);
+                }
                 _ => {
                     let frames = 1 + sequence.next() % 2_048;
                     position = position.saturating_add(frames);

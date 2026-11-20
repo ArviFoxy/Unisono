@@ -328,6 +328,8 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       (fun r => [r.val])
   | "div_floor", [a, b] =>
     result (fixed.div_floor (signed .I128 a) (signed .I64 b)) (fun r => [r.val])
+  | "div_floor_wide", [a, b] =>
+    result (fixed.div_floor_wide (signed .I128 a) (signed .I128 b)) (fun r => [r.val])
   | "relation", span :: limit :: count :: rest =>
     match triples rest with
     | some packets =>
