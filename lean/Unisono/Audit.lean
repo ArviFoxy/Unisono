@@ -12,6 +12,7 @@ public import Unisono.Packet
 public import Unisono.Presence
 public import Unisono.Receiver
 public import Unisono.Relation
+public import Unisono.Sender
 
 /-!
 # The axioms the theorems rest on
@@ -181,3 +182,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Receiver.new_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Receiver.new_spec
+
+/-- info: 'Unisono.Sender.packet_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.packet_spec
+
+/-- info: 'Unisono.Sender.departed_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.departed_spec
+
+/-- info: 'Unisono.Sender.restart_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sender.restart_spec

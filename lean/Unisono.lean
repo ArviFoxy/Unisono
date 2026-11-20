@@ -10,3 +10,4 @@ public import Unisono.Packet
 public import Unisono.Presence
 public import Unisono.Receiver
 public import Unisono.Relation
+public import Unisono.Sender

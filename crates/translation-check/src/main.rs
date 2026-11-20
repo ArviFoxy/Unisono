@@ -13,7 +13,7 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{fixed, packet, presence, relation};
+use unisono_core::{fixed, packet, presence, receiver, relation, sender};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -341,6 +341,199 @@ fn presence_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// The header that the receiver cases use: the numbers that vary, and the
+/// rest fixed.
+fn stream_header(
+    timeline: u64,
+    index: u64,
+    frames: u16,
+    flags: u16,
+    stamped_index: u64,
+    stamped_departure: i64,
+) -> packet::Audio {
+    packet::Audio {
+        stream: 1,
+        timeline,
+        index,
+        capture: 0,
+        drift: 0,
+        rate: 48_000,
+        frames,
+        channels: 2,
+        format: packet::Format::Signed16,
+        level: 0,
+        level_slope: 0,
+        span: 20,
+        window: 50,
+        flags,
+        protection: 0,
+        stamped_index,
+        stamped_departure,
+    }
+}
+
+/// Runs of operations on a receiver that holds 128 frames, remembers four
+/// samples of the sender's clock and keeps two arrivals. Each operation is
+/// eight numbers. 0, a timeline, an index, a number of frames, flags, a
+/// stamped index, a stamped departure and an arrival time: a packet, whose
+/// results are whether it was ignored, whether its timeline was taken up,
+/// and the four counts of its frames. 1 and a limit: a run of frames is
+/// taken, and the results are its first index, its length and whether it is
+/// held. 2 and an index: a skip, whose result is the number of frames
+/// skipped. After every operation the followed timeline, or -1, and the
+/// playhead follow. At the end come the line of the clock estimate, or
+/// zeros, and the index of the schedule, or -1.
+fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(5);
+    for _ in 0..200 {
+        let silence = 1_000 + sequence.next() % 5_000;
+        let mut receiver =
+            receiver::Receiver::<2, 4, 2>::new(i64::try_from(silence).unwrap_or(0), 200_000);
+        let operations = 1 + sequence.next() % 40;
+        let mut results: Vec<i128> = Vec::new();
+        write!(out, "receiver {silence} {operations}")?;
+        let mut now = 0i64;
+        let mut near = sequence.next() % 1_000;
+        // Most packets are of one timeline and carry the departure of one of
+        // the two packets before, so that the estimate of the clock gets
+        // samples.
+        let mut timeline = 2u64;
+        let mut recent = [0u64; 2];
+        for _ in 0..operations {
+            match sequence.next() % 5 {
+                0 => {
+                    let limit = u32::try_from(sequence.next() % 40).unwrap_or(0);
+                    let segment = receiver.take(limit);
+                    write!(out, " 1 {limit} 0 0 0 0 0 0")?;
+                    results.extend([
+                        i128::from(segment.first),
+                        i128::from(segment.frames),
+                        i128::from(segment.held),
+                    ]);
+                }
+                1 => {
+                    let to = (near + sequence.next() % 60).saturating_sub(20);
+                    write!(out, " 2 {to} 0 0 0 0 0 0")?;
+                    results.push(i128::from(receiver.skip(to)));
+                }
+                _ => {
+                    now += i64::try_from(sequence.next() % 2_500).unwrap_or(0) - 100;
+                    if sequence.next().is_multiple_of(12) {
+                        timeline = 1 + sequence.next() % 3;
+                    }
+                    let index = (near + sequence.next() % 200).saturating_sub(40) / 10 * 10;
+                    let frames = u16::try_from(sequence.next() % 25).unwrap_or(0);
+                    let flags = u16::try_from(sequence.next() % 4).unwrap_or(0);
+                    let stamped_index = if sequence.next().is_multiple_of(2) {
+                        recent[0]
+                    } else {
+                        recent[1]
+                    };
+                    recent = [recent[1], index];
+                    let stamped_departure = now - i64::try_from(sequence.next() % 300).unwrap_or(0);
+                    let header = stream_header(
+                        timeline,
+                        index,
+                        frames,
+                        flags,
+                        stamped_index,
+                        stamped_departure,
+                    );
+                    let heard = receiver.packet(&header, now);
+                    write!(
+                        out,
+                        " 0 {timeline} {index} {frames} {flags} {stamped_index} {stamped_departure} {now}"
+                    )?;
+                    results.extend([
+                        i128::from(heard.ignored),
+                        i128::from(heard.adopted),
+                        i128::from(heard.marked.stored),
+                        i128::from(heard.marked.duplicate),
+                        i128::from(heard.marked.late),
+                        i128::from(heard.marked.early),
+                    ]);
+                }
+            }
+            near = near.max(receiver.playhead());
+            results.push(receiver.timeline().map_or(-1, i128::from));
+            results.push(i128::from(receiver.playhead()));
+        }
+        let line = receiver
+            .clock()
+            .map_or([0; 4], |line| [line.time, line.value, line.rise, line.run]);
+        results.extend(line.map(i128::from));
+        results.push(
+            receiver
+                .schedule()
+                .map_or(-1, |schedule| i128::from(schedule.index)),
+        );
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
+/// Runs of operations on a sender. Each operation is four numbers. 0, a
+/// number of frames, a capture time and a drift: the header of the next
+/// packet, of which the index, the flags, the stamped index and the stamped
+/// departure are the results. 1, a timeline, an index and a departure: a
+/// departure is taken in. 2 and a timeline: a restart. After every operation
+/// the timeline and the index of the next frame follow.
+fn sender_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(6);
+    for _ in 0..200 {
+        let settings = sender::Settings {
+            stream: 1,
+            rate: 48_000,
+            channels: 2,
+            format: packet::Format::Signed16,
+            span: 20,
+            window: 50,
+        };
+        let first = sequence.next() % 4;
+        let mut sender = sender::Sender::new(settings, first, 0);
+        let operations = 1 + sequence.next() % 30;
+        let mut results: Vec<i128> = Vec::new();
+        write!(out, "sender {first} {operations}")?;
+        for _ in 0..operations {
+            match sequence.next() % 6 {
+                0 => {
+                    let timeline = sequence.next() % 8;
+                    write!(out, " 2 {timeline} 0 0")?;
+                    sender.restart(timeline);
+                }
+                1 | 2 => {
+                    let timeline = sender.timeline().saturating_sub(sequence.next() % 2);
+                    let index = sequence.next() % (sender.next() + 30);
+                    let departure = sequence.signed();
+                    write!(out, " 1 {timeline} {index} {departure}")?;
+                    sender.departed(timeline, index, departure);
+                }
+                _ => {
+                    let frames = u16::try_from(sequence.next() % 300).unwrap_or(0);
+                    let capture = sequence.signed();
+                    // The cast keeps the low bits of a random number.
+                    #[allow(clippy::cast_possible_truncation)]
+                    let drift = sequence.signed() as i32;
+                    write!(out, " 0 {frames} {capture} {drift}")?;
+                    let header = sender.packet(frames, capture, drift);
+                    results.extend([
+                        i128::from(header.index),
+                        i128::from(header.flags),
+                        i128::from(header.stamped_index),
+                        i128::from(header.stamped_departure),
+                        i128::from(header.capture),
+                        i128::from(header.drift),
+                    ]);
+                }
+            }
+            results.push(i128::from(sender.timeline()));
+            results.push(i128::from(sender.next()));
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -349,5 +542,7 @@ fn main() -> io::Result<()> {
     relation_cases(&mut out)?;
     packet_cases(&mut out)?;
     presence_cases(&mut out)?;
+    receiver_cases(&mut out)?;
+    sender_cases(&mut out)?;
     out.flush()
 }

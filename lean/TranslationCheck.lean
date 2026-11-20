@@ -129,6 +129,98 @@ def runPresence (operations : List (Int × Int × Int)) : Result (List Int) := d
   let final ← operations.foldlM presenceStep (start, [])
   pure final.2
 
+/-- Groups a flat list into groups of `n`; `none` if its length is not a
+multiple of `n`. -/
+def groups (n : Nat) (values : List Int) : Option (List (List Int)) :=
+  if n = 0 ∨ values.length % n ≠ 0 then none
+  else some ((List.range (values.length / n)).map (fun k => (values.drop (k * n)).take n))
+
+/-- The header that the receiver cases use; see `stream_header` in the Rust
+program. -/
+def streamHeader (timeline index frames flags stampedIndex stampedDeparture : Int) :
+    packet.Audio :=
+  { stream := 1#u16, timeline := unsigned .U64 timeline, index := unsigned .U64 index,
+    capture := 0#i64, drift := 0#i32, rate := 48000#u32, frames := unsigned .U16 frames,
+    channels := 2#u8, format := .Signed16, level := 0#i64, level_slope := 0#i32,
+    span := 20#u32, window := 50#u32, flags := unsigned .U16 flags, protection := 0#u16,
+    stamped_index := unsigned .U64 stampedIndex,
+    stamped_departure := signed .I64 stampedDeparture }
+
+abbrev CheckedReceiver := receiver.Receiver 2#usize 4#usize 2#usize
+
+/-- A truth value as a number. -/
+def bit (b : Bool) : Int := if b then 1 else 0
+
+/-- Applies one operation of eight numbers to a receiver and collects its
+results; see `receiver_cases` in the Rust program. -/
+def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
+    Result (CheckedReceiver × List Int) := do
+  let r := state.1
+  let (r1, results) ← (match operation with
+    | [0, timeline, index, frames, flags, stampedIndex, stampedDeparture, arrival] => do
+      let out ← receiver.Receiver.packet r
+        (streamHeader timeline index frames flags stampedIndex stampedDeparture)
+        (signed .I64 arrival)
+      pure (out.2, ([bit out.1.ignored, bit out.1.adopted, out.1.marked.stored.val,
+        out.1.marked.duplicate.val, out.1.marked.late.val, out.1.marked.early.val] : List Int))
+    | [1, limit, _, _, _, _, _, _] => do
+      let out ← receiver.Receiver.take r (unsigned .U32 limit)
+      pure (out.2, ([out.1.first.val, out.1.frames.val, bit out.1.held] : List Int))
+    | [2, target, _, _, _, _, _, _] => do
+      let out ← receiver.Receiver.skip r (unsigned .U64 target)
+      pure (out.2, ([out.1.val] : List Int))
+    | _ => pure (r, [-2]) : Result (CheckedReceiver × List Int))
+  let timeline ← receiver.Receiver.impl.timeline r1
+  let playhead ← receiver.Receiver.playhead r1
+  let followed : Int := match timeline with
+    | some t => t.val
+    | none => -1
+  pure (r1, state.2 ++ results ++ [followed, playhead.val])
+
+def runReceiver (silence : Int) (operations : List (List Int)) : Result (List Int) := do
+  let start ← receiver.Receiver.new 2#usize 4#usize 2#usize (signed .I64 silence) 200000#i64
+  let final ← operations.foldlM receiverStep (start, [])
+  let line ← receiver.Receiver.impl.clock final.1
+  let schedule ← receiver.Receiver.impl.schedule final.1
+  let lineNumbers : List Int := match line with
+    | some l => [l.time.val, l.value.val, l.rise.val, l.run.val]
+    | none => [0, 0, 0, 0]
+  let scheduled : Int := match schedule with
+    | some s => s.index.val
+    | none => -1
+  pure (final.2 ++ lineNumbers ++ [scheduled])
+
+/-- Applies one operation of four numbers to a sender and collects its
+results; see `sender_cases` in the Rust program. -/
+def senderStep (state : sender.Sender × List Int) (operation : List Int) :
+    Result (sender.Sender × List Int) := do
+  let s := state.1
+  let (s1, results) ← (match operation with
+    | [0, frames, capture, drift] => do
+      let out ← sender.Sender.packet s (unsigned .U16 frames) (signed .I64 capture)
+        (signed .I32 drift)
+      pure (out.2, ([out.1.index.val, out.1.flags.val, out.1.stamped_index.val,
+        out.1.stamped_departure.val, out.1.capture.val, out.1.drift.val] : List Int))
+    | [1, timeline, index, departure] => do
+      let s1 ← sender.Sender.departed s (unsigned .U64 timeline) (unsigned .U64 index)
+        (signed .I64 departure)
+      pure (s1, [])
+    | [2, timeline, _, _] => do
+      let s1 ← sender.Sender.restart s (unsigned .U64 timeline)
+      pure (s1, [])
+    | _ => pure (s, [-2]) : Result (sender.Sender × List Int))
+  let timeline ← sender.Sender.impl.timeline s1
+  let next ← sender.Sender.impl.next s1
+  pure (s1, state.2 ++ results ++ ([timeline.val, next.val] : List Int))
+
+def runSender (first : Int) (operations : List (List Int)) : Result (List Int) := do
+  let settings : sender.Settings :=
+    { stream := 1#u16, rate := 48000#u32, channels := 2#u8, format := .Signed16,
+      span := 20#u32, window := 50#u32 }
+  let start ← sender.Sender.new settings (unsigned .U64 first) 0#i64
+  let final ← operations.foldlM senderStep (start, [])
+  pure final.2
+
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
@@ -150,6 +242,18 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       if operations.length = count then result (runPresence operations) id
       else .error "the number of operations is not the stated one"
     | none => .error "operations are not triples"
+  | "receiver", silence :: count :: rest =>
+    match groups 8 rest with
+    | some operations =>
+      if operations.length = count then result (runReceiver silence operations) id
+      else .error "the number of operations is not the stated one"
+    | none => .error "operations are not groups of eight"
+  | "sender", first :: count :: rest =>
+    match groups 4 rest with
+    | some operations =>
+      if operations.length = count then result (runSender first operations) id
+      else .error "the number of operations is not the stated one"
+    | none => .error "operations are not groups of four"
   | "parse_audio", bytes => result (runParse bytes) id
   | "write_audio", fields => result (runWrite fields) id
   | _, _ => .error s!"no function {function} with {args.length} arguments"
