@@ -32,8 +32,14 @@
 // A cast written with `as` translates to Lean directly; `From` and `TryFrom`
 // between integer types do not. Neither do `Option::copied`, a closure that
 // returns a reference, and `?` on an `Option`, so an `Option` is taken apart
-// with `match` or `let ... else`.
-#![allow(clippy::cast_lossless, clippy::manual_map, clippy::question_mark)]
+// with `match` or `let ... else`. `clamp` panics when its bounds are out of
+// order, so a value is limited with two comparisons.
+#![allow(
+    clippy::cast_lossless,
+    clippy::manual_clamp,
+    clippy::manual_map,
+    clippy::question_mark
+)]
 
 #[cfg(test)]
 extern crate std;
@@ -41,7 +47,9 @@ extern crate std;
 pub mod arrivals;
 pub mod fixed;
 pub mod packet;
+pub mod player;
 pub mod presence;
 pub mod receiver;
 pub mod relation;
 pub mod sender;
+pub mod timing;

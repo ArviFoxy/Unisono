@@ -7,6 +7,7 @@ module
 public import UnisonoCore
 public import Unisono.Scalar
 public import Unisono.Arrivals
+public import Unisono.Player
 public import Unisono.Presence
 public import Unisono.Relation
 
@@ -31,21 +32,24 @@ open Unisono.Presence
 variable {N M K : Std.Usize}
 
 /-- Two states of a receiver agree in the timeline they follow, in when they
-last heard it, in their settings and in the frames they hold. They may differ
-in the estimate of the sender's clock, in the arrivals they keep and in the
-schedule. -/
+last heard it and last had a frame that was not behind the playhead, in their
+settings and in the frames they hold. They may differ in the estimate of the
+sender's clock, in the arrivals they keep, in the schedule and in the
+regulator. -/
 def SameStream (a b : receiver.Receiver N M K) : Prop :=
   a.following = b.following ∧ a.timeline = b.timeline ∧ a.heard = b.heard
-  ∧ a.silence = b.silence ∧ a.limit = b.limit ∧ a.presence = b.presence
+  ∧ a.fresh = b.fresh ∧ a.silence = b.silence ∧ a.limit = b.limit
+  ∧ a.presence = b.presence
 
 theorem SameStream.refl (a : receiver.Receiver N M K) : SameStream a a :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 theorem SameStream.trans {a b c : receiver.Receiver N M K} (h1 : SameStream a b)
     (h2 : SameStream b c) : SameStream a c := by
-  obtain ⟨a1, a2, a3, a4, a5, a6⟩ := h1
-  obtain ⟨b1, b2, b3, b4, b5, b6⟩ := h2
-  exact ⟨a1.trans b1, a2.trans b2, a3.trans b3, a4.trans b4, a5.trans b5, a6.trans b6⟩
+  obtain ⟨a1, a2, a3, a4, a5, a6, a7⟩ := h1
+  obtain ⟨b1, b2, b3, b4, b5, b6, b7⟩ := h2
+  exact ⟨a1.trans b1, a2.trans b2, a3.trans b3, a4.trans b4, a5.trans b5, a6.trans b6,
+    a7.trans b7⟩
 
 /-! ## What a packet says about the sender's clock -/
 
@@ -109,9 +113,9 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
     simp only
     step as ⟨r1, hsame, harr, hsched⟩
     step as ⟨a⟩
-    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hsame
+    obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := hsame
     simp only [SameStream]
-    exact ⟨⟨h1, h2, h3, h4, h5, h6⟩, hsched⟩
+    exact ⟨⟨h1, h2, h3, h4, h5, h6, h7⟩, hsched⟩
 
 /-- Keeping what a packet says about when frames are due changes the schedule
 and nothing else. -/
@@ -119,11 +123,7 @@ and nothing else. -/
 theorem note_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.note r h ⦃ r' => SameStream r' r ⦄ := by
   unfold receiver.Receiver.note
-  cases r.schedule with
-  | none => simp [SameStream]
-  | some s =>
-    simp only [bind_ok, Std.uncurry]
-    split <;> simp [SameStream]
+  simp [SameStream]
 
 /-! ## Which timeline is followed -/
 
@@ -195,17 +195,164 @@ nothing, and has its playhead at the packet's first frame. -/
 theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.adopt r h ⦃ r' =>
       r'.following = true ∧ r'.timeline = h.timeline ∧ r'.heard = r.heard
-      ∧ r'.silence = r.silence ∧ r'.limit = r.limit
+      ∧ r'.fresh = r.fresh ∧ r'.silence = r.silence ∧ r'.limit = r.limit
       ∧ r'.presence.base = h.index ∧ ∀ j, ¬ Held r'.presence j ⦄ := by
   unfold receiver.Receiver.adopt
   step as ⟨p, hpb, hph⟩
   step as ⟨i⟩
   step as ⟨e⟩
   step as ⟨a⟩
+  step with Unisono.Player.stop_total as ⟨p1⟩
   exact ⟨hpb, hph⟩
 
-/-- Taking in a packet of the followed timeline: its frames arrive, and the
-time at which the timeline was last heard is now. -/
+/-! ## A playhead that is ahead of everything that arrives -/
+
+/-- The time at which a receiver last had a frame at or ahead of its playhead,
+put right against the clock: it is not later than now. -/
+def freshBy (r : receiver.Receiver N M K) (t : Std.I64) : Std.I64 :=
+  if r.fresh > t then t else r.fresh
+
+/-- Every frame of a packet was behind the playhead, and it had a frame. -/
+def OnlyLate (m : presence.Marked) : Prop :=
+  m.late.val ≠ 0 ∧ m.stored.val = 0 ∧ m.duplicate.val = 0 ∧ m.early.val = 0
+
+instance (m : presence.Marked) : Decidable (OnlyLate m) := by
+  unfold OnlyLate; infer_instance
+
+/-- Every frame of the packet of `d` frames from index `first` on lies before
+the stretch, and it has a frame. -/
+def AllLate (p : presence.Presence N) (first d : ℕ) : Prop :=
+  countOf p first d presence.Outcome.Late ≠ 0
+  ∧ countOf p first d presence.Outcome.Stored = 0
+  ∧ countOf p first d presence.Outcome.Duplicate = 0
+  ∧ countOf p first d presence.Outcome.Early = 0
+
+instance (p : presence.Presence N) (first d : ℕ) : Decidable (AllLate p first d) := by
+  unfold AllLate; infer_instance
+
+theorem onlyLate_iff {p s : presence.Presence N} {first d : ℕ} {m : presence.Marked}
+    (h : Arrived p first d s m) : OnlyLate m ↔ AllLate p first d := by
+  obtain ⟨-, -, h1, h2, h3, h4⟩ := h
+  unfold OnlyLate AllLate
+  rw [h1, h2, h3, h4]
+
+/-- The packet shows that the playhead is wrong: all its frames are behind
+the playhead, and no packet has had a frame at or ahead of it for the set
+time. The receiver then starts anew at this packet. -/
+def Restarts (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64) : Prop :=
+  AllLate r.presence h.index.val h.frames.val
+  ∧ r.silence.val ≤ (core.num.I64.saturating_sub t (freshBy r t)).val
+
+instance (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64) :
+    Decidable (Restarts r h t) := by
+  unfold Restarts; infer_instance
+
+@[step]
+theorem stale_spec (r : receiver.Receiver N M K) (m : presence.Marked) (t : Std.I64) :
+    receiver.Receiver.stale r m t ⦃ out =>
+      out.1 = decide (OnlyLate m
+        ∧ r.silence.val ≤ (core.num.I64.saturating_sub t (freshBy r t)).val)
+      ∧ out.2.following = r.following ∧ out.2.timeline = r.timeline
+      ∧ out.2.heard = r.heard ∧ out.2.fresh = freshBy r t ∧ out.2.silence = r.silence
+      ∧ out.2.limit = r.limit ∧ out.2.presence = r.presence
+      ∧ out.2.player = r.player ⦄ := by
+  unfold receiver.Receiver.stale
+  have hfresh : (if r.fresh > t then ok t else ok r.fresh) = ok (freshBy r t) := by
+    unfold freshBy
+    split <;> rfl
+  rw [hfresh]
+  simp only [bind_ok]
+  split
+  · rename_i h0
+    have : m.late.val = 0 := by scalar_tac
+    simp [OnlyLate, this]
+  · rename_i h0
+    have hl : m.late.val ≠ 0 := by scalar_tac
+    split
+    · rename_i h1
+      have : m.stored.val ≠ 0 := by scalar_tac
+      simp [OnlyLate, this]
+    · rename_i h1
+      have hs : m.stored.val = 0 := by scalar_tac
+      split
+      · rename_i h2
+        have : m.duplicate.val ≠ 0 := by scalar_tac
+        simp [OnlyLate, this]
+      · rename_i h2
+        have hd : m.duplicate.val = 0 := by scalar_tac
+        split
+        · rename_i h3
+          have : m.early.val ≠ 0 := by scalar_tac
+          simp [OnlyLate, this]
+        · rename_i h3
+          have he : m.early.val = 0 := by scalar_tac
+          step as ⟨i, hi⟩
+          have hiff : i ≥ r.silence ↔ (OnlyLate m
+              ∧ r.silence.val ≤ (core.num.I64.saturating_sub t (freshBy r t)).val) := by
+            rw [← hi]
+            constructor
+            · intro hge
+              exact ⟨⟨hl, hs, hd, he⟩, by scalar_tac⟩
+            · rintro ⟨-, hge⟩
+              scalar_tac
+          simp [hiff]
+
+/-- Starting anew at a packet: the playhead is at the packet's first frame and
+nothing but the packet's frames is held. -/
+@[step]
+theorem renew_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
+    receiver.Receiver.renew r h ⦃ out =>
+      out.2.following = r.following ∧ out.2.timeline = r.timeline
+      ∧ out.2.heard = r.heard ∧ out.2.fresh = r.fresh ∧ out.2.silence = r.silence
+      ∧ out.2.limit = r.limit
+      ∧ ∃ p0 : presence.Presence N, p0.base = h.index ∧ (∀ j, ¬ Held p0 j)
+          ∧ Arrived p0 h.index.val h.frames.val out.2.presence out.1 ⦄ := by
+  unfold receiver.Receiver.renew
+  step as ⟨p, hpb, hph⟩
+  step with Unisono.Player.stop_total as ⟨p1⟩
+  step as ⟨i, hi⟩
+  have hiv : i.val = h.frames.val := by rw [hi]; exact U16.cast_U32_val h.frames
+  step as ⟨m, p2, harr⟩
+  rw [hiv] at harr
+  exact ⟨p, hpb, hph, harr⟩
+
+/-- Taking in how a packet's frames were marked: a packet with a frame at or
+ahead of the playhead makes now the time at which such a frame last arrived,
+and any other packet leaves that time as it was. -/
+@[step]
+theorem refresh_spec (r : receiver.Receiver N M K) (h : packet.Audio) (m : presence.Marked)
+    (t : Std.I64) :
+    receiver.Receiver.refresh r h m t ⦃ r' =>
+      r'.following = r.following ∧ r'.timeline = r.timeline ∧ r'.heard = r.heard
+      ∧ r'.silence = r.silence ∧ r'.limit = r.limit ∧ r'.presence = r.presence
+      ∧ (r'.fresh = t ∨ r'.fresh = r.fresh)
+      ∧ (m.stored.val = 0 → m.duplicate.val = 0 → m.early.val = 0 →
+          r'.fresh = r.fresh) ⦄ := by
+  unfold receiver.Receiver.refresh
+  split
+  · rename_i h1
+    have : m.stored.val ≠ 0 := by scalar_tac
+    step as ⟨r1, hs⟩
+    obtain ⟨a1, a2, a3, a4, a5, a6, a7⟩ := hs
+    exact ⟨a1, a2, a3, a5, a6, a7, Or.inl a4, fun h0 => absurd h0 this⟩
+  · split
+    · rename_i h1 h2
+      have : m.duplicate.val ≠ 0 := by scalar_tac
+      step as ⟨r1, hs⟩
+      obtain ⟨a1, a2, a3, a4, a5, a6, a7⟩ := hs
+      exact ⟨a1, a2, a3, a5, a6, a7, Or.inl a4, fun _ h0 => absurd h0 this⟩
+    · split
+      · rename_i h1 h2 h3
+        have : m.early.val ≠ 0 := by scalar_tac
+        simp only [WP.spec_ok]
+        exact ⟨trivial, trivial, trivial, trivial, trivial, trivial, Or.inl trivial,
+          fun _ _ h0 => absurd h0 this⟩
+      · simp
+
+/-- Taking in a packet of the followed timeline. The timeline has been heard
+now. If the packet shows that the playhead is wrong, the receiver starts anew
+at it and holds the packet's frames from an empty stretch; otherwise the
+packet's frames arrive at the stretch as it is. -/
 @[step]
 theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64)
     (adopted : Bool) :
@@ -213,19 +360,55 @@ theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       out.1.ignored = false ∧ out.1.adopted = adopted
       ∧ out.2.following = r.following ∧ out.2.timeline = r.timeline ∧ out.2.heard = t
       ∧ out.2.silence = r.silence ∧ out.2.limit = r.limit
-      ∧ Arrived r.presence h.index.val h.frames.val out.2.presence out.1.marked ⦄ := by
+      ∧ out.1.restarted = decide (Restarts r h t)
+      ∧ (out.1.restarted = false →
+          Arrived r.presence h.index.val h.frames.val out.2.presence out.1.marked)
+      ∧ (out.1.restarted = true →
+          ∃ p0 : presence.Presence N, p0.base = h.index ∧ (∀ j, ¬ Held p0 j)
+            ∧ Arrived p0 h.index.val h.frames.val out.2.presence out.1.marked)
+      ∧ (out.1.restarted = false → OnlyLate out.1.marked →
+          out.2.fresh = freshBy r t) ⦄ := by
   unfold receiver.Receiver.accept
   step as ⟨r1, hs1, hsched1⟩
-  step as ⟨r2, hs2⟩
+  obtain ⟨a1, a2, a3, a4, a5, a6, a7⟩ := hs1
+  simp only at a1 a2 a3 a4 a5 a6 a7
   step as ⟨i, hi⟩
   have hiv : i.val = h.frames.val := by rw [hi]; exact U16.cast_U32_val h.frames
-  step as ⟨marked, p, harr⟩
-  obtain ⟨a1, a2, a3, a4, a5, a6⟩ := hs1
-  obtain ⟨b1, b2, b3, b4, b5, b6⟩ := hs2
-  simp only at a1 a2 a3 a4 a5 a6
-  refine ⟨b1.trans a1, b2.trans a2, b3.trans a3, b4.trans a4, b5.trans a5, ?_⟩
-  rw [b6, a6, hiv] at harr
-  exact harr
+  step as ⟨first, p, harr⟩
+  rw [a7, hiv] at harr
+  step as ⟨restarted, r2, hres, b1, b2, b3, b4, b5, b6, b7, b8⟩
+  have hfb : freshBy { r1 with presence := p } t = freshBy r t := by
+    unfold freshBy
+    simp only [a4]
+  rw [hfb] at hres b4
+  have hrestarts : restarted = decide (Restarts r h t) := by
+    rw [hres]
+    apply decide_eq_decide.mpr
+    unfold Restarts
+    rw [onlyLate_iff harr, a5]
+  cases restarted with
+  | true =>
+    simp only [↓reduceIte]
+    step as ⟨out1, c1, c2, c3, c4, c5, c6, p0, c7, c8, c9⟩
+    obtain ⟨m1, r4⟩ := out1
+    simp only at c1 c2 c3 c4 c5 c6 c9 ⊢
+    step as ⟨r5, d1, d2, d3, d4, d5, d6, d7, d8⟩
+    refine ⟨d1.trans (c1.trans (b1.trans a1)), d2.trans (c2.trans (b2.trans a2)),
+      d3.trans (c3.trans (b3.trans a3)), d4.trans (c5.trans (b5.trans a5)),
+      d5.trans (c6.trans (b6.trans a6)), hrestarts, fun hc => (by cases hc), fun _ => ?_,
+      fun hc => (by cases hc)⟩
+    rw [d6]
+    exact ⟨p0, c7, c8, c9⟩
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, bind_ok]
+    step as ⟨r5, d1, d2, d3, d4, d5, d6, d7, d8⟩
+    refine ⟨d1.trans (b1.trans a1), d2.trans (b2.trans a2), d3.trans (b3.trans a3),
+      d4.trans (b5.trans a5), d5.trans (b6.trans a6), hrestarts, fun _ => ?_,
+      fun hc => (by cases hc), fun _ hlate => ?_⟩
+    · rw [d6, b7]
+      exact harr
+    · obtain ⟨-, l2, l3, l4⟩ := hlate
+      rw [d8 l2 l3 l4, b4]
 
 /-- What a receiver does with a packet, in three cases.
 
@@ -233,7 +416,9 @@ It takes up the packet's timeline: then it follows that timeline, held nothing
 of it before this packet, and has heard it now. Or the packet is of another
 timeline than the followed one and is not taken up: then nothing changes but
 the correction of the time last heard. Or the packet is of the followed
-timeline: then its frames arrive and the timeline has been heard now.
+timeline: then the timeline has been heard now, and the packet's frames
+arrive, at the stretch as it is or, if the packet shows that the playhead is
+wrong, at an empty stretch that starts at the packet.
 
 The settings never change. -/
 theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64) :
@@ -247,11 +432,19 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       ∧ (¬ Adopts r h.timeline t → h.timeline ≠ r.timeline →
           out.1.adopted = false ∧ out.1.ignored = true
           ∧ out.2.following = r.following ∧ out.2.timeline = r.timeline
-          ∧ out.2.heard = heardBy r t ∧ out.2.presence = r.presence)
+          ∧ out.2.heard = heardBy r t ∧ out.2.presence = r.presence
+          ∧ out.2.fresh = r.fresh)
       ∧ (¬ Adopts r h.timeline t → h.timeline = r.timeline →
           out.1.adopted = false ∧ out.1.ignored = false
           ∧ out.2.following = r.following ∧ out.2.timeline = r.timeline ∧ out.2.heard = t
-          ∧ Arrived r.presence h.index.val h.frames.val out.2.presence out.1.marked) ⦄ := by
+          ∧ out.1.restarted = decide (Restarts r h t)
+          ∧ (out.1.restarted = false →
+              Arrived r.presence h.index.val h.frames.val out.2.presence out.1.marked)
+          ∧ (out.1.restarted = true →
+              ∃ p0 : presence.Presence N, p0.base = h.index ∧ (∀ j, ¬ Held p0 j)
+                ∧ Arrived p0 h.index.val h.frames.val out.2.presence out.1.marked)
+          ∧ (out.1.restarted = false → OnlyLate out.1.marked →
+              out.2.fresh = freshBy r t)) ⦄ := by
   unfold receiver.Receiver.packet
   have hheard : (if r.heard > t then ok t else ok r.heard) = ok (heardBy r t) := by
     unfold heardBy
@@ -264,11 +457,14 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
   split
   · rename_i hyes
     have hA : Adopts r h.timeline t := hiff.mp hyes
-    step as ⟨r1, c1, c2, c3, c4, c5, c6, c7⟩
-    step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8⟩
-    refine ⟨d6.trans c4, d7.trans c5, fun _ => ?_, fun hno => absurd hA hno,
+    step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8⟩
+    step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11⟩
+    refine ⟨d6.trans c5, d7.trans c6, fun _ => ?_, fun hno => absurd hA hno,
       fun hno => absurd hA hno⟩
-    exact ⟨d2.trans hyes, d1, d3.trans c1, d4.trans c2, d5, r1.presence, c6, c7, d8⟩
+    refine ⟨d2.trans hyes, d1, d3.trans c1, d4.trans c2, d5, ?_⟩
+    cases hre : out.1.restarted with
+    | false => exact ⟨r1.presence, c7, c8, d9 hre⟩
+    | true => exact d10 hre
   · rename_i hno
     have hA : ¬ Adopts r h.timeline t := fun hc => hno (hiff.mpr hc)
     split
@@ -277,15 +473,15 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       simp only [WP.spec_ok]
       refine ⟨trivial, trivial, fun hc => absurd hc hA, fun _ _ => ?_,
         fun _ heq => absurd heq hne'⟩
-      exact ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
+      exact ⟨trivial, trivial, trivial, trivial, trivial, trivial, trivial⟩
     · rename_i heq
       have heq' : h.timeline = r.timeline := by
         have : ¬ h.timeline ≠ r.timeline := by simpa using heq
         exact not_not.mp this
-      step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8⟩
+      step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11⟩
       have had : adopted = false := by simpa using hno
       refine ⟨d6, d7, fun hc => absurd hc hA, fun _ hne => absurd heq' hne, fun _ _ => ?_⟩
-      exact ⟨d2.trans had, d1, d3, d4, d5, d8⟩
+      exact ⟨d2.trans had, d1, d3, d4, d5, d8, d9, d10, d11⟩
 
 /-! ## Following the packets that arrive, from any state -/
 
@@ -553,12 +749,186 @@ theorem skip_spec (r : receiver.Receiver N M K) (target : Std.U64) :
     rw [hf'] at hc; cases hc
 
 /-- A new receiver follows no timeline. -/
-theorem new_spec (N M K : Std.Usize) (silence limit : Std.I64) :
-    receiver.Receiver.new N M K silence limit ⦃ r =>
+theorem new_spec (N M K : Std.Usize) (silence limit : Std.I64)
+    (regulation : player.Regulation) :
+    receiver.Receiver.new N M K silence limit regulation ⦃ r =>
       r.following = false ∧ r.silence = silence ∧ r.limit = limit ⦄ := by
-  unfold receiver.Receiver.new
+  unfold receiver.Receiver.new player.Player.new
   step with Unisono.Presence.new_spec as ⟨p⟩
   step as ⟨e⟩
   step as ⟨a⟩
+
+/-! ## A receiver cannot stay behind what arrives -/
+
+theorem freshBy_le_now (r : receiver.Receiver N M K) (t : Std.I64) :
+    (freshBy r t).val ≤ t.val := by
+  unfold freshBy
+  split <;> scalar_tac
+
+theorem freshBy_eq (r : receiver.Receiver N M K) (t : Std.I64) (h : r.fresh.val ≤ t.val) :
+    freshBy r t = r.fresh := by
+  unfold freshBy
+  split
+  · scalar_tac
+  · rfl
+
+/-- A packet did nothing for the receiver: every frame of it was behind the
+playhead, and the receiver did not start anew at it. -/
+def Useless (hd : receiver.Heard) : Prop := hd.restarted = false ∧ OnlyLate hd.marked
+
+/-- A packet of the followed timeline is not taken for another one, and if it
+did nothing for the receiver, the set time of silence had not yet passed since
+a frame last arrived at or ahead of the playhead. -/
+theorem followed_packet (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64)
+    (hf : r.following = true) (hX : h.timeline = r.timeline) :
+    receiver.Receiver.packet r h t ⦃ out =>
+      out.2.following = true ∧ out.2.timeline = r.timeline ∧ out.2.silence = r.silence
+      ∧ (Useless out.1 →
+          out.2.fresh = freshBy r t
+          ∧ ¬ r.silence.val ≤ (core.num.I64.saturating_sub t (freshBy r t)).val) ⦄ := by
+  have hA : ¬ Adopts r h.timeline t := by
+    rintro (hc | ⟨hne, -⟩)
+    · rw [hf] at hc; cases hc
+    · exact hne hX
+  apply WP.spec_mono (packet_spec r h t)
+  rintro out ⟨hs, -, -, -, hsame⟩
+  obtain ⟨-, -, f, tl, -, hres, harr, -, hfresh⟩ := hsame hA hX
+  refine ⟨f.trans hf, tl, hs, ?_⟩
+  rintro ⟨hno, hlate⟩
+  refine ⟨hfresh hno hlate, fun hsil => ?_⟩
+  have hall : AllLate r.presence h.index.val h.frames.val :=
+    (onlyLate_iff (harr hno)).mp hlate
+  have hre : Restarts r h t := ⟨hall, hsil⟩
+  rw [hno] at hres
+  simp [hre] at hres
+
+/-- Takes in packets one after the other and collects what was done with
+each. -/
+def hear (r : receiver.Receiver N M K) :
+    List (packet.Audio × Std.I64) →
+      Result (List receiver.Heard × receiver.Receiver N M K)
+  | [] => ok ([], r)
+  | p :: rest => do
+    let out ← receiver.Receiver.packet r p.1 p.2
+    let later ← hear out.2 rest
+    ok (out.1 :: later.1, later.2)
+
+theorem hear_late (X : Std.U64) (t0 : ℤ) (rest : List (packet.Audio × Std.I64)) :
+    ∀ r : receiver.Receiver N M K, r.following = true → r.timeline = X →
+      (∀ p ∈ rest, p.1.timeline = X ∧ t0 ≤ p.2.val) →
+      hear r rest ⦃ out =>
+        r.fresh.val ≤ t0 → (∀ hd ∈ out.1, Useless hd) →
+          ∀ p ∈ rest, p.2.val < t0 + r.silence.val ⦄ := by
+  induction rest with
+  | nil =>
+    intro r _ _ _
+    simp [hear]
+  | cons p rest ih =>
+    intro r hf hX hall
+    have hp := hall p (by simp)
+    simp only [hear]
+    apply WP.spec_bind (followed_packet r p.1 p.2 hf (hp.1.trans hX.symm))
+    rintro out ⟨hf', htl', hs', huse⟩
+    apply WP.spec_bind (ih out.2 hf' (htl'.trans hX) (fun q hq => hall q (by simp [hq])))
+    rintro later hlater
+    simp only [WP.spec_ok]
+    intro hfresh hall_useless q hq
+    have hhead : Useless out.1 := hall_useless out.1 (by simp)
+    obtain ⟨hfr, hnot⟩ := huse hhead
+    have hsame : freshBy r p.2 = r.fresh := freshBy_eq r p.2 (by omega)
+    rcases List.mem_cons.mp hq with rfl | hq'
+    · rw [hsame, I64.saturating_sub_val] at hnot
+      have hsil : r.silence.val ≤ 2 ^ 63 - 1 := by scalar_tac
+      by_contra hcon
+      apply hnot
+      have : r.silence.val ≤ q.2.val - r.fresh.val := by omega
+      exact le_max_of_le_right (le_min hsil this)
+    · have hrest := hlater (by rw [hfr, hsame]; exact hfresh)
+        (fun hd hhd => hall_useless hd (by simp [hhd])) q hq'
+      rw [hs'] at hrest
+      exact hrest
+
+/-- From any state of a receiver that follows a timeline: if packets of that
+timeline arrive, none before the first of them, and every one is behind the
+playhead with all its frames without making the receiver start anew, then all
+of them arrive within the set time of silence after the first.
+
+Put the other way round: once that time has passed since the first packet, a
+packet either has a frame at or ahead of the playhead or the receiver starts
+anew at it. A playhead that is ahead of everything that arrives does not
+last. -/
+theorem late_run_is_short (r : receiver.Receiver N M K) (h0 : packet.Audio) (t0 : Std.I64)
+    (rest : List (packet.Audio × Std.I64)) (hf : r.following = true)
+    (hX : h0.timeline = r.timeline)
+    (hall : ∀ p ∈ rest, p.1.timeline = r.timeline ∧ t0.val ≤ p.2.val) :
+    hear r ((h0, t0) :: rest) ⦃ out =>
+      (∀ hd ∈ out.1, Useless hd) → ∀ p ∈ rest, p.2.val < t0.val + r.silence.val ⦄ := by
+  simp only [hear]
+  apply WP.spec_bind (followed_packet r h0 t0 hf hX)
+  rintro out ⟨hf', htl', hs', huse⟩
+  apply WP.spec_bind (hear_late r.timeline t0.val rest out.2 hf' htl' hall)
+  rintro later hlater
+  simp only [WP.spec_ok]
+  intro hall_useless q hq
+  have hhead : Useless out.1 := hall_useless out.1 (by simp)
+  obtain ⟨hfr, -⟩ := huse hhead
+  have hrest := hlater (by rw [hfr]; exact freshBy_le_now r t0)
+    (fun hd hhd => hall_useless hd (by simp [hhd])) q hq
+  rw [hs'] at hrest
+  exact hrest
+
+/-- A receiver that starts anew at a packet holds the packet's first frame
+afterwards, if it has room for a frame and the packet has one. -/
+theorem restart_stores (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I64)
+    (hf : r.following = true) (hX : h.timeline = r.timeline)
+    (hroom : 0 < widthOf N.val) (hframes : 0 < h.frames.val) :
+    receiver.Receiver.packet r h t ⦃ out =>
+      out.1.restarted = true → 0 < out.1.marked.stored.val ⦄ := by
+  have hA : ¬ Adopts r h.timeline t := by
+    rintro (hc | ⟨hne, -⟩)
+    · rw [hf] at hc; cases hc
+    · exact hne hX
+  apply WP.spec_mono (packet_spec r h t)
+  rintro out ⟨-, -, -, -, hsame⟩
+  obtain ⟨-, -, -, -, -, -, -, hnew, -⟩ := hsame hA hX
+  intro hre
+  obtain ⟨p0, hb, hempty, harr⟩ := hnew hre
+  exact harr.stored_pos (by rw [hb]) hempty hroom hframes
+
+/-! ## A cycle of the device -/
+
+/-- Planning a cycle of the device returns for every state and every reading
+of the clock, and changes nothing about the timeline that is followed or the
+frames that are held: only the regulator moves. -/
+theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
+    (frames : Std.U32) :
+    receiver.Receiver.cycle r time duration frames ⦃ out => SameStream out.2 r ⦄ := by
+  unfold receiver.Receiver.cycle relation.Estimator.impl.line
+  split
+  · simp only [bind_ok]
+    cases r.clock.line with
+    | none => simp [SameStream]
+    | some line =>
+      simp only
+      cases r.schedule with
+      | none => simp [SameStream]
+      | some schedule =>
+        simp only
+        step as ⟨first⟩
+        step as ⟨i, hi⟩
+        step as ⟨last⟩
+        step as ⟨o1⟩
+        cases o1 with
+        | none => simp [SameStream]
+        | some now =>
+          simp only
+          step as ⟨o2⟩
+          cases o2 with
+          | none => simp [SameStream]
+          | some later =>
+            simp only
+            step as ⟨out⟩
+            simp [SameStream]
+  · simp [SameStream]
 
 end Unisono.Receiver

@@ -140,13 +140,38 @@ program. -/
 def streamHeader (timeline index frames flags stampedIndex stampedDeparture : Int) :
     packet.Audio :=
   { stream := 1#u16, timeline := unsigned .U64 timeline, index := unsigned .U64 index,
-    capture := 0#i64, drift := 0#i32, rate := 48000#u32, frames := unsigned .U16 frames,
+    capture := signed .I64 (index * 20833), drift := 0#i32, rate := 48000#u32, frames := unsigned .U16 frames,
     channels := 2#u8, format := .Signed16, level := 0#i64, level_slope := 0#i32,
     span := 20#u32, window := 50#u32, flags := unsigned .U16 flags, protection := 0#u16,
     stamped_index := unsigned .U64 stampedIndex,
     stamped_departure := signed .I64 stampedDeparture }
 
 abbrev CheckedReceiver := receiver.Receiver 2#usize 4#usize 2#usize
+
+/-- A plan as numbers: its frames, the frame and fraction of its start, its
+step and whether it jumped. -/
+def planNumbers (plan : player.Plan) : List Int :=
+  [plan.frames.val, plan.start.frame.val, plan.start.fraction.val, plan.step.val,
+    if plan.jumped then 1 else 0]
+
+/-- Applies one cycle of six numbers to a regulator and collects the plan;
+see `player_cases` in the Rust program. -/
+def playerStep (state : player.Player × List Int) (cycle : List Int) :
+    Result (player.Player × List Int) :=
+  match cycle with
+  | [frame, fraction, laterFrame, laterFraction, frames, duration] => do
+    let out ← player.Player.cycle state.1
+      { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
+      { frame := unsigned .U64 laterFrame, fraction := unsigned .U64 laterFraction }
+      (unsigned .U32 frames) (signed .I64 duration)
+    pure (out.2, state.2 ++ planNumbers out.1)
+  | _ => pure (state.1, state.2 ++ [-2])
+
+def runPlayer (gain limit jump : Int) (cycles : List (List Int)) : Result (List Int) := do
+  let start ← player.Player.new
+    { gain := unsigned .U32 gain, limit := unsigned .U32 limit, jump := unsigned .U32 jump }
+  let final ← cycles.foldlM playerStep (start, [])
+  pure final.2
 
 /-- A truth value as a number. -/
 def bit (b : Bool) : Int := if b then 1 else 0
@@ -161,7 +186,8 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
       let out ← receiver.Receiver.packet r
         (streamHeader timeline index frames flags stampedIndex stampedDeparture)
         (signed .I64 arrival)
-      pure (out.2, ([bit out.1.ignored, bit out.1.adopted, out.1.marked.stored.val,
+      pure (out.2, ([bit out.1.ignored, bit out.1.adopted, bit out.1.restarted,
+        out.1.marked.stored.val,
         out.1.marked.duplicate.val, out.1.marked.late.val, out.1.marked.early.val] : List Int))
     | [1, limit, _, _, _, _, _, _] => do
       let out ← receiver.Receiver.take r (unsigned .U32 limit)
@@ -169,6 +195,10 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
     | [2, target, _, _, _, _, _, _] => do
       let out ← receiver.Receiver.skip r (unsigned .U64 target)
       pure (out.2, ([out.1.val] : List Int))
+    | [3, time, frames, _, _, _, _, _] => do
+      let out ← receiver.Receiver.cycle r (signed .I64 time) (signed .I64 (frames * 20833))
+        (unsigned .U32 frames)
+      pure (out.2, planNumbers out.1)
     | _ => pure (r, [-2]) : Result (CheckedReceiver × List Int))
   let timeline ← receiver.Receiver.impl.timeline r1
   let playhead ← receiver.Receiver.playhead r1
@@ -178,7 +208,10 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
   pure (r1, state.2 ++ results ++ [followed, playhead.val])
 
 def runReceiver (silence : Int) (operations : List (List Int)) : Result (List Int) := do
+  let regulation : player.Regulation :=
+    { gain := 262144#u32, limit := 1000000#u32, jump := 30#u32 }
   let start ← receiver.Receiver.new 2#usize 4#usize 2#usize (signed .I64 silence) 200000#i64
+    regulation
   let final ← operations.foldlM receiverStep (start, [])
   let line ← receiver.Receiver.impl.clock final.1
   let schedule ← receiver.Receiver.impl.schedule final.1
@@ -254,6 +287,33 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       if operations.length = count then result (runSender first operations) id
       else .error "the number of operations is not the stated one"
     | none => .error "operations are not groups of four"
+  | "sender_time", [time, value, rise, run, path, moment] =>
+    result (timing.sender_time
+      { time := signed .I64 time, value := signed .I64 value, rise := signed .I64 rise,
+        run := signed .I64 run } (signed .I64 path) (signed .I64 moment)) (fun r => [r.val])
+  | "due", [index, capture, rate, drift, level, slope, moment] =>
+    result (timing.due
+      { index := unsigned .U64 index, capture := signed .I64 capture,
+        rate := unsigned .U32 rate, drift := signed .I32 drift, level := signed .I64 level,
+        level_slope := signed .I32 slope } (signed .I64 moment))
+      (fun r => match r with
+        | some p => [1, p.frame.val, p.fraction.val]
+        | none => [0, 0, 0])
+  | "distance", [frame, fraction, laterFrame, laterFraction] =>
+    result (timing.distance
+      { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
+      { frame := unsigned .U64 laterFrame, fraction := unsigned .U64 laterFraction })
+      (fun r => [r.val])
+  | "advance", [frame, fraction, frames, step] =>
+    result (timing.advance
+      { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
+      (unsigned .U32 frames) (signed .I64 step)) (fun r => [r.frame.val, r.fraction.val])
+  | "player", gain :: limit :: jump :: count :: rest =>
+    match groups 6 rest with
+    | some cycles =>
+      if cycles.length = count then result (runPlayer gain limit jump cycles) id
+      else .error "the number of cycles is not the stated one"
+    | none => .error "cycles are not groups of six"
   | "parse_audio", bytes => result (runParse bytes) id
   | "write_audio", fields => result (runWrite fields) id
   | _, _ => .error s!"no function {function} with {args.length} arguments"

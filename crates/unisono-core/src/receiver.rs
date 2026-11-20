@@ -14,12 +14,17 @@
 //! The frames of the timeline pass the receiver's **playhead** once and in
 //! order: the playhead is the index of the next frame for the device, it
 //! only moves forward, and every index it passes is reported exactly once,
-//! as held, as absent, or as skipped.
+//! as held, as absent, or as skipped. If packets of the followed timeline
+//! keep arriving and every frame of theirs is behind the playhead for a
+//! while, the playhead is wrong, and the receiver starts anew at the frames
+//! that arrive.
 
 use crate::arrivals::Arrivals;
 use crate::packet::{Audio, FLAG_STAMPED};
+use crate::player::{Plan, Player, Regulation};
 use crate::presence::{Marked, Presence};
 use crate::relation::{Estimator, Line, Sample};
+use crate::timing::{Position, Schedule, due, sender_time};
 
 /// The number of nanoseconds in a millisecond.
 const MILLISECOND: i64 = 1_000_000;
@@ -33,6 +38,9 @@ pub struct Heard {
     pub ignored: bool,
     /// The receiver began to follow the packet's timeline with this packet.
     pub adopted: bool,
+    /// The receiver started anew at this packet, because the frames that
+    /// arrive had been behind its playhead for too long.
+    pub restarted: bool,
     /// What became of the packet's frames.
     pub marked: Marked,
 }
@@ -47,29 +55,6 @@ pub struct Segment {
     pub frames: u32,
     /// Whether the frames are held. Absent frames are to be concealed.
     pub held: bool,
-}
-
-/// When the frames of a timeline are due, as the latest packet says it.
-///
-/// The frame `index` was captured at `capture` on the sender's clock, and
-/// the frames after it follow at `rate` frames per second, faster by `drift`
-/// parts per billion. A frame is due at its capture time plus the level.
-#[derive(Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(test, derive(Debug))]
-pub struct Schedule {
-    /// The index of a frame.
-    pub index: u64,
-    /// When that frame was captured.
-    pub capture: i64,
-    /// Frames per second.
-    pub rate: u32,
-    /// How much faster than `rate` the capture device runs against the
-    /// sender's clock, in parts per billion.
-    pub drift: i32,
-    /// The latency that every receiver holds for that frame.
-    pub level: i64,
-    /// How the level changes, in nanoseconds per second of stream.
-    pub level_slope: i32,
 }
 
 /// The receiver of a stream.
@@ -87,16 +72,23 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     /// The receiver's clock when a packet of the followed timeline last
     /// arrived.
     heard: i64,
+    /// The receiver's clock when a packet last arrived that had a frame at
+    /// or ahead of the playhead.
+    fresh: i64,
     /// How long the followed timeline is silent before any other is taken
     /// up, in nanoseconds.
     silence: i64,
     /// The largest slope of the estimate of the sender's clock, in
     /// nanoseconds per second.
     limit: i64,
+    /// The receiver's estimate of the smallest delay of a packet from the
+    /// sender, in nanoseconds.
+    path: i64,
     presence: Presence<N>,
     clock: Estimator<M>,
     arrivals: Arrivals<K>,
     schedule: Option<Schedule>,
+    player: Player,
 }
 
 /// How long a receiver remembers samples of the sender's clock, in
@@ -107,23 +99,34 @@ fn span_of(header: &Audio) -> i64 {
 }
 
 impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
-    /// A receiver that follows no timeline yet. It takes up another timeline
-    /// than the one it follows after `silence` nanoseconds without a packet,
-    /// and holds the slope of its estimate of the sender's clock within
-    /// `limit` nanoseconds per second.
+    /// A receiver that follows no timeline yet. After `silence` nanoseconds
+    /// without a packet of the timeline it follows it takes up another, and
+    /// after as long without a frame at or ahead of its playhead it starts
+    /// anew. It holds the slope of its estimate of the sender's clock within
+    /// `limit` nanoseconds per second, and steers its playback by
+    /// `regulation`.
     #[must_use]
-    pub fn new(silence: i64, limit: i64) -> Self {
+    pub fn new(silence: i64, limit: i64, regulation: Regulation) -> Self {
         Receiver {
             following: false,
             timeline: 0,
             heard: 0,
+            fresh: 0,
             silence,
             limit,
+            path: 0,
             presence: Presence::new(),
             clock: Estimator::new(0, limit),
             arrivals: Arrivals::new(),
             schedule: None,
+            player: Player::new(regulation),
         }
+    }
+
+    /// Sets the receiver's estimate of the smallest delay of a packet from
+    /// the sender, in nanoseconds.
+    pub fn path(&mut self, path: i64) {
+        self.path = path;
     }
 
     /// The timeline that is followed, if any.
@@ -184,6 +187,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.clock = Estimator::new(span_of(header), self.limit);
         self.arrivals = Arrivals::new();
         self.schedule = None;
+        self.player.stop();
     }
 
     /// When the earlier packet arrived whose departure `header` carries, if
@@ -221,22 +225,53 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.arrivals.record(header.index, arrival);
     }
 
-    /// Keeps what `header` says about when frames are due, unless a packet
-    /// further on in the timeline has said it already.
+    /// Keeps what `header` says about when frames are due.
     fn note(&mut self, header: &Audio) {
-        let newer = match self.schedule {
-            Some(schedule) => header.index >= schedule.index,
-            None => true,
-        };
-        if newer {
-            self.schedule = Some(Schedule {
-                index: header.index,
-                capture: header.capture,
-                rate: header.rate,
-                drift: header.drift,
-                level: header.level,
-                level_slope: header.level_slope,
-            });
+        self.schedule = Some(Schedule {
+            index: header.index,
+            capture: header.capture,
+            rate: header.rate,
+            drift: header.drift,
+            level: header.level,
+            level_slope: header.level_slope,
+        });
+    }
+
+    /// Whether the frames of a packet that arrived at `arrival` and were
+    /// marked as `marked` show that the playhead is wrong: all of them are
+    /// behind it, and no packet has had a frame at or ahead of it for the
+    /// set time.
+    fn stale(&mut self, marked: &Marked, arrival: i64) -> bool {
+        // The clock is not behind the last such arrival; a record that says
+        // so is wrong.
+        if self.fresh > arrival {
+            self.fresh = arrival;
+        }
+        if marked.late == 0 || marked.stored > 0 || marked.duplicate > 0 || marked.early > 0 {
+            return false;
+        }
+        arrival.saturating_sub(self.fresh) >= self.silence
+    }
+
+    /// Starts anew at the frames of the packet with `header`: the playhead
+    /// is at its first frame, nothing but its frames is held, and playback
+    /// starts on the schedule.
+    fn renew(&mut self, header: &Audio) -> Marked {
+        self.presence.restart(header.index);
+        self.player.stop();
+        self.presence.mark(header.index, header.frames as u32)
+    }
+
+    /// Takes in that a packet with `header` arrived at `arrival` and its
+    /// frames were marked as `marked`. A packet with a frame in the stretch
+    /// is one of the stream as the receiver holds it, and says when its
+    /// frames are due.
+    fn refresh(&mut self, header: &Audio, marked: &Marked, arrival: i64) {
+        if marked.stored > 0 || marked.duplicate > 0 {
+            self.fresh = arrival;
+            self.note(header);
+        } else if marked.early > 0 {
+            self.fresh = arrival;
         }
     }
 
@@ -244,11 +279,14 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     fn accept(&mut self, header: &Audio, arrival: i64, adopted: bool) -> Heard {
         self.heard = arrival;
         self.measure(header, arrival);
-        self.note(header);
-        let marked = self.presence.mark(header.index, header.frames as u32);
+        let first = self.presence.mark(header.index, header.frames as u32);
+        let restarted = self.stale(&first, arrival);
+        let marked = if restarted { self.renew(header) } else { first };
+        self.refresh(header, &marked, arrival);
         Heard {
             ignored: false,
             adopted,
+            restarted,
             marked,
         }
     }
@@ -268,6 +306,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             return Heard {
                 ignored: true,
                 adopted: false,
+                restarted: false,
                 marked: Marked {
                     stored: 0,
                     duplicate: 0,
@@ -277,6 +316,41 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             };
         }
         self.accept(header, arrival, adopted)
+    }
+
+    /// Plans one cycle of the device: `frames` output frames, the first of
+    /// which leaves the device when the receiver's clock reads `time`, and
+    /// which take `duration` nanoseconds on that clock. Nothing is played,
+    /// and the plan has no frames, as long as no timeline is followed, the
+    /// sender's clock is not known, or no frame of the timeline is due.
+    pub fn cycle(&mut self, time: i64, duration: i64, frames: u32) -> Plan {
+        let idle = Plan {
+            frames: 0,
+            start: Position {
+                frame: 0,
+                fraction: 0,
+            },
+            step: 0,
+            jumped: false,
+        };
+        if !self.following {
+            return idle;
+        }
+        let Some(line) = self.clock.line() else {
+            return idle;
+        };
+        let Some(schedule) = self.schedule else {
+            return idle;
+        };
+        let first = sender_time(&line, self.path, time);
+        let last = sender_time(&line, self.path, time.saturating_add(duration));
+        let Some(now) = due(&schedule, first) else {
+            return idle;
+        };
+        let Some(then) = due(&schedule, last) else {
+            return idle;
+        };
+        self.player.cycle(now, then, frames, duration)
     }
 
     /// Moves the playhead forward by `frames`.
@@ -333,6 +407,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
 mod tests {
     use super::{Heard, Receiver, Segment};
     use crate::packet::{Audio, FLAG_STAMPED, Format};
+    use crate::player::Regulation;
     use crate::presence::Marked;
 
     const SILENCE: i64 = 1_000_000_000;
@@ -367,7 +442,12 @@ mod tests {
     }
 
     fn receiver() -> Receiver<4, 8, 4> {
-        Receiver::new(SILENCE, 200_000)
+        let regulation = Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 240,
+        };
+        Receiver::new(SILENCE, 200_000, regulation)
     }
 
     #[test]
@@ -381,6 +461,7 @@ mod tests {
             Heard {
                 ignored: false,
                 adopted: true,
+                restarted: false,
                 marked: stored(10)
             }
         );
@@ -503,15 +584,90 @@ mod tests {
     }
 
     #[test]
-    fn the_schedule_is_the_one_of_the_packet_furthest_on() {
+    fn the_schedule_is_that_of_the_last_packet_with_a_frame_in_the_stretch() {
         let mut receiver = receiver();
         let mut first = header(7, 100, 10);
         first.capture = 1_000;
-        let mut earlier = header(7, 90, 10);
-        earlier.capture = 500;
         receiver.packet(&first, 0);
-        receiver.packet(&earlier, 1);
+        // A packet whose frames are all beyond the stretch, as a damaged
+        // header may claim, does not say when frames are due.
+        let mut beyond = header(7, 1_000_000, 10);
+        beyond.capture = 77;
+        receiver.packet(&beyond, 1);
         let schedule = receiver.schedule().expect("a schedule after a packet");
         assert_eq!((schedule.index, schedule.capture), (100, 1_000));
+        let mut next = header(7, 110, 10);
+        next.capture = 2_000;
+        receiver.packet(&next, 2);
+        let schedule = receiver.schedule().expect("a schedule after a packet");
+        assert_eq!((schedule.index, schedule.capture), (110, 2_000));
+    }
+
+    #[test]
+    fn a_playhead_that_is_ahead_of_everything_that_arrives_is_given_up() {
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 0, 10), 0);
+        // The playhead is moved far ahead, as a damaged packet may cause.
+        receiver.skip(1_000_000);
+        // Packets go on arriving, all of them behind the playhead.
+        let heard = receiver.packet(&header(7, 10, 10), SILENCE - 1);
+        assert_eq!((heard.restarted, heard.marked.late), (false, 10));
+        let heard = receiver.packet(&header(7, 20, 10), SILENCE);
+        assert_eq!((heard.restarted, heard.marked), (true, stored(10)));
+        assert_eq!(receiver.playhead(), 20);
+        // One late packet among others that are in time changes nothing.
+        receiver.take(10);
+        receiver.packet(&header(7, 40, 10), 3 * SILENCE);
+        let heard = receiver.packet(&header(7, 20, 10), 5 * SILENCE);
+        assert_eq!((heard.restarted, heard.marked.late), (true, 0));
+    }
+
+    /// Feeds a receiver the packets of a sender whose clock is `offset`
+    /// behind the receiver's, each of 480 frames every 10 ms with a delay of
+    /// 100 microseconds, from packet `from` up to packet `to`.
+    fn stream(receiver: &mut Receiver<4, 8, 4>, offset: i64, from: u64, to: u64) {
+        let period = 10_000_000i64;
+        for packet in from..to {
+            let departure = i64::try_from(packet).unwrap_or(0) * period;
+            let mut header = header(7, packet * 480, 480);
+            header.capture = departure - 10_000_000;
+            header.window = 4_800;
+            if packet > 0 {
+                header.flags = FLAG_STAMPED;
+                header.stamped_index = (packet - 1) * 480;
+                header.stamped_departure = departure - period;
+            }
+            receiver.packet(&header, departure + offset + 100_000);
+        }
+    }
+
+    #[test]
+    fn a_cycle_plays_the_frames_that_are_due() {
+        let offset = 3_600_000_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        // Before the sender's clock is known nothing is played.
+        stream(&mut receiver, offset, 0, 5);
+        assert_eq!(
+            receiver.cycle(offset + 50_000_000, 5_000_000, 240).frames,
+            0
+        );
+        stream(&mut receiver, offset, 5, 60);
+        // Frame n was captured at (n / 48 - 10) ms and is due 20 ms later.
+        // The estimate holds the delay of 100 microseconds, which the path
+        // takes off again.
+        receiver.path(100_000);
+        let time = offset + 500_000_000;
+        let plan = receiver.cycle(time, 5_000_000, 240);
+        assert!(plan.jumped && plan.frames == 240);
+        assert_eq!(plan.start.frame, (500 - 10) * 48);
+        assert!(
+            plan.start.fraction < 1 << 54,
+            "fraction {}",
+            plan.start.fraction
+        );
+        // The next cycle goes on where this one ended.
+        let next = receiver.cycle(time + 5_000_000, 5_000_000, 240);
+        assert!(!next.jumped);
+        assert_eq!(next.start.frame, plan.start.frame + 240);
     }
 }

@@ -13,7 +13,7 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{fixed, packet, presence, receiver, relation, sender};
+use unisono_core::{fixed, packet, player, presence, receiver, relation, sender, timing};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -341,6 +341,18 @@ fn presence_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// A plan as numbers: its frames, the frame and fraction of its start, its
+/// step and whether it jumped.
+fn plan_numbers(plan: &player::Plan) -> [i128; 5] {
+    [
+        i128::from(plan.frames),
+        i128::from(plan.start.frame),
+        i128::from(plan.start.fraction),
+        i128::from(plan.step),
+        i128::from(plan.jumped),
+    ]
+}
+
 /// The header that the receiver cases use: the numbers that vary, and the
 /// rest fixed.
 fn stream_header(
@@ -355,7 +367,8 @@ fn stream_header(
         stream: 1,
         timeline,
         index,
-        capture: 0,
+        // A frame of 48,000 a second lasts 20,833 nanoseconds.
+        capture: i64::try_from(index).unwrap_or(0).saturating_mul(20_833),
         drift: 0,
         rate: 48_000,
         frames,
@@ -380,15 +393,25 @@ fn stream_header(
 /// and the four counts of its frames. 1 and a limit: a run of frames is
 /// taken, and the results are its first index, its length and whether it is
 /// held. 2 and an index: a skip, whose result is the number of frames
-/// skipped. After every operation the followed timeline, or -1, and the
-/// playhead follow. At the end come the line of the clock estimate, or
+/// skipped. 3, a time and a number of frames: a cycle of the device, whose
+/// results are the plan's number of frames, the frame and the fraction of
+/// its start, its step and whether it jumped. After every operation the
+/// followed timeline, or -1, and the playhead follow. At the end come the line of the clock estimate, or
 /// zeros, and the index of the schedule, or -1.
 fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
     let mut sequence = Sequence(5);
     for _ in 0..200 {
         let silence = 1_000 + sequence.next() % 5_000;
-        let mut receiver =
-            receiver::Receiver::<2, 4, 2>::new(i64::try_from(silence).unwrap_or(0), 200_000);
+        let regulation = player::Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 30,
+        };
+        let mut receiver = receiver::Receiver::<2, 4, 2>::new(
+            i64::try_from(silence).unwrap_or(0),
+            200_000,
+            regulation,
+        );
         let operations = 1 + sequence.next() % 40;
         let mut results: Vec<i128> = Vec::new();
         write!(out, "receiver {silence} {operations}")?;
@@ -400,7 +423,14 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
         let mut timeline = 2u64;
         let mut recent = [0u64; 2];
         for _ in 0..operations {
-            match sequence.next() % 5 {
+            match sequence.next() % 6 {
+                2 => {
+                    let frames = u32::try_from(sequence.next() % 40).unwrap_or(0);
+                    let time = now + i64::try_from(sequence.next() % 400_000).unwrap_or(0);
+                    let plan = receiver.cycle(time, i64::from(frames) * 20_833, frames);
+                    write!(out, " 3 {time} {frames} 0 0 0 0 0")?;
+                    results.extend(plan_numbers(&plan));
+                }
                 0 => {
                     let limit = u32::try_from(sequence.next() % 40).unwrap_or(0);
                     let segment = receiver.take(limit);
@@ -447,6 +477,7 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
                     results.extend([
                         i128::from(heard.ignored),
                         i128::from(heard.adopted),
+                        i128::from(heard.restarted),
                         i128::from(heard.marked.stored),
                         i128::from(heard.marked.duplicate),
                         i128::from(heard.marked.late),
@@ -534,6 +565,154 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Readings of clocks turned into positions of a stream, and positions moved
+/// and compared, at boundary values and at random ones.
+fn timing_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(7);
+    let boundaries = boundary_values();
+    let pick = |sequence: &mut Sequence| {
+        if sequence.next().is_multiple_of(4) {
+            let place = usize::try_from(sequence.next()).unwrap_or(0) % boundaries.len();
+            boundaries[place]
+        } else {
+            sequence.signed()
+        }
+    };
+    for _ in 0..600 {
+        let line = relation::Line {
+            time: pick(&mut sequence),
+            value: pick(&mut sequence),
+            rise: sequence.signed() % 1_000_000,
+            run: 1 + i64::try_from(sequence.next() % 20_000_000_000).unwrap_or(0),
+        };
+        let path = sequence.signed() % 10_000_000;
+        let time = pick(&mut sequence);
+        writeln!(
+            out,
+            "sender_time {} {} {} {} {path} {time} -> {}",
+            line.time,
+            line.value,
+            line.rise,
+            line.run,
+            timing::sender_time(&line, path, time)
+        )?;
+        // The casts keep the low bits of random numbers.
+        #[allow(clippy::cast_possible_truncation)]
+        let schedule = timing::Schedule {
+            index: sequence.next() >> (sequence.next() % 64),
+            capture: pick(&mut sequence),
+            rate: [44_100, 48_000, 96_000, 0, u32::MAX]
+                [usize::try_from(sequence.next() % 5).unwrap_or(0)],
+            drift: (sequence.signed() % 2_000_000_000) as i32,
+            level: sequence.signed() % 1_000_000_000_000,
+            level_slope: (sequence.signed() % 2_000_000_000) as i32,
+        };
+        let at = pick(&mut sequence);
+        let position = timing::due(&schedule, at);
+        writeln!(
+            out,
+            "due {} {} {} {} {} {} {at} -> {}",
+            schedule.index,
+            schedule.capture,
+            schedule.rate,
+            schedule.drift,
+            schedule.level,
+            schedule.level_slope,
+            match position {
+                Some(position) => format!("1 {} {}", position.frame, position.fraction),
+                None => "0 0 0".to_string(),
+            }
+        )?;
+        let from = timing::Position {
+            frame: sequence.next() >> (sequence.next() % 64),
+            fraction: sequence.next(),
+        };
+        let to = timing::Position {
+            frame: sequence.next() >> (sequence.next() % 64),
+            fraction: sequence.next(),
+        };
+        writeln!(
+            out,
+            "distance {} {} {} {} -> {}",
+            from.frame,
+            from.fraction,
+            to.frame,
+            to.fraction,
+            timing::distance(from, to)
+        )?;
+        #[allow(clippy::cast_possible_truncation)]
+        let frames = sequence.next() as u32 >> (sequence.next() % 32);
+        let step = pick(&mut sequence);
+        let moved = timing::advance(from, frames, step);
+        writeln!(
+            out,
+            "advance {} {} {frames} {step} -> {} {}",
+            from.frame, from.fraction, moved.frame, moved.fraction
+        )?;
+    }
+    Ok(())
+}
+
+/// Runs of cycles through a regulator. Each cycle is six numbers: the frame
+/// and fraction of the position due at its start, the same for its end, the
+/// number of frames and the duration. The results of each are the plan's
+/// number of frames, the frame and fraction of its start, its step and
+/// whether it jumped.
+fn player_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(8);
+    for _ in 0..200 {
+        // The casts keep the low bits of random numbers.
+        #[allow(clippy::cast_possible_truncation)]
+        let regulation = player::Regulation {
+            gain: sequence.next() as u32 >> (sequence.next() % 32),
+            limit: sequence.next() as u32 >> (sequence.next() % 32),
+            jump: sequence.next() as u32 >> (8 + sequence.next() % 24),
+        };
+        let mut player = player::Player::new(regulation);
+        let cycles = 1 + sequence.next() % 30;
+        write!(
+            out,
+            "player {} {} {} {cycles}",
+            regulation.gain, regulation.limit, regulation.jump
+        )?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut now = timing::Position {
+            frame: sequence.next() % 1_000_000,
+            fraction: sequence.next(),
+        };
+        for _ in 0..cycles {
+            let frames = u32::try_from(sequence.next() % 600).unwrap_or(0);
+            // Mostly a schedule near one frame for a frame, at times one that
+            // is far off or runs backwards.
+            let step = match sequence.next() % 8 {
+                0 => sequence.signed(),
+                1 => i64::MIN,
+                _ => sequence.signed() % (1 << 52),
+            };
+            let then = timing::advance(now, frames, step);
+            let duration = i64::from(frames) * 20_833 + sequence.signed() % 1_000;
+            let plan = player.cycle(now, then, frames, duration);
+            write!(
+                out,
+                " {} {} {} {} {frames} {duration}",
+                now.frame, now.fraction, then.frame, then.fraction
+            )?;
+            results.extend(plan_numbers(&plan));
+            // At times the schedule moves away from where the regulator is.
+            now = match sequence.next() % 6 {
+                0 => timing::advance(then, u32::try_from(sequence.next() % 400).unwrap_or(0), 0),
+                1 => timing::Position {
+                    frame: then.frame.saturating_sub(sequence.next() % 400),
+                    fraction: then.fraction,
+                },
+                _ => then,
+            };
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -544,5 +723,7 @@ fn main() -> io::Result<()> {
     presence_cases(&mut out)?;
     receiver_cases(&mut out)?;
     sender_cases(&mut out)?;
+    timing_cases(&mut out)?;
+    player_cases(&mut out)?;
     out.flush()
 }

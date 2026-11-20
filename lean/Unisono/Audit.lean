@@ -9,6 +9,7 @@ public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
 public import Unisono.Model.SupportLine
 public import Unisono.Packet
+public import Unisono.Player
 public import Unisono.Presence
 public import Unisono.Receiver
 public import Unisono.Relation
@@ -194,3 +195,27 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Sender.restart_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Sender.restart_spec
+
+/-- info: 'Unisono.Receiver.late_run_is_short' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.late_run_is_short
+
+/-- info: 'Unisono.Receiver.restart_stores' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.restart_stores
+
+/-- info: 'Unisono.Receiver.cycle_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Receiver.cycle_spec
+
+/-- info: 'Unisono.Player.cycle_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.cycle_total
+
+/-- info: 'Unisono.Player.sender_time_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.sender_time_total
+
+/-- info: 'Unisono.Player.due_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.due_total

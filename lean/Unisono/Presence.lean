@@ -694,6 +694,28 @@ theorem mark_spec (p : presence.Presence N) (first : Std.U64) (frames : Std.U32)
   unfold presence.Presence.mark
   exact mark_loop_spec p first frames
 
+/-- A packet that arrives at a stretch which starts at its first frame and
+holds nothing has its first frame stored, if the stretch has room for a frame
+and the packet has one. -/
+theorem Arrived.stored_pos {p s : presence.Presence N} {first d : ℕ} {m : presence.Marked}
+    (h : Arrived p first d s m) (hbase : p.base.val = first) (hempty : ∀ j, ¬ Held p j)
+    (hroom : 0 < widthOf N.val) (hd : 0 < d) : 0 < m.stored.val := by
+  obtain ⟨-, -, hst, -⟩ := h
+  rw [hst]
+  unfold countOf
+  rw [List.countP_pos_iff]
+  refine ⟨0, by simpa using hd, ?_⟩
+  have hb : p.base.val ≤ U64.max := by scalar_tac
+  have hc : Covered p (first + 0) := by
+    unfold Covered
+    omega
+  have hbit : bitOf p (first + 0) = false := by
+    by_contra hcon
+    exact hempty (first + 0) ⟨hc, by simpa using hcon⟩
+  unfold outcomeOf
+  simp only [hc, ↓reduceIte, hbit]
+  simp
+
 /-- Two packets leave the same frames held in whichever order they arrive. -/
 theorem Arrived.comm {p q r q' r' : presence.Presence N} {a b da db : ℕ}
     {m1 m2 m3 m4 : presence.Marked}
