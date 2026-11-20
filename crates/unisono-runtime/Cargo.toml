@@ -1,0 +1,13 @@
+[package]
+name = "unisono-runtime"
+description = "The shell around unisono's core: audio interfaces, a software audio device, and what turns a receiver's plan into frames."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+unisono-core = { path = "../unisono-core" }
+unisono-dsp = { path = "../unisono-dsp" }
+
+[lints]
+workspace = true
