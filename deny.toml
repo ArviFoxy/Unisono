@@ -1,0 +1,24 @@
+# What `cargo deny check` holds the dependencies against.
+
+[advisories]
+version = 2
+
+[licenses]
+version = 2
+# The licences that a dependency may have. Unicode-3.0 is that of the tables
+# in a crate that the procedural macros of a test tool use.
+allow = ["MIT", "Apache-2.0", "MPL-2.0", "Unicode-3.0"]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# The crates of the workspace that are not published depend on the others by
+# path alone.
+allow-wildcard-paths = true
+# loom is used only to test the ring between threads; which versions of
+# other crates it brings is its own matter.
+skip-tree = [{ crate = "loom" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

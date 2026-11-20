@@ -7,8 +7,8 @@ license.workspace = true
 
 [dependencies]
 libc = "0.2"
-unisono-core = { path = "../unisono-core" }
-unisono-dsp = { path = "../unisono-dsp" }
+unisono-core.workspace = true
+unisono-dsp.workspace = true
 
 # The ring is checked under every interleaving of its two threads by loom,
 # which replaces the atomics when the crate is built with `--cfg loom`.

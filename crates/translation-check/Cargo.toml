@@ -7,7 +7,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-unisono-core = { path = "../unisono-core" }
+unisono-core.workspace = true
 
 [lints]
 workspace = true

@@ -7,9 +7,9 @@ license.workspace = true
 publish = false
 
 [dependencies]
-unisono-core = { path = "../unisono-core" }
-unisono-dsp = { path = "../unisono-dsp" }
-unisono-runtime = { path = "../unisono-runtime" }
+unisono-core.workspace = true
+unisono-dsp.workspace = true
+unisono-runtime.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"

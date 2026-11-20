@@ -1,0 +1,15 @@
+# Proposes updates of what the repository depends on, once a week: the
+# actions of continuous integration, which are named by their commits, and
+# the crates.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: cargo
+    directories:
+      - /
+      - /tools/realtime-check
+    schedule:
+      interval: weekly

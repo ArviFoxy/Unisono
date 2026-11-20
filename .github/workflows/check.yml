@@ -2,28 +2,51 @@ name: check
 
 on:
   push:
+    branches: [main]
   pull_request:
+  # Once a week, so that a change outside the repository that breaks the
+  # check is noticed: a tool that is fetched, a cache that is gone.
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
 
+# The jobs read the repository and nothing else.
+permissions:
+  contents: read
+
+# A newer push to a pull request replaces the run of the older one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Actions are named by the commit they were reviewed at; the comment gives the
+# release that the commit belongs to.
 jobs:
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v7
-      - uses: extractions/setup-just@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: just format-check lint test targets realtime cost
 
   proofs:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
-      - uses: extractions/setup-just@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install elan
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://elan.lean-lang.org/elan-init.sh \
             | sh -s -- -y --default-toolchain none
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
       # The Lean library of Aeneas is built from source and takes long without this.
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .tools/aeneas
@@ -33,15 +56,25 @@ jobs:
 
   translation:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
-      - uses: extractions/setup-just@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - name: Install opam
         run: sudo apt-get update && sudo apt-get install --yes opam libgmp-dev pkg-config
-      - uses: actions/cache@v6
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .tools/aeneas
             ~/.opam
           key: translation-${{ hashFiles('tools/proof-tools.sh') }}
       - run: just translation
+
+  # Known vulnerabilities in what the crates depend on, the licences of the
+  # dependencies, and where they come from.
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@17aeb3c839e42274e2b8adf721c8c65edfdc74dd # v2.1.3

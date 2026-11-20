@@ -63,3 +63,8 @@ realtime:
 cost:
     cargo run --quiet --release --package cycle-cost
 
+# Hold the dependencies against deny.toml: known vulnerabilities, licences
+# and sources. Needs cargo-deny; continuous integration runs it too.
+dependencies:
+    cargo deny check
+
