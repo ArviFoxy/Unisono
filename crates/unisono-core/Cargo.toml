@@ -1,0 +1,9 @@
+[package]
+name = "unisono-core"
+description = "The pure core of unisono: arithmetic, clock estimation, packet format and state machines."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true

@@ -1,0 +1,19 @@
+name = "unisono"
+defaultTargets = ["Unisono"]
+
+# The Lean library of Aeneas, from the checkout that tools/proof-tools.sh
+# makes: the translation in UnisonoCore.lean and this library then come from
+# the same commit.
+[[require]]
+name = "aeneas"
+path = "../.tools/aeneas/backends/lean"
+
+# The translation of crates/unisono-core, written by tools/extract.sh.
+[[lean_lib]]
+name = "UnisonoCore"
+
+# The specifications and the proofs. A warning fails the build, so a proof
+# with a gap cannot pass.
+[[lean_lib]]
+name = "Unisono"
+leanOptions = { warningAsError = true }
