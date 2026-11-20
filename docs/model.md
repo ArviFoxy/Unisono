@@ -284,11 +284,19 @@ Claims, for kept samples at times $t_j$ with values $z_j$, and $c$ the middle:
   *Not stated in Lean.*
 
 About the code that computes it (`unisono_core::relation`), over the integers
-and without rounding: `Unisono.Relation.side_spec` (the test of which side of
-a line a sample lies on), `is_under_spec` (whether a line lies under all kept
-samples), `put_spec` and `drop_oldest_spec` (keeping and forgetting samples).
-That a stored line passes through two kept samples around the middle and lies
-under all of them is *not yet stated in Lean*.
+and without rounding, all in `Unisono.Relation`: `side_spec` (the test of which
+side of a line a sample lies on), `is_under_spec` (whether a line lies under
+all kept samples), `put_spec`, `drop_oldest_spec` and `forget_before_spec`
+(keeping and forgetting samples), `bridge_spec` (the two samples the line is
+drawn through are kept samples around the middle), and `fit_spec`: the fit
+ends for every state, changes nothing but the line, and a line it newly stores
+passes through a kept sample and has no kept sample below it. The statements
+hold for times and values within an eighth of the 64-bit range, which is 36
+years in nanoseconds.
+
+Not stated in Lean: that the fit always finds a line when there are two kept
+samples, which needs the hull to be built correctly and is covered by tests;
+and what taking in a packet and ending a window do as a whole.
 
 **Limits of the slope.** A slope beyond what $y_{\max}$ allows for two
 oscillators means an assumption has failed, as when the first sample of all

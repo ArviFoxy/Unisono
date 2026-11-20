@@ -313,25 +313,37 @@ impl<const M: usize> Estimator<M> {
             });
             return;
         }
-        // Too steep: the limiting slope, through the sample that lies lowest
-        // against it.
+        // Too steep: the limiting slope instead.
         let rise = if rise < 0 {
             0i64.saturating_sub(self.limit)
         } else {
             self.limit
         };
-        let lowest = self.lowest_against(first, rise);
+        if let Some(line) = self.limited(first, rise) {
+            self.line = Some(line);
+        }
+    }
+
+    /// The highest line under all kept samples among those that rise by
+    /// `rise` nanoseconds per second: the one through the kept sample that
+    /// lies lowest against that slope. The search starts from the kept
+    /// sample `start`. Nothing is returned if the line found does not pass
+    /// the check that it lies under every kept sample.
+    fn limited(&self, start: Sample, rise: i64) -> Option<Line> {
+        let lowest = self.lowest_against(start, rise);
         let ahead = Sample {
             time: lowest.time.saturating_add(SECOND),
             value: lowest.value.saturating_add(rise),
         };
         if self.is_under(lowest, ahead) {
-            self.line = Some(Line {
+            Some(Line {
                 time: lowest.time,
                 value: lowest.value,
                 rise,
                 run: SECOND,
-            });
+            })
+        } else {
+            None
         }
     }
 

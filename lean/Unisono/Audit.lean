@@ -78,3 +78,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Relation.bridge_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Relation.bridge_spec
+
+/-- info: 'Unisono.Relation.limited_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.limited_spec
+
+/-- info: 'Unisono.Relation.fit_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.fit_spec
