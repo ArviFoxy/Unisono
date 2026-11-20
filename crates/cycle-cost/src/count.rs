@@ -34,7 +34,26 @@ pub(crate) fn instructions(work: &mut dyn FnMut()) -> io::Result<u64> {
 
 #[cfg(target_os = "linux")]
 mod linux {
-    use std::io;
+    use std::ffi::c_void;
+    use std::{io, ptr};
+
+    /// Waits for `child` to change state, retrying if a signal interrupts the
+    /// wait.
+    fn wait_child(child: libc::pid_t) -> io::Result<libc::c_int> {
+        let mut status = 0;
+        loop {
+            // SAFETY: `child` is a child of this process and `status` is a
+            // valid pointer to one integer.
+            let waited = unsafe { libc::waitpid(child, &raw mut status, 0) };
+            if waited != -1 {
+                return Ok(status);
+            }
+            let error = io::Error::last_os_error();
+            if error.kind() != io::ErrorKind::Interrupted {
+                return Err(error);
+            }
+        }
+    }
 
     /// Lets the child that waits at a stop run until it stops at the signal
     /// `SIGSTOP` again, one instruction at a time, and returns the number of
@@ -42,18 +61,14 @@ mod linux {
     fn step_to_stop(child: libc::pid_t) -> io::Result<u64> {
         let mut count = 0u64;
         loop {
-            let mut status = 0;
+            let null = ptr::null_mut::<c_void>();
             // SAFETY: `child` is a child of this process that is stopped under
-            // its trace, and `status` is a place for one integer.
-            let stopped = unsafe {
-                if libc::ptrace(libc::PTRACE_SINGLESTEP, child, 0, 0) == -1 {
-                    return Err(io::Error::last_os_error());
-                }
-                libc::waitpid(child, &raw mut status, 0)
-            };
-            if stopped == -1 {
+            // its trace, and the variadic address and data arguments are typed
+            // null pointers.
+            if unsafe { libc::ptrace(libc::PTRACE_SINGLESTEP, child, null, null) } == -1 {
                 return Err(io::Error::last_os_error());
             }
+            let status = wait_child(child)?;
             if !libc::WIFSTOPPED(status) {
                 return Err(io::Error::other(
                     "the measured work ended before its end was marked",
@@ -71,6 +86,19 @@ mod linux {
         }
     }
 
+    /// Ends and reaps `child`, whatever state it is in.
+    fn reap(child: libc::pid_t) {
+        let mut status = 0;
+        // SAFETY: `child` is a child of this process; killing and reaping it
+        // leaves no zombie behind.
+        unsafe {
+            libc::kill(child, libc::SIGKILL);
+            while libc::waitpid(child, &raw mut status, 0) == -1
+                && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted
+            {}
+        }
+    }
+
     /// The number of instructions between the two marks in the child, of which
     /// those of `work` are a part: the rest is the end of one mark and the
     /// beginning of the next.
@@ -84,31 +112,42 @@ mod linux {
             return Err(io::Error::last_os_error());
         }
         if child == 0 {
-            // SAFETY: plain system calls of the child on itself.
+            let null = ptr::null_mut::<c_void>();
+            // SAFETY: plain system calls of the child on itself, with typed
+            // variadic arguments for `ptrace`.
             unsafe {
-                libc::ptrace(libc::PTRACE_TRACEME, 0, 0, 0);
-                libc::raise(libc::SIGSTOP);
+                if libc::ptrace(libc::PTRACE_TRACEME, 0 as libc::pid_t, null, null) == -1 {
+                    libc::_exit(1);
+                }
+                if libc::raise(libc::SIGSTOP) != 0 {
+                    libc::_exit(1);
+                }
             }
             work();
             // SAFETY: as above.
             unsafe {
-                libc::raise(libc::SIGSTOP);
+                let _ = libc::raise(libc::SIGSTOP);
                 libc::_exit(0);
             }
         }
-        let mut status = 0;
-        // SAFETY: `child` is a child of this process, and `status` is a place
-        // for one integer.
-        if unsafe { libc::waitpid(child, &raw mut status, 0) } == -1 {
-            return Err(io::Error::last_os_error());
-        }
-        let count = step_to_stop(child);
-        // SAFETY: `child` is a child of this process; it is ended and collected
-        // whatever state it is in.
-        unsafe {
-            libc::kill(child, libc::SIGKILL);
-            libc::waitpid(child, &raw mut status, 0);
-        }
+        let count = match wait_child(child) {
+            Ok(status) if libc::WIFSTOPPED(status) && libc::WSTOPSIG(status) == libc::SIGSTOP => {
+                step_to_stop(child)
+            }
+            Ok(status) if libc::WIFEXITED(status) => Err(io::Error::other(format!(
+                "the traced child exited with status {} before starting",
+                libc::WEXITSTATUS(status)
+            ))),
+            Ok(status) if libc::WIFSTOPPED(status) => Err(io::Error::other(format!(
+                "the traced child stopped on signal {} before starting",
+                libc::WSTOPSIG(status)
+            ))),
+            Ok(_) => Err(io::Error::other(
+                "the traced child ended before its start was marked",
+            )),
+            Err(error) => Err(error),
+        };
+        reap(child);
         count
     }
 }
