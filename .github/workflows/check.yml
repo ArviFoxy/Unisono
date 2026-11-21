@@ -37,6 +37,30 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libclang-dev
       - run: just sizes format-check lint test targets realtime cost
 
+  # The tests on 64-bit ARM. The crate for PipeWire is left out: it is
+  # tested in its container.
+  arm:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo test --workspace --exclude unisono-pipewire
+
+  # macOS, whose kernel stamps no departures: everything builds, and the
+  # tests that need no such stamps run. The tests of the runtime and of the
+  # program hold timing to microseconds and are run on Linux.
+  macos:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - run: cargo build --workspace --exclude unisono-pipewire
+      - run: >-
+          cargo test --package unisono-core --package unisono-dsp
+          --package unisono-metrics --package unisono-sim
+
   # The tests against a running PipeWire, in a container.
   pipewire:
     runs-on: ubuntu-latest
