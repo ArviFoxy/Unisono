@@ -1,6 +1,6 @@
 # unisono
 
-unisono streams uncompressed audio over IP to multiple receivers and synchronizes playback. It uses stochastic optimal control to deliver best possible mix of synchronization, low latency and reliability over a variety of links (wired or WiFi). It is designed for small processing quanta and supports realtime scheduling.
+unisono streams uncompressed audio over IP to multiple receivers and synchronizes playback. It uses stochastic optimal control to deliver best possible mix of synchronization, low latency and reliability over a variety of links (wired or WiFi). It is designed from the grounds up for small processing quanta and realtime operation.
 
 **Status: early development. Nothing here can be used yet.**
 
