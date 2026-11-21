@@ -27,6 +27,7 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Models.Delays
 
@@ -852,3 +853,27 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.DelayModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.DelayModel.example_holds
+
+/-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.longRun_le
+
+/-- info: 'Unisono.Spec.missed_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missed_eq_zero
+
+/-- info: 'Unisono.Spec.discontinuities_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuities_eq_zero
+
+/-- info: 'Unisono.Spec.meanLatency_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.meanLatency_le
+
+/-- info: 'Unisono.Spec.sync_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sync_le
+
+/-- info: 'Unisono.Spec.tracking_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.tracking_le
