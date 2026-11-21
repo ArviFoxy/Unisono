@@ -980,4 +980,208 @@ theorem Solution.no_request_between (σ : Solution H R Msg) (lookahead : ℕ+) {
 
 end Requests
 
+section Progress
+
+/-- The weight of the messages of a list that arrive by true time `T`, each
+message weighing `wt` of its payload. -/
+noncomputable def weightBy (wt : Msg → ℕ) (T : Time) (l : List (InFlight H Msg)) : ℕ :=
+  (l.map fun m => if m.arrival ≤ T then wt m.contents else 0).sum
+
+namespace State
+
+/-- Sending a message adds at most its weight to the messages in transit. -/
+theorem send_weight (wt : Msg → ℕ) (T : Time) (st : State H R Msg) (h : H) (t : Time) (j : H)
+    (c : Msg) (F : Finset ℕ) :
+    weightBy wt T (st.send w h t j c F).inFlight ≤ weightBy wt T st.inFlight + wt c := by
+  unfold send
+  split
+  · simp only [weightBy, List.map_append, List.map_cons, List.map_nil, List.sum_append,
+      List.sum_cons, List.sum_nil]
+    split_ifs <;> omega
+  · simp only
+    omega
+
+/-- Sending messages adds at most their weights to the messages in
+transit. -/
+theorem sendAll_weight (wt : Msg → ℕ) (T : Time) (st : State H R Msg) (h : H) (t : Time)
+    (held : Finset ℕ) (sends : List (H × Msg × Finset ℕ)) :
+    weightBy wt T (st.sendAll w h t held sends).inFlight
+      ≤ weightBy wt T st.inFlight + (sends.map fun s => wt s.2.1).sum := by
+  induction sends generalizing st with
+  | nil => simp [sendAll]
+  | cons s l ih =>
+    have h1 := ih (st.send w h t s.1 s.2.1 (s.2.2.filter (· ∈ held)))
+    have h2 := send_weight w wt T st h t s.1 s.2.1 (s.2.2.filter (· ∈ held))
+    simp only [sendAll, List.foldl_cons] at h1 ⊢
+    simp only [List.map_cons, List.sum_cons]
+    omega
+
+/-- Handling an event adds to the messages in transit at most the weights of
+what the host sends. -/
+theorem handle_weight (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg → ℕ) (T : Time)
+    (st : State H R Msg) (h : H) (t : Time) (obs : Observation H R Msg) :
+    weightBy wt T (st.handle σ w lookahead h t obs).inFlight
+      ≤ weightBy wt T st.inFlight
+        + ((σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.map fun s => wt s.2.1).sum := by
+  simp only [handle]
+  exact sendAll_weight w wt T _ h t _ _
+
+/-- A host that sets no timers leaves the timers as they are. -/
+theorem handle_timers (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (h : H)
+    (t : Time) (obs : Observation H R Msg)
+    (htimers : (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).timers = []) :
+    (st.handle σ w lookahead h t obs).timers = st.timers := by
+  simp only [handle, htimers, List.filterMap_nil, List.append_nil]
+  exact sendAll_timers w _ h t _ _
+
+end State
+
+omit [DecidableEq H] in
+/-- Taking out a message of a list takes its weight out of the list's. -/
+theorem weightBy_eraseIdx (wt : Msg → ℕ) (T : Time) (l : List (InFlight H Msg)) {p : ℕ}
+    (hp : p < l.length) :
+    weightBy wt T (l.eraseIdx p) + (if l[p].arrival ≤ T then wt l[p].contents else 0)
+      = weightBy wt T l := by
+  unfold weightBy
+  conv_rhs => rw [← List.take_append_drop p l]
+  rw [List.eraseIdx_eq_take_drop_succ, List.drop_eq_getElem_cons hp]
+  simp only [List.map_append, List.map_cons, List.sum_append, List.sum_cons]
+  ring
+
+/-- **A run whose messages die out advances past every true time.** Let every
+payload weigh at least one, and let a solution set no timers and send at each
+event messages whose weights add up to less than what the event uses up: the
+weight `cH` at a handoff, `cQ` at a request, and the arriving message's
+weight at an arrival. In a world whose handoffs and requests go on for ever,
+the run has an event after every true time. -/
+theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg → ℕ) (cH cQ : ℕ)
+    (htimers : ∀ h view, (σ h view).timers = [])
+    (hhanded : ∀ h view frames rep reading,
+      ((σ h (view ++ [⟨reading, .handed frames rep⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ cH)
+    (hasked : ∀ h view r outs rep reading,
+      ((σ h (view ++ [⟨reading, .asked r outs rep⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ cQ)
+    (hreceived : ∀ h view i c F reading,
+      ((σ h (view ++ [⟨reading, .received i c F⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ wt c)
+    (hhand : ∀ T, ∃ b, T < w.source.handed b) (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b)
+    (T : Time) : ∃ n, T < σ.eventTime w lookahead n := by
+  obtain ⟨NH, hNH⟩ := hhand T
+  choose NQ hNQ using fun r => hask r T
+  -- What remains to happen by `T`: the handoffs, the requests and the messages
+  -- that arrive by then, each weighing what it may lead to.
+  let Φ : State H R Msg → ℕ := fun st =>
+    cH * (NH - st.handedNext) + ∑ r, cQ * (NQ r - st.askedNext r) + weightBy wt T st.inFlight
+  have htm : ∀ n, (σ.states w lookahead n).timers = [] := by
+    intro n
+    induction n with
+    | zero => rfl
+    | succ n ih =>
+      show ((σ.states w lookahead n).step σ w lookahead).timers = []
+      set st := σ.states w lookahead n
+      unfold State.step
+      split
+      · simp only
+        rw [State.handle_timers w σ lookahead st _ _ _ (htimers _ _), ih]
+      · simp only
+        rw [State.handle_timers w σ lookahead st _ _ _ (htimers _ _), ih]
+      · split
+        · rw [State.handle_timers w σ lookahead _ _ _ _ (htimers _ _)]
+          exact ih
+        · exact ih
+      · split
+        · rename_i p _ u hu
+          rw [ih] at hu
+          simp at hu
+        · exact ih
+      · exact ih
+  have hdec : ∀ n, σ.eventTime w lookahead n ≤ T →
+      Φ (σ.states w lookahead (n + 1)) + 1 ≤ Φ (σ.states w lookahead n) := by
+    intro n hn
+    set st := σ.states w lookahead n with hst
+    have hstep : σ.states w lookahead (n + 1) = st.step σ w lookahead := rfl
+    obtain ⟨e₀, he₀⟩ := earliest_exists (st.key w) st.due_ne_nil
+    have htime : σ.eventTime w lookahead n = (st.key w e₀).1 := by
+      simp only [Solution.eventTime, ← hst, he₀]
+    have hmem := (earliest_spec _ _ _ he₀).1
+    rw [hstep]
+    unfold State.step
+    rw [he₀]
+    rcases st.mem_due hmem with rfl | ⟨r, rfl⟩ | ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
+    · -- A handoff, which happens by `T`.
+      have hb : st.handedNext < NH := by
+        by_contra hge
+        have := w.source.handed_strictMono.monotone (not_lt.mp hge)
+        simp only [State.key] at htime
+        linarith
+      have hw := State.handle_weight w σ lookahead wt T st w.sender (w.source.handed st.handedNext)
+        (.handed ((w.source.block st.handedNext).map fun m => (m, w.target m))
+          (w.source.reported st.handedNext))
+      have hs := hhanded w.sender (st.views w.sender)
+        ((w.source.block st.handedNext).map fun m => (m, w.target m))
+        (w.source.reported st.handedNext) ((w.clock w.sender).read
+        (w.source.handed st.handedNext))
+      simp only [Φ, State.handle_askedNext]
+      have hmul : cH * (NH - st.handedNext) = cH * (NH - (st.handedNext + 1)) + cH := by
+        rw [show NH - st.handedNext = (NH - (st.handedNext + 1)) + 1 by omega, Nat.mul_succ]
+      omega
+    · -- A request, which happens by `T`.
+      have hb : st.askedNext r < NQ r := by
+        by_contra hge
+        have := (w.speaker r).asked_strictMono.monotone (not_lt.mp hge)
+        have h2 := hNQ r
+        simp only [State.key] at htime
+        linarith
+      have hw := State.handle_weight w σ lookahead wt T st (w.host r)
+        ((w.speaker r).asked (st.askedNext r))
+        (.asked r ((w.speaker r).block (st.askedNext r)) ((w.speaker r).reported (st.askedNext r)))
+      have hs := hasked (w.host r) (st.views (w.host r)) r ((w.speaker r).block (st.askedNext r))
+        ((w.speaker r).reported (st.askedNext r)) ((w.clock (w.host r)).read
+        ((w.speaker r).asked (st.askedNext r)))
+      have hsum : ∑ r', cQ * (NQ r' - Function.update st.askedNext r (st.askedNext r + 1) r') + cQ
+          = ∑ r', cQ * (NQ r' - st.askedNext r') := by
+        rw [← Finset.add_sum_erase _ _ (Finset.mem_univ r),
+          ← Finset.add_sum_erase _ _ (Finset.mem_univ r)]
+        have hrest : ∑ r' ∈ Finset.univ.erase r,
+              cQ * (NQ r' - Function.update st.askedNext r (st.askedNext r + 1) r')
+            = ∑ r' ∈ Finset.univ.erase r, cQ * (NQ r' - st.askedNext r') := by
+          refine Finset.sum_congr rfl fun r' hr' => ?_
+          rw [Function.update_of_ne (Finset.ne_of_mem_erase hr')]
+        rw [hrest, Function.update_self,
+          show NQ r - st.askedNext r = (NQ r - (st.askedNext r + 1)) + 1 by omega, Nat.mul_succ]
+        ring
+      simp only [Φ, State.handle_handedNext]
+      omega
+    · -- The arrival of a message, which happens by `T`.
+      have harr : st.inFlight[p].arrival ≤ T := by
+        simp only [State.key, List.getElem?_eq_getElem hp, Option.map_some,
+          Option.getD_some] at htime
+        linarith
+      simp only [List.getElem?_eq_getElem hp]
+      have hw := State.handle_weight w σ lookahead wt T { st with inFlight := st.inFlight.eraseIdx p }
+        st.inFlight[p].destination st.inFlight[p].arrival
+        (.received st.inFlight[p].origin st.inFlight[p].contents st.inFlight[p].frames)
+      have hs := hreceived st.inFlight[p].destination (st.views st.inFlight[p].destination)
+        st.inFlight[p].origin st.inFlight[p].contents st.inFlight[p].frames
+        ((w.clock st.inFlight[p].destination).read st.inFlight[p].arrival)
+      have he := weightBy_eraseIdx wt T st.inFlight hp
+      simp only [harr, ite_true] at he
+      simp only [Φ, State.handle_handedNext, State.handle_askedNext]
+      simp only at hw
+      omega
+    · -- No timer is set.
+      rw [htm n] at hp
+      simp at hp
+  by_contra hcon
+  simp only [not_exists, not_lt] at hcon
+  have hbound : ∀ n, Φ (σ.states w lookahead n) + n ≤ Φ (σ.states w lookahead 0) := by
+    intro n
+    induction n with
+    | zero => simp
+    | succ n ih =>
+      have := hdec n (hcon n)
+      omega
+  have := hbound (Φ (σ.states w lookahead 0) + 1)
+  omega
+
+end Progress
+
 end Unisono.Spec

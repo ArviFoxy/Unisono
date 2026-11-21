@@ -48,6 +48,8 @@ Facts about clocks and devices within bounds:
   (`captured_sub_mem`), so positions with close capture times are close
   (`sub_le_of_captured`), and every true time is the capture time of some
   position (`exists_captured_eq`).
+* Devices hand over and request blocks for ever (`handed_unbounded`,
+  `asked_unbounded`).
 -/
 
 @[expose] public noncomputable section
@@ -387,5 +389,42 @@ theorem World.sub_le_of_captured (w : World H R) {ε : ℝ} (hd : w.source.RateW
       _ ≤ w.rate / (1 - ε) * |w.captured x - w.captured y| := by
         apply mul_le_mul_of_nonneg_left _ (div_nonneg hrate.le (by linarith))
         exact le_abs_self _
+
+/-- A capture device that runs within `ε < 1` of the nominal rate hands
+over blocks for ever: after every true time it hands one over. -/
+theorem CaptureDevice.handed_unbounded {d : CaptureDevice} {rate ε : ℝ} (hrate : 0 < rate)
+    (hd : d.RateWithin rate ε) (hε : ε < 1) (T : ℝ) : ∃ b, T < d.handed b := by
+  have hlo : 0 < (1 - ε) / rate := div_pos (by linarith) hrate
+  obtain ⟨b, hb⟩ := exists_nat_gt ((T - d.capture 0) / ((1 - ε) / rate))
+  refine ⟨b, ?_⟩
+  have hcap := (CaptureDevice.capture_sub_mem hd (Nat.zero_le b)).1
+  have hfirst : b ≤ d.first (b + 1) - 1 := by
+    have := d.first_strictMono.id_le (b + 1)
+    simp only [id] at this
+    omega
+  have hmono := d.capture_strictMono.monotone hfirst
+  have hafter := d.handed_after b
+  rw [div_lt_iff₀ hlo] at hb
+  simp only [Nat.cast_zero, sub_zero] at hcap
+  rw [mul_comm] at hcap
+  linarith
+
+/-- A playback device that runs within `ε < 1` of the nominal rate and
+requests each block at most `most` seconds ahead requests blocks for ever:
+after every true time it requests one. -/
+theorem PlaybackDevice.asked_unbounded {d : PlaybackDevice} {rate ε least most : ℝ}
+    (hrate : 0 < rate) (hd : d.RateWithin rate ε) (hε : ε < 1) (hlead : d.LeadWithin least most)
+    (T : ℝ) : ∃ b, T < d.asked b := by
+  have hlo : 0 < (1 - ε) / rate := div_pos (by linarith) hrate
+  obtain ⟨b, hb⟩ := exists_nat_gt ((T + most - d.out 0) / ((1 - ε) / rate))
+  refine ⟨b, ?_⟩
+  have hout := (PlaybackDevice.out_sub_mem hd (Nat.zero_le b)).1
+  have hmono : d.out b ≤ d.out (d.first b) :=
+    d.out_strictMono.monotone (by simpa using d.first_strictMono.id_le b)
+  have hl := (hlead b).2
+  rw [div_lt_iff₀ hlo] at hb
+  simp only [Nat.cast_zero, sub_zero] at hout
+  rw [mul_comm] at hout
+  linarith
 
 end Unisono.Spec

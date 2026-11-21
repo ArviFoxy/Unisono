@@ -1148,3 +1148,19 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.playable_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.playable_of_captured
+
+/-- info: 'Unisono.Spec.Solution.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.progress
+
+/-- info: 'Unisono.Spec.CaptureDevice.handed_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.handed_unbounded
+
+/-- info: 'Unisono.Spec.PlaybackDevice.asked_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.asked_unbounded
+
+/-- info: 'Unisono.Solutions.FixedDelay.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.progress

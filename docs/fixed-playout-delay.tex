@@ -231,11 +231,13 @@ each bounding one source of error:
   exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff
   delay $\eta$, the request lead $\lambda_{\max}$, and the spans of two
   blocks and of the lookahead.
-\item \emph{Progress:} the baseline sets no timers, and it sends messages
-  only at handoffs and requests, of which finitely many happen before any
-  time, and when a question arrives; it answers each question at most once,
-  and blocks and answers lead to no message. So finitely many events happen
-  before any time, and the run advances past every true time.
+\item \emph{Progress} (proved): the baseline sets no timers, and what it
+  sends at each event weighs less than what the event uses up, where a block
+  and an answer weigh one and a question one more than the $c$ copies of the
+  answer it may draw. What remains to happen by a time $T$, the handoffs and
+  requests before $T$ and the messages that arrive by $T$ weighed so, then
+  decreases at every step whose event comes by $T$, so the run has an event
+  after every true time (\lean{Solution.progress}, \lean{progress}).
 \end{enumerate}
 Together with Theorem~\ref{thm:atlatency}, this gives the baseline's
 guarantees under the bounded model.
