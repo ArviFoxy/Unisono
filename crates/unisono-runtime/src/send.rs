@@ -40,7 +40,7 @@ use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::format::{to_signed16, to_signed24};
 
 use crate::audio::Capture;
-use crate::level::{Choice, Chooser};
+use crate::level::{Checks, Choice, Chooser};
 use crate::ring::{Consumer, Producer, ring};
 use crate::socket::Socket;
 
@@ -257,6 +257,13 @@ impl SenderNetwork {
     #[must_use]
     pub fn counts(&self) -> SenderCounts {
         self.counts
+    }
+
+    /// What the needs reported say about the assumptions that the choice of
+    /// the level rests on; nothing if the level is held.
+    #[must_use]
+    pub fn checks(&self) -> Option<Checks> {
+        self.chooser.as_ref().map(Chooser::checks)
     }
 
     /// The core's sender.

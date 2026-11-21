@@ -14,7 +14,7 @@ use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
 use unisono_metrics::FloatGauge;
 use unisono_runtime::level::{Choice, Weights};
-use unisono_runtime::send::{self, CaptureEnd, SenderCounts, SenderNetwork, Settings};
+use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input};
 use unisono_runtime::{clock, memory};
@@ -253,7 +253,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         network
             .turn(2)
             .map_err(|error| Wrong(format!("sending: {error}")))?;
-        counters.update(network.counts(), network.sender().current_level());
+        counters.update(&network);
         std::thread::sleep(Duration::from_micros(200));
     }
     stop.store(true, Ordering::Relaxed);
@@ -281,6 +281,12 @@ struct Counters {
     restarts: Tally,
     moves: Tally,
     level: FloatGauge,
+    stretches: Tally,
+    largest: Tally,
+    expected: FloatGauge,
+    beyond: FloatGauge,
+    replaced: Tally,
+    outlasted: Tally,
 }
 
 impl Counters {
@@ -323,10 +329,62 @@ impl Counters {
                     "The latency that every receiver holds for the next frame.",
                 )
                 .map_err(named)?,
+            stretches: metrics
+                .tally(
+                    "unisono_sender_level_stretches_total",
+                    "Stretches of the stream whose need was held against the needs of the \
+                     stretches before them.",
+                )
+                .map_err(named)?,
+            largest: metrics
+                .tally(
+                    "unisono_sender_level_largest_needs_total",
+                    "Stretches that needed more than every stretch before them.",
+                )
+                .map_err(named)?,
+            expected: metrics
+                .gauge(
+                    "unisono_sender_level_largest_needs_expected",
+                    "How many stretches are expected to need more than every stretch before \
+                     them when nothing sets a stretch apart from those before it.",
+                )
+                .map_err(named)?,
+            beyond: metrics
+                .gauge(
+                    "unisono_sender_level_largest_needs_beyond",
+                    "For each stretch that needed more than every stretch before it, the \
+                     probability that the assumed law gave to a need as large or larger, added \
+                     up: half the number of such stretches when the law holds.",
+                )
+                .map_err(named)?,
+            replaced: metrics
+                .tally(
+                    "unisono_sender_level_choices_replaced_total",
+                    "Levels chosen that another choice has replaced.",
+                )
+                .map_err(named)?,
+            outlasted: metrics
+                .tally(
+                    "unisono_sender_level_choices_outlasted_total",
+                    "Levels chosen and replaced that were held for longer than the time of \
+                     the evidence they were chosen from: half of them when the needs keep \
+                     their law as the rule for moving takes them to.",
+                )
+                .map_err(named)?,
         })
     }
 
-    fn update(&mut self, counts: SenderCounts, level: i64) {
+    fn update(&mut self, network: &SenderNetwork) {
+        let counts = network.counts();
+        let level = network.sender().current_level();
+        if let Some(checks) = network.checks() {
+            self.stretches.update(checks.stretches);
+            self.largest.update(checks.largest);
+            self.expected.set(checks.expected);
+            self.beyond.set(checks.beyond);
+            self.replaced.update(checks.replaced);
+            self.outlasted.update(checks.outlasted);
+        }
         self.moves.update(counts.moves);
         // A level is far below 2^53 nanoseconds, where an `f64` is exact.
         #[allow(clippy::cast_precision_loss)]

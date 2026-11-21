@@ -1213,6 +1213,25 @@ theorem reached_spec (r : receiver.Receiver N M K) (now : timing.Position) (firs
       step as ⟨o⟩
       cases o <;> simpa [SameStream] using hsame
 
+/-- Asking which position is due at a time returns for every state and every
+time. -/
+theorem due_at_total (r : receiver.Receiver N M K) (time : Std.I64) :
+    receiver.Receiver.due_at r time ⦃ _ => True ⦄ := by
+  unfold receiver.Receiver.due_at relation.Estimator.impl.line
+  split
+  · simp only [bind_ok]
+    cases r.clock.line with
+    | none => simp
+    | some line =>
+      simp only
+      cases r.schedule with
+      | none => simp
+      | some schedule =>
+        simp only
+        step as ⟨first⟩
+        step as ⟨o⟩
+  · simp
+
 /-- Planning a cycle of the device returns for every state and every reading
 of the clock, and changes nothing about the timeline that is followed or the
 frames that are held: only the regulator moves. -/

@@ -306,6 +306,9 @@ struct Counters {
     concealed: Tally,
     jumps: Tally,
     delay: FloatGauge,
+    revisions: Tally,
+    squares: FloatGauge,
+    products: FloatGauge,
 }
 
 impl Counters {
@@ -348,6 +351,27 @@ impl Counters {
                     "The receiver's estimate of the smallest delay of a packet from the sender.",
                 )
                 .map_err(named)?,
+            revisions: metrics
+                .tally(
+                    "unisono_receiver_schedule_revisions_total",
+                    "Cycles at whose start the position that is due was held against where \
+                     the cycle before expected it.",
+                )
+                .map_err(named)?,
+            squares: metrics
+                .gauge(
+                    "unisono_receiver_schedule_revision_squares",
+                    "The squares of those differences, added up, in square frames.",
+                )
+                .map_err(named)?,
+            products: metrics
+                .gauge(
+                    "unisono_receiver_schedule_revision_products",
+                    "The products of each of those differences with the one before it, added \
+                     up, in square frames: nothing against the squares when the differences \
+                     cannot be foreseen.",
+                )
+                .map_err(named)?,
         })
     }
 
@@ -356,6 +380,10 @@ impl Counters {
         self.played.update(totals.played);
         self.concealed.update(totals.concealed);
         self.jumps.update(totals.jumps);
+        let revisions = playback.revisions();
+        self.revisions.update(revisions.count);
+        self.squares.set(revisions.squares);
+        self.products.set(revisions.products);
         // A delay in nanoseconds is exact as a float.
         #[allow(clippy::cast_precision_loss)]
         self.delay.set(playback.receiver().delay() as f64 * 1e-9);

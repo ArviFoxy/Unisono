@@ -27,6 +27,7 @@ use unisono_core::needs::Needs;
 use unisono_core::packet::{Audio, Echo, RECENT, Recent, Report};
 use unisono_core::player::{Plan, Regulation};
 use unisono_core::receiver::{self, Heard, Receiver};
+use unisono_core::timing;
 use unisono_dsp::{Concealment, Filter, Parameters, Position, Resampler, Step, Window};
 
 use crate::audio::Playback;
@@ -73,6 +74,35 @@ pub struct Totals {
     pub behind: u64,
     /// See [`Played::skipped`].
     pub skipped: u64,
+}
+
+/// The revisions of the schedule from cycle to cycle, added up. A revision
+/// is how far the position that is due at the start of a cycle lies from
+/// where the cycle before expected it: what the receiver's estimates of the
+/// clocks changed by in between. The regulator's law is the best when a
+/// revision cannot be foreseen from those before it, and then the products
+/// of successive revisions add up to nothing against their squares.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Revisions {
+    /// The number of revisions.
+    pub count: u64,
+    /// The sum of their squares, in square frames.
+    pub squares: f64,
+    /// The sum of the products of each with the one before it, in square
+    /// frames.
+    pub products: f64,
+}
+
+impl Revisions {
+    /// Adds the revision `revision`, in frames, that follows the revision
+    /// `before`, if one does.
+    fn add(&mut self, revision: f64, before: Option<f64>) {
+        self.count = self.count.wrapping_add(1);
+        self.squares += revision * revision;
+        if let Some(before) = before {
+            self.products += revision * before;
+        }
+    }
 }
 
 impl Totals {
@@ -551,6 +581,12 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     device_range: u32,
     /// Whether the delay of the path was told, so that it is not measured.
     told: bool,
+    revisions: Revisions,
+    /// The position that the cycle before expected to be due at the start
+    /// of this one.
+    expected: Option<timing::Position>,
+    /// The revision at the start of the cycle before, in frames.
+    revised: Option<f64>,
     /// Sub-nanosecond duration remainder carried between cycles, in units of
     /// 2^-16 nanosecond.
     carried: i64,
@@ -584,6 +620,9 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             device: Device::new(settings.rate),
             device_range: settings.device_range,
             told: false,
+            revisions: Revisions::default(),
+            expected: None,
+            revised: None,
             carried: 0,
             rate: settings.rate,
             channels: settings.channels,
@@ -706,6 +745,31 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         self.totals
     }
 
+    /// The revisions of the schedule so far.
+    #[must_use]
+    pub fn revisions(&self) -> Revisions {
+        self.revisions
+    }
+
+    /// Takes in the revision of the schedule at the start of a cycle: `due`
+    /// is the position that is due there, and `jumped` whether the cycle
+    /// jumped to the schedule, which begins anew.
+    fn revise(&mut self, due: Option<timing::Position>, jumped: bool) {
+        let revision = match (self.expected, due) {
+            (Some(expected), Some(due)) if !jumped => {
+                // In units of 2^-32 frame; far below 2^53 of them.
+                #[allow(clippy::cast_precision_loss)]
+                let frames = timing::distance(expected, due) as f64 / 4_294_967_296.0;
+                Some(frames)
+            }
+            _ => None,
+        };
+        if let Some(revision) = revision {
+            self.revisions.add(revision, self.revised);
+        }
+        self.revised = revision;
+    }
+
     /// Updates the device clock line with this cycle's `(position, time)`
     /// report and returns the fitted `(start, duration)` in nanoseconds.
     fn step_device(&mut self, position: u64, time: i64, frames: u32) -> (i64, i64) {
@@ -746,7 +810,10 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
     fn cycle(&mut self, frames: &mut [f32], position: u64, time: i64) {
         let count = narrow(frames.len() / usize::from(self.channels).max(1));
         let (start, duration) = self.step_device(position, time, count);
+        let due = self.receiver.due_at(start);
         let plan = self.receiver.cycle(start, duration, count);
+        self.revise(due, plan.jumped);
+        self.expected = self.receiver.due_at(start.saturating_add(duration));
         self.last = self
             .pump
             .play(&mut self.receiver, &self.store, &plan, frames);

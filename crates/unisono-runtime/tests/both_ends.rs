@@ -30,7 +30,7 @@ use unisono_core::sender::Settings as StreamSettings;
 use unisono_dsp::Parameters;
 use unisono_runtime::clock;
 use unisono_runtime::level::{Choice, Weights};
-use unisono_runtime::pump::{ReceiverPlayback, Totals};
+use unisono_runtime::pump::{ReceiverPlayback, Revisions, Totals};
 use unisono_runtime::receive::{
     self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
 };
@@ -55,6 +55,8 @@ struct Run {
     sent: SenderCounts,
     /// What the receiver played.
     played: Totals,
+    /// How the receiver's schedule was revised from cycle to cycle.
+    revisions: Revisions,
     /// The level at the end, in nanoseconds.
     level: i64,
     /// The lowest and the highest level on the way, in nanoseconds.
@@ -164,6 +166,7 @@ fn run(choice: Option<Choice>, limit: u32, seconds: i64) -> Run {
     Run {
         sent,
         played: audio.playback().totals(),
+        revisions: audio.playback().revisions(),
         level: sender.sender().current_level(),
         range: (lowest, highest),
         errors: errors(input.device(), &output, end - 3_000_000_000, &levels),
@@ -201,6 +204,20 @@ fn frames_play_a_level_after_they_were_captured() {
     assert!(run.errors.len() > 140_000, "{} frames", run.errors.len());
     let (low, high) = spread(&mut run.errors);
     assert!(low > -20e-6 && high < 20e-6, "from {low} to {high}");
+    // The schedule is revised at the start of nearly every cycle, by small
+    // fractions of a frame, and the products of successive revisions are
+    // within what their squares allow.
+    let revisions = run.revisions;
+    println!("revisions {revisions:?}");
+    assert!(
+        revisions.count * 10 > run.played.cycles * 9,
+        "{revisions:?} in {:?}",
+        run.played
+    );
+    assert!(
+        revisions.squares > 0.0 && revisions.products.abs() <= revisions.squares,
+        "{revisions:?}"
+    );
 }
 
 #[test]

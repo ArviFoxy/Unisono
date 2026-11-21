@@ -92,6 +92,16 @@
 //! the law holds as in any other, the law holds for more than `t` longer
 //! with the probability `T / (T + t)`, and the move more likely than not
 //! pays for itself exactly when `s T > c`. The level moves when that holds.
+//!
+//! # What the stretches say about the assumptions
+//!
+//! Three things are assumed above, and each says something that can be
+//! counted ([`Checks`]). Of the stretches that follow `m` others, one in
+//! `m + 1` needs more than all of those. A need above all before it lies
+//! beyond any given size with the probability that the law says, so the
+//! probability that the law gave to a need as large as the one that came is,
+//! on average, a half. And half of the levels chosen are held for longer
+//! than the time of the evidence they were chosen from.
 
 // Counts of stretches, and levels in nanoseconds, are far below 2^52, where
 // an `f64` holds every integer exactly.
@@ -128,6 +138,35 @@ pub struct Choice {
     /// How fast the level moves, in nanoseconds per second of stream.
     pub slope: i32,
 }
+
+/// What the stretches seen say about the assumptions that the choice of the
+/// level rests on, counted since the chooser was made.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Checks {
+    /// Stretches that were held against the stretches before them.
+    pub stretches: u64,
+    /// Of those, the stretches that needed more than every stretch before
+    /// them that the evidence held.
+    pub largest: u64,
+    /// How many of them are expected when nothing sets a stretch apart from
+    /// those before it: `1 / (m + 1)` for each stretch held against `m`
+    /// others, added up.
+    pub expected: f64,
+    /// For each stretch counted in `largest`, the probability that the law
+    /// of such a need gave to a need as large as its own or larger, added
+    /// up: half of `largest` when the law holds.
+    pub beyond: f64,
+    /// Levels chosen that another choice has replaced.
+    pub replaced: u64,
+    /// Of those, the levels that were held for longer than the time of the
+    /// evidence they were chosen from: half of them when the needs keep
+    /// their law as the rule for moving takes them to.
+    pub outlasted: u64,
+}
+
+/// How many stretches are held against those before them at one time; a
+/// chooser that was not asked for longer leaves the rest out.
+const CHECKED_AT_ONCE: u64 = 64;
 
 /// The scale of the law of a need about which nothing is known, in seconds:
 /// such a need exceeds `x` with the probability `(1 + x / PRIOR_SCALE)^-2`.
@@ -212,6 +251,12 @@ pub struct Chooser {
     starts: Vec<f64>,
     ends: Vec<f64>,
     points: Vec<i64>,
+    checks: Checks,
+    /// The newest stretch that was held against those before it.
+    checked: Option<u64>,
+    /// The newest stretch when the level was last chosen, and the time of
+    /// the evidence it was chosen from, in seconds.
+    chosen: Option<(u64, f64)>,
 }
 
 impl Chooser {
@@ -232,7 +277,16 @@ impl Chooser {
             starts: Vec::with_capacity(history),
             ends: Vec::with_capacity(history),
             points: Vec::with_capacity(2 * history + 2),
+            checks: Checks::default(),
+            checked: None,
+            chosen: None,
         }
+    }
+
+    /// What the stretches seen say about the assumptions.
+    #[must_use]
+    pub fn checks(&self) -> Checks {
+        self.checks
     }
 
     /// How fast the level moves, in nanoseconds per second of stream.
@@ -288,12 +342,70 @@ impl Chooser {
     /// The level to move to from `current`, in nanoseconds, if the evidence
     /// says that moving is worth its cost.
     pub fn choose(&mut self, current: i64) -> Option<i64> {
+        self.check();
         let weights = self.choice.weights;
         let mut evidence = self.gather()?;
         let cost_now = evidence.cost(seconds(current), &weights);
         let (best, cost_best) = evidence.best(&weights);
-        let saving = (cost_now - cost_best) * evidence.time();
-        (saving > weights.moving).then_some(best)
+        let time = evidence.time();
+        if (cost_now - cost_best) * time <= weights.moving {
+            return None;
+        }
+        if let Some((stretch, covered)) = self.chosen {
+            self.checks.replaced += 1;
+            if self.newest.saturating_sub(stretch) as f64 * self.stretch > covered {
+                self.checks.outlasted += 1;
+            }
+        }
+        self.chosen = Some((self.newest, time));
+        Some(best)
+    }
+
+    /// The largest need of stretch `stretch`, if it is kept.
+    fn need(&self, stretch: u64) -> Option<f64> {
+        let length = self.kept.len() as u64;
+        usize::try_from(stretch % length)
+            .ok()
+            .and_then(|place| self.kept.get(place))
+            .and_then(|slot| *slot)
+            .filter(|(held, _)| *held == stretch)
+            .map(|(_, need)| need)
+    }
+
+    /// Holds each stretch that no report will give again, and that was not
+    /// held before, against the kept stretches before it.
+    fn check(&mut self) {
+        let Some(last) = self.newest.checked_sub(RECENT as u64) else {
+            return;
+        };
+        let from = match self.checked {
+            Some(done) => (done + 1).max(last.saturating_sub(CHECKED_AT_ONCE - 1)),
+            None => last,
+        };
+        let oldest = (self.newest + 1).saturating_sub(self.kept.len() as u64);
+        for stretch in from..=last {
+            let Some(need) = self.need(stretch) else {
+                continue;
+            };
+            let mut others = 0u64;
+            let mut largest = f64::NEG_INFINITY;
+            for before in oldest..stretch {
+                if let Some(other) = self.need(before) {
+                    others += 1;
+                    largest = largest.max(other);
+                }
+            }
+            if others == 0 {
+                continue;
+            }
+            self.checks.stretches += 1;
+            self.checks.expected += 1.0 / (others as f64 + 1.0);
+            if need > largest {
+                self.checks.largest += 1;
+                self.checks.beyond += exceeds_beyond(need, largest.max(0.0));
+            }
+        }
+        self.checked = Some(last);
     }
 
     /// The stretches that no report will give again as evidence; `None` if
@@ -308,12 +420,7 @@ impl Chooser {
         // The need before a stretch that is not known counts as none.
         let mut before = f64::NEG_INFINITY;
         for stretch in first..=last {
-            let need = usize::try_from(stretch % length)
-                .ok()
-                .and_then(|place| self.kept.get(place))
-                .and_then(|slot| *slot)
-                .filter(|(held, _)| *held == stretch)
-                .map(|(_, need)| need);
+            let need = self.need(stretch);
             if let Some(need) = need {
                 self.sorted.push(need);
                 // A level in `[before, need)` is exceeded from this stretch
@@ -772,6 +879,34 @@ mod tests {
         let level = chosen(weights, &seen);
         assert!(level > 0.0299 && level < 0.0301, "{level}");
         assert_eq!(super::nanoseconds(level) % 1_000, 999, "{level}");
+    }
+
+    #[test]
+    fn stretches_that_need_more_than_all_before_them_come_as_often_as_expected() {
+        let mut numbers = Numbers(0x3c6e_f372_fe94_f82b);
+        // Needs that nothing sets apart from each other: the same jitter in
+        // every stretch.
+        let quiet = needs(&mut numbers, 20_000, 1e9);
+        let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
+        for (part, some) in quiet.chunks(20).enumerate() {
+            report(&mut chooser, 7, part as u64 * 20, some);
+            let _ = chooser.choose(20_000_000);
+        }
+        let checks = chooser.checks();
+        assert!(checks.stretches > 19_000, "{checks:?}");
+        // About one stretch in the number of stretches kept, and within what
+        // chance allows of the number expected.
+        assert!(
+            checks.expected > 10.0 && checks.expected < 40.0,
+            "{checks:?}"
+        );
+        let off = (checks.largest as f64 - checks.expected).abs();
+        assert!(off <= 4.0 * checks.expected.sqrt(), "{checks:?}");
+        // Each of them counts between nothing and one.
+        assert!(
+            checks.beyond > 0.0 && checks.beyond <= checks.largest as f64,
+            "{checks:?}"
+        );
     }
 
     #[test]

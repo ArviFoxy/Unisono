@@ -627,8 +627,14 @@ The estimates of section 6.3 are not derived as such means: the line under
 the samples lies above the true relation by up to the bound given there, and
 the device's line is a least-squares fit to its last reports. What that
 costs is *not stated in Lean*. *Monitor:* the correlation between successive
-revisions of the schedule's position and pace, which is zero for revisions
-that cannot be foreseen.
+revisions of the schedule's position, which is zero for revisions that cannot
+be foreseen. A receiver holds, at the start of each cycle, the position that
+is due against where the cycle before expected it, and adds up the squares
+of these differences and the products of each with the one before
+(`unisono_receiver_schedule_revision_squares`, `..._products`); the
+correlation is the second over the first. Between a sender and a receiver on
+one host, with devices 130 parts per million apart, it was -0.01, with
+revisions of 5 ns (`crates/unisono-runtime/tests/both_ends.rs`).
 
 **The level's slope.** The sender announces the level and its slope with the
 frames they apply to, so a change of the slope is no revision: the receiver
@@ -804,6 +810,18 @@ above the last by $S + M$ on average, so that pauses have no typical size.
 The numbers are about links and devices in general and are not fitted to
 anything. *Monitor:* how far each new largest need lay above the one before.
 
+The sender counts what these two assumptions say
+(`unisono_runtime::level::Checks`). Each stretch is held against the
+stretches kept before it: how many needed more than all of those
+(`unisono_sender_level_largest_needs_total`), against the sum of $1/(m+1)$
+over the stretches (`..._expected`). And for each stretch that did, the
+probability that the law above gave to a need as large as its own or larger
+is added up (`..._beyond`): under the law that probability is evenly spread
+between 0 and 1, so the sum is half the count. A sum well above half says
+that new largest needs lie closer to the old ones than the law takes them
+to, and the level is held higher than it need be; a sum well below half says
+the opposite.
+
 The level so chosen is the best decision under what is stated: the law of
 the next stretch above, and the cost $J$. A level is a whole number of
 nanoseconds from zero to two seconds, and the level chosen is one at which
@@ -842,7 +860,11 @@ the move more likely than not pays for itself exactly when
 
 $$s\,T > c$$
 
-(`move_pays_iff`). The level moves when that holds. The rule looks at
+(`move_pays_iff`). The level moves when that holds. *Monitor:* of the levels
+chosen and since replaced, how many were held for longer than the time of the
+evidence they were chosen from
+(`unisono_sender_level_choices_outlasted_total` of
+`..._choices_replaced_total`): half of them under the assumption. The rule looks at
 whether the move is more likely to pay than not, and not at the mean of what
 it saves, which under this law has no finite value. The level moves along a
 line that the sender announces with the frames, at a slope within the bound
@@ -866,6 +888,9 @@ pace in section 6.4, which is left as a weight of its own.
 
 ## 7. Assumptions at a glance
 
+A monitor marked *counted* is among the metrics that the program serves; the
+others are not counted yet.
+
 | Assumption | Section | Used for | Monitor |
 |---|---|---|---|
 | Oscillators: bounded frequency, bounded departure from a line | 1 | error of the fitted line | change of the fitted slope |
@@ -873,9 +898,9 @@ pace in section 6.4, which is left as a weight of its own.
 | Stamps err toward delay | 2.2 | the fitted line | samples that lower the line by much |
 | Smallest delays equal in both directions for equal sizes, up to an unknown constant | 2.3, 2.5 | the offset | half-sum of the two fitted lines |
 | Device reports: bounded error of either sign, constant delay | 2.4 | device lines | residuals of reports |
-| Revisions of the schedule have the mean zero given what the receiver has seen | 6.4 | the regulator's law being the best | correlation between successive revisions |
+| Revisions of the schedule have the mean zero given what the receiver has seen | 6.4 | the regulator's law being the best | correlation between successive revisions (counted) |
 | Delivery delay: baseline, deviation, pauses | 4 | level | histograms and records of each part |
 | The laws of the delivery delay hold over the time the evidence covers | 6.5 | level | short-window against long-window estimates |
-| Nothing sets the next stretch apart from those seen | 6.5 | the level | how often a need exceeds all before it, against one in the number seen |
-| A stretch that needs more than all seen: the law of how much more | 6.5 | the level | how far each new largest need lay above the one before |
-| The moment of a choice is as likely in any part of the time over which the needs keep their law as in any other | 6.5 | when the level moves | how long a chosen level stayed the best, against the time of the evidence it was chosen from |
+| Nothing sets the next stretch apart from those seen | 6.5 | the level | how often a need exceeds all before it, against one in the number seen (counted) |
+| A stretch that needs more than all seen: the law of how much more | 6.5 | the level | how far each new largest need lay above the one before (counted) |
+| The moment of a choice is as likely in any part of the time over which the needs keep their law as in any other | 6.5 | when the level moves | how long a chosen level stayed the best, against the time of the evidence it was chosen from (counted) |

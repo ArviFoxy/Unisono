@@ -6315,7 +6315,7 @@ def timing.sender_time
   fixed.saturate i11
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reached]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 638:4-650:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 655:4-667:5 -/
 def receiver.Receiver.reached
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (now : timing.Position) (first : Std.I64) :
@@ -6409,8 +6409,29 @@ def receiver.Receiver.cycle
          jumped := false
        }, self)
 
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::due_at]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 639:4-650:5
+    Visibility: public -/
+def receiver.Receiver.due_at
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (time : Std.I64) :
+  Result (Option timing.Position)
+  := do
+  if self.following
+  then
+    let o ← relation.Estimator.impl.line self.clock
+    match o with
+    | none => ok none
+    | some line =>
+      match self.schedule with
+      | none => ok none
+      | some schedule =>
+        let i ← timing.sender_time line self.path time
+        timing.due schedule i
+  else ok none
+
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 653:4-656:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 670:4-673:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -6423,7 +6444,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 661:4-686:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 678:4-703:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -6445,7 +6466,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 692:4-699:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 709:4-716:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}

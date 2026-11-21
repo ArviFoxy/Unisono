@@ -632,6 +632,23 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             .cycle(now, then, frames, duration, schedule.level_slope)
     }
 
+    /// The position that is due when the receiver's clock reads `time`, by
+    /// the schedule in use; nothing while no timeline is followed, the
+    /// sender's clock is not known, or no frame of the timeline is due.
+    #[must_use]
+    pub fn due_at(&self, time: i64) -> Option<Position> {
+        if !self.following {
+            return None;
+        }
+        let Some(line) = self.clock.line() else {
+            return None;
+        };
+        let Some(schedule) = self.schedule else {
+            return None;
+        };
+        due(&schedule, sender_time(&line, self.path, time))
+    }
+
     /// Takes the next schedule kept into use, if the position `now` that is
     /// due when the sender's clock reads `first` has reached the index it
     /// holds from, and returns it with the position that is due under it.
