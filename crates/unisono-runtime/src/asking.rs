@@ -275,6 +275,50 @@ mod tests {
     }
 
     #[test]
+    fn whatever_arrives_a_request_names_frames_that_did_not() {
+        // Packets in any order, some lost, some twice, with jumps of the
+        // index and times that go back: every request is for a run of
+        // frames that begins after the first packet of the timeline and
+        // ends before the furthest frame that arrived, and of which the
+        // first frame did not arrive.
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let mut draw = |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let mut asking = Asking::new();
+        let mut arrived = std::collections::BTreeSet::new();
+        let mut furthest = 0u64;
+        let mut place = 0u64;
+        for step in 0..20_000i64 {
+            place = match draw(20) {
+                0 => place.saturating_sub(draw(40)),
+                1 => place + draw(60),
+                2 => place + 2,
+                _ => place + 1,
+            };
+            let index = place * 240;
+            asking.arrived(
+                &packet(index),
+                step * 5_000_000 - i64::try_from(draw(3)).unwrap(),
+            );
+            arrived.insert(index);
+            furthest = furthest.max(index + 240);
+            while let Some(wanted) = asking.due(step * 5_000_000) {
+                assert_eq!(wanted.timeline, 7);
+                assert!(wanted.frames > 0, "{wanted:?}");
+                assert!(wanted.first + wanted.frames <= furthest, "{wanted:?}");
+                assert!(
+                    !arrived.contains(&wanted.first),
+                    "{wanted:?} at step {step}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn another_timeline_and_a_stream_without_protection_ask_for_nothing() {
         let mut asking = Asking::new();
         asking.arrived(&packet(0), 0);

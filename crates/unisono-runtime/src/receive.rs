@@ -417,8 +417,7 @@ impl Reporting {
 pub struct Intake {
     /// The most items taken in at the start of a cycle.
     pub items: usize,
-    /// When reports are sent; `None` for a receiver that sends none, as one
-    /// that is told the delay of its path.
+    /// When reports are sent; `None` for a receiver that sends none.
     pub reports: Option<Reporting>,
 }
 

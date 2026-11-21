@@ -32,12 +32,14 @@ Built and tested on Linux, without audio hardware:
   hands a sender the frames of its capture device, or has a receiver fill
   the frames of its playback device, from the device's own cycle.
 
-The tests run on x86-64 and on 64-bit ARM. Not built yet: platforms other
-than Linux (everything but the audio systems compiles for macOS; its kernel
-stamps no departures, and the timing there is not tested), and any
-measurement on audio hardware: the ALSA and PipeWire devices are tested
-against PipeWire in containers, where the program plays every frame into a
-sink within a microsecond of its capture time and the latency.
+The tests run on x86-64 and on 64-bit ARM, and those of the core, the
+signal processing and the metrics also on ARMv7 without hardware floating
+point. Not built yet: platforms other than Linux (everything but the audio
+systems compiles for macOS; its kernel stamps no departures, and the timing
+there is not tested), and any measurement on audio hardware: the ALSA and
+PipeWire devices are tested against PipeWire in containers, where the
+program plays every frame into a sink within a microsecond of its capture
+time and the latency.
 
 `docs/model.md` states the problem and what is assumed, `docs/theorems.md`
 lists what is proved, and `docs/protocol.md` gives the packets.
