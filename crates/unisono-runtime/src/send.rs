@@ -45,7 +45,7 @@ use crate::audio::Capture;
 use crate::level::{Checks, Choice, Chooser};
 use crate::network_thread::NetworkLoop;
 use crate::ring::{Consumer, Producer, ring};
-use crate::socket::{Socket, canonical_addr, is_transient_send_error};
+use crate::socket::{Socket, canonical_addr, is_restricted_send_error, is_transient_send_error};
 
 /// The most frames that are sent as silence in place of dropped cycles. A
 /// longer gap starts a timeline anew: 2^20 frames, about 22 seconds at
@@ -261,12 +261,26 @@ pub struct SenderCounts {
     /// Incoming datagrams ignored because their source address was not in the
     /// configured receiver list.
     pub ignored: u64,
-    /// Datagrams that could not be sent.
+    /// Datagrams that could not be sent due to a transient error.
     pub unsent: u64,
+    /// Subset of `unsent` caused by per-destination policy (`EPERM`) or
+    /// address availability (`EADDRNOTAVAIL`).
+    pub blocked: u64,
     /// Moves of the level that were begun.
     pub moves: u64,
     /// Packets sent again to a receiver that asked for their frames.
     pub again: u64,
+}
+
+impl SenderCounts {
+    /// Counts a transient send error, breaking out per-destination policy or
+    /// address-availability failures (`EPERM`, `EADDRNOTAVAIL`) into `blocked`.
+    fn record_unsent(&mut self, error: &io::Error) {
+        self.unsent += 1;
+        if is_restricted_send_error(error) {
+            self.blocked += 1;
+        }
+    }
 }
 
 /// A packet that is kept to be sent again.
@@ -566,7 +580,7 @@ impl SenderNetwork {
             match sent {
                 Ok(_) => tagged = true,
                 Err(error) if is_transient_send_error(&error) => {
-                    self.counts.unsent += 1;
+                    self.counts.record_unsent(&error);
                 }
                 Err(error) => return Err(error),
             }
@@ -710,7 +724,7 @@ impl SenderNetwork {
             match self.socket.send_untagged(bytes, to) {
                 Ok(_) => self.counts.again += 1,
                 Err(error) if is_transient_send_error(&error) => {
-                    self.counts.unsent += 1;
+                    self.counts.record_unsent(&error);
                 }
                 Err(error) => return Err(error),
             }
@@ -768,7 +782,7 @@ impl SenderNetwork {
             match self.socket.send_untagged(&out[..length], received.from) {
                 Ok(_) => self.counts.answers += 1,
                 Err(error) if is_transient_send_error(&error) => {
-                    self.counts.unsent += 1;
+                    self.counts.record_unsent(&error);
                 }
                 Err(error) => return Err(error),
             }

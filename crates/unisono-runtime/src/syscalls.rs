@@ -99,8 +99,29 @@ mod linux {
     #[cfg(target_arch = "aarch64")]
     const PROCESSOR: u32 = 0xc000_00b7;
 
+    /// Linux `READ_IMPLIES_EXEC` personality flag (`<sys/personality.h>`).
+    const READ_IMPLIES_EXEC: libc::c_ulong = 0x0040_0000;
+
+    /// Returns an error if a queried Linux personality bitmask has
+    /// `READ_IMPLIES_EXEC` set, because `PROT_READ` mappings would then become
+    /// executable without `PROT_EXEC`.
+    fn check_personality_value(persona: libc::c_int) -> io::Result<()> {
+        #[allow(clippy::cast_sign_loss)]
+        if persona >= 0 && (persona as libc::c_ulong & READ_IMPLIES_EXEC) != 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "cannot enforce non-executable memory while READ_IMPLIES_EXEC personality is set",
+            ));
+        }
+        Ok(())
+    }
+
     /// Restricts the calling thread with the BPF program built from `ALLOWED`.
     pub(super) fn restrict() -> io::Result<()> {
+        // Query process personality without modifying it (`0xffff_ffff`).
+        // SAFETY: `personality(0xffffffff)` is a read-only Linux syscall.
+        let persona = unsafe { libc::personality(0xffff_ffff) };
+        check_personality_value(persona)?;
         // SAFETY: `getpid` is always safe and returns the current process ID.
         let pid = u32::try_from(unsafe { libc::getpid() })
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "process id is negative"))?;
@@ -419,6 +440,18 @@ mod linux {
             drop(here);
             // The thread that asked is restricted, and no other.
             std::fs::File::open("/dev/null").expect("this thread opens files");
+        }
+
+        #[test]
+        fn read_implies_exec_personality_is_rejected() {
+            use super::{READ_IMPLIES_EXEC, check_personality_value};
+
+            assert!(check_personality_value(0).is_ok());
+            assert!(check_personality_value(-1).is_ok());
+            #[allow(clippy::cast_possible_truncation)]
+            let bad = READ_IMPLIES_EXEC as libc::c_int;
+            let err = check_personality_value(bad).expect_err("READ_IMPLIES_EXEC must fail");
+            assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
         }
     }
 }

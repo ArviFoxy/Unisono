@@ -25,15 +25,18 @@ time or for the start and length of a cycle, and read and write packets. The che
   reference that cannot be resolved, and the check sees it by name. On every
   run the check also builds a function that does panic and fails unless that
   reference appears: the check is seen to catch what it is for;
-- **every reached function is audited fail-closed by `crates/reachable`,**
-  with jump tables disabled (`-max-jump-table-size=0`) and eager RELRO
-  linking (`-Wl,-z,relro,-z,now`), so no direct call, unconditional or
-  conditional jump (including hinted branches), linear fallthrough, or
-  indirect branch can leave unisono's own code, branch through writable
-  memory, jump into the middle of an allowed helper, or reach a trap or
-  kernel entry. `crates/reachable` audits x86-64 ELF libraries only and exits
-  with status 2 on other architectures (so `just realtime` and `just check`
-  target x86-64 Linux).
+- **the core's sources outside tests contain no trait objects (`dyn`) and no
+  function pointers (`fn(...)`),** so every call in the core is direct across
+  both the audit build and the shipped program;
+- **every reached function of the audit build is audited fail-closed by
+  `crates/reachable`,** with jump tables disabled (`-max-jump-table-size=0`)
+  and eager RELRO linking (`-Wl,-z,relro,-z,now`), so in the audited library no
+  direct call, unconditional or conditional jump (including hinted branches),
+  linear fallthrough, or indirect branch can leave unisono's own code, branch
+  through writable memory, jump into the middle of an allowed helper, or reach
+  a trap or kernel entry. `crates/reachable` audits x86-64 ELF libraries only
+  and exits with status 2 on other architectures (so `just realtime` and `just
+  check` target x86-64 Linux).
 
 These are statements about every path, not about the paths that a test ran.
 They hold for the code as compiled for the machine that runs the check.
@@ -127,13 +130,16 @@ the socket that is open, waiting for it, reading the clock and sleeping,
 waking other threads, writing to a file that is open, non-executable memory
 management (`brk`, `munmap`, `madvise`, and `mmap`/`mprotect` without
 `PROT_EXEC`), signaling its own process via `tgkill` (so `abort()` terminates
-cleanly), and ending. A call under a foreign architecture terminates the
-process; any other call of that thread fails with `EPERM` (`PermissionDenied`)
-and does nothing: it cannot open a file, make a socket, start a program or
-make memory executable. The program asks for this at the start of the network
-thread of a sender and of a receiver on little-endian Linux on x86-64 and
-64-bit ARM, and fails startup if installing the filter fails there; on other
-platforms (`Unsupported`) the thread runs unrestricted and a warning is
-printed. Tests verify both the BPF verdicts and a live restricted thread
-sending, sleeping, mapping non-executable memory, and being denied `openat`,
-`socket`, and `mprotect(..., PROT_EXEC)`.
+cleanly), and ending. Before installing the filter, `restrict()` queries the process
+personality (`personality(0xffffffff)`) and refuses startup if
+`READ_IMPLIES_EXEC` is active, because `PROT_READ` mappings would otherwise be
+executable without `PROT_EXEC`. A call under a foreign architecture terminates
+the process; any other call of that thread fails with `EPERM`
+(`PermissionDenied`) and does nothing: it cannot open a file, make a socket,
+start a program or make memory executable. The program asks for this at the
+start of the network thread of a sender and of a receiver on little-endian
+Linux on x86-64 and 64-bit ARM, and fails startup if installing the filter
+fails there; on other platforms (`Unsupported`) the thread runs unrestricted
+and a warning is printed. Tests verify both the BPF verdicts and a live
+restricted thread sending, sleeping, mapping non-executable memory, and being
+denied `openat`, `socket`, and `mprotect(..., PROT_EXEC)`.

@@ -447,7 +447,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
 fn summarize(network: &SenderNetwork, dropped: u64) {
     let counts = network.counts();
     println!(
-        "sent packets {} answers {} ignored {} filled {} restarts {} unsent {} \
+        "sent packets {} answers {} ignored {} filled {} restarts {} unsent {} blocked {} \
          dropped-cycles {dropped} level-moves {} level {} again {}",
         counts.packets,
         counts.answers,
@@ -455,6 +455,7 @@ fn summarize(network: &SenderNetwork, dropped: u64) {
         counts.filled,
         counts.restarts,
         counts.unsent,
+        counts.blocked,
         counts.moves,
         network.sender().current_level(),
         counts.again
@@ -476,6 +477,8 @@ struct Counters {
     packets: Tally,
     answers: Tally,
     ignored: Tally,
+    unsent: Tally,
+    blocked: Tally,
     filled: Tally,
     restarts: Tally,
     dropped: Tally,
@@ -491,105 +494,119 @@ struct Counters {
 }
 
 impl Counters {
+    fn tally(
+        metrics: &mut Metrics,
+        name: &'static str,
+        help: &'static str,
+    ) -> Result<Tally, Wrong> {
+        metrics
+            .tally(name, help)
+            .map_err(|error| Wrong(format!("registering metrics: {error:?}")))
+    }
+
+    fn gauge(
+        metrics: &mut Metrics,
+        name: &'static str,
+        help: &'static str,
+    ) -> Result<FloatGauge, Wrong> {
+        metrics
+            .gauge(name, help)
+            .map_err(|error| Wrong(format!("registering metrics: {error:?}")))
+    }
+
     fn new(metrics: &mut Metrics) -> Result<Counters, Wrong> {
-        let named = |error| Wrong(format!("registering metrics: {error:?}"));
         Ok(Counters {
-            packets: metrics
-                .tally(
-                    "unisono_sender_packets_total",
-                    "Audio packets made and sent to every receiver.",
-                )
-                .map_err(named)?,
-            answers: metrics
-                .tally(
-                    "unisono_sender_answers_total",
-                    "Reports of receivers answered.",
-                )
-                .map_err(named)?,
-            ignored: metrics
-                .tally(
-                    "unisono_sender_ignored_datagrams_total",
-                    "Incoming datagrams dropped because their source address was not in --to.",
-                )
-                .map_err(named)?,
-            filled: metrics
-                .tally(
-                    "unisono_sender_filled_frames_total",
-                    "Frames sent as silence for cycles of the capture device that were dropped.",
-                )
-                .map_err(named)?,
-            restarts: metrics
-                .tally(
-                    "unisono_sender_timeline_restarts_total",
-                    "Timelines started after the first.",
-                )
-                .map_err(named)?,
-            dropped: metrics
-                .tally(
-                    "unisono_sender_dropped_cycles_total",
-                    "Cycles dropped by the capture thread before reaching the network thread.",
-                )
-                .map_err(named)?,
-            moves: metrics
-                .tally(
-                    "unisono_sender_level_moves_total",
-                    "Moves of the level that were begun.",
-                )
-                .map_err(named)?,
-            again: metrics
-                .tally(
-                    "unisono_sender_packets_sent_again_total",
-                    "Packets sent again to a receiver that asked for their frames.",
-                )
-                .map_err(named)?,
-            level: metrics
-                .gauge(
-                    "unisono_sender_level_seconds",
-                    "The latency that every receiver holds for the next frame.",
-                )
-                .map_err(named)?,
-            stretches: metrics
-                .tally(
-                    "unisono_sender_level_stretches_total",
-                    "Stretches of the stream whose need was held against the needs of the \
-                     stretches before them.",
-                )
-                .map_err(named)?,
-            largest: metrics
-                .tally(
-                    "unisono_sender_level_largest_needs_total",
-                    "Stretches that needed more than every stretch before them.",
-                )
-                .map_err(named)?,
-            expected: metrics
-                .gauge(
-                    "unisono_sender_level_largest_needs_expected",
-                    "How many stretches are expected to need more than every stretch before \
-                     them when nothing sets a stretch apart from those before it.",
-                )
-                .map_err(named)?,
-            beyond: metrics
-                .gauge(
-                    "unisono_sender_level_largest_needs_beyond",
-                    "For each stretch that needed more than every stretch before it, the \
-                     probability that the assumed law gave to a need as large or larger, added \
-                     up: half the number of such stretches when the law holds.",
-                )
-                .map_err(named)?,
-            replaced: metrics
-                .tally(
-                    "unisono_sender_level_choices_replaced_total",
-                    "Levels chosen that another choice has replaced.",
-                )
-                .map_err(named)?,
-            outlasted: metrics
-                .tally(
-                    "unisono_sender_level_choices_outlasted_total",
-                    "Levels chosen and replaced that were held for longer than the time of \
-                     the evidence they were chosen from: half of them when the needs keep \
-                     their law as the rule for moving takes them to.",
-                )
-                .map_err(named)?,
+            packets: Self::tally(
+                metrics,
+                "unisono_sender_packets_total",
+                "Audio packets made and sent to every receiver.",
+            )?,
+            answers: Self::tally(
+                metrics,
+                "unisono_sender_answers_total",
+                "Reports of receivers answered.",
+            )?,
+            ignored: Self::tally(
+                metrics,
+                "unisono_sender_ignored_datagrams_total",
+                "Incoming datagrams dropped because their source address was not in --to.",
+            )?,
+            unsent: Self::tally(
+                metrics,
+                "unisono_sender_unsent_datagrams_total",
+                "Outgoing datagrams that could not be sent due to a transient error.",
+            )?,
+            blocked: Self::tally(
+                metrics,
+                "unisono_sender_blocked_datagrams_total",
+                "Outgoing datagrams rejected per destination with EPERM or EADDRNOTAVAIL.",
+            )?,
+            filled: Self::tally(
+                metrics,
+                "unisono_sender_filled_frames_total",
+                "Frames sent as silence for cycles of the capture device that were dropped.",
+            )?,
+            restarts: Self::tally(
+                metrics,
+                "unisono_sender_timeline_restarts_total",
+                "Timelines started after the first.",
+            )?,
+            dropped: Self::tally(
+                metrics,
+                "unisono_sender_dropped_cycles_total",
+                "Cycles dropped by the capture thread before reaching the network thread.",
+            )?,
+            moves: Self::tally(
+                metrics,
+                "unisono_sender_level_moves_total",
+                "Moves of the level that were begun.",
+            )?,
+            again: Self::tally(
+                metrics,
+                "unisono_sender_packets_sent_again_total",
+                "Packets sent again to a receiver that asked for their frames.",
+            )?,
+            level: Self::gauge(
+                metrics,
+                "unisono_sender_level_seconds",
+                "The latency that every receiver holds for the next frame.",
+            )?,
+            stretches: Self::tally(
+                metrics,
+                "unisono_sender_level_stretches_total",
+                "Stretches of the stream whose need was held against the needs of the \
+                 stretches before them.",
+            )?,
+            largest: Self::tally(
+                metrics,
+                "unisono_sender_level_largest_needs_total",
+                "Stretches that needed more than every stretch before them.",
+            )?,
+            expected: Self::gauge(
+                metrics,
+                "unisono_sender_level_largest_needs_expected",
+                "How many stretches are expected to need more than every stretch before \
+                 them when nothing sets a stretch apart from those before it.",
+            )?,
+            beyond: Self::gauge(
+                metrics,
+                "unisono_sender_level_largest_needs_beyond",
+                "For each stretch that needed more than every stretch before it, the \
+                 probability that the assumed law gave to a need as large or larger, added \
+                 up: half the number of such stretches when the law holds.",
+            )?,
+            replaced: Self::tally(
+                metrics,
+                "unisono_sender_level_choices_replaced_total",
+                "Levels chosen that another choice has replaced.",
+            )?,
+            outlasted: Self::tally(
+                metrics,
+                "unisono_sender_level_choices_outlasted_total",
+                "Levels chosen and replaced that were held for longer than the time of \
+                 the evidence they were chosen from: half of them when the needs keep \
+                 their law as the rule for moving takes them to.",
+            )?,
         })
     }
 
@@ -612,6 +629,8 @@ impl Counters {
         self.packets.update(counts.packets);
         self.answers.update(counts.answers);
         self.ignored.update(counts.ignored);
+        self.unsent.update(counts.unsent);
+        self.blocked.update(counts.blocked);
         self.filled.update(counts.filled);
         self.restarts.update(counts.restarts);
         self.dropped.update(dropped);

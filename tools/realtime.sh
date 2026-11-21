@@ -85,6 +85,89 @@ if [ -n "$kernel_entries" ]; then
     failed=1
 fi
 
+# Source-level ban on trait objects and function pointer types in the core
+# outside tests, so an indirect call eliminated by LTO in the audit build
+# cannot survive into the shipped binary.
+pointers="$(find "$root/crates/unisono-core/src" -type f -name '*.rs' | sort | while IFS= read -r file; do
+    awk '
+        function strip(line,    out, i, c, nextc, n, in_str, esc) {
+            out = ""
+            n = length(line)
+            in_str = 0
+            esc = 0
+            for (i = 1; i <= n; i++) {
+                c = substr(line, i, 1)
+                nextc = (i < n) ? substr(line, i + 1, 1) : ""
+                if (blk_depth > 0) {
+                    if (c == "/" && nextc == "*") { blk_depth++; i++ }
+                    else if (c == "*" && nextc == "/") { blk_depth--; i++ }
+                } else if (in_str) {
+                    if (esc) { esc = 0 }
+                    else if (c == "\\") { esc = 1 }
+                    else if (c == "\"") { in_str = 0 }
+                } else {
+                    if (c == "/" && nextc == "/") {
+                        break
+                    } else if (c == "/" && nextc == "*") {
+                        blk_depth++
+                        i++
+                    } else if (c == "\"") {
+                        in_str = 1
+                        out = out " "
+                    } else {
+                        out = out c
+                    }
+                }
+            }
+            return out
+        }
+        function brace_delta(s,    t, opens, closes) {
+            t = s; opens = gsub(/\{/, "", t)
+            t = s; closes = gsub(/\}/, "", t)
+            return opens - closes
+        }
+        BEGIN { skip_pending = 0; skip_depth = 0; blk_depth = 0 }
+        {
+            code = strip($0)
+            if (skip_depth > 0) {
+                skip_depth += brace_delta(code)
+                if (skip_depth < 0) skip_depth = 0
+                next
+            }
+            if (skip_pending) {
+                if (code ~ /^[[:space:]]*$/ || code ~ /^[[:space:]]*#\[/) next
+                if (code ~ /\{/) {
+                    skip_depth = brace_delta(code)
+                    if (skip_depth < 0) skip_depth = 0
+                    skip_pending = 0
+                } else if (code ~ /;/) {
+                    skip_pending = 0
+                }
+                next
+            }
+            if (code ~ /^[[:space:]]*#\[cfg\(test\)\]/) {
+                rest = code
+                sub(/^[[:space:]]*#\[cfg\(test\)\]/, "", rest)
+                if (rest ~ /\{/) {
+                    skip_depth = brace_delta(rest)
+                    if (skip_depth < 0) skip_depth = 0
+                } else if (rest ~ /;/) {
+                    # single-line test item
+                } else {
+                    skip_pending = 1
+                }
+                next
+            }
+            print FILENAME ":" FNR ": " code
+        }
+    ' "$file"
+done | grep -E '\bdyn\b|\bfn[[:space:]]*\(' || true)"
+if [ -n "$pointers" ]; then
+    echo "the core calls through a pointer:" >&2
+    echo "$pointers" >&2
+    failed=1
+fi
+
 # shellcheck disable=SC2086
 if ! core_report="$("$reachable" "$linked" $entries)"; then
     echo "the real-time core reaches what it may not" >&2

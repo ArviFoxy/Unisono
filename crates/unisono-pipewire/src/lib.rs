@@ -379,6 +379,13 @@ impl<P: Playback, C: Capture> State<P, C> {
             return;
         }
         let Ok(time) = stream.time() else {
+            // Advance past the dequeued frames so later callbacks do not stamp
+            // subsequent audio as if these frames never existed, and keep
+            // `last_ticks` aligned so `sync_position` will not double-count them.
+            self.position = self.position.saturating_add(total_frames);
+            if let Some((_, prev_frames)) = &mut self.last_ticks {
+                *prev_frames = prev_frames.saturating_add(total_frames);
+            }
             return;
         };
         self.sync_position(&time);

@@ -89,15 +89,27 @@ pub fn unspecified_for(peers: &[SocketAddr]) -> SocketAddr {
     }
 }
 
-/// Whether a UDP `send_to` error is transient or peer-specific and should be
-/// counted as an unsent datagram instead of terminating the network thread.
+/// Whether a UDP `send_to` error is transient or per-destination and should be
+/// counted instead of terminating the network thread.
 ///
-/// Configuration errors such as `EACCES`/`EPERM` (for example sending to a
-/// broadcast address without `SO_BROADCAST`) and `EADDRNOTAVAIL` are treated
-/// as fatal so they surface instead of silently incrementing `unsent`.
+/// `EACCES` (for example sending to a broadcast address without `SO_BROADCAST`)
+/// is treated as fatal so misconfiguration surfaces immediately. `EPERM` (for
+/// example a firewall rule dropping packets to one receiver) and
+/// `EADDRNOTAVAIL` (for example a temporary address change) stay transient and
+/// per-destination so one peer cannot stop delivery to other receivers; use
+/// [`is_restricted_send_error`] to count them separately.
 #[must_use]
 pub fn is_transient_send_error(error: &io::Error) -> bool {
-    if matches!(
+    #[cfg(unix)]
+    if let Some(code) = error.raw_os_error() {
+        if code == libc::EACCES {
+            return false;
+        }
+        if matches!(code, libc::ENOBUFS | libc::EPERM | libc::EADDRNOTAVAIL) {
+            return true;
+        }
+    }
+    matches!(
         error.kind(),
         io::ErrorKind::WouldBlock
             | io::ErrorKind::Interrupted
@@ -106,14 +118,21 @@ pub fn is_transient_send_error(error: &io::Error) -> bool {
             | io::ErrorKind::NetworkDown
             | io::ErrorKind::ConnectionRefused
             | io::ErrorKind::ConnectionReset
-    ) {
-        return true;
-    }
+            | io::ErrorKind::AddrNotAvailable
+    )
+}
+
+/// Whether a transient UDP `send_to` error was caused by a per-destination
+/// policy or address-availability failure (`EPERM` or `EADDRNOTAVAIL` on Unix;
+/// `AddrNotAvailable` elsewhere), which is counted separately from generic
+/// transient errors so firewall drops and address changes stay visible.
+#[must_use]
+pub fn is_restricted_send_error(error: &io::Error) -> bool {
     #[cfg(unix)]
-    if error.raw_os_error() == Some(libc::ENOBUFS) {
-        return true;
+    if let Some(code) = error.raw_os_error() {
+        return matches!(code, libc::EPERM | libc::EADDRNOTAVAIL);
     }
-    false
+    error.kind() == io::ErrorKind::AddrNotAvailable
 }
 
 /// After how many datagrams with a stamp of the packet scheduler and none of
@@ -1557,29 +1576,40 @@ mod tests {
     }
 
     #[test]
-    fn transient_send_error_excludes_configuration_failures() {
+    fn transient_send_error_distinguishes_eacces_from_eperm_and_addr_not_available() {
         use std::io;
 
-        use super::is_transient_send_error;
-        assert!(is_transient_send_error(&io::Error::from(
-            io::ErrorKind::WouldBlock
-        )));
+        use super::{is_restricted_send_error, is_transient_send_error};
+        let would_block = io::Error::from(io::ErrorKind::WouldBlock);
+        assert!(is_transient_send_error(&would_block));
+        assert!(!is_restricted_send_error(&would_block));
         assert!(is_transient_send_error(&io::Error::from(
             io::ErrorKind::NetworkUnreachable
         )));
         assert!(is_transient_send_error(&io::Error::from(
             io::ErrorKind::ConnectionRefused
         )));
+        let addr_unavail = io::Error::from(io::ErrorKind::AddrNotAvailable);
+        assert!(is_transient_send_error(&addr_unavail));
+        assert!(is_restricted_send_error(&addr_unavail));
         #[cfg(unix)]
-        assert!(is_transient_send_error(&io::Error::from_raw_os_error(
-            libc::ENOBUFS
-        )));
-        assert!(!is_transient_send_error(&io::Error::from(
-            io::ErrorKind::PermissionDenied
-        )));
-        assert!(!is_transient_send_error(&io::Error::from(
-            io::ErrorKind::AddrNotAvailable
-        )));
+        {
+            let enobufs = io::Error::from_raw_os_error(libc::ENOBUFS);
+            assert!(is_transient_send_error(&enobufs));
+            assert!(!is_restricted_send_error(&enobufs));
+            let eperm = io::Error::from_raw_os_error(libc::EPERM);
+            assert!(is_transient_send_error(&eperm));
+            assert!(is_restricted_send_error(&eperm));
+            let eaddrnotavail = io::Error::from_raw_os_error(libc::EADDRNOTAVAIL);
+            assert!(is_transient_send_error(&eaddrnotavail));
+            assert!(is_restricted_send_error(&eaddrnotavail));
+            let eacces = io::Error::from_raw_os_error(libc::EACCES);
+            assert!(!is_transient_send_error(&eacces));
+            assert!(!is_restricted_send_error(&eacces));
+        }
+        let generic_perm = io::Error::from(io::ErrorKind::PermissionDenied);
+        assert!(!is_transient_send_error(&generic_perm));
+        assert!(!is_restricted_send_error(&generic_perm));
     }
 
     #[cfg(target_os = "linux")]

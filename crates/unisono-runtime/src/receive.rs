@@ -49,7 +49,7 @@ use crate::clock;
 use crate::network_thread::NetworkLoop;
 use crate::pump::ReceiverPlayback;
 use crate::ring::{Consumer, Producer, ring};
-use crate::socket::{Socket, canonical_addr, is_transient_send_error};
+use crate::socket::{Socket, canonical_addr, is_restricted_send_error, is_transient_send_error};
 
 /// Maximum datagrams drained in one [`ReceiverNetwork::turn`] so a burst
 /// cannot starve departures, reports, or retransmission requests.
@@ -235,6 +235,9 @@ pub struct NetworkCounts {
     pub requests: u64,
     /// Outgoing reports or requests dropped due to a transient send error.
     pub unsent: u64,
+    /// Subset of `unsent` caused by per-destination policy (`EPERM`) or
+    /// address availability (`EADDRNOTAVAIL`).
+    pub blocked: u64,
     /// Datagrams dropped because the audio thread had not handed back a
     /// buffer, or had no room for another item.
     pub dropped: u64,
@@ -396,7 +399,7 @@ impl ReceiverNetwork {
                 Ok(_) => self.counts.requests += 1,
                 // It is asked again in ten milliseconds.
                 Err(error) if is_transient_send_error(&error) => {
-                    self.counts.unsent += 1;
+                    self.record_unsent(&error);
                     break;
                 }
                 Err(error) => return Err(error),
@@ -560,10 +563,19 @@ impl ReceiverNetwork {
             // A report that cannot be sent now is not sent again: the next
             // one serves as well.
             Err(error) if is_transient_send_error(&error) => {
-                self.counts.unsent += 1;
+                self.record_unsent(&error);
                 Ok(())
             }
             Err(error) => Err(error),
+        }
+    }
+
+    /// Counts a transient send error, breaking out per-destination policy or
+    /// address-availability failures (`EPERM`, `EADDRNOTAVAIL`) into `blocked`.
+    fn record_unsent(&mut self, error: &io::Error) {
+        self.counts.unsent += 1;
+        if is_restricted_send_error(error) {
+            self.counts.blocked += 1;
         }
     }
 }
