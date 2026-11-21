@@ -109,9 +109,13 @@ pub struct Chooser {
     choice: Choice,
     /// The length of a stretch, in seconds.
     stretch: f64,
-    /// The timeline whose stretches are kept.
+    /// The timeline that reports are taken in for.
     timeline: Option<u64>,
-    /// The newest stretch that a report gave.
+    /// The number that stretch 0 of that timeline has here. The stretches of
+    /// the timelines before keep theirs, so that the evidence about the
+    /// links outlives a new start of the sender.
+    base: u64,
+    /// The newest stretch that a report gave, by its number here.
     newest: u64,
     /// The stretch and the largest need, in seconds, of stretch `i` at
     /// place `i % history`.
@@ -134,6 +138,7 @@ impl Chooser {
             choice: Choice { history, ..choice },
             stretch: f64::from(window) / f64::from(rate.max(1)),
             timeline: None,
+            base: 0,
             newest: 0,
             kept: vec![None; history],
             needs: Vec::with_capacity(history),
@@ -150,13 +155,15 @@ impl Chooser {
         self.choice.slope
     }
 
-    /// Takes in the needs that a report on `timeline` carried. The stretches
-    /// of another timeline than before are dropped.
+    /// Takes in the needs that a report on `timeline` carried. A timeline
+    /// other than the one before follows on from the stretches of that one,
+    /// which are kept: they tell of the same links.
     pub fn observe(&mut self, timeline: u64, recent: &Recent) {
         if self.timeline != Some(timeline) {
             self.timeline = Some(timeline);
-            self.newest = 0;
-            self.kept.fill(None);
+            if self.kept.iter().any(Option::is_some) {
+                self.base = self.newest.saturating_add(1);
+            }
         }
         let count = usize::from(recent.count).min(RECENT);
         for (back, &need) in recent.needs.iter().take(count).enumerate() {
@@ -164,7 +171,7 @@ impl Chooser {
                 break;
             };
             if need != UNKNOWN_NEED {
-                self.take(stretch, f64::from(need) * 1e-6);
+                self.take(self.base.saturating_add(stretch), f64::from(need) * 1e-6);
             }
         }
     }
@@ -473,7 +480,7 @@ mod tests {
     // A need of the test is a fraction of a second: a few thousand
     // microseconds.
     #[allow(clippy::cast_possible_truncation)]
-    fn report(chooser: &mut Chooser, first: u64, needs: &[f64]) {
+    fn report(chooser: &mut Chooser, timeline: u64, first: u64, needs: &[f64]) {
         for (i, _) in needs.iter().enumerate().skip(3).step_by(4) {
             let mut recent = Recent::NONE;
             recent.newest = first + i as u64;
@@ -483,7 +490,7 @@ mod tests {
                     .checked_sub(back)
                     .map_or(UNKNOWN_NEED, |at| (needs[at] * 1e6).ceil() as i32);
             }
-            chooser.observe(7, &recent);
+            chooser.observe(timeline, &recent);
         }
     }
 
@@ -494,7 +501,7 @@ mod tests {
         for every in [5.0, 30.0, 300.0] {
             let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
             let seen = needs(&mut numbers, 2_400, every);
-            report(&mut chooser, 0, &seen);
+            report(&mut chooser, 7, 0, &seen);
             let chosen = chooser
                 .choose(20_000_000)
                 .map_or(0.02, |level| level as f64 * 1e-9);
@@ -512,21 +519,36 @@ mod tests {
     }
 
     #[test]
+    fn the_evidence_outlives_a_new_timeline_of_the_sender() {
+        let mut numbers = Numbers(0x1234_5678_9abc_def1);
+        let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
+        let paused = needs(&mut numbers, 2_400, 5.0);
+        report(&mut chooser, 7, 0, &paused);
+        // The sender starts again: the index counts from zero in a timeline
+        // of another number, over the same links. A second of its stretches
+        // would be too few to choose from on their own.
+        let quiet = needs(&mut numbers, 20, 1e9);
+        report(&mut chooser, 8, 0, &quiet);
+        let level = chooser.choose(2_000_000).expect("the level rises");
+        assert!(level > 40_000_000, "{level}");
+    }
+
+    #[test]
     fn the_level_stays_without_evidence_and_rises_with_pauses() {
         let mut numbers = Numbers(0x9e37_79b9_7f4a_7c15);
         let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
         assert_eq!(chooser.choose(20_000_000), None);
         let few = needs(&mut numbers, 50, 1e9);
-        report(&mut chooser, 0, &few);
+        report(&mut chooser, 7, 0, &few);
         assert_eq!(chooser.choose(20_000_000), None);
         // A quiet link brings the level down from 20 ms...
         let quiet = needs(&mut numbers, 2_400, 1e9);
-        report(&mut chooser, 50, &quiet);
+        report(&mut chooser, 7, 50, &quiet);
         let low = chooser.choose(20_000_000).expect("the level falls");
         assert!(low < 10_000_000, "{low}");
         // ...and pauses bring it up again.
         let paused = needs(&mut numbers, 2_400, 5.0);
-        report(&mut chooser, 2_450, &paused);
+        report(&mut chooser, 7, 2_450, &paused);
         let high = chooser.choose(low).expect("the level rises");
         assert!(high > 40_000_000, "{high}");
     }
