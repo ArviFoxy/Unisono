@@ -22,7 +22,7 @@ use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Output};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Tally};
+use crate::exported::{Metrics, Server, Tally};
 use crate::options::{Options, Wrong};
 use crate::{MAX_CYCLE, System, sleep_until, validate_drift};
 
@@ -225,7 +225,7 @@ impl Config {
 pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let config = Config::from_options(options)?;
     let playback = playback(options, config.stream, config.rate, config.channels)?;
-    let counters = Counters::served(options)?;
+    let (counters, _metrics_server) = Counters::served(options)?;
 
     let socket = Socket::bind(config.listen)
         .map_err(|error| Wrong(format!("binding {}: {error}", config.listen)))?;
@@ -436,15 +436,18 @@ struct Counters {
 
 impl Counters {
     /// The counters, among metrics that are served where `--metrics` says.
-    fn served(options: &Options) -> Result<Counters, Wrong> {
+    fn served(options: &Options) -> Result<(Counters, Option<Server>), Wrong> {
         let mut metrics = Metrics::new();
         let counters = Counters::new(&mut metrics)?;
-        if let Some(address) = options.one::<SocketAddr>("metrics")? {
-            metrics
-                .serve(address)
-                .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
-        }
-        Ok(counters)
+        let server = match options.one::<SocketAddr>("metrics")? {
+            Some(address) => Some(
+                metrics
+                    .serve(address)
+                    .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?,
+            ),
+            None => None,
+        };
+        Ok((counters, server))
     }
 
     fn new(metrics: &mut Metrics) -> Result<Counters, Wrong> {
