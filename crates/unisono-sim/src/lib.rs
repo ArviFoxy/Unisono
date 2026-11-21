@@ -15,6 +15,7 @@ pub mod assumptions;
 pub mod clock;
 pub mod link;
 pub mod packets;
+pub mod protection;
 pub mod random;
 pub mod reference;
 pub mod stream;
