@@ -903,3 +903,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.block_arrives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.block_arrives
+
+/-- info: 'Unisono.Spec.Solution.mem_inFlight_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.mem_inFlight_succ
+
+/-- info: 'Unisono.Spec.Solution.views_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_succ
+
+/-- info: 'Unisono.Solutions.FixedDelay.origin_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.origin_inFlight

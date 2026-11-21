@@ -18,6 +18,10 @@ model (`Unisono.Spec.Models.Bounded`).
   link can drop in a row, every speaker's host holds the frames of a block
   at every step of the run whose event comes later than the block's handoff
   plus the longest delay from the sender (`block_arrives`).
+* **Where messages come from.** Every message of the baseline in transit
+  was sent where it should have been: a block message at its block's
+  handoff, a question with its origin's reading, an answer with the
+  sender's reading when a question arrived (`origin_inFlight`).
 -/
 
 @[expose] public noncomputable section
@@ -152,5 +156,129 @@ theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
     exact hdel
   -- It is handled before the event of step `k`.
   exact σ.frames_arrive w lookahead hin hnk (by simp only; linarith)
+
+/-- What the baseline sends, by the event it acts on: the stream at a
+handoff, at the sender; answers to questions, at the sender; questions, at
+another host's device request. -/
+theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payload)
+    {s : H × Payload × Finset ℕ} (hs : s ∈ ((solution p : Solution H R Payload) h (l ++ [e])).sends) :
+    (∃ frames stamp f t', e.observation = .handed frames stamp ∧ h = p.sender ∧
+        frames.head? = some (f, t') ∧ s.1 ∈ p.speakers ∧ s.2.1 = .block f stamp ∧
+        s.2.2 = (frames.map Prod.fst).toFinset)
+      ∨ (∃ i sent F, e.observation = .received i (.ask sent) F ∧ h = p.sender ∧
+        s = (i, .answer sent e.reading, ∅))
+      ∨ (∃ r outputs stamp, e.observation = .asked r outputs stamp ∧ h ≠ p.sender ∧
+        s = (p.sender, .ask e.reading, ∅)) := by
+  simp only [solution, List.getLast?_append, List.getLast?_singleton, Option.some_or] at hs
+  unfold act at hs
+  split at hs
+  · rename_i frames stamp hobs
+    split_ifs at hs with hh
+    · split at hs
+      · rename_i f t' hhead
+        simp only [List.mem_flatMap, List.mem_replicate] at hs
+        obtain ⟨j, hj, -, rfl⟩ := hs
+        exact Or.inl ⟨frames, stamp, f, t', hobs, hh, hhead, hj, rfl, rfl⟩
+      · simp at hs
+    · simp at hs
+  · rename_i i sent F hobs
+    split_ifs at hs with hh
+    · simp only [List.mem_replicate] at hs
+      exact Or.inr (Or.inl ⟨i, sent, F, hobs, hh, hs.2⟩)
+    · simp at hs
+  · rename_i r outputs stamp hobs
+    split_ifs at hs with hask
+    · simp only [List.mem_replicate] at hs
+      refine Or.inr (Or.inr ⟨r, outputs, stamp, hobs, ?_, hs.2⟩)
+      simp only [asks, Bool.and_eq_true, bne_iff_ne] at hask
+      exact hask.1
+    · simp at hs
+  · simp at hs
+
+omit [DecidableEq H] in
+/-- The first frame of a block handed over is the block's first frame. -/
+theorem block_head (w : World H R) (b : ℕ) :
+    ((w.source.block b).map fun n => (n, w.target n)).head?
+      = some (w.source.first b, w.target (w.source.first b)) := by
+  have hne : 0 < w.source.first (b + 1) - w.source.first b :=
+    Nat.sub_pos_of_lt (w.source.first_strictMono (Nat.lt_succ_self b))
+  unfold CaptureDevice.block
+  obtain ⟨m, hm⟩ : ∃ m, w.source.first (b + 1) - w.source.first b = m + 1 :=
+    ⟨_, (Nat.succ_pred_eq_of_pos hne).symm⟩
+  rw [hm, List.range'_succ]
+  simp
+
+/-- Where a message of the baseline comes from. A block message was sent by
+the sender at the handoff of its block, with the block's frames; a question
+was sent by its origin to the sender, at the reading of its origin's clock
+that it carries; an answer was sent by the sender, at the reading of its
+clock that it carries, when a question of its destination arrived. -/
+def Origin (w : World H R) (m : InFlight H Payload) : Prop :=
+  match m.contents with
+  | .block f stamp => ∃ b, m.origin = w.sender ∧ f = w.source.first b ∧
+      stamp = w.source.reported b ∧ m.frames = (w.source.block b).toFinset ∧
+      ∃ q, w.network.deliver w.sender m.destination (w.source.handed b) q = some m.arrival
+  | .ask sent => ∃ s₁ q, m.destination = w.sender ∧ sent = (w.clock m.origin).read s₁ ∧
+      w.network.deliver m.origin w.sender s₁ q = some m.arrival
+  | .answer sent received => ∃ s₁ s₂ q q', m.origin = w.sender ∧
+      sent = (w.clock m.destination).read s₁ ∧ received = (w.clock w.sender).read s₂ ∧
+      w.network.deliver m.destination w.sender s₁ q = some s₂ ∧
+      w.network.deliver w.sender m.destination s₂ q' = some m.arrival
+
+/-- **Every message of the baseline in transit comes from where it should.** -/
+theorem origin_inFlight (w : World H R) (lookahead : ℕ+) (hsender : p.sender = w.sender) :
+    ∀ n, ∀ m ∈ ((solution p : Solution H R Payload).states w lookahead n).inFlight, Origin w m := by
+  set σ : Solution H R Payload := solution p
+  intro n
+  induction n with
+  | zero => intro m hm; simp [Solution.states, State.start] at hm
+  | succ n ih =>
+    intro m hm
+    rcases σ.mem_inFlight_succ w lookahead n hm with hold | ⟨h, t, obs, hn, s, hs, ho, hd, hc, hf, q, hq⟩
+    · exact ih m hold
+    · rcases sends_cases p h _ _ hs with
+        ⟨frames, stamp, f, t', hobs, hh, hhead, -, hs1, hs2⟩ | ⟨i, sent, F, hobs, hh, rfl⟩ |
+          ⟨r, outputs, stamp, hobs, hh, rfl⟩
+      · simp only at hobs
+        subst hobs
+        obtain ⟨b, hbh, hbt, hbf, hbs⟩ := σ.handled_handed w lookahead hn
+        rw [hbf, block_head] at hhead
+        simp only [Option.some.injEq, Prod.mk.injEq] at hhead
+        unfold Origin
+        rw [hc, hs1]
+        refine ⟨b, ho.trans hbh, hhead.1.symm, hbs, ?_, q, ?_⟩
+        · have hT : (((w.source.block b).map fun n => (n, w.target n)).map Prod.fst).toFinset
+              = (w.source.block b).toFinset := by
+            simp [List.map_map, Function.comp_def]
+          rw [hf, hs2, hbf]
+          simp only [Observation.frames, hT]
+          exact Finset.filter_true_of_mem fun x hx => Finset.mem_union_right _ hx
+        · rw [← hbh, ← hbt, hd]
+          exact hq
+      · simp only at hobs hd hc hq
+        subst hobs
+        obtain ⟨mq, hmq, hdest, harr, hor, hcont, -⟩ := σ.handled_received w lookahead hn
+        have hO := ih mq hmq
+        unfold Origin at hO
+        simp only [hcont] at hO
+        obtain ⟨s₁, q₁, -, hsent, hdel₁⟩ := hO
+        unfold Origin
+        simp only [hc]
+        refine ⟨s₁, t, q₁, q, ?_, ?_, ?_, ?_, ?_⟩
+        · rw [ho, hh, hsender]
+        · rw [hd, hsent, hor]
+        · rw [hh, hsender]
+        · rw [hd, ← hor, ← harr]
+          exact hdel₁
+        · rw [hd, ← hsender, ← hh]
+          exact hq
+      · simp only at hd hc hq
+        unfold Origin
+        simp only [hc]
+        refine ⟨t, q, ?_, ?_, ?_⟩
+        · rw [hd, hsender]
+        · rw [ho]
+        · rw [ho, ← hsender]
+          exact hq
 
 end Unisono.Solutions.FixedDelay
