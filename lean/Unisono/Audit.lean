@@ -1092,3 +1092,39 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.plays_of_asked_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.plays_of_asked_step
+
+/-- info: 'Unisono.Spec.Solution.handled_of_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_asked
+
+/-- info: 'Unisono.Spec.Solution.handled_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_asked
+
+/-- info: 'Unisono.Spec.Solution.askedNext_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_succ
+
+/-- info: 'Unisono.Spec.Solution.views_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_append
+
+/-- info: 'Unisono.Spec.Solution.no_request_between' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.no_request_between
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_at_next_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_at_next_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_handled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_handled
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_memory' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_memory
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_recent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_recent

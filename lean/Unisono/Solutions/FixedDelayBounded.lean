@@ -34,6 +34,13 @@ model (`Unisono.Spec.Models.Bounded`).
   remembers an estimate from a question as late or later (`answer_reaches`).
   The estimate a host remembers is an NTP sample whose question and answer
   took between the least and the longest delays (`offset_sample`).
+* **What a host remembers at a step.** A speaker host other than the
+  sender's remembers a block handed over before the step, and no earlier than
+  any block handed over more than the longest delay from the sender before it
+  (`block_memory`). It remembers a clock estimate from a question that left
+  no earlier than an earlier request less one period of the questions
+  (`offset_recent`). At a request of a speaker it continues from the position
+  chosen at the speaker's previous request (`last_at_next_request`).
 * **The pace.** A position corrected towards its target by at most `w`
   frames per output sample stays within `B` frames of a trajectory when the
   targets do and the trajectory drifts from one frame per output sample by
@@ -663,5 +670,164 @@ theorem advance_converges {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K
   refine ⟨K + j, Nat.le_add_right K j, ?_⟩
   exact advance_tracks hw x xs T (K + j) (fun k hk => hstep k (by omega))
     (fun k hk => hband k (by omega)) (fun k hk => hT k (by omega)) hin
+
+/-- **A speaker continues at its next request from where it ended.** At the
+step that handles request `b + 1` of speaker `r`, its host remembers for `r`
+the output sample and position chosen last at request `b`. -/
+theorem last_at_next_request (w : World H R) (lookahead : ℕ+) {n₁ n₂ : ℕ} {r : Fin R} {b : ℕ}
+    (hb₁ : ((solution p : Solution H R Payload).states w lookahead n₁).askedNext r = b)
+    (he₁ : earliest (((solution p : Solution H R Payload).states w lookahead n₁).key w)
+      ((solution p : Solution H R Payload).states w lookahead n₁).due = some (.asked r b))
+    (hb₂ : ((solution p : Solution H R Payload).states w lookahead n₂).askedNext r = b + 1)
+    (hn : n₁ < n₂) :
+    (memoryOf p (w.host r) (((solution p : Solution H R Payload).states w lookahead n₂).views (w.host r))).last r
+      = lastChosen (positions p (memoryOf p (w.host r)
+          (((solution p : Solution H R Payload).states w lookahead n₁).views (w.host r))) r
+          ((w.speaker r).block b) ((w.speaker r).reported b)) := by
+  set σ : Solution H R Payload := solution p
+  have hh := σ.handled_of_asked w lookahead he₁
+  have hsucc := σ.askedNext_succ w lookahead (hb₁ ▸ he₁)
+  rw [hb₁] at hsucc
+  have hv₁ : (σ.states w lookahead (n₁ + 1)).views (w.host r)
+      = (σ.states w lookahead n₁).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩] := by
+    rw [σ.views_succ w lookahead n₁ (w.host r), hh]
+    simp
+  obtain ⟨l, hl, hev⟩ := σ.views_append w lookahead (show n₁ + 1 ≤ n₂ by omega) (w.host r)
+  rw [hl, hv₁, List.append_assoc, List.singleton_append]
+  apply last_after_request p (w.host r) _ _ l rfl
+  intro e he outs st heo
+  obtain ⟨i, hi₁, hi₂, t, obs, hhi, rfl⟩ := hev e he
+  simp only at heo
+  subst heo
+  exact σ.no_request_between w lookahead (hsucc.trans hb₂.symm) hi₁ hi₂ hhi
+
+/-- **Every block's message reaches every other speaker's host.** In a world
+within bounds, when the baseline sends each message more times than a link
+can drop in a row, a message of block `b` reaches every speaker host `j`
+other than the sender's within the longest delay, and is handled before
+every step whose event comes later. -/
+theorem block_handled (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
+    {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
+    (hk : w.source.handed b + B.delayMost w.sender j
+      < (solution p : Solution H R Payload).eventTime w lookahead k) :
+    ∃ i < k, ∃ arr F, arr ≤ w.source.handed b + B.delayMost w.sender j ∧
+      (solution p : Solution H R Payload).handled w lookahead i
+        = some (j, arr, .received w.sender (.block (w.source.first b) (w.source.reported b)) F) := by
+  set σ : Solution H R Payload := solution p with hσ
+  have hdpos := B.delayLeast_pos w.sender j
+  have hdle := B.delayLeast_le w.sender j
+  have hlt : w.source.handed b < σ.eventTime w lookahead k := by linarith
+  obtain ⟨n, hnk, hbn, hearly⟩ :=
+    σ.exists_handed_step w lookahead (σ.lt_handedNext w lookahead hlt)
+  have hn : σ.handled w lookahead n = some (w.sender, w.source.handed b,
+      .handed ((w.source.block b).map fun m => (m, w.target m)) (w.source.reported b)) := by
+    unfold Solution.handled
+    rw [hearly]
+  set x : H → Payload × Finset ℕ :=
+    fun _ => (Payload.block (w.source.first b) (w.source.reported b), (w.source.block b).toFinset)
+  have hjf : j ∈ p.speakers.filter (· ≠ p.sender) := by
+    rw [List.mem_filter, hsender]
+    exact ⟨hj, by simpa using hjs⟩
+  obtain ⟨i0, hi0⟩ := replicate_entries p.copies x _ (hnodup.filter _) hjf
+  have hS := solution_handed_sends p w hsender ((σ.states w lookahead n).views w.sender)
+    ((w.clock w.sender).read (w.source.handed b)) b
+  obtain ⟨arr, -, harr, hin⟩ := Solution.copy_inFlight σ w B hw lookahead hn hS hcopies hi0
+  have h1 : n + 1 ≤ k := by omega
+  have h2 : arr < σ.eventTime w lookahead k := by linarith
+  obtain ⟨i, -, hik, hhi⟩ := Solution.handled_before w σ lookahead hin h1 h2
+  exact ⟨i, hik, arr, _, harr, hhi⟩
+
+/-- **The block that a speaker's host remembers.** In a world within bounds,
+at step `k` a speaker host `h` other than the sender's remembers the first
+frame and timestamp of a block `b'` handed over before the step's event, and
+no earlier than any block `b''` handed over more than the longest delay from
+the sender to `h` before it. -/
+theorem block_memory (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
+    {h : H} (hh : h ∈ p.speakers) (hhs : h ≠ w.sender) {k b'' : ℕ}
+    (hb'' : w.source.handed b'' + B.delayMost w.sender h
+      < (solution p : Solution H R Payload).eventTime w lookahead k) :
+    ∃ b', (memoryOf p h (((solution p : Solution H R Payload).states w lookahead k).views h)).block
+        = some (w.source.first b', w.source.reported b')
+      ∧ b'' ≤ b' ∧ w.source.handed b' < (solution p : Solution H R Payload).eventTime w lookahead k := by
+  set σ : Solution H R Payload := solution p with hσ
+  obtain ⟨i, hik, arr, F, -, hhi⟩ := block_handled p w B hw lookahead hsender hnodup hcopies hh hhs hb''
+  have hmem := Solution.mem_views_of_handled w σ lookahead hhi hik
+  have hns : h ≠ p.sender := hsender ▸ hhs
+  obtain ⟨f', c', hblock, hle⟩ := block_latest p h hns _ hmem rfl
+  obtain ⟨e, he, i', F', heo⟩ := block_received p h hns _ hblock
+  obtain ⟨j, hj, t, obs, hhj, rfl⟩ := Solution.handled_of_mem_views w σ lookahead he
+  simp only at heo
+  subst heo
+  obtain ⟨m, hm, hdest, harr, -, hcont, -⟩ := Solution.handled_received w σ lookahead hhj
+  have hO := origin_inFlight p w lookahead hsender j m hm
+  unfold Origin at hO
+  simp only [hcont] at hO
+  obtain ⟨b', -, hf, hc, -, q, hq⟩ := hO
+  refine ⟨b', by rw [hblock, hf, hc], ?_, ?_⟩
+  · rw [hf] at hle
+    exact w.source.first_strictMono.le_iff_le.mp hle
+  · have hafter := w.network.after _ _ _ _ _ hq
+    rw [harr] at hafter
+    have htj : t ≤ σ.eventTime w lookahead k := by
+      rw [← Solution.handled_time w σ lookahead hhj]
+      exact Solution.eventTime_mono w σ lookahead hj.le
+    linarith
+
+/-- **The clock estimate that a speaker's host remembers is recent.** In a
+world within bounds, when step `n'` handles a request of a speaker whose host
+`h` is not the sender's, at true time `a'`, then at every step whose event
+comes later than `a'` plus the longest delays to the sender and back, `h`
+remembers an estimate from a question that left at a true time `s` no
+earlier than `a'` less the period of the questions on `h`'s clock. -/
+theorem offset_recent (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
+    (hperiod : 0 ≤ p.period) {n' : ℕ} {h : H} (hhs : h ≠ w.sender) {a' : Time} {r : Fin R}
+    {outs : List ℕ} {st : ℝ}
+    (hn' : (solution p : Solution H R Payload).handled w lookahead n' = some (h, a', .asked r outs st))
+    {k : ℕ} (hk : a' + B.delayMost h w.sender + B.delayMost w.sender h
+      < (solution p : Solution H R Payload).eventTime w lookahead k) :
+    ∃ t₁ θ s, (memoryOf p h (((solution p : Solution H R Payload).states w lookahead k).views h)).offset
+        = some (t₁, θ) ∧ (w.clock h).read s ≤ t₁ ∧ a' - p.period / (1 - B.clockRate) ≤ s := by
+  set σ : Solution H R Payload := solution p with hσ
+  have hclocks := hw.1
+  have hε := B.clockRate_lt_one
+  have hgap : 0 ≤ p.period / (1 - B.clockRate) := div_nonneg hperiod (by linarith)
+  by_cases hask : asks p h (memoryOf p h ((σ.states w lookahead n').views h)) ((w.clock h).read a') = true
+  · obtain ⟨t₁, θ, ho, hle⟩ := answer_reaches p w B hw lookahead hsender hcopies hn' hask hk
+    exact ⟨t₁, θ, a', ho, hle, by linarith⟩
+  · -- The host asked within the last period, at a request of its view.
+    have hns : h ≠ p.sender := hsender ▸ hhs
+    obtain ⟨x, hx, hlt⟩ : ∃ x, (memoryOf p h ((σ.states w lookahead n').views h)).asked = some x
+        ∧ (w.clock h).read a' < x + p.period := by
+      simp only [asks, Bool.and_eq_true, bne_iff_ne, not_and] at hask
+      have hask' := hask hns
+      split at hask'
+      · rename_i x hx
+        simp only [decide_eq_true_eq, not_le] at hask'
+        exact ⟨x, hx, hask'⟩
+      · simp at hask'
+    obtain ⟨l₁, e, l₂, hl, hex, ⟨r'', outs', st', heo⟩, hask₀⟩ := asked_request p h _ hx
+    obtain ⟨i, hi, hvi, s, obs, hhi, rfl⟩ := Solution.handled_of_views_eq w σ lookahead hl
+    simp only at hex heo
+    subst heo
+    rw [← hvi] at hask₀
+    have hsa : s ≤ a' := by
+      rw [← Solution.handled_time w σ lookahead hhi, ← Solution.handled_time w σ lookahead hn']
+      exact Solution.eventTime_mono w σ lookahead hi.le
+    obtain ⟨t₁, θ, ho, hle⟩ := answer_reaches p w B hw lookahead hsender hcopies hhi hask₀
+      (by linarith)
+    refine ⟨t₁, θ, s, ho, hle, ?_⟩
+    -- The host's clock advanced by less than the period from `s` to `a'`.
+    have hadv := (Clock.advance_mem (hclocks h) hsa).1
+    rw [← hex] at hlt
+    have hlt' : (1 - B.clockRate) * (a' - s) < p.period := by linarith
+    rw [sub_le_iff_le_add, ← sub_le_iff_le_add', div_eq_mul_inv]
+    have hpos : 0 < 1 - B.clockRate := by linarith
+    rw [le_mul_inv_iff₀ hpos]
+    linarith
 
 end Unisono.Solutions.FixedDelay

@@ -886,6 +886,98 @@ theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) 
   rw [hearly]
   simp only [State.handle, Observation.frames, Finset.union_empty, hk, and_self, ite_true]
 
+/-- The event that a step handling request `b` of speaker `r` handles. -/
+theorem Solution.handled_of_asked (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
+    {b : ℕ} (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r b)) :
+    σ.handled w lookahead n = some (w.host r, (w.speaker r).asked b,
+      .asked r ((w.speaker r).block b) ((w.speaker r).reported b)) := by
+  unfold Solution.handled
+  rw [hearly]
+
+/-- An event in which a device requests a block is handled at the step that
+handles the speaker's next request. -/
+theorem Solution.handled_asked (σ : Solution H R Msg) (lookahead : ℕ+) {i : ℕ} {h : H} {t : Time}
+    {r : Fin R} {outs : List ℕ} {st : ℝ}
+    (hi : σ.handled w lookahead i = some (h, t, .asked r outs st)) :
+    earliest ((σ.states w lookahead i).key w) (σ.states w lookahead i).due
+      = some (.asked r ((σ.states w lookahead i).askedNext r)) := by
+  unfold Solution.handled at hi
+  split at hi
+  · simp at hi
+  · rename_i r' b hb
+    simp only [Option.some.injEq, Prod.mk.injEq, Observation.asked.injEq] at hi
+    obtain ⟨-, -, rfl, -, -⟩ := hi
+    have hmem := (earliest_spec _ _ _ hb).1
+    rcases (σ.states w lookahead i).mem_due hmem with h | ⟨r'', h⟩ | ⟨p, _, h⟩ | ⟨p, _, h⟩
+    · simp at h
+    · simp only [Due.asked.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      exact hb
+    · simp at h
+    · simp at h
+  · obtain ⟨m, -, heq⟩ := Option.map_eq_some_iff.mp hi
+    simp at heq
+  · obtain ⟨u, -, heq⟩ := Option.map_eq_some_iff.mp hi
+    simp at heq
+  · simp at hi
+
+/-- The step that handles a speaker's next request moves the speaker on to
+the request after it. -/
+theorem Solution.askedNext_succ (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
+    (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r ((σ.states w lookahead n).askedNext r))) :
+    (σ.states w lookahead (n + 1)).askedNext r = (σ.states w lookahead n).askedNext r + 1 := by
+  show ((σ.states w lookahead n).step σ w lookahead).askedNext r = _
+  unfold State.step
+  rw [hearly]
+  simp
+
+/-- **A view only grows.** A host's view at a later step is its view at an
+earlier step followed by the events it handled at the steps between. -/
+theorem Solution.views_append (σ : Solution H R Msg) (lookahead : ℕ+) {k₁ k₂ : ℕ} (hk : k₁ ≤ k₂)
+    (h : H) :
+    ∃ l, (σ.states w lookahead k₂).views h = (σ.states w lookahead k₁).views h ++ l ∧
+      ∀ e ∈ l, ∃ i, k₁ ≤ i ∧ i < k₂ ∧ ∃ t obs, σ.handled w lookahead i = some (h, t, obs)
+        ∧ e = ⟨(w.clock h).read t, obs⟩ := by
+  induction k₂, hk using Nat.le_induction with
+  | base => exact ⟨[], by simp, by simp⟩
+  | succ k hk ih =>
+    obtain ⟨l, hl, hev⟩ := ih
+    rw [σ.views_succ w lookahead k h]
+    split
+    · rename_i h' t obs hkh
+      split_ifs with hh
+      · subst hh
+        refine ⟨l ++ [⟨(w.clock h).read t, obs⟩], by rw [hl, List.append_assoc], ?_⟩
+        intro e he
+        rcases List.mem_append.mp he with he | he
+        · obtain ⟨i, h1, h2, rest⟩ := hev e he
+          exact ⟨i, h1, Nat.lt_succ_of_lt h2, rest⟩
+        · rw [List.mem_singleton] at he
+          exact ⟨k, hk, Nat.lt_succ_self k, t, obs, hkh, he⟩
+      · refine ⟨l, by rw [hl, List.append_nil], fun e he => ?_⟩
+        obtain ⟨i, h1, h2, rest⟩ := hev e he
+        exact ⟨i, h1, Nat.lt_succ_of_lt h2, rest⟩
+    · refine ⟨l, by rw [hl, List.append_nil], fun e he => ?_⟩
+      obtain ⟨i, h1, h2, rest⟩ := hev e he
+      exact ⟨i, h1, Nat.lt_succ_of_lt h2, rest⟩
+
+/-- **No request of a speaker comes between two of its consecutive
+requests.** While a speaker's next request stays the same, its host handles
+no request of that speaker. -/
+theorem Solution.no_request_between (σ : Solution H R Msg) (lookahead : ℕ+) {k₁ k₂ : ℕ} {r : Fin R}
+    (hsame : (σ.states w lookahead k₁).askedNext r = (σ.states w lookahead k₂).askedNext r)
+    {i : ℕ} (hi₁ : k₁ ≤ i) (hi₂ : i < k₂) {h : H} {t : Time} {outs : List ℕ} {st : ℝ} :
+    σ.handled w lookahead i ≠ some (h, t, .asked r outs st) := by
+  intro hi
+  have hearly := σ.handled_asked w lookahead hi
+  have hsucc := σ.askedNext_succ w lookahead hearly
+  have m1 := Solution.askedNext_mono w σ lookahead r hi₁
+  have m2 := Solution.askedNext_mono w σ lookahead r (show i + 1 ≤ k₂ by omega)
+  simp only at m1 m2
+  omega
+
 end Requests
 
 end Unisono.Spec
