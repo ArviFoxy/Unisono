@@ -539,4 +539,54 @@ theorem offset_sample (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   refine ⟨s₁, s₂, s₄, hs₁.symm, hj', hD₁.1, hD₁.2, hD₂.1, hD₂.2, ?_⟩
   rw [hθ, hs₁, hs₂]
 
+omit [DecidableEq H] in
+/-- **The time that the baseline's target stands for.** Speaker `r`'s host
+`h` gives output sample `k` of block `b` the time
+`c(f) + (ô + (k - g) / ρ + θ̂ - L - ĉ)`, where `f` and `ĉ` are the first frame
+and timestamp of a block `b'` of the source, `ô` and `g` the timestamp and
+first output sample of block `b`, and `θ̂` an estimate of the sender's clock
+minus the host's within `e` of their true difference at some time `s₂`. In a
+world within bounds, that time is within
+`2 ε_R + e + 2 ε_C |o(g) - s₂| + ε_C |o(g) - c(f)| + ε_D (k - g) / ρ` of
+`o(k) - L`. -/
+theorem target_time_error (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R)
+    {b b' k : ℕ} (hk : (w.speaker r).first b ≤ k) {s₂ θ L e : ℝ}
+    (hθ : |θ - ((w.clock w.sender).read s₂ - (w.clock (w.host r)).read s₂)| ≤ e) :
+    |w.source.capture (w.source.first b')
+        + ((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate + θ - L
+          - w.source.reported b')
+        - ((w.speaker r).out k - L)|
+      ≤ 2 * B.report + e
+        + 2 * B.clockRate * |(w.speaker r).out ((w.speaker r).first b) - s₂|
+        + B.clockRate * |(w.speaker r).out ((w.speaker r).first b)
+            - w.source.capture (w.source.first b')|
+        + B.deviceRate * ((k : ℝ) - (w.speaker r).first b) / w.rate := by
+  obtain ⟨hclocks, -, hspeakers, hsrc, hsp, -, -, -, -, -, -⟩ := hw
+  set g := (w.speaker r).first b
+  set f := w.source.first b'
+  set C := w.clock (w.host r)
+  set S := w.clock w.sender
+  set og := (w.speaker r).out g
+  set cf := w.source.capture f
+  have h₁ := abs_le.mp (hsp r b)
+  have h₂ := abs_le.mp (hsrc b')
+  have hθ' := abs_le.mp hθ
+  have hdrift := abs_le.mp (offset_drift_abs (hclocks (w.host r)) (hclocks w.sender) s₂ og)
+  have hS := abs_le.mp (Clock.read_sub_near (hclocks w.sender) cf og)
+  have hout := PlaybackDevice.out_sub_mem (hspeakers r) hk
+  have hrate := w.rate_pos
+  have hkg : (0 : ℝ) ≤ (k : ℝ) - g := by
+    have : (g : ℝ) ≤ k := by exact_mod_cast hk
+    linarith
+  have e1 : (1 - B.deviceRate) / w.rate * ((k : ℝ) - g)
+      = ((k : ℝ) - g) / w.rate - B.deviceRate * ((k : ℝ) - g) / w.rate := by
+    field_simp
+  have e2 : (1 + B.deviceRate) / w.rate * ((k : ℝ) - g)
+      = ((k : ℝ) - g) / w.rate + B.deviceRate * ((k : ℝ) - g) / w.rate := by
+    field_simp
+  rw [e1] at hout
+  rw [e2] at hout
+  rw [abs_le]
+  constructor <;> linarith [hout.1, hout.2]
+
 end Unisono.Solutions.FixedDelay

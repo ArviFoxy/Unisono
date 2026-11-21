@@ -1020,3 +1020,35 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.solution_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.solution_append
+
+/-- info: 'Unisono.Spec.Clock.read_sub_near' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Clock.read_sub_near
+
+/-- info: 'Unisono.Spec.offset_drift_abs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.offset_drift_abs
+
+/-- info: 'Unisono.Spec.CaptureDevice.capture_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.capture_sub_mem
+
+/-- info: 'Unisono.Spec.PlaybackDevice.out_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.out_sub_mem
+
+/-- info: 'Unisono.Spec.World.captured_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_sub_mem
+
+/-- info: 'Unisono.Spec.World.exists_captured_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.exists_captured_eq
+
+/-- info: 'Unisono.Spec.World.sub_le_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.sub_le_of_captured
+
+/-- info: 'Unisono.Solutions.FixedDelay.target_time_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.target_time_error
