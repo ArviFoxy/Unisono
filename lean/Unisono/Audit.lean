@@ -1136,3 +1136,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.captured_target' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.captured_target
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_block_of_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_block_of_frame
+
+/-- info: 'Unisono.Solutions.FixedDelay.frame_held' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.frame_held
+
+/-- info: 'Unisono.Solutions.FixedDelay.playable_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.playable_of_captured
