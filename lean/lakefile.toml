@@ -8,12 +8,16 @@ defaultTargets = ["Unisono"]
 name = "aeneas"
 path = "../.tools/aeneas/backends/lean"
 
-# The translation of crates/unisono-core, written by tools/extract.sh.
+# The translation of crates/unisono-core, written by tools/extract.sh. A name
+# that the translation uses and nothing defines fails the build, rather than
+# becoming a variable of any type: Aeneas writes a floating-point number of
+# the Rust as the type `F64`, which its library does not define.
 [[lean_lib]]
 name = "UnisonoCore"
+leanOptions = { autoImplicit = false }
 
 # The specifications and the proofs. A warning fails the build, so a proof
 # with a gap cannot pass.
 [[lean_lib]]
 name = "Unisono"
-leanOptions = { warningAsError = true }
+leanOptions = { warningAsError = true, autoImplicit = false }
