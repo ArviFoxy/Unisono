@@ -821,6 +821,34 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.decided
 
-/-- info: 'Unisono.Spec.Way.deliver_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.Link.deliver_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.Way.deliver_after
+#print axioms Unisono.Spec.Link.deliver_after
+
+/-- info: 'Unisono.Spec.discontinuities_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuities_gap
+
+/-- info: 'Unisono.Spec.discontinuityAt_jump' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_jump
+
+/-- info: 'Unisono.Spec.roughnessCost_across' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.roughnessCost_across
+
+/-- info: 'Unisono.Spec.latencyCost_unplayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.latencyCost_unplayed
+
+/-- info: 'Unisono.Spec.syncCost_one_off' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.syncCost_one_off
+
+/-- info: 'Unisono.Spec.Bounds.example_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Bounds.example_within
+
+/-- info: 'Unisono.Spec.DelayModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.DelayModel.example_holds

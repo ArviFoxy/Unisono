@@ -5,6 +5,9 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Spec.Objectives
+public import Unisono.Spec.Models.Bounded
+public import Unisono.Spec.Models.Delays
+public import Mathlib.MeasureTheory.Measure.Dirac.Basic
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 public import Mathlib.Tactic.FieldSimp
 public import Mathlib.Tactic.Linarith
@@ -20,18 +23,29 @@ fails here.
 
 * The speed is one less how fast the latency changes (`speed_eq`).
 * Missed samples: an output sample that plays anything but the source
-  counts one (`missedAt_none`); playback that goes on counts nothing
+  counts one (`missedAt_none`); continuous playback counts nothing
   (`missedAt_continues`); a jump forward over `J` frames counts `J`
   (`missedAt_skip`); playing `J` frames again counts `J`
   (`missedAt_repeat`); after `g` output samples that played something
-  else, which count `g`, content that goes on as if they had played counts
-  nothing more (`missedAt_after_gap`), and content that resumes where it
-  stopped counts nothing more either (`missedAt_resume`).
-* The synchronisation cost of a frame, when every speaker plays it, is the
-  variance of the times at which they play it (`sum_pairs_eq`).
-* The run meets events in the order of true time
-  (`Solution.eventTime_le_succ`), and a run that gets past every moment
-  decides what every output sample plays (`Solution.decided`).
+  else, which count `g`, a position that continues as if they had played
+  counts nothing more (`missedAt_after_gap`), and a position that resumes
+  where it stopped counts nothing more either (`missedAt_resume`).
+* Discontinuities: a gap counts one, however long it is
+  (`discontinuities_gap`), and so does a jump (`discontinuityAt_jump`).
+* Roughness across a break: a change of speed `Δv` between two continuous
+  steps whose midpoints are `Δt` apart costs `Δv² / Δt`, whatever lies
+  between them (`roughnessCost_across`).
+* The synchronization cost of a frame, when every speaker plays it, is the
+  variance of the times at which they play it (`sum_pairs_eq`); one speaker
+  off by `Δ` from all others adds `(R - 1) Δ² / R²` (`syncCost_one_off`).
+* Not playing a frame at one speaker lowers the frame's latency cost by that
+  speaker's latency divided by the number of speakers
+  (`latencyCost_unplayed`).
+* The run processes events in chronological order
+  (`Solution.eventTime_le_succ`), and a run that passes every time decides
+  what every output sample plays (`Solution.decided`).
+* Neither model of the world is empty (`Bounds.example_within`,
+  `DelayModel.example_holds`).
 -/
 
 @[expose] public noncomputable section
@@ -45,8 +59,8 @@ variable {H : Type} {R : ℕ}
 /-! ## Speed -/
 
 /-- **The speed is one less how fast the latency changes.** Over a step of
-the playback that goes on, the speed is one less the change of the latency,
-the time an output sample leaves less the time its content was captured,
+continuous playback, the speed is one less the change of the latency, the
+time an output sample leaves less the time its sound was captured,
 divided by the time between the two output samples. -/
 theorem speed_eq (w : World H R) (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (k : ℕ)
     {x y : ℝ} (hx : plays r k = some x) (hy : plays r (k + 1) = some y) (hxy : x < y)
@@ -69,9 +83,9 @@ theorem missedAt_none (plays : ℕ → Option ℝ) {k : ℕ} (h : plays k = none
     missedAt plays k = 1 := by
   simp [missedAt, h]
 
-/-- The missed samples counted at output sample `k`, which plays content `y`,
+/-- The missed samples counted at output sample `k`, which plays position `y`,
 when the last output sample before it that played the source is `j`, which
-played content `x`. -/
+played position `x`. -/
 theorem missedAt_after (plays : ℕ → Option ℝ) {j k : ℕ} {x y : ℝ} (hjk : j < k)
     (hj : plays j = some x) (hk : plays k = some y)
     (hnone : ∀ i, j < i → i < k → plays i = none) :
@@ -85,8 +99,7 @@ theorem missedAt_after (plays : ℕ → Option ℝ) {j k : ℕ} {x y : ℝ} (hjk
   simp only [missedAt, hk, hsome, ite_true]
   rw [hlast, hj]
 
-/-- Playback that goes on from one output sample to the next counts no missed
-sample. -/
+/-- Continuous playback counts no missed sample. -/
 theorem missedAt_continues (plays : ℕ → Option ℝ) {k : ℕ} {x y : ℝ} (hx : plays k = some x)
     (hy : plays (k + 1) = some y) (hxy : x < y) (hyx : y < x + 2) :
     missedAt plays (k + 1) = 0 := by
@@ -136,7 +149,7 @@ theorem missedAt_repeat (plays : ℕ → Option ℝ) {k : ℕ} {x : ℝ} (J : �
   simp
 
 /-- After `g` output samples that played something else, which count `g`
-missed samples, content that goes on as if they had played the source
+missed samples, a position that continues as if they had played the source
 counts no more. -/
 theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
@@ -154,7 +167,7 @@ theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (h
   simp
 
 /-- After `g` output samples that played something else, which count `g`
-missed samples, content that resumes where it stopped counts no more. -/
+missed samples, a position that resumes where it stopped counts no more. -/
 theorem missedAt_resume (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
     (hy : plays (k + 1 + g) = some (x + 1)) :
@@ -167,7 +180,7 @@ theorem missedAt_resume (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx :
     rw [show 1 - (x + 1 - x) = (0 : ℤ) by push_cast; ring, Int.floor_intCast]
   rw [Int.toNat_eq_zero.mpr h1, Int.toNat_eq_zero.mpr h2]
 
-/-! ## Synchronisation -/
+/-! ## Synchronization -/
 
 /-- **The pairs and the variance.** The squares of the differences between the
 times `t r` of `R` speakers, over all pairs, add up to `R` times the sum of
@@ -323,12 +336,12 @@ theorem asked_mem_due (r : Fin R) : Due.asked r (st.askedNext r) ∈ st.due := b
 theorem arrival_mem_due {p : ℕ} (hp : p < st.inFlight.length) : Due.arrival p ∈ st.due := by
   simp [due, hp]
 
-theorem wake_mem_due {p : ℕ} (hp : p < st.wakes.length) : Due.wake p ∈ st.due := by
+theorem timer_mem_due {p : ℕ} (hp : p < st.timers.length) : Due.timer p ∈ st.due := by
   simp [due, hp]
 
 theorem mem_due {e : Due R} (he : e ∈ st.due) :
     e = .handed st.handedNext ∨ (∃ r, e = .asked r (st.askedNext r))
-      ∨ (∃ p < st.inFlight.length, e = .arrival p) ∨ (∃ p < st.wakes.length, e = .wake p) := by
+      ∨ (∃ p < st.inFlight.length, e = .arrival p) ∨ (∃ p < st.timers.length, e = .timer p) := by
   simp [due] at he
   rcases he with rfl | ⟨r, rfl⟩ | ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
   · exact Or.inl rfl
@@ -336,10 +349,10 @@ theorem mem_due {e : Due R} (he : e ∈ st.due) :
   · exact Or.inr (Or.inr (Or.inl ⟨p, hp, rfl⟩))
   · exact Or.inr (Or.inr (Or.inr ⟨p, hp, rfl⟩))
 
-/-- Every event that is due in a state comes at true time `t` or later. -/
+/-- Every pending event of a state occurs at true time `t` or later. -/
 def DueFrom (t : Time) : Prop :=
   t ≤ w.source.handed st.handedNext ∧ (∀ r, t ≤ (w.speaker r).asked (st.askedNext r))
-    ∧ (∀ m ∈ st.inFlight, t ≤ m.arrival) ∧ (∀ u ∈ st.wakes, t ≤ u.time)
+    ∧ (∀ m ∈ st.inFlight, t ≤ m.arrival) ∧ (∀ u ∈ st.timers, t ≤ u.time)
 
 theorem DueFrom.le_key {st : State H R Msg} {t : Time} (h : st.DueFrom w t) {e : Due R}
     (he : e ∈ st.due) : t ≤ (st.key w e).1 := by
@@ -359,7 +372,7 @@ theorem dueFrom_of_le_key {t : Time} (h : ∀ e ∈ st.due, t ≤ (st.key w e).1
     simpa [key, List.getElem?_eq_getElem hp] using h _ (st.arrival_mem_due hp)
   · intro u hu
     obtain ⟨p, hp, rfl⟩ := List.getElem_of_mem hu
-    simpa [key, List.getElem?_eq_getElem hp] using h _ (st.wake_mem_due hp)
+    simpa [key, List.getElem?_eq_getElem hp] using h _ (st.timer_mem_due hp)
 
 variable [DecidableEq H]
 
@@ -377,9 +390,9 @@ theorem sendAll_askedNext (h : H) (t : Time) (held : Finset ℕ)
   | nil => rfl
   | cons m l ih => exact ih (st.send w h t m.1 m.2.1 (m.2.2.filter (· ∈ held)))
 
-theorem sendAll_wakes (h : H) (t : Time) (held : Finset ℕ)
+theorem sendAll_timers (h : H) (t : Time) (held : Finset ℕ)
     (sends : List (H × Msg × Finset ℕ)) :
-    (st.sendAll w h t held sends).wakes = st.wakes := by
+    (st.sendAll w h t held sends).timers = st.timers := by
   induction sends generalizing st with
   | nil => rfl
   | cons m l ih => exact ih (st.send w h t m.1 m.2.1 (m.2.2.filter (· ∈ held)))
@@ -403,24 +416,24 @@ theorem sendAll_inFlight {h : H} {t t₀ : Time} (ht : t₀ ≤ t) (held : Finse
         exact ht.trans (w.network.after h m.1 t _ a ha).le
     · exact hst f hf
 
-/-- A host that meets an event at true time `t` adds only events after `t`:
-the messages it sends arrive after `t`, and the wake-ups it asks for come
+/-- A host that handles an event at true time `t` adds only events after
+`t`: the messages it sends arrive after `t`, and the timers it sets fire
 after `t`. -/
-theorem meet_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {h : H} {t : Time}
+theorem handle_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {h : H} {t : Time}
     {obs : Observation H R Msg} (hst : st.DueFrom w t) :
-    (st.meet σ w lookahead h t obs).DueFrom w t := by
+    (st.handle σ w lookahead h t obs).DueFrom w t := by
   obtain ⟨h1, h2, h3, h4⟩ := hst
   refine ⟨?_, ?_, ?_, ?_⟩
-  · simp only [meet, sendAll_handedNext]
+  · simp only [handle, sendAll_handedNext]
     exact h1
   · intro r
-    simp only [meet, sendAll_askedNext]
+    simp only [handle, sendAll_askedNext]
     exact h2 r
   · intro m hm
-    simp only [meet] at hm
+    simp only [handle] at hm
     exact sendAll_inFlight w _ le_rfl _ _ (by exact h3) m hm
   · intro u hu
-    simp only [meet, sendAll_wakes, List.mem_append, List.mem_filterMap] at hu
+    simp only [handle, sendAll_timers, List.mem_append, List.mem_filterMap] at hu
     rcases hu with hu | ⟨c, _, hc⟩
     · exact h4 u hu
     · split_ifs at hc with hlt
@@ -428,8 +441,8 @@ theorem meet_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {h : H} {t : Tim
       have hread := Clock.read_timeAt hv
       exact ((w.clock h).strictMono.lt_iff_lt.mp (hread ▸ hlt)).le
 
-/-- After the earliest event that is due is met, every event that is due
-comes no earlier than it. -/
+/-- After the earliest pending event is handled, every pending event occurs
+no earlier than it. -/
 theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
     (he : earliest (st.key w) st.due = some e) (hst : st.DueFrom w (st.key w e).1) :
     (st.step σ w lookahead).DueFrom w (st.key w e).1 := by
@@ -437,11 +450,13 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
   unfold State.step
   rw [he]
   rcases st.mem_due hmem with rfl | ⟨r, rfl⟩ | ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
-  · have hm := st.meet_dueFrom w σ lookahead (h := w.sender)
-      (obs := .handed (w.source.block st.handedNext)) hst
+  · have hm := st.handle_dueFrom w σ lookahead (h := w.sender)
+      (obs := .handed ((w.source.block st.handedNext).map fun n => (n, w.target n))
+        (w.source.reported st.handedNext)) hst
     exact ⟨(w.source.handed_strictMono (Nat.lt_succ_self _)).le, hm.2.1, hm.2.2.1, hm.2.2.2⟩
-  · have hm := st.meet_dueFrom w σ lookahead (h := w.host r)
-      (obs := .asked r ((w.speaker r).block (st.askedNext r))) hst
+  · have hm := st.handle_dueFrom w σ lookahead (h := w.host r)
+      (obs := .asked r ((w.speaker r).block (st.askedNext r))
+        ((w.speaker r).reported (st.askedNext r))) hst
     refine ⟨hm.1, fun r' => ?_, hm.2.2.1, hm.2.2.2⟩
     by_cases hr : r' = r
     · subst hr
@@ -453,13 +468,13 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
     have hkey : (st.key w (.arrival p)).1 = st.inFlight[p].arrival := by
       simp [key, List.getElem?_eq_getElem hp]
     rw [hkey] at hst ⊢
-    apply meet_dueFrom
+    apply handle_dueFrom
     exact ⟨hst.1, hst.2.1, fun m hm => hst.2.2.1 m (List.mem_of_mem_eraseIdx hm), hst.2.2.2⟩
   · simp only [List.getElem?_eq_getElem hp]
-    have hkey : (st.key w (.wake p)).1 = st.wakes[p].time := by
+    have hkey : (st.key w (.timer p)).1 = st.timers[p].time := by
       simp [key, List.getElem?_eq_getElem hp]
     rw [hkey] at hst ⊢
-    apply meet_dueFrom
+    apply handle_dueFrom
     exact ⟨hst.1, hst.2.1, hst.2.2.1, fun u hu => hst.2.2.2 u (List.mem_of_mem_eraseIdx hu)⟩
 
 end State
@@ -475,7 +490,7 @@ theorem Solution.eventTime_dueFrom (σ : Solution H R Msg) (w : World H R) (look
   simp only [Solution.eventTime, he₀]
   exact (earliest_spec _ _ _ he₀).2 e he
 
-/-- **The run meets events in the order of true time.** -/
+/-- **The run processes events in chronological order.** -/
 theorem Solution.eventTime_le_succ (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     (n : ℕ) : σ.eventTime w lookahead n ≤ σ.eventTime w lookahead (n + 1) := by
   set st := σ.states w lookahead n with hst
@@ -499,8 +514,8 @@ theorem Solution.eventTime_le_asked (σ : Solution H R Msg) (w : World H R) (loo
     σ.eventTime w lookahead n ≤ (w.speaker r).asked ((σ.states w lookahead n).askedNext r) :=
   (σ.eventTime_dueFrom w lookahead n).2.1 r
 
-/-- A request of a device that comes before the event of step `n` has been
-met by then. -/
+/-- A device's request that occurs before the event of step `n` has been
+handled by then. -/
 theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     {n : ℕ} {r : Fin R} {b : ℕ} (h : (w.speaker r).asked b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).askedNext r := by
@@ -509,9 +524,9 @@ theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead
   have h2 := σ.eventTime_le_asked w lookahead n r
   linarith
 
-/-- **A run that gets past every moment decides every output sample.** When
-the run's events go beyond any true time, every request of every device is
-met, so each output sample plays what the solution decided at its request
+/-- **A run that passes every time decides every output sample.** When the
+run's events pass any true time, every request of every device is handled,
+so each output sample plays what the solution decided at its request
 (`Solution.plays`). -/
 theorem Solution.decided (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     (hgo : ∀ T, ∃ n, T < σ.eventTime w lookahead n) (r : Fin R) (k : ℕ) :
@@ -521,5 +536,308 @@ theorem Solution.decided (σ : Solution H R Msg) (w : World H R) (lookahead : �
     ((w.speaker r).first_strictMono.id_le _)⟩
 
 end Run
+
+
+section Further
+
+open MeasureTheory Filter Topology
+
+/-! ## Discontinuities -/
+
+/-- An output sample that plays something else counts no discontinuity:
+a gap counts only at its start. -/
+theorem discontinuityAt_none (plays : ℕ → Option ℝ) {k : ℕ} (h : plays k = none) :
+    discontinuityAt plays k = 0 := by
+  simp [discontinuityAt, h]
+
+/-- The start of a gap counts one discontinuity. -/
+theorem discontinuityAt_gap_start (plays : ℕ → Option ℝ) {k : ℕ} {x : ℝ}
+    (hx : plays k = some x) (hnext : plays (k + 1) = none) : discontinuityAt plays k = 1 := by
+  have : ¬ PlaysContinuously plays k := by
+    rintro ⟨a, b, -, hb, -⟩
+    simp [hnext] at hb
+  simp [discontinuityAt, hx, this]
+
+/-- **A gap counts one discontinuity, however long it is.** -/
+theorem discontinuities_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
+    (hg : 0 < g) (hgap : ∀ i, k < i → i ≤ k + g → plays i = none) :
+    ∑ i ∈ Finset.range (g + 1), discontinuityAt plays (k + i) = 1 := by
+  rw [Finset.sum_range_succ', Finset.sum_eq_zero fun i hi =>
+    discontinuityAt_none plays (hgap _ (by omega) (by simp at hi; omega))]
+  simpa using discontinuityAt_gap_start plays hx (hgap (k + 1) (by omega) (by omega))
+
+/-- **A jump counts one discontinuity**: forward by two frames or more, or
+back. -/
+theorem discontinuityAt_jump (plays : ℕ → Option ℝ) {k : ℕ} {x y : ℝ} (hx : plays k = some x)
+    (hy : plays (k + 1) = some y) (hjump : y ≤ x ∨ x + 2 ≤ y) :
+    discontinuityAt plays k = 1 := by
+  have : ¬ PlaysContinuously plays k := by
+    rintro ⟨a, b, ha, hb, hab, hba⟩
+    rw [hx, Option.some.injEq] at ha
+    rw [hy, Option.some.injEq] at hb
+    subst ha
+    subst hb
+    rcases hjump with h | h <;> linarith
+  simp [discontinuityAt, hx, this]
+
+/-- Continuous playback counts no discontinuity. -/
+theorem discontinuityAt_continues (plays : ℕ → Option ℝ) {k : ℕ}
+    (h : PlaysContinuously plays k) : discontinuityAt plays k = 0 := by
+  simp [discontinuityAt, h]
+
+/-! ## Roughness across a break -/
+
+/-- **Roughness across a break.** When the step from output sample `k` has
+speed `v`, and the next continuous step is `j`, with speed `v'`, the
+roughness between them is `(v' - v)² / Δt`, where `Δt` is the time between
+the two steps' midpoints, whatever the output samples between them play. -/
+theorem roughnessCost_across (w : World H R) (plays : Fin R → ℕ → Option ℝ) (r : Fin R)
+    {k j : ℕ} {v v' : ℝ} (hv : w.speed plays r k = some v) (hkj : k < j)
+    (hj : PlaysContinuously (plays r) j)
+    (hbetween : ∀ i, k < i → i < j → ¬ PlaysContinuously (plays r) i)
+    (hv' : w.speed plays r j = some v') :
+    w.roughnessCost plays r k = ENNReal.ofReal ((v' - v) ^ 2 / (((w.speaker r).out j
+      + (w.speaker r).out (j + 1) - (w.speaker r).out k - (w.speaker r).out (k + 1)) / 2)) := by
+  have hnext : nextContinuous (plays r) k = some j := by
+    classical
+    unfold nextContinuous
+    split
+    · rw [Option.some.injEq, Nat.find_eq_iff]
+      exact ⟨⟨hkj, hj⟩, fun i hij ⟨hki, hi⟩ => hbetween i hki hij hi⟩
+    · rename_i hno
+      exact absurd ⟨j, hkj, hj⟩ hno
+  simp only [World.roughnessCost, hv, hnext, hv']
+
+/-! ## Muting a speaker -/
+
+/-- **Not playing a frame at one speaker** lowers the frame's latency cost by
+that speaker's latency divided by the number of speakers. -/
+theorem latencyCost_unplayed (w : World H R) (plays plays' : Fin R → ℕ → Option ℝ) (r : Fin R)
+    (n : ℕ) {l : ℝ} (hl : w.latency plays r n = some l) (hl' : w.latency plays' r n = none)
+    (hothers : ∀ r', r' ≠ r → w.latency plays' r' n = w.latency plays r' n) :
+    w.latencyCost plays n = w.latencyCost plays' n + (R : ℝ≥0∞)⁻¹ * ENNReal.ofReal l := by
+  have h1 : w.latencyAt plays r n = ENNReal.ofReal l := by simp [World.latencyAt, hl]
+  have h2 : w.latencyAt plays' r n = 0 := by simp [World.latencyAt, hl']
+  have h3 : ∀ x ∈ Finset.univ.erase r, w.latencyAt plays' x n = w.latencyAt plays x n :=
+    fun x hx => by simp only [World.latencyAt, hothers x (Finset.ne_of_mem_erase hx)]
+  unfold World.latencyCost
+  rw [← Finset.add_sum_erase _ _ (Finset.mem_univ r), ← Finset.add_sum_erase _ _ (Finset.mem_univ r),
+    h1, h2, Finset.sum_congr rfl h3]
+  ring
+
+/-- **One speaker off by `Δ`.** When every speaker but `r` plays frame `n` at
+the same time `t`, and speaker `r` plays it at `t + Δ`, the frame's
+synchronization cost is `(R - 1) Δ² / R²`, about `Δ² / R`: the variance
+dilutes a single speaker that is off. -/
+theorem syncCost_one_off (w : World H R) (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (n : ℕ)
+    {t Δ : ℝ} (hr : w.playTime plays r n = some (t + Δ))
+    (hothers : ∀ r', r' ≠ r → w.playTime plays r' n = some t) :
+    w.syncCost plays n = ((R : ℝ≥0∞) ^ 2)⁻¹ * (((R - 1 : ℕ) : ℝ≥0∞) * ENNReal.ofReal (Δ ^ 2)) := by
+  have hpair : ∀ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2),
+      w.pairCost plays p.1 p.2 n = if p.1 = r ∨ p.2 = r then ENNReal.ofReal (Δ ^ 2) else 0 := by
+    intro p hp
+    simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hp
+    by_cases h1 : p.1 = r
+    · have h2 : p.2 ≠ r := fun h => by rw [h1, h] at hp; exact lt_irrefl _ hp
+      simp [World.pairCost, h1, hr, hothers p.2 h2]
+    · by_cases h2 : p.2 = r
+      · simp [World.pairCost, h2, hr, hothers p.1 h1]
+      · simp [World.pairCost, hothers p.1 h1, hothers p.2 h2, h1, h2]
+  have hcard : ((Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2)).filter
+      (fun p => p.1 = r ∨ p.2 = r)).card = R - 1 := by
+    have ht : (Finset.univ.erase r).card = R - 1 := by simp [Finset.card_erase_of_mem]
+    rw [← ht]
+    refine Finset.card_bij (fun p _ => if p.1 = r then p.2 else p.1) ?_ ?_ ?_
+    · intro p hp
+      simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hp
+      simp only [Finset.mem_erase, Finset.mem_univ, and_true]
+      obtain ⟨hlt, h | h⟩ := hp
+      · rw [ite_eq_left h]
+        intro he
+        rw [h, he] at hlt
+        exact lt_irrefl _ hlt
+      · have h1 : p.1 ≠ r := fun he => by rw [he, h] at hlt; exact lt_irrefl _ hlt
+        rw [ite_eq_right h1]
+        exact h1
+    · intro p hp p' hp' heq
+      simp only [Finset.mem_filter, Finset.mem_univ, true_and] at hp hp'
+      obtain ⟨hlt, h⟩ := hp
+      obtain ⟨hlt', h'⟩ := hp'
+      by_cases h1 : p.1 = r <;> by_cases h1' : p'.1 = r
+      · rw [ite_eq_left h1, ite_eq_left h1'] at heq
+        exact Prod.ext (h1.trans h1'.symm) heq
+      · rw [ite_eq_left h1, ite_eq_right h1'] at heq
+        have h2' : p'.2 = r := h'.resolve_left h1'
+        rw [h1] at hlt
+        rw [h2'] at hlt'
+        rw [heq] at hlt
+        exact absurd hlt' (lt_asymm hlt)
+      · rw [ite_eq_right h1, ite_eq_left h1'] at heq
+        have h2 : p.2 = r := h.resolve_left h1
+        rw [h1'] at hlt'
+        rw [h2] at hlt
+        rw [← heq] at hlt'
+        exact absurd hlt (lt_asymm hlt')
+      · rw [ite_eq_right h1, ite_eq_right h1'] at heq
+        have h2 : p.2 = r := h.resolve_left h1
+        have h2' : p'.2 = r := h'.resolve_left h1'
+        exact Prod.ext heq (h2.trans h2'.symm)
+    · intro r' hr'
+      simp only [Finset.mem_erase, Finset.mem_univ, and_true] at hr'
+      rcases lt_or_gt_of_ne hr' with h | h
+      · refine ⟨(r', r), by simp [h], ?_⟩
+        simp only
+        rw [ite_eq_right hr']
+      · refine ⟨(r, r'), by simp [h], ?_⟩
+        simp
+  unfold World.syncCost
+  rw [Finset.sum_congr rfl hpair, Finset.sum_ite, Finset.sum_const_zero, add_zero,
+    Finset.sum_const, nsmul_eq_mul, hcard]
+
+/-! ## Neither model is empty -/
+
+/-- **The bounded model is not empty**: a world with one speaker on the
+sender's host, exact clocks and devices, blocks of one frame, and a network
+that delivers every message after one second, is within bounds. -/
+theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.WithinBounds B := by
+  refine ⟨
+    { rate := 1
+      rate_pos := one_pos
+      sender := ()
+      host := fun _ => ()
+      hosts := fun _ => Or.inl rfl
+      clock := fun _ => ⟨id, strictMono_id, continuous_id⟩
+      source :=
+        { capture := fun n => n
+          capture_strictMono := Nat.strictMono_cast
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          handed := fun b => b
+          handed_strictMono := Nat.strictMono_cast
+          handed_after := fun b => by simp
+          reported := fun b => b }
+      speaker := fun _ =>
+        { out := fun k => k + 1
+          out_strictMono := fun a b h => by simpa using h
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          asked := fun b => b + 1 / 2
+          asked_strictMono := fun a b h => by simpa using h
+          asked_before := fun b => by norm_num
+          reported := fun b => b + 1 }
+      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
+        simp only [Option.some.injEq] at h; linarith⟩
+      target := fun _ => 0 },
+    { clockRate := 0
+      clockRate_nonneg := le_rfl
+      clockRate_lt_one := one_pos
+      deviceRate := 0
+      deviceRate_nonneg := le_rfl
+      deviceRate_lt_one := one_pos
+      report := 0
+      report_nonneg := le_rfl
+      handoff := 0
+      handoff_nonneg := le_rfl
+      leadLeast := 1 / 2
+      leadMost := 1 / 2
+      leadLeast_pos := by norm_num
+      leadLeast_le := le_rfl
+      blockMost := 1
+      blockMost_pos := one_pos
+      delayLeast := fun _ _ => 1
+      delayMost := fun _ _ => 1
+      delayLeast_pos := fun _ _ => one_pos
+      delayLeast_le := fun _ _ => le_rfl
+      lossRun := 0 }, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · intro h s t _
+    simp
+  · intro n
+    simp
+  · intro r k
+    simp
+  · intro b
+    simp
+  · intro r b
+    simp
+  · intro b
+    simp
+  · intro r b
+    norm_num
+  · intro b
+    simp
+  · intro r b
+    simp
+  · intro i j s q a h
+    simp only [Option.some.injEq] at h
+    constructor <;> linarith
+  · intro i j q send
+    exact ⟨0, le_rfl, rfl⟩
+
+/-- **The probabilistic network model is not empty**: a network of one host
+whose link to itself has a constant baseline of one second, no jitter, no
+pauses and no losses follows the model with zero rates. -/
+theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
+    (d : Unit → Unit → Unit → Link), IsProbabilityMeasure P ∧ m.Holds P d := by
+  let link : Link := ⟨fun _ => 1, fun _ => 0, ∅, ∅⟩
+  let d : Unit → Unit → Unit → Link := fun _ _ _ => link
+  have hstate : ∀ u, link.state u = (0, false, false) := by
+    intro u
+    simp [Link.state, Link.Holds, Link.Loses, link]
+  have hshift : ∀ τ ω, shiftTime τ (linkStates d ω) = linkStates d ω := by
+    intro τ ω
+    funext i j u
+    simp [shiftTime, linkStates, d, hstate]
+  have hdrop : ∀ m ω, shiftCount m (droppedMessages d ω) = droppedMessages d ω := by
+    intro m ω
+    funext i j q
+    simp [shiftCount, droppedMessages, d, link]
+  have hmix : ∀ {β : Type} [MeasurableSpace β] (X : Unit → β) (A B : Set β),
+      (Measure.dirac ()) {ω | X ω ∈ A ∧ X ω ∈ B}
+        = (Measure.dirac ()) {ω | X ω ∈ A} * (Measure.dirac ()) {ω | X ω ∈ B} := by
+    intro β _ X A B
+    simp only [Measure.dirac_apply, Set.indicator, Set.mem_ofPred_eq, Pi.one_apply]
+    by_cases hA : X () ∈ A <;> by_cases hB : X () ∈ B <;> simp [hA, hB]
+  refine ⟨
+    { slope := 0
+      slope_nonneg := le_rfl
+      tailFactor := 1
+      tailFactor_pos := one_pos
+      tailScale := 1
+      tailScale_pos := one_pos
+      pauseRate := fun _ => 0
+      pauseRate_nonneg := fun _ => le_rfl
+      pauseLength := fun _ => Measure.dirac 1
+      pauseLength_probability := fun _ => inferInstance
+      pauseLength_pos := fun _ => by simp [Measure.dirac_apply']
+      lossProbability := 0
+      lossProbability_nonneg := le_rfl
+      lossProbability_le_one := zero_le_one },
+    Measure.dirac (), d, inferInstance, ?_⟩
+  refine
+    { baseline_pos := fun _ _ _ _ => one_pos
+      baseline_slow := fun _ _ _ _ _ => by simp [d, link]
+      jitter_nonneg := fun _ _ _ _ => le_rfl
+      jitter_near_zero := fun _ _ _ δ hδ => by simp [d, link, hδ]
+      jitter_tail := fun _ _ _ x hx => by simp [d, link, not_lt.mpr hx]
+      pause_length_pos := fun _ _ _ p hp => by simp [d, link] at hp
+      pauses := fun _ _ _ _ _ _ _ _ => by simp [d, link]
+      lost := fun _ _ _ => by simp [d, link]
+      state_measurable := fun _ _ _ => measurable_const' fun _ _ => rfl
+      lost_measurable := fun _ _ _ => by simp [d, link]
+      states_stationary := fun τ => by simp only [hshift]
+      states_mixing := fun A B _ _ => by
+        simp only [hshift]
+        rw [hmix]
+        exact tendsto_const_nhds
+      dropped_stationary := fun m => by simp only [hdrop]
+      dropped_mixing := fun A B _ _ => by
+        simp only [hdrop]
+        rw [hmix]
+        exact tendsto_const_nhds }
+
+end Further
 
 end Unisono.Spec

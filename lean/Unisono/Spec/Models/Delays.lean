@@ -11,29 +11,36 @@ public import Mathlib.Data.Set.Card
 public import Mathlib.MeasureTheory.Measure.Typeclasses.Probability
 
 /-!
-# A model of the network with laws of chance: delays, pauses and losses
+# A probabilistic model of the network: delays, pauses and losses
 
-The model of the earlier work. On each way from one host to another, a
-message sent at true time `s` takes
+The model of the earlier work. On each link from one host to another, a
+message sent at true time `s` waits, if the link is paused at `s`, until the
+link releases it: at the first moment `u ≥ s` at which the link holds
+nothing back. The message is then lost if the link is in an outage at `u`,
+or if it is one of the messages that the link drops individually. Otherwise
+it arrives at `u + baseline u + jitter u`.
 
-* the **baseline** at `s`: the least time a message takes, which changes
-  slowly;
-* plus the **jitter** at `s`: how much longer than the baseline it takes.
-  It is never negative and rarely large; it has the same law at all times,
-  and at times far apart it is nearly independent;
-* plus, when `s` falls in a **pause** of the way, the time until the pause
-  ends. The way holds back every message sent during a pause and lets them
-  go when it ends, so the first message sent in a pause is late by the
-  pause's whole length.
+* The **baseline** is the least time a message takes. It is positive and
+  changes slowly.
+* The **jitter** is how much longer than the baseline a message takes. It is
+  never negative, comes arbitrarily close to zero, and large values are
+  rare.
+* A **pause** holds back every message sent during it and releases them all
+  when it ends, so the first message sent in a pause is late by the pause's
+  whole length. Messages released together arrive together, the earlier
+  work's zero-drain idealization. An **outage** is a pause that drops the
+  messages instead.
 
-Two kinds of loss come on top: a pause may lose the messages sent during it
-instead of holding them back (an outage), and single messages may be lost.
-
-`Way` and `World.HasDelays` say what the delays are made of, with no chance
-in it; `DelayModel.Holds` gives the laws of chance. Nothing is assumed
-independent: the ways between different hosts may be alike, pauses may come
-in clusters, and the jitter, the pauses and the losses may depend on each
-other.
+`Link` and `World.HasDelays` define what the delays consist of, without
+probability; `DelayModel.Holds` gives their distribution. The state of all
+links over time (each link's jitter, and whether it is paused or in an
+outage) is jointly stationary and mixing, and so is the sequence of
+individually dropped messages. Mixing makes long-run averages equal their
+expectations almost surely, which rules out worlds that, with some
+probability, drop every message or hold every message forever. Nothing else
+is assumed independent: links may be alike, pauses may come in clusters,
+and the jitter, the pauses and the losses may depend on each other. Two
+messages sent on the same link at the same instant take the same time.
 -/
 
 @[expose] public noncomputable section
@@ -43,147 +50,206 @@ namespace Unisono.Spec
 open MeasureTheory Filter Topology
 open scoped ENNReal
 
-/-- A pause of a way: from true time `start`, for `length` seconds. -/
+/-- An episode of a link: from true time `start`, for `length` seconds, the
+link holds back the messages sent on it (a pause) or, if `loses`, drops them
+(an outage). -/
 structure Pause where
   start : Time
   length : ℝ
-  /-- Whether the way loses the messages sent during the pause, instead of
-  holding them back until it ends. -/
   loses : Bool
 
-/-- A pause is on at true time `u`. -/
+/-- An episode is under way at true time `u`. -/
 def Pause.On (p : Pause) (u : Time) : Prop :=
   p.start ≤ u ∧ u < p.start + p.length
 
-/-- The delays of one way, from one host to another. -/
-structure Way where
-  /-- The least time that a message sent at each true time takes. -/
+/-- The delays of one link, from one host to another. -/
+structure Link where
+  /-- The least time that a message released at each true time takes. -/
   baseline : Time → ℝ
-  /-- How much longer than the baseline a message sent at each true time
-  takes. -/
+  /-- How much longer than the baseline a message released at each true
+  time takes. -/
   jitter : Time → ℝ
-  /-- The pauses of the way. -/
+  /-- The pauses and outages of the link. -/
   pauses : Set Pause
-  /-- The messages lost on their own, by their number on the way, counted
-  from zero as in `Network.deliver`. -/
+  /-- The messages that the link drops individually, by their number on the
+  link, counted from zero as in `Network.deliver`. -/
   lost : Set ℕ
 
-namespace Way
+namespace Link
 
-/-- The way holds back the messages sent at true time `u`. -/
-def Holds (d : Way) (u : Time) : Prop :=
+/-- The link holds back the messages sent at true time `u`: a pause is
+under way. -/
+def Holds (d : Link) (u : Time) : Prop :=
   ∃ p ∈ d.pauses, p.loses = false ∧ p.On u
 
-/-- The way loses the messages sent at true time `u`. -/
-def Loses (d : Way) (u : Time) : Prop :=
+/-- The link drops the messages it releases at true time `u`: an outage is
+under way. -/
+def Loses (d : Link) (u : Time) : Prop :=
   ∃ p ∈ d.pauses, p.loses = true ∧ p.On u
 
-/-- When the way lets go of a message sent at true time `s`: the first
-moment from `s` on at which it holds nothing back; `none` if that never
-comes. -/
-def release (d : Way) (s : Time) : Option Time := by
+/-- When the link releases a message sent at true time `s`: at the first
+moment from `s` on at which it holds nothing back; `none` if that moment
+never comes. -/
+def release (d : Link) (s : Time) : Option Time := by
   classical
   exact if ∃ u, s ≤ u ∧ ¬ d.Holds u then some (sInf {u | s ≤ u ∧ ¬ d.Holds u}) else none
 
-/-- When the message sent at true time `s` as the `q`-th on the way arrives:
-when the way lets it go, plus the baseline and the jitter at `s`; `none` if
-it is lost. -/
-def deliver (d : Way) (s : Time) (q : ℕ) : Option Time := by
+/-- When the `q`-th message on the link, sent at true time `s`, arrives:
+the baseline and the jitter after the link releases it, at the time of the
+release; `none` if the link drops it. -/
+def deliver (d : Link) (s : Time) (q : ℕ) : Option Time := by
   classical
-  exact if q ∈ d.lost ∨ d.Loses s then none
-    else (d.release s).map fun u => u + d.baseline s + d.jitter s
+  exact match d.release s with
+    | some u => if q ∈ d.lost ∨ d.Loses u then none else some (u + d.baseline u + d.jitter u)
+    | none => none
+
+/-- The state of a link at true time `u`: its jitter, whether a pause is
+under way, and whether an outage is under way. -/
+def state (d : Link) (u : Time) : ℝ × Bool × Bool := by
+  classical
+  exact (d.jitter u, decide (d.Holds u), decide (d.Loses u))
+
+/-- A link releases a message no earlier than it is sent. -/
+theorem le_release (d : Link) {s u : Time} (h : d.release s = some u) : s ≤ u := by
+  unfold release at h
+  split_ifs at h with hex
+  simp only [Option.some.injEq] at h
+  subst h
+  obtain ⟨v, hv⟩ := hex
+  exact le_csInf ⟨v, hv⟩ fun x hx => hx.1
 
 /-- A message arrives after it is sent, when the baseline is positive and the
 jitter is not negative. -/
-theorem deliver_after (d : Way) {s : Time} {q : ℕ} {a : Time} (hb : 0 < d.baseline s)
-    (hj : 0 ≤ d.jitter s) (h : d.deliver s q = some a) : s < a := by
-  unfold deliver release at h
-  split_ifs at h with hlost hex
-  · simp only [Option.map_some, Option.some.injEq] at h
+theorem deliver_after (d : Link) {s : Time} {q : ℕ} {a : Time} (hb : ∀ u, 0 < d.baseline u)
+    (hj : ∀ u, 0 ≤ d.jitter u) (h : d.deliver s q = some a) : s < a := by
+  unfold deliver at h
+  split at h
+  · rename_i u hu
+    split_ifs at h
+    simp only [Option.some.injEq] at h
     subst h
-    have : s ≤ sInf {u | s ≤ u ∧ ¬ d.Holds u} := by
-      obtain ⟨u, hu⟩ := hex
-      exact le_csInf ⟨u, hu⟩ fun v hv => hv.1
-    linarith
+    linarith [d.le_release hu, hb u, hj u]
   · simp at h
 
-end Way
+end Link
 
-/-- The network of a world is made of the ways `d`: the messages from host
-`i` to host `j` take the delays of `d i j`. -/
-def World.HasDelays {H : Type} {R : ℕ} (w : World H R) (d : H → H → Way) : Prop :=
+/-- The network of a world consists of the links `d`: messages from host `i`
+to host `j` take the delays of `d i j`. -/
+def World.HasDelays {H : Type} {R : ℕ} (w : World H R) (d : H → H → Link) : Prop :=
   ∀ i j s q, w.network.deliver i j s q = (d i j).deliver s q
 
 /-- The parameters of the model. -/
 structure DelayModel where
   /-- The baseline changes by at most `slope` seconds per second. -/
   slope : ℝ
+  slope_nonneg : 0 ≤ slope
   /-- A jitter above `x` seconds has probability at most
   `tailFactor * exp (-x / tailScale)`. -/
   tailFactor : ℝ
+  tailFactor_pos : 0 < tailFactor
   tailScale : ℝ
-  /-- How many pauses start on a way per second, on average: of pauses that
-  hold messages back for `false`, of pauses that lose them for `true`. -/
+  tailScale_pos : 0 < tailScale
+  /-- How many episodes start on a link per second, on average: pauses for
+  `false`, outages for `true`. -/
   pauseRate : Bool → ℝ
-  /-- The law of the length of a pause, for each kind. -/
+  pauseRate_nonneg : ∀ kind, 0 ≤ pauseRate kind
+  /-- The distribution of the length of an episode, for each kind. Lengths
+  are positive. -/
   pauseLength : Bool → Measure ℝ
   pauseLength_probability : ∀ kind, IsProbabilityMeasure (pauseLength kind)
-  /-- The probability that a message is lost on its own. -/
+  pauseLength_pos : ∀ kind, pauseLength kind (Set.Iic 0) = 0
+  /-- The probability that the link drops a message individually. -/
   lossProbability : ℝ
+  lossProbability_nonneg : 0 ≤ lossProbability
+  lossProbability_le_one : lossProbability ≤ 1
 
 variable {H : Type} {Ω : Type} [MeasurableSpace Ω]
 
-/-- The jitters of all the ways of the network `d ω`, at all times. -/
-def jitters (d : Ω → H → H → Way) (ω : Ω) : H → H → Time → ℝ :=
-  fun i j s => (d ω i j).jitter s
+/-- A random variable `X` is stationary under the shifts `shift`: shifting
+it does not change its distribution. -/
+def Stationary {β : Type} [MeasurableSpace β] {T : Type} (P : Measure Ω) (X : Ω → β)
+    (shift : T → β → β) : Prop :=
+  ∀ τ, P.map (fun ω => shift τ (X ω)) = P.map X
 
-/-- Jitters at all times, moved by `τ` seconds: the value at time `s` is the
-one at time `s + τ`. -/
-def shiftTime (τ : ℝ) (x : H → H → Time → ℝ) : H → H → Time → ℝ :=
-  fun i j s => x i j (s + τ)
+/-- A random variable `X` is mixing under the shifts `shift`: for any two
+events about `X`, the probability that the first holds and the second holds
+after a shift by `τ` tends, as `τ` grows, to the product of their
+probabilities. -/
+def Mixing {β : Type} [MeasurableSpace β] {T : Type} [Preorder T] (P : Measure Ω) (X : Ω → β)
+    (shift : T → β → β) : Prop :=
+  ∀ A B : Set β, MeasurableSet A → MeasurableSet B →
+    Tendsto (fun τ => P {ω | X ω ∈ A ∧ shift τ (X ω) ∈ B}) atTop
+      (𝓝 (P {ω | X ω ∈ A} * P {ω | X ω ∈ B}))
 
-/-- A random network, `d ω` for `ω` drawn from `P`, follows the laws of the
-model. -/
-structure DelayModel.Holds (m : DelayModel) (P : Measure Ω) (d : Ω → H → H → Way) : Prop where
+/-- The states of all the links of the network `d ω`, at all times. -/
+def linkStates (d : Ω → H → H → Link) (ω : Ω) : H → H → Time → ℝ × Bool × Bool :=
+  fun i j u => (d ω i j).state u
+
+/-- The individually dropped messages on all the links of the network
+`d ω`, by their number on the link. -/
+def droppedMessages (d : Ω → H → H → Link) (ω : Ω) : H → H → ℕ → Bool := by
+  classical
+  exact fun i j q => decide (q ∈ (d ω i j).lost)
+
+/-- A function of time on every link, shifted by `τ` seconds: its value at
+`u` is the one at `u + τ`. -/
+def shiftTime {α : Type} (τ : ℝ) (x : H → H → Time → α) : H → H → Time → α :=
+  fun i j u => x i j (u + τ)
+
+/-- A function of the message number on every link, shifted by `m`
+messages. -/
+def shiftCount {α : Type} (m : ℕ) (x : H → H → ℕ → α) : H → H → ℕ → α :=
+  fun i j q => x i j (q + m)
+
+/-- A random network, `d ω` for `ω` drawn from `P`, follows the model. -/
+structure DelayModel.Holds (m : DelayModel) (P : Measure Ω) (d : Ω → H → H → Link) : Prop where
   /-- The baseline is positive. -/
-  baseline_pos : ∀ ω i j s, 0 < (d ω i j).baseline s
+  baseline_pos : ∀ ω i j u, 0 < (d ω i j).baseline u
   /-- The baseline changes by at most `slope` seconds per second. -/
-  baseline_slow : ∀ ω i j s s',
-    |(d ω i j).baseline s - (d ω i j).baseline s'| ≤ m.slope * |s - s'|
+  baseline_slow : ∀ ω i j u u',
+    |(d ω i j).baseline u - (d ω i j).baseline u'| ≤ m.slope * |u - u'|
   /-- The jitter is never negative. -/
-  jitter_nonneg : ∀ ω i j s, 0 ≤ (d ω i j).jitter s
-  /-- The jitter of each way at each time is a random variable. -/
-  jitter_measurable : ∀ i j s, Measurable fun ω => (d ω i j).jitter s
+  jitter_nonneg : ∀ ω i j u, 0 ≤ (d ω i j).jitter u
+  /-- The jitter comes arbitrarily close to zero, so that the baseline is the
+  least time a message takes. -/
+  jitter_near_zero : ∀ i j u δ, 0 < δ → 0 < P {ω | (d ω i j).jitter u < δ}
   /-- Large jitter is rare: a jitter above `x` seconds has probability at
   most `tailFactor * exp (-x / tailScale)`. -/
-  jitter_tail : ∀ i j s x, 0 ≤ x →
-    P {ω | x < (d ω i j).jitter s} ≤ ENNReal.ofReal (m.tailFactor * Real.exp (-x / m.tailScale))
-  /-- The jitter has the same law at all times: moving the jitters of all
-  the ways in time does not change their joint law. -/
-  jitter_stationary : ∀ τ, P.map (fun ω => shiftTime τ (jitters d ω)) = P.map (jitters d)
-  /-- The jitter at times far apart is nearly independent: for any two
-  events about the jitters, the probability that the first holds and the
-  second holds `τ` seconds later tends, as `τ` grows, to the product of
-  their probabilities. -/
-  jitter_mixing : ∀ A B : Set (H → H → Time → ℝ), MeasurableSet A → MeasurableSet B →
-    Tendsto (fun τ => P {ω | jitters d ω ∈ A ∧ shiftTime τ (jitters d ω) ∈ B}) atTop
-      (𝓝 (P {ω | jitters d ω ∈ A} * P {ω | jitters d ω ∈ B}))
-  /-- Pauses of each kind start at the rate `pauseRate`, with lengths of the
-  law `pauseLength`: on any way, the mean number of pauses of a kind that
-  start within any `t` seconds and whose length is in a set `A` is
-  `pauseRate * t * pauseLength A`. -/
+  jitter_tail : ∀ i j u x, 0 ≤ x →
+    P {ω | x < (d ω i j).jitter u} ≤ ENNReal.ofReal (m.tailFactor * Real.exp (-x / m.tailScale))
+  /-- Episodes have positive lengths. -/
+  pause_length_pos : ∀ ω i j p, p ∈ (d ω i j).pauses → 0 < p.length
+  /-- Episodes of each kind start at the rate `pauseRate`, with lengths
+  distributed as `pauseLength`: on any link, the mean number of episodes of
+  a kind that start within any `t` seconds and whose length is in a set `A`
+  is `pauseRate * t * pauseLength A`. -/
   pauses : ∀ i j kind (a t : ℝ) (A : Set ℝ), 0 ≤ t → MeasurableSet A →
     ∫⁻ ω, (((d ω i j).pauses ∩
         {p | p.loses = kind ∧ a ≤ p.start ∧ p.start < a + t ∧ p.length ∈ A}).encard : ℝ≥0∞) ∂P
       = ENNReal.ofReal (m.pauseRate kind * t) * m.pauseLength kind A
-  /-- Each message is lost on its own with probability `lossProbability`. -/
+  /-- Each message is dropped individually with probability
+  `lossProbability`. -/
   lost : ∀ i j q, P {ω | q ∈ (d ω i j).lost} = ENNReal.ofReal m.lossProbability
+  /-- The state of each link at each time is a random variable. -/
+  state_measurable : ∀ i j u, Measurable fun ω => (d ω i j).state u
+  /-- Whether each message is dropped individually is a random event. -/
+  lost_measurable : ∀ i j q, MeasurableSet {ω | q ∈ (d ω i j).lost}
+  /-- The states of all links over time are jointly stationary. -/
+  states_stationary : Stationary P (linkStates d) shiftTime
+  /-- The states of all links over time are jointly mixing. -/
+  states_mixing : Mixing P (linkStates d) shiftTime
+  /-- The individually dropped messages of all links are jointly stationary
+  in the message number. -/
+  dropped_stationary : Stationary P (droppedMessages d) shiftCount
+  /-- The individually dropped messages of all links are jointly mixing in
+  the message number. -/
+  dropped_mixing : Mixing P (droppedMessages d) shiftCount
 
 /-- A random world, `world ω` for `ω` drawn from `P`, follows the model: `P`
-is a probability measure, and the network of each world is made of ways that
-follow the model's laws. -/
+is a probability measure, and the network of each world consists of links
+that follow the model. -/
 def DelayModel.Random (m : DelayModel) {R : ℕ} (P : Measure Ω) (world : Ω → World H R) :
     Prop :=
-  IsProbabilityMeasure P ∧ ∃ d : Ω → H → H → Way, (∀ ω, (world ω).HasDelays (d ω)) ∧ m.Holds P d
+  IsProbabilityMeasure P ∧ ∃ d : Ω → H → H → Link, (∀ ω, (world ω).HasDelays (d ω)) ∧ m.Holds P d
 
 end Unisono.Spec
