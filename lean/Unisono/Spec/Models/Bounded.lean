@@ -427,4 +427,25 @@ theorem PlaybackDevice.asked_unbounded {d : PlaybackDevice} {rate ε least most 
   rw [mul_comm] at hout
   linarith
 
+/-- The time of capture of a position changes by at most `(1 + ε) / rate`
+seconds per frame. -/
+theorem World.captured_lipschitz (w : World H R) {ε : ℝ}
+    (hd : w.source.RateWithin w.rate ε) (x y : ℝ) :
+    |w.captured x - w.captured y| ≤ (1 + ε) / w.rate * |x - y| := by
+  have hρ := w.rate_pos
+  have key : ∀ a b, a ≤ b → |w.captured a - w.captured b| ≤ (1 + ε) / w.rate * |a - b| := by
+    intro a b hab
+    have h := w.captured_sub_mem hd hab
+    rw [abs_sub_comm a b, abs_of_nonneg (sub_nonneg.mpr hab), abs_le]
+    have hpos : 0 ≤ (b - a) / w.rate := div_nonneg (sub_nonneg.mpr hab) hρ.le
+    have e1 : (1 - ε) / w.rate * (b - a) = (1 - ε) * ((b - a) / w.rate) := by ring
+    have e2 : (1 + ε) / w.rate * (b - a) = (1 + ε) * ((b - a) / w.rate) := by ring
+    rw [e1, e2] at h
+    rw [e2]
+    constructor <;> nlinarith [h.1, h.2]
+  rcases le_total x y with hxy | hyx
+  · exact key x y hxy
+  · rw [abs_sub_comm, abs_sub_comm x y]
+    exact key y x hyx
+
 end Unisono.Spec

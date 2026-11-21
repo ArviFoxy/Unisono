@@ -193,54 +193,111 @@ then; and the copies that the sender sends to a host at a handoff are its
 consecutive messages on that link, of which the bounded model delivers at
 least one within $d_{\max}$.
 
-What remains is to show that the baseline's run is at a latency, in every
-world within the bounds of the bounded model, with an explicit $E$ and for
-every $L$ above an explicit minimum. The proof follows the solution's parts,
-each bounding one source of error:
+The baseline's main guarantee is that its run is at a latency. Its error is
+built from the errors of the target, in seconds of capture time:
+\begin{itemize}
+\item $s = (m_B - 1)(1 + \varepsilon_D)/\rho$, the longest span of a block;
+\item $A_q = 2 d_{\max} + m_B (1 + \varepsilon_D)/\rho + \lambda_{\max}$,
+  the oldest that the question of the estimate a host uses can be at a
+  request: a round trip to the sender and the longest time between two
+  requests;
+\item $A_b = d_{\max} + m_B (1 + \varepsilon_D)/\rho + \eta$, the oldest
+  that the block a host extrapolates from can be at a request: the longest
+  delay and the longest time between two handoffs;
+\item $S_b = \lambda_{\max} + A_b + \eta + s$, the longest time from the
+  capture of that block's first frame to the output of the request's first
+  sample;
+\item $e = 2\varepsilon_R + \tfrac12 (d_{\max} - d_{\min} + 2\varepsilon_C
+  d_{\max}) + 2\varepsilon_C (\lambda_{\max} + A_q + P/(1 - \varepsilon_C))
+  + \varepsilon_C S_b + \varepsilon_D (m_B - 1)/\rho$: the two timestamps'
+  errors, the estimate's error, the clocks' drift over the estimate's age
+  and over the block's age, and the playback device's rate error over a
+  block;
+\item $E_t = e + \varepsilon_D (L + s + S_b + e)$, which adds the capture
+  device's rate error over the time from the block to the position
+  (\lean{targetError}).
+\end{itemize}
+
+\begin{theorem}[The baseline plays at its latency]\label{thm:baseline}
+In a world within the bounds of the bounded model where no speaker is on
+the sender's host, let $d_{\min}$ and $d_{\max}$ bound the delays between
+the sender and the speakers' hosts in both directions, and let the baseline
+send each message $c > m_L$ times, with a slew
+$2\varepsilon_D/(1 - \varepsilon_D) < w < 1$, a period $P \ge 0$ and a
+latency
+\[
+  L > E + \bigl(a + 2(m_B - 1)\bigr)\frac{1 + \varepsilon_D}{\rho} + \eta
+    + d_{\max} + \lambda_{\max},
+  \qquad E = \frac{1 + \varepsilon_D}{1 - \varepsilon_D}\, E_t
+\]
+(\lean{latencyError}). Then the baseline's playback is at latency $L$ within
+$E$ from some output sample on (\lean{plays\_at\_latency}).
+\end{theorem}
+
+To first order in the rate errors, $E \approx (d_{\max} - d_{\min})/2 +
+2\varepsilon_R + \varepsilon_D L$, and the least latency is about $E$ plus
+the longest delay, the handoff delay, the request lead and the spans of two
+blocks and of the lookahead. With Theorem~\ref{thm:atlatency} and
+$\delta = (1 + \varepsilon_D)/\rho$, the longest time between two output
+samples, the baseline misses no samples and has no discontinuities in the
+long run, its latency is at most $L + E + \delta$, its synchronization cost
+at most $(E + \delta)^2$, and its tracking cost at most $(D + E + \delta)^2$
+when every target latency is within $D$ of $L$ (\lean{guarantees}).
+
+The proof follows the solution's parts, each bounding one source of error:
 \begin{enumerate}
-\item \emph{The views} (proved): a host's view is the list of the events it
-  handled, with its clock's readings, and every message of the baseline in
-  transit was sent where it should have been (\lean{origin\_inFlight}), so
-  what the baseline remembers can be traced to the world. A host other than
-  the sender's remembers the latest block that arrived and the estimate of
-  the latest question answered (\path{lean/Unisono/Solutions/FixedDelayMemory.lean}).
-\item \emph{The clocks} (proved): every question is answered, so at every
-  step later than a question plus the longest delays to the sender and back,
-  the asking host remembers an estimate from a question as late or later
-  (\lean{answer\_reaches}); the estimate it remembers is an NTP sample whose
-  question and answer took between the least and the longest delays
-  (\lean{offset\_sample}). Such an estimate errs from the true difference of
-  the two clocks at the sender's reading by at most half the largest
-  difference of the two delays, plus the clocks' rate error times the mean
-  delay (\lean{offset\_error}), and the difference of two clocks drifts by
-  at most twice their rate error per second (\lean{offset\_drift}).
-\item \emph{The target:} the capture time of $x^*_k$ errs from
-  $o_r(k) - L$ by at most the clock error, the timestamps' errors
-  $2\varepsilon_R$, and the rate errors over the extrapolated spans, so
-  $x^*_k$ lies within some $B$ frames of the trajectory $T_k$ whose capture
-  time is exactly $o_r(k) - L$.
-\item \emph{The pace} (proved): $T_k$ advances by one frame per output
-  sample within the devices' rate error $\nu$. When $w > \nu$, a position
-  within $B$ of $T_k$ stays within $B$ of it (\lean{advance\_tracks}), and
-  a position at any distance gets closer by at least $w - \nu$ frames per
-  output sample until it is within $B$ (\lean{advance\_converges}). Within a
-  block, the positions the baseline chooses follow this recursion
-  (\lean{positions\_block}, \lean{chosen\_succ}).
-\item \emph{The data:} the frames that $x_k$ needs, within the resampler's
-  lookahead $a$, have arrived when the device requests the block once $L$
-  exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff
-  delay $\eta$, the request lead $\lambda_{\max}$, and the spans of two
-  blocks and of the lookahead.
-\item \emph{Progress} (proved): the baseline sets no timers, and what it
-  sends at each event weighs less than what the event uses up, where a block
-  and an answer weigh one and a question one more than the $c$ copies of the
-  answer it may draw. What remains to happen by a time $T$, the handoffs and
+\item \emph{The views:} a host's view is the list of the events it handled,
+  with its clock's readings, and every message of the baseline in transit
+  was sent where it should have been (\lean{origin\_inFlight}), so what the
+  baseline remembers can be traced to the world. A host other than the
+  sender's remembers the latest block that arrived and the estimate of the
+  latest question answered
+  (\path{lean/Unisono/Solutions/FixedDelayMemory.lean}); at a step, the block
+  is no older than any block handed over more than $d_{\max}$ before it
+  (\lean{block\_memory}).
+\item \emph{The clocks:} every question is answered, so at every step later
+  than a question plus the longest delays to the sender and back, the asking
+  host remembers an estimate from a question as late or later
+  (\lean{answer\_reaches}), and from one no older than an earlier request
+  less one period (\lean{offset\_recent}); the estimate it remembers is an
+  NTP sample whose question and answer took between the least and the
+  longest delays (\lean{offset\_sample}). Such an estimate errs from the
+  true difference of the two clocks at the sender's reading by at most half
+  the largest difference of the two delays, plus the clocks' rate error
+  times the mean delay (\lean{offset\_error}), and the difference of two
+  clocks drifts by at most twice their rate error per second
+  (\lean{offset\_drift}).
+\item \emph{The target:} the time that the target of output sample $k$
+  stands for is within $e$ of $o_r(k) - L$ (\lean{target\_time\_error}), and
+  the sound at the target was captured within $E_t$ of it
+  (\lean{captured\_target}, \lean{target\_band}). The trajectory $T_k$ whose
+  capture time is exactly $o_r(k) - L$ exists (\lean{exists\_captured\_eq}),
+  and the target lies within $\rho E_t/(1 - \varepsilon_D)$ frames of it.
+\item \emph{The pace:} $T_k$ advances by one frame per output sample within
+  $\nu = 2\varepsilon_D/(1 - \varepsilon_D)$ (\lean{trajectory\_step}). When
+  $w > \nu$, a position within $B$ of $T_k$ stays within $B$ of it
+  (\lean{advance\_tracks}), and a position at any distance gets closer by at
+  least $w - \nu$ frames per output sample until it is within $B$
+  (\lean{advance\_converges}). The positions the baseline chooses follow
+  this recursion within a block (\lean{positions\_block},
+  \lean{chosen\_succ}) and from one request to the next
+  (\lean{last\_at\_next\_request}).
+\item \emph{The data:} a frame captured more than the span of a block, the
+  handoff delay and $d_{\max}$ before a step has reached every speaker's
+  host by then (\lean{frame\_held}), so a position whose sound was captured
+  early enough, also by the resampler's lookahead, plays
+  (\lean{playable\_of\_captured}). The bound on $L$ makes that so for every
+  late output sample.
+\item \emph{Progress:} the baseline sets no timers, and what it sends at
+  each event weighs less than what the event uses up, where a block and an
+  answer weigh one and a question one more than the $c$ copies of the answer
+  it may draw. What remains to happen by a time $T$, the handoffs and
   requests before $T$ and the messages that arrive by $T$ weighed so, then
   decreases at every step whose event comes by $T$, so the run has an event
-  after every true time (\lean{Solution.progress}, \lean{progress}).
+  after every true time (\lean{Solution.progress}, \lean{progress}), and
+  every request is handled (\lean{request\_step}).
 \end{enumerate}
-Together with Theorem~\ref{thm:atlatency}, this gives the baseline's
-guarantees under the bounded model.
+The parts come together per speaker (\lean{speaker\_at\_latency}).
 
 The estimate $\hat\theta$ errs by up to half the largest difference of the
 delays of the question and the answer. When every link's delays lie within

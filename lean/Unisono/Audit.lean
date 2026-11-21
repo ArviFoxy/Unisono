@@ -1184,3 +1184,43 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.target_band' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.target_band
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_last_below' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_last_below
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_block_of_sample' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_block_of_sample
+
+/-- info: 'Unisono.Solutions.FixedDelay.trajectory_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.trajectory_step
+
+/-- info: 'Unisono.Spec.World.captured_lipschitz' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_lipschitz
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_eq_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_eq_chosen
+
+/-- info: 'Unisono.Solutions.FixedDelay.targetError_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.targetError_mono
+
+/-- info: 'Unisono.Solutions.FixedDelay.late_targets' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.late_targets
+
+/-- info: 'Unisono.Solutions.FixedDelay.speaker_at_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.speaker_at_latency
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_at_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_at_latency
+
+/-- info: 'Unisono.Solutions.FixedDelay.guarantees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.guarantees
