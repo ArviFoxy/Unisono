@@ -34,8 +34,8 @@ Outside the scope:
   correction): every speaker is to play a sample at the same moment;
 - what a speaker plays instead of a missed sample (concealment): every
   output sample that is not the original counts as missed, whatever it is;
-- how well content between two samples is reproduced (the quality of
-  resampling);
+- the quality of resampling: how well the resampler reproduces the sound
+  between two frames. Only its lookahead counts (section 4);
 - devices of different nominal rates: all devices have one nominal rate.
 
 ## 2. The world (`World`)
@@ -72,11 +72,13 @@ which worlds can happen, and how likely each is, is a model of the world
   runs at the rate of its own oscillator.
 - The hosts are the sender's host and the speakers' hosts (`hosts`).
 
-Content between two frames is captured, by definition, between their
-captures in proportion (`World.captured`): content at position `x`, in
-frames, was captured at `capture ⌊x⌋ + (x − ⌊x⌋)·(capture (⌊x⌋ + 1) − capture ⌊x⌋)`.
-A speaker may play content at any position, which is how it plays faster or
-slower than its device runs.
+**Positions in the source.** Speakers resample: an output sample plays the
+source at a position `x`, counted in frames, which in general is not a whole
+number. Position 999.98 lies 98% of the way from frame 999 to frame 1000.
+The sound at position `x` counts as captured the same fraction of the way
+between the captures of the frames around it (`World.captured`):
+`capture ⌊x⌋ + (x − ⌊x⌋)·(capture (⌊x⌋ + 1) − capture ⌊x⌋)`, where `⌊x⌋` is
+`x` rounded down.
 
 ## 3. What a host observes (`Observation`, `Event`)
 
@@ -95,7 +97,7 @@ list of its events so far, each as it saw it: a reading of its own clock and
 what it observed. True time is not in the view, and neither is anything that
 happens at another host, unless a message brought it.
 
-## 4. What a solution can do (`Action`, `Solution`, `Run`)
+## 4. What a solution can do, and its run (`Solution`)
 
 At each event a host:
 
@@ -103,45 +105,48 @@ At each event a host:
   with the data of frames of the source that it holds;
 - asks to be woken at readings of its clock;
 - when a speaker's device asks for a block, says for each of the block's
-  output samples what it plays: the source's content at a position, or
-  anything else.
+  output samples what it plays: the source at a position, or anything else.
 
 A **solution** (`Solution`) says what each host does at each event, given
 its view. It may have speakers send messages to each other, have the sender
 announce anything to anyone, keep any state it can derive from its view. A
-host **holds** a frame of the source when an event so far brought its data:
+host **holds** a frame of the source once an event has brought its data:
 the capture device's handing over, at the sender, or a message.
 
 Three limits hold whatever the solution:
 
 - **causality:** what a host does at an event depends only on its view;
-- **data:** a host sends only frames it holds, and a speaker plays content
-  at position `x` only if its host holds the two frames on either side of
-  `x` when the device asks for the block (`Consistent.plays`);
+- **data:** a host sends only frames it holds, and a speaker plays only
+  sound that has arrived. The resampler computes the sound at position `x`
+  from the frames less than `a` frames away from `x`, where `a` is the
+  resampler's lookahead: one frame for linear interpolation (position 999.98
+  needs frames 999 and 1000), about half the filter length for a longer
+  filter. An output sample plays the original sound only if its host holds
+  all of those frames when the device asks for the block; otherwise it is a
+  missed sample (`playable`). The lookahead is a parameter;
 - **capacity:** in any second, a host sends any other host at most a given
   number of messages, carrying at most a given number of frames
-  (`WithinBudget`). The two numbers are parameters.
+  (`Solution.WithinBudget`). The two numbers are parameters.
 
-A **run** (`Run`) records what happens when a solution runs in a world: each
-host's events in order, each with its true time, what the host observed and
-why the event happened, and what each speaker played at each output sample.
-A record is a run of the solution in the world (`Consistent`) when:
+**The run** of a solution in a world (`Solution.states`) is what happens,
+one event after another in the order of true time. At each step the
+earliest event that is due happens: the capture device's next block, a
+speaker's device's next request, the arrival of a message, or a wake-up. The
+world says when each comes: the devices say when they hand over or ask, the
+network says when a message arrives or that it is lost, and a host's clock
+says when it reads what a wake-up asked for. The host meets the event: it
+sees it, with the reading of its clock, and does what the solution says for
+its view. Events at the same true time are taken in a fixed order: the
+capture device's first, then the speakers' devices' in the order of the
+speakers, then messages and wake-ups in the order they were sent or asked
+for.
 
-- each host's events come in the order of true time, and no two have the
-  same cause;
-- each event is what its cause makes it: a block handed over or asked for
-  is an event at the time the device says, with the frames or output
-  samples of the block and the device's reports; a message is an event at
-  the host it was sent to, at the time the network delivers it, with its
-  contents; a wake-up is an event when the host's clock reads what was
-  asked;
-- every block of every device, every message that the network delivers,
-  and every wake-up asked for at a later reading is an event;
-- what each host does at each event is what the solution says for its view;
-- the data limit holds.
-
-A solution is admissible in a world for a capacity when it has a run there
-and every run of it stays within the capacity (`Solution.Admissible`).
+So every solution has exactly one run in every world. The run meets events
+in the order of true time (`Solution.eventTime_le_succ`). If it gets past
+every moment, the solution decides what every output sample of every
+speaker plays (`Solution.decided`). A solution that does infinitely many
+things before some moment, for example by asking to be woken ever sooner,
+never gets past it, and every output sample after that moment is missed.
 
 ## 5. The objectives (`Objectives.lean`)
 
@@ -228,10 +233,10 @@ kinds of weights: low-latency mode has a zero weight for tracking, lip-sync
 mode a zero weight for latency. How the objectives combine may be revisited
 once the limits and the solutions are known.
 
-The cost of a solution in a world is the cost of its worst run there
-(`Solution.cost`). When the world is random, a world `world ω` with `ω`
-drawn from a probability measure `P`, the cost of a solution is its expected
-cost (`Solution.expectedCost`).
+The cost of a solution in a world is the cost of what its speakers play in
+its run there (`Solution.cost`). When the world is random, a world
+`world ω` with `ω` drawn from a probability measure `P`, the cost of a
+solution is its expected cost (`Solution.expectedCost`).
 
 ## 6. Rate distortion: where the measure comes from
 
@@ -281,38 +286,32 @@ way between two hosts (`World.WithinBounds`). A statement under it holds for
 every world within the bounds: the worst case. A random world can be
 required to be within bounds almost surely (`AlmostSurelyWithin`).
 
-Models with laws of chance, for the delays, the losses and outages of the
-network, and the wandering of the clocks, come with the statements that
-need them. Some will need mathematics that Mathlib does not have yet; that
+The second model, `Delays`, gives the network laws of chance; it is the
+model of the earlier work. On each way from one host to another, a message
+sent at true time `s` takes:
+
+- the **baseline** at `s`, the least time a message takes. It changes by at
+  most a given number of seconds per second;
+- plus the **jitter** at `s`, how much longer than the baseline the message
+  takes. It is never negative. Large values are rare: the probability that
+  it exceeds `x` seconds is at most `C·e^(−x/x₀)`, where `C` and `x₀` are
+  parameters. Its law is the same at all times (it is stationary), and its
+  values at times far apart are nearly independent (it is mixing);
+- plus, if `s` falls in a **pause** of the way, the time until the pause
+  ends. The way holds back every message sent during a pause and lets them
+  go when it ends, so the first message sent in a pause is late by the
+  pause's whole length.
+
+A pause may instead lose every message sent during it (an outage), and
+single messages may be lost. Pauses of each kind start at a given mean rate
+per second, with lengths that follow a given law, and a single message is
+lost with a given probability (`DelayModel.Holds`). Nothing is assumed
+independent: the ways between different hosts may be alike, pauses may come
+in clusters, and the jitter, the pauses and the losses may depend on each
+other. A random world follows the model when its network is made of such
+ways (`DelayModel.Random`).
+
+Models of how the clocks wander come with the statements that need them.
+Some statements will need mathematics that Mathlib does not have yet; that
 is formalised as a library of its own, apart from the specification and
 from any solution.
-
-## 8. Choices made here, to review
-
-1. One nominal rate for all devices.
-2. Content between two frames was captured between their captures in
-   proportion, and playing content at a position needs the two frames
-   around it. A solution that reproduces content from more frames waits for
-   more.
-3. Whether a message arrives, and when, depends on the two hosts, when it is
-   sent and how many messages went before it on the same way, not on its
-   size or on the network's load. The network's capacity is a budget of
-   messages and frames a second for each way between two hosts.
-4. A host answers a device's request at the moment of the request; the time
-   it takes to compute is not modelled.
-5. A host reads its clock exactly at its events. A device's reports may be
-   wrong; by how much is part of a model.
-6. Playback goes on while the content advances by more than nothing and less
-   than two frames per output sample. Playing faster than double speed is
-   counted as skipping.
-7. Synchronisation compares the times at which speakers play the same frame,
-   not their latencies at the same moment. The two agree while latency
-   changes slowly.
-8. Latency counts linearly and tracking quadratically, as in the earlier work.
-9. A frame missed at a speaker does not count in that speaker's
-   synchronisation, latency or tracking; it counts as missed samples.
-10. When a solution has several runs in a world, its cost there is the
-    worst. That a solution has exactly one run, when every message takes
-    some time, is not yet proved; admissibility asks for one.
-11. The hosts are the sender's and the speakers'. A host that serves as a
-    reference clock and nothing else is outside the scope.

@@ -26,6 +26,7 @@ public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Models.Bounded
+public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Solution
 public import Unisono.Spec.World

@@ -28,6 +28,7 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Spec.Checks
+public import Unisono.Spec.Models.Delays
 
 /-!
 # The axioms the theorems rest on
@@ -811,3 +812,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.sum_pairs_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.sum_pairs_eq
+
+/-- info: 'Unisono.Spec.Solution.eventTime_le_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_le_succ
+
+/-- info: 'Unisono.Spec.Solution.decided' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.decided
+
+/-- info: 'Unisono.Spec.Way.deliver_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Way.deliver_after

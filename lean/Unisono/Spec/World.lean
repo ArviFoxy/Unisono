@@ -123,9 +123,10 @@ structure World (H : Type) (R : ℕ) where
 
 variable {H : Type} {R : ℕ}
 
-/-- When the content at position `x` of the source was captured, `x` in
-frames: frame `n` at its capture, and the content between two frames in
-proportion. -/
+/-- When the sound at position `x` of the source was captured, `x` counted
+in frames: frame `n` at `capture n`, and the sound a fraction of the way
+from frame `n` to frame `n + 1` the same fraction of the way between their
+captures. -/
 def World.captured (w : World H R) (x : ℝ) : Time :=
   w.source.capture ⌊x⌋₊
     + (x - ⌊x⌋₊) * (w.source.capture (⌊x⌋₊ + 1) - w.source.capture ⌊x⌋₊)

@@ -232,16 +232,17 @@ end World
 
 variable {Msg : Type}
 
-/-- The cost of a solution in a world: that of its worst run there. -/
-def Solution.cost [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (target : ℕ → ℝ)
-    (c : Weights) : ℝ≥0∞ :=
-  ⨆ ρ ∈ σ.runs w, w.cost ρ.plays target c
+/-- The cost of a solution in a world, for a resampler lookahead of
+`lookahead` frames: the cost of what its speakers play in its run there. -/
+def Solution.cost [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
+    (target : ℕ → ℝ) (c : Weights) : ℝ≥0∞ :=
+  w.cost (σ.plays w lookahead) target c
 
 /-- The expected cost of a solution when the world is random: the world is
 `world ω`, with `ω` drawn from the probability measure `P`. -/
 def Solution.expectedCost [DecidableEq H] {Ω : Type} [MeasurableSpace Ω]
     (P : MeasureTheory.Measure Ω) (world : Ω → World H R) (σ : Solution H R Msg)
-    (target : ℕ → ℝ) (c : Weights) : ℝ≥0∞ :=
-  ∫⁻ ω, σ.cost (world ω) target c ∂P
+    (lookahead : ℕ+) (target : ℕ → ℝ) (c : Weights) : ℝ≥0∞ :=
+  ∫⁻ ω, σ.cost (world ω) lookahead target c ∂P
 
 end Unisono.Spec
