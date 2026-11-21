@@ -659,6 +659,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Model.Level.integral_predictive
 
+/-- info: 'Unisono.Model.Level.volume_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.volume_missed
+
+/-- info: 'Unisono.Model.Level.missed_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.missed_le
+
+/-- info: 'Unisono.Model.Level.missed_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.missed_ge
+
+/-- info: 'Unisono.Model.Level.volume_lasts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.volume_lasts
+
+/-- info: 'Unisono.Model.Level.move_pays_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.move_pays_iff
+
 /-- info: 'Unisono.Model.SupportLine.estimate_isGreatest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.SupportLine.estimate_isGreatest
@@ -674,6 +694,14 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.Stream.sum_sq_errors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.Stream.sum_sq_errors
+
+/-- info: 'Unisono.Model.Stream.groupNeed_errors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Stream.groupNeed_errors
+
+/-- info: 'Unisono.Model.Stream.group_misses_errors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Stream.group_misses_errors
 
 /-- info: 'Unisono.Model.RegulationRandom.mean_value_law_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

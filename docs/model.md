@@ -220,6 +220,20 @@ receivers counts a gap that all of them share $N$ times, so the level rises
 with the number of receivers for a cause that the level of a larger group
 does nothing more against.
 
+The cost has two parts that are chosen apart: the terms of the level, the
+gaps and the missed frames, which the sender answers with the level (section
+6.5), and the terms of each receiver, which its regulator answers with its
+pace (section 6.4). They are not free of each other, because what a frame
+needs at a receiver contains that receiver's timing error: a receiver that
+plays late needs less. But timing errors within $\varepsilon$ move the need
+of the group by no more than $\varepsilon$, so what the group misses at a
+level lies between what it would miss without timing errors at the levels
+$\varepsilon$ above and below. *Lean:*
+`Unisono.Model.Stream.groupNeed_errors`, `group_misses_errors`. The timing
+errors are microseconds and the needs milliseconds. The needs that the level
+is chosen from are measured at the receivers as they play, timing errors
+included.
+
 The weights, $L_0$ and $u_{\max}$ are parameters of a stream; no value of them
 is built in. A large $w_{\mathrm{tgt}}$ holds the latency at $L_0$, which suits
 audio that accompanies video. With $w_{\mathrm{tgt}} = 0$ the latency follows
@@ -740,7 +754,9 @@ stretch need less the later they were captured, since they waited less for
 the pause that delayed them, so a stretch with $y > \ell$ is late from its
 first frame and misses about $\min(y - \ell, D)$ seconds. That count of
 missed time is exact for a pause that begins at the start of a stretch, and
-too large by less than one stretch for each pause otherwise. The cost per
+otherwise too large by at most the time from the start of the stretch to the
+start of the pause (*Lean:* `Unisono.Model.Level.volume_missed`, `missed_le`,
+`missed_ge`). The cost per
 second of holding $\ell$ is
 
 $$J(\ell) \;=\; w_{\mathrm{lat}}\,\ell + w_{\mathrm{tgt}}\,(\ell - L_0)^2
@@ -781,10 +797,20 @@ The numbers are about links and devices in general and are not fitted to
 anything. *Monitor:* how far each new largest need lay above the one before.
 
 The level so chosen is the best decision under what is stated: the law of
-the next stretch above, and the cost $J$. It is found among the needs that
-were seen, the level $L_0$ and 256 further levels up to two seconds, which
-are closer together near the needs: the mean cost falls only where the level
-passes a need that was seen, or smoothly above the largest of them.
+the next stretch above, and the cost $J$. A level is a whole number of
+nanoseconds from zero to two seconds, and the level chosen is one at which
+$J$ is least among all of them. $J$ changes its form only at the needs that
+were seen and one stretch below each. Between two neighbours of those levels
+it is the sum of a constant, a square, and the mean cost of a stretch that
+needs more than all seen: convex above the largest need and more than a
+stretch below it, and with a convex derivative in between. So it is least at
+the lower of the two levels, at the last level before the upper one, or
+where its derivative passes from negative to positive, which it does at most
+once and where halving finds it. The last level before a need matters: there
+a stretch that the level would just play is missed, and two gaps around it
+become one. The search is floating-point code and is tested, not proved: no
+level on a grid of 5 µs, and none next to a need, costs less than the one
+found (`unisono_runtime::level`, in its tests).
 
 On needs drawn with pauses of 10 to 80 ms every 5, 30 or 300 seconds
 (`unisono_runtime::level`, in its tests), the level chosen from two or ten
@@ -795,14 +821,24 @@ as a millisecond held for a hundred minutes, the level is held higher than
 hindsight would: one large need in two minutes, or none, is no ground to
 expect few of them, and the cost was up to 1.9 times the best.
 
-**Moving the level.** The level moves to another minimum only when the cost
-saved, over the time the evidence covers, exceeds the cost of the move. This
-rule is *not derived*: it takes the time that the evidence covers as the time
-for which what was seen will go on. The level moves along a line that the
-sender announces with the frames, at a slope within the bound of section 6.4,
-and every receiver follows it as section 6.4 says. The cost of a move stands
-for the two changes of pace, at its start and at its end, that all receivers
-make at once.
+**Moving the level.** A move costs $c$ once: it stands for the two changes
+of pace, at its start and at its end, that all receivers make at once. It
+saves $s = J(\ell_{\text{now}}) - J(\ell_{\text{best}})$ per second for as
+long as the needs keep the law they have, so it pays for itself if they keep
+it for more than $c/s$ longer. How long they will is not known. What is known
+is that they have kept it for the time $T$ that the evidence covers. Take the
+moment of the choice to be as likely in any part of the time over which the
+law holds as in any other. Then the law holds for more than $t$ longer with
+the probability $T/(T+t)$ (*Lean:* `Unisono.Model.Level.volume_lasts`), and
+the move more likely than not pays for itself exactly when
+
+$$s\,T > c$$
+
+(`move_pays_iff`). The level moves when that holds. The rule looks at
+whether the move is more likely to pay than not, and not at the mean of what
+it saves, which under this law has no finite value. The level moves along a
+line that the sender announces with the frames, at a slope within the bound
+of section 6.4, and every receiver follows it as section 6.4 says.
 
 A packet arrives well before its frames are played, and the level of a
 frame is the one its own packet carries. A receiver therefore keeps what a
@@ -816,9 +852,9 @@ are ahead, for all receivers alike (`unisono_core::receiver`, `note`). A
 receiver's pace is held within three parts in a thousand, so a level cannot
 be followed faster than 3 ms a second.
 
-*Not stated in Lean:* that the level is the best over all levels and not
-only over those tried; the rule for moving; and the count of missed time
-from the largest need of a stretch.
+*Not stated in Lean:* the search for the least cost, which is outside the
+core; and how the cost $c$ of a move follows from the weight on changes of
+pace in section 6.4, which is left as a weight of its own.
 
 ## 7. Assumptions at a glance
 
@@ -834,3 +870,4 @@ from the largest need of a stretch.
 | The laws of the delivery delay hold over the time the evidence covers | 6.5 | level | short-window against long-window estimates |
 | Nothing sets the next stretch apart from those seen | 6.5 | the level | how often a need exceeds all before it, against one in the number seen |
 | A stretch that needs more than all seen: the law of how much more | 6.5 | the level | how far each new largest need lay above the one before |
+| The moment of a choice is as likely in any part of the time over which the needs keep their law as in any other | 6.5 | when the level moves | how long a chosen level stayed the best, against the time of the evidence it was chosen from |

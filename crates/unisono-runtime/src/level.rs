@@ -69,12 +69,29 @@
 //! to have no typical size. These numbers are about links and devices in
 //! general and are not fitted to anything.
 //!
+//! # The least cost
+//!
+//! A level is a whole number of nanoseconds between zero and a ceiling, and
+//! the level chosen is one at which `J` is least among all of those. `J`
+//! changes its form only at the needs that were seen and one stretch below
+//! each of them. Between two neighbours of these levels, `J` is the sum of
+//! a number that does not change, a square, and the mean cost of a stretch
+//! that needs more than all seen; it is least at one end, or where its
+//! derivative passes from negative to positive, which happens at most once
+//! and is found by halving. So the levels that need to be compared are, for
+//! each of those neighbours, the lower one, the last level before the upper
+//! one, and the two levels around that crossing.
+//!
 //! # Moving
 //!
-//! The level moves only when the cost saved, over the time that the evidence
-//! covers, exceeds the cost of a move. This rule is not derived: it takes the
-//! time that the evidence covers as the time for which what was seen will go
-//! on.
+//! A move costs `c` once and saves `s`, the difference of `J` between the
+//! level now and the best one, per second for as long as the needs keep the
+//! law they have: it pays for itself if they keep it for more than `c / s`
+//! longer. They have kept it for the time `T` that the evidence covers. With
+//! the moment of the choice as likely in any part of the time over which
+//! the law holds as in any other, the law holds for more than `t` longer
+//! with the probability `T / (T + t)`, and the move more likely than not
+//! pays for itself exactly when `s T > c`. The level moves when that holds.
 
 // Counts of stretches, and levels in nanoseconds, are far below 2^52, where
 // an `f64` holds every integer exactly.
@@ -116,11 +133,34 @@ pub struct Choice {
 /// such a need exceeds `x` with the probability `(1 + x / PRIOR_SCALE)^-2`.
 const PRIOR_SCALE: f64 = 0.02;
 
-/// How many levels are tried besides the needs that were seen.
-const LEVELS: usize = 256;
+/// The highest level that is chosen, in nanoseconds: two seconds.
+const CEILING: i64 = 2_000_000_000;
 
-/// The highest level that is chosen, in seconds.
-const CEILING: f64 = 2.0;
+/// A number of nanoseconds in seconds. Levels and needs are whole numbers
+/// of nanoseconds, and every one of them becomes a number of seconds here,
+/// so that equal ones stay equal.
+fn seconds(nanoseconds: i64) -> f64 {
+    nanoseconds as f64 * 1e-9
+}
+
+/// A number of seconds in nanoseconds, rounded.
+// Within the range of `i64`: levels and needs are seconds at most.
+#[allow(clippy::cast_possible_truncation)]
+fn nanoseconds(seconds: f64) -> i64 {
+    (seconds * 1e9).round() as i64
+}
+
+/// Where a level lies against the largest need that was seen, which decides
+/// what a stretch that needs more than all seen is expected to cost there.
+#[derive(Clone, Copy)]
+enum Range {
+    /// More than a stretch below it: such a stretch is missed whole.
+    FarBelow,
+    /// Below it by less than a stretch.
+    Below,
+    /// Above it.
+    Above,
+}
 
 /// The probability that a need exceeds `level`, for a need that is larger
 /// than `largest`, the largest that was seen.
@@ -171,6 +211,7 @@ pub struct Chooser {
     sums: Vec<f64>,
     starts: Vec<f64>,
     ends: Vec<f64>,
+    points: Vec<i64>,
 }
 
 impl Chooser {
@@ -190,6 +231,7 @@ impl Chooser {
             sums: Vec::with_capacity(history + 1),
             starts: Vec::with_capacity(history),
             ends: Vec::with_capacity(history),
+            points: Vec::with_capacity(2 * history + 2),
         }
     }
 
@@ -215,7 +257,10 @@ impl Chooser {
                 break;
             };
             if need != UNKNOWN_NEED {
-                self.take(self.base.saturating_add(stretch), f64::from(need) * 1e-6);
+                self.take(
+                    self.base.saturating_add(stretch),
+                    seconds(i64::from(need) * 1_000),
+                );
             }
         }
     }
@@ -244,21 +289,11 @@ impl Chooser {
     /// says that moving is worth its cost.
     pub fn choose(&mut self, current: i64) -> Option<i64> {
         let weights = self.choice.weights;
-        let evidence = self.gather()?;
-        let current = current as f64 * 1e-9;
-        let cost_now = evidence.cost(current, &weights);
-        let (best, cost_best) = evidence
-            .levels(&weights)
-            .map(|level| (level, evidence.cost(level, &weights)))
-            .fold((current, cost_now), |a, b| if b.1 < a.1 { b } else { a });
+        let mut evidence = self.gather()?;
+        let cost_now = evidence.cost(seconds(current), &weights);
+        let (best, cost_best) = evidence.best(&weights);
         let saving = (cost_now - cost_best) * evidence.time();
-        if saving > weights.moving {
-            // Within the range of `i64`: at most the ceiling.
-            #[allow(clippy::cast_possible_truncation)]
-            Some((best * 1e9).round() as i64)
-        } else {
-            None
-        }
+        (saving > weights.moving).then_some(best)
     }
 
     /// The stretches that no report will give again as evidence; `None` if
@@ -308,6 +343,7 @@ impl Chooser {
             sums: &self.sums,
             starts: &self.starts,
             ends: &self.ends,
+            points: &mut self.points,
             stretch: self.stretch,
         })
     }
@@ -324,6 +360,8 @@ struct Evidence<'a> {
     /// each sorted on its own.
     starts: &'a [f64],
     ends: &'a [f64],
+    /// Room for the levels at which the cost changes its form.
+    points: &'a mut Vec<i64>,
     /// The length of a stretch, in seconds.
     stretch: f64,
 }
@@ -366,31 +404,144 @@ impl Evidence<'_> {
     /// The cost per second that holding `level` is expected to have.
     fn cost(&self, level: f64, weights: &Weights) -> f64 {
         let (gaps, missed) = self.rates(level);
-        let off = level - weights.target as f64 * 1e-9;
+        let off = level - seconds(weights.target);
         weights.latency * level
             + weights.off_target * off * off
             + weights.gap * gaps
             + weights.missed * missed
     }
 
-    /// The levels that are tried. The expected cost falls only where the
-    /// level passes a need that was seen, or smoothly above the largest of
-    /// them, so these are the needs that were seen, the level aimed at, and
-    /// levels from the smallest need to the highest level, closer together
-    /// near the needs.
-    fn levels(&self, weights: &Weights) -> impl Iterator<Item = f64> + '_ {
-        let lowest = self.sorted[0].clamp(0.0, CEILING);
-        let span = CEILING - lowest;
-        let spread = (0..LEVELS).map(move |i| {
-            let part = i as f64 / (LEVELS - 1) as f64;
-            lowest + span * part * part
-        });
-        let target = (weights.target as f64 * 1e-9).clamp(0.0, CEILING);
-        self.sorted
-            .iter()
-            .map(|need| need.clamp(0.0, CEILING))
-            .chain(spread)
-            .chain(std::iter::once(target))
+    /// The largest need that was seen, or zero if all were below it.
+    fn largest(&self) -> f64 {
+        self.sorted[self.sorted.len() - 1].max(0.0)
+    }
+
+    /// The derivative of the expected cost by the level, at `level`, between
+    /// two neighbouring levels at which the cost changes its form: where
+    /// `partly` of the stretches seen are missed in part, and the level lies
+    /// in `range`.
+    fn slope(&self, level: f64, partly: f64, range: Range, weights: &Weights) -> f64 {
+        let weight = (self.sorted.len() as f64 + 1.0) * self.stretch;
+        let scale = PRIOR_SCALE + self.largest();
+        let near = PRIOR_SCALE + level;
+        let far = near + self.stretch;
+        // The derivatives of `exceeds_beyond` and of `missed_beyond`.
+        let (gaps, missed) = match range {
+            Range::FarBelow => (0.0, 0.0),
+            Range::Below => (0.0, (scale / far).powi(2) - 1.0),
+            Range::Above => (
+                -2.0 * scale * scale / (near * near * near),
+                (scale / far).powi(2) - (scale / near).powi(2),
+            ),
+        };
+        let off = level - seconds(weights.target);
+        weights.latency
+            + 2.0 * weights.off_target * off
+            + (weights.gap * gaps + weights.missed * (missed - partly)) / weight
+    }
+
+    /// The level strictly between `low` and `high` at which the expected
+    /// cost has a minimum, if it has one there; in seconds. `low` and `high`
+    /// are two neighbouring levels at which the cost changes its form.
+    fn turn(&self, low: f64, high: f64, weights: &Weights) -> Option<f64> {
+        let middle = f64::midpoint(low, high);
+        let largest = self.largest();
+        let range = if middle > largest {
+            Range::Above
+        } else if middle + self.stretch > largest {
+            Range::Below
+        } else {
+            Range::FarBelow
+        };
+        let partly =
+            (above(self.sorted, middle + self.stretch) - above(self.sorted, middle)) as f64;
+        let slope = |level: f64| self.slope(level, partly, range, weights);
+        if slope(high) <= 0.0 {
+            // The cost falls up to the upper level, or has no minimum
+            // before it.
+            return None;
+        }
+        let mut from = low;
+        if slope(low) >= 0.0 {
+            // Far below the largest need and above it, the cost is convex:
+            // it rises from the lower level on. Within a stretch below the
+            // largest need it is the derivative that is convex, and it can
+            // fall below zero and come back. It is least where the second
+            // derivative is zero, which only a level aimed at allows.
+            let Range::Below = range else {
+                return None;
+            };
+            if weights.off_target <= 0.0 {
+                return None;
+            }
+            let weight = (self.sorted.len() as f64 + 1.0) * self.stretch;
+            let scale = PRIOR_SCALE + largest;
+            let least = (weights.missed * scale * scale / (weight * weights.off_target)).cbrt()
+                - PRIOR_SCALE
+                - self.stretch;
+            if !(least > low && least < high) || slope(least) >= 0.0 {
+                return None;
+            }
+            from = least;
+        }
+        // The derivative is negative at `from` and positive at `high`, and
+        // passes zero once between them.
+        let mut to = high;
+        for _ in 0..64 {
+            let half = f64::midpoint(from, to);
+            if slope(half) < 0.0 {
+                from = half;
+            } else {
+                to = half;
+            }
+        }
+        Some(to)
+    }
+
+    /// The level between zero and the ceiling at which the expected cost is
+    /// least, in nanoseconds, and that cost.
+    fn best(&mut self, weights: &Weights) -> (i64, f64) {
+        // The levels at which the cost changes its form: the needs that were
+        // seen and a stretch below each.
+        self.points.clear();
+        self.points.extend([0, CEILING]);
+        for need in self.sorted {
+            for point in [nanoseconds(*need), nanoseconds(*need - self.stretch)] {
+                if point > 0 && point < CEILING {
+                    self.points.push(point);
+                }
+            }
+        }
+        self.points.sort_unstable();
+        self.points.dedup();
+        let mut best = (0, f64::INFINITY);
+        let mut consider = |level: i64| {
+            let cost = self.cost(seconds(level), weights);
+            if cost < best.1 {
+                best = (level, cost);
+            }
+        };
+        for (at, &low) in self.points.iter().enumerate() {
+            consider(low);
+            let Some(&high) = self.points.get(at + 1) else {
+                break;
+            };
+            if high - 1 > low {
+                consider(high - 1);
+            }
+            if let Some(turn) = self.turn(seconds(low), seconds(high), weights) {
+                // The cost is least at one of the two levels around it.
+                // Within the range of `i64`: below the ceiling.
+                #[allow(clippy::cast_possible_truncation)]
+                let below = (turn * 1e9).floor() as i64;
+                for level in [below, below + 1] {
+                    if level > low && level < high {
+                        consider(level);
+                    }
+                }
+            }
+        }
+        best
     }
 }
 
@@ -542,6 +693,85 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn no_level_costs_less_than_the_one_found() {
+        let mut numbers = Numbers(0x6a09_e667_f3bc_c908);
+        for (gap, target, off_target) in [
+            (60.0, 0, 0.0),
+            (6_000.0, 0, 0.0),
+            (600.0, 30_000_000, 2e6),
+            (6.0, 60_000_000, 5e7),
+            (600.0, 40_000_000, 3e5),
+        ] {
+            let weights = Weights {
+                gap,
+                missed: gap * 100.0,
+                target,
+                off_target,
+                ..WEIGHTS
+            };
+            for (count, every) in [(40, 1.0), (300, 5.0), (300, 1e9), (1_200, 30.0)] {
+                let seen = needs(&mut numbers, count, every);
+                let choice = Choice {
+                    weights,
+                    history: count,
+                    ..CHOICE
+                };
+                let mut chooser = Chooser::new(choice, 2_400, 48_000);
+                report(&mut chooser, 7, 0, &seen);
+                let mut evidence = chooser.gather().expect("evidence");
+                let (level, cost) = evidence.best(&weights);
+                assert!(
+                    (cost - evidence.cost(super::seconds(level), &weights)).abs() <= 1e-9,
+                    "{level}"
+                );
+                // Every level that is a multiple of 5 microseconds, and the
+                // levels around each need that was seen and a stretch below
+                // it.
+                let mut least = (0..=400_000)
+                    .map(|i| evidence.cost(super::seconds(i * 5_000), &weights))
+                    .fold(f64::INFINITY, f64::min);
+                for need in evidence.sorted {
+                    for point in [*need, *need - 0.05] {
+                        for off in -2..=2 {
+                            let near = super::nanoseconds(point) + off;
+                            if (0..=super::CEILING).contains(&near) {
+                                least = least.min(evidence.cost(super::seconds(near), &weights));
+                            }
+                        }
+                    }
+                }
+                assert!(
+                    cost <= least + 1e-9 * least.abs(),
+                    "a gap at {gap}, aimed at {target} with {off_target}, {count} stretches \
+                     with pauses every {every} s: level {level} costs {cost}, another {least}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_level_just_below_a_need_joins_two_gaps() {
+        // Again and again a stretch that needs 50 ms, one that needs 30 ms
+        // and one that needs 40 ms, among stretches that need 5 ms. At
+        // 30 ms the second of them is played, and two gaps start; a
+        // nanosecond below, the three are one gap. Gaps are priced so that
+        // this is the least cost of all levels.
+        let pattern = [0.005, 0.05, 0.03, 0.04];
+        let seen: Vec<f64> = (0..2_000)
+            .map(|i| pattern.get(i % 20).copied().unwrap_or(0.005))
+            .collect();
+        let weights = Weights {
+            gap: 5.0,
+            missed: 400.0,
+            moving: 0.0,
+            ..WEIGHTS
+        };
+        let level = chosen(weights, &seen);
+        assert!(level > 0.0299 && level < 0.0301, "{level}");
+        assert_eq!(super::nanoseconds(level) % 1_000, 999, "{level}");
     }
 
     #[test]

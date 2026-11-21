@@ -33,6 +33,13 @@ Three statements that the rest of the model rests on.
   distances from their mean, which is what is heard as receivers being out
   of step with each other, plus the squared mean for each receiver, which is
   latency (`sum_sq_errors`).
+
+And one about choosing the level and the paces apart. The need of a frame
+contains the timing error of the receiver, so the part of the cost that the
+level answers is not free of what the regulators do. But timing errors within
+`ε` move the need of the group by no more than `ε` (`groupNeed_errors`): what
+the group misses at a level with them lies between what it would miss
+without them at the levels `ε` above and `ε` below (`group_misses_errors`).
 -/
 
 @[expose] public noncomputable section
@@ -87,5 +94,34 @@ theorem sum_sq_errors [Nonempty ι] (e : ι → ℝ) :
     field_simp
   rw [hsum]
   ring
+
+/-- **Timing errors move the need of the group by no more than their size.** -/
+theorem groupNeed_errors [Nonempty ι] {ε : ℝ} (e D lead : ι → ℝ) (h : ∀ r, |e r| ≤ ε) :
+    groupNeed e D lead ≤ groupNeed 0 D lead + ε
+      ∧ groupNeed 0 D lead ≤ groupNeed e D lead + ε := by
+  constructor
+  · refine Finset.sup'_le _ _ fun r _ => ?_
+    have h1 : need 0 D lead r ≤ groupNeed 0 D lead :=
+      Finset.le_sup' (need 0 D lead) (Finset.mem_univ r)
+    have h2 := abs_le.mp (h r)
+    simp only [need, Pi.zero_apply] at h1 ⊢
+    linarith
+  · refine Finset.sup'_le _ _ fun r _ => ?_
+    have h1 : need e D lead r ≤ groupNeed e D lead :=
+      Finset.le_sup' (need e D lead) (Finset.mem_univ r)
+    have h2 := abs_le.mp (h r)
+    simp only [need, Pi.zero_apply] at h1 ⊢
+    linarith
+
+/-- **The level and the paces can be chosen apart, up to the size of the
+timing errors.** With timing errors within `ε`, a frame that the group would
+miss at the level `ℓ + ε` without them is missed at `ℓ`, and a frame missed
+at `ℓ` would be missed at `ℓ - ε` without them. -/
+theorem group_misses_errors [Nonempty ι] {ε : ℝ} (ℓ : ℝ) (e D lead : ι → ℝ)
+    (h : ∀ r, |e r| ≤ ε) :
+    (ℓ + ε < groupNeed 0 D lead → ℓ < groupNeed e D lead)
+      ∧ (ℓ < groupNeed e D lead → ℓ - ε < groupNeed 0 D lead) := by
+  obtain ⟨h1, h2⟩ := groupNeed_errors e D lead h
+  exact ⟨fun hlt => by linarith, fun hlt => by linarith⟩
 
 end Unisono.Model.Stream

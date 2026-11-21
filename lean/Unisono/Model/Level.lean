@@ -7,6 +7,7 @@ module
 public import Mathlib.MeasureTheory.Constructions.Pi
 public import Mathlib.MeasureTheory.Integral.Bochner.Basic
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
+public import Mathlib.MeasureTheory.Measure.Lebesgue.Basic
 public import Mathlib.Tactic.Linarith
 
 /-!
@@ -30,6 +31,25 @@ proves the two facts it rests on.
   record is drawn from a law `ν` of stretches that need more than all seen.
   The mean of any cost over that is the mean of the cost under `ν` plus its
   sum over the stretches seen, divided by `m + 1` (`integral_predictive`).
+
+Two further things that the choice rests on are stated here.
+
+* **The frames that a stretch misses.** A pause holds back every frame
+  captured while it lasts, and a frame captured later in it waited that much
+  less. Of a stretch in which a pause begins, the level therefore misses the
+  frames captured in the first `y - l` seconds from the start of the pause,
+  where `y` is the largest need of the stretch and `l` the level. The count
+  `min (y - l) D` used in `stretchCost` is that time when the pause begins
+  with the stretch, and never less than it (`volume_missed`, `missed_le`,
+  `missed_ge`).
+
+* **When moving the level pays.** A move costs `c` once and saves `s` per
+  second for as long as the needs keep the law they have. If the moment of
+  the choice is as likely to lie in any part of that time as in any other,
+  and the needs have kept their law for `T` so far, they keep it for more
+  than `t` longer with the probability `T / (T + t)` (`volume_lasts`). The
+  move then more likely than not pays for itself exactly when `s T > c`
+  (`move_pays_iff`).
 -/
 
 @[expose] public noncomputable section
@@ -158,5 +178,109 @@ theorem integral_predictive (rs : List (ℝ × ℝ)) (ν : Measure (ℝ × ℝ))
   rw [ENNReal.toReal_inv, ENNReal.toReal_add (by simp) (by simp)]
   simp only [ENNReal.toReal_natCast, ENNReal.toReal_one, smul_eq_mul]
   rw [inv_mul_eq_div]
+
+/-! ## The frames that a stretch misses -/
+
+/-- The need of the frame captured at the time `t`, when a pause that began at
+the time `t₀` holds back every frame captured from then on, and the frame
+captured at `t₀` needs `y`: a frame captured later waited that much less. -/
+def pausedNeed (y t₀ t : ℝ) : ℝ := y - (t - t₀)
+
+/-- The level misses the frames captured before `y - l` has passed since the
+pause began. -/
+theorem lt_pausedNeed_iff {l y t₀ t : ℝ} : l < pausedNeed y t₀ t ↔ t < t₀ + (y - l) := by
+  simp only [pausedNeed]
+  constructor <;> intro h <;> linarith
+
+/-- **The time for which a stretch is missed.** Of a stretch that begins at
+`a` and lasts `D`, in which a pause begins at `t₀`, the frames captured from
+`t₀` on that the level `l` misses were captured over `min (y - l) (a + D - t₀)`
+seconds, where `y` is the need of the frame captured at `t₀`: the largest
+need of the stretch. -/
+theorem volume_missed {D l y a t₀ : ℝ} :
+    volume {t : ℝ | t₀ ≤ t ∧ t < a + D ∧ l < pausedNeed y t₀ t}
+      = ENNReal.ofReal (min (y - l) (a + D - t₀)) := by
+  have hset : {t : ℝ | t₀ ≤ t ∧ t < a + D ∧ l < pausedNeed y t₀ t}
+      = Set.Ico t₀ (min (t₀ + (y - l)) (a + D)) := by
+    ext t
+    simp only [Set.mem_ofPred_eq, Set.mem_Ico, lt_pausedNeed_iff, lt_min_iff]
+    tauto
+  rw [hset, Real.volume_Ico]
+  congr 1
+  rcases le_total (y - l) (a + D - t₀) with h | h
+  · rw [min_eq_left h, min_eq_left (by linarith)]
+    ring
+  · rw [min_eq_right h, min_eq_right (by linarith)]
+
+/-- The count of missed time in `stretchCost` is never less than the time for
+which the stretch is missed. -/
+theorem missed_le {D l y a t₀ : ℝ} (ha : a ≤ t₀) :
+    min (y - l) (a + D - t₀) ≤ min (max (y - l) 0) D :=
+  le_min (le_trans (min_le_left _ _) (le_max_left _ _))
+    (le_trans (min_le_right _ _) (by linarith))
+
+/-- It is more than that time by at most the time from the start of the
+stretch to the start of the pause, and so equal to it for a pause that begins
+with the stretch and a need above the level. -/
+theorem missed_ge {D l y a t₀ : ℝ} (ha : a ≤ t₀) (hy : l ≤ y) :
+    min (max (y - l) 0) D - (t₀ - a) ≤ min (y - l) (a + D - t₀) := by
+  rw [max_eq_left (by linarith)]
+  refine le_min ?_ ?_
+  · linarith [min_le_left (y - l) D]
+  · linarith [min_le_right (y - l) D]
+
+/-! ## When moving the level pays -/
+
+/-- The probability that needs which have kept their law for `T` keep it for
+more than `t` longer. -/
+def lasts (T t : ℝ) : ℝ := T / (T + t)
+
+/-- **Where the probability comes from.** Let the needs keep their law over a
+time of which the part `u` has passed at the moment of the choice, so that
+the whole time is `T / u` when `T` has passed. If `u` is as likely to be in
+any part of the range from 0 to 1 as in any other, the time that remains,
+`T / u - T`, is more than `t` with the probability `T / (T + t)`. -/
+theorem volume_lasts {T t : ℝ} (hT : 0 < T) (ht : 0 ≤ t) :
+    volume {u : ℝ | 0 < u ∧ u < 1 ∧ t < T / u - T} = ENNReal.ofReal (lasts T t) := by
+  have hsum : 0 < T + t := by linarith
+  have hset : {u : ℝ | 0 < u ∧ u < 1 ∧ t < T / u - T} = Set.Ioo 0 (T / (T + t)) := by
+    ext u
+    simp only [Set.mem_ofPred_eq, Set.mem_Ioo]
+    constructor
+    · rintro ⟨hu0, -, hmore⟩
+      refine ⟨hu0, ?_⟩
+      have h1 : T + t < T / u := by linarith
+      rw [lt_div_iff₀ hu0] at h1
+      rw [lt_div_iff₀ hsum]
+      linarith
+    · rintro ⟨hu0, hu⟩
+      have h1 : u * (T + t) < T := (lt_div_iff₀ hsum).mp hu
+      have hle : T / (T + t) ≤ 1 := (div_le_one hsum).mpr (by linarith)
+      refine ⟨hu0, lt_of_lt_of_le hu hle, ?_⟩
+      have h2 : T + t < T / u := by
+        rw [lt_div_iff₀ hu0]
+        linarith
+      linarith
+  rw [hset, Real.volume_Ioo, sub_zero, lasts]
+
+/-- **A move more likely than not pays for itself exactly when what it saves
+over the time of the evidence exceeds its cost.** The move costs `c` and
+saves `s` per second, so it pays for itself when the needs keep their law for
+more than `c / s` longer. -/
+theorem move_pays_iff {T s c : ℝ} (hT : 0 < T) (hs : 0 < s) (hc : 0 ≤ c) :
+    1 / 2 < lasts T (c / s) ↔ c < s * T := by
+  have hquot : 0 ≤ c / s := div_nonneg hc hs.le
+  have hden : 0 < T + c / s := by linarith
+  rw [lasts, lt_div_iff₀ hden]
+  constructor
+  · intro h
+    have h1 : c / s < T := by linarith
+    rw [div_lt_iff₀ hs] at h1
+    linarith
+  · intro h
+    have h1 : c / s < T := by
+      rw [div_lt_iff₀ hs]
+      linarith
+    linarith
 
 end Unisono.Model.Level
