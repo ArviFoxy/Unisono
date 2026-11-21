@@ -4,8 +4,9 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Runs the tests that need a PipeWire instance: starts one of its own, with
-# WirePlumber and a sink that plays to nothing, runs the ignored tests of
-# crates/unisono-pipewire against it, and stops it again. The instance is
+# WirePlumber and a sink that plays to nothing, builds the program with
+# PipeWire, runs the ignored tests of crates/unisono-pipewire against the
+# instance, and stops it again. The instance is
 # private to this script: its sockets are in a directory of their own, so a
 # PipeWire that the host runs is not touched.
 #
@@ -61,4 +62,9 @@ if ! pw-cli ls Node 2> /dev/null | grep -q unisono-test-sink; then
 fi
 
 cd "$root"
-cargo test -p unisono-pipewire -- --ignored --nocapture "$@"
+# The program with PipeWire, for the test that runs it.
+cargo build --package unisono --features pipewire
+UNISONO_PROGRAM="$(cargo metadata --format-version 1 --no-deps \
+    | sed 's/.*"target_directory":"\([^"]*\)".*/\1/')/debug/unisono"
+export UNISONO_PROGRAM
+cargo test -p unisono-pipewire -- --ignored --nocapture --test-threads 1 "$@"
