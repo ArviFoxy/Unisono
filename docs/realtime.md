@@ -32,6 +32,31 @@ time or for the start and length of a cycle, and read and write packets. The che
 These are statements about every path, not about the paths that a test ran.
 They hold for the code as compiled for the machine that runs the check.
 
+## The audio threads' whole cycles
+
+The core is one part of what an audio thread runs. The rest uses the
+standard library: the receiver's playback takes in what the network thread
+handed over, plans with the core, resamples, conceals and fades; the
+sender's capture hands frames to the network thread. `tools/realtime-audio`
+builds the two cycles, as the program sizes them, into a library of their
+own, and `tools/reachable.py` follows every call from them through the
+machine code, through the table of addresses as well. The check fails
+unless every function they reach is unisono's own, one of the functions
+that copy and fill memory, or one of the compiler's helpers for 128-bit
+arithmetic, and none of them enters the kernel or calls through a pointer.
+A path to a panic, to the allocator or to a lock reaches a function of
+the standard library and fails it; so does freeing memory. It is seen to
+fail: a function with a path to a panic is built beside them, and the
+check must reject it.
+
+The check found, when it was first run, paths that panic in the pump (a
+division by the number of channels, a copy whose range the compiler could
+not bound), in the concealment (copies of slices whose lengths are equal
+but not known to be, `clamp` on numbers, which checks its limits), and the
+freeing of a buffer on both threads where a full ring would give it back.
+All of them are gone; the buffers are kept, never freed, in the case that
+cannot happen.
+
 ## What the proofs add
 
 Every loop of the core has, in its proof, a quantity that decreases with each
@@ -70,15 +95,16 @@ A count of instructions is not a time: an instruction that misses the cache
 costs a hundred that do not. The count catches a change that makes a cycle do
 more work; it says nothing about the machine.
 
-**The code outside the core.** The resampler, the concealment and the code
-that turns a plan into frames use floating point and slices. They are tested
-not to allocate, but their machine code is not inspected yet, and they may
-hold paths that panic. The thread that reads and writes the network has to
-enter the kernel; for it the kernel can be made to enforce a list of the
-system calls it may make. *Not built.*
-
 **What the processor and the operating system add.** Memory that is not in
 place when it is touched, floating-point numbers so small that arithmetic on
 them is slow, and interrupts are outside what any of the above sees. The
-runtime is to lock and touch its memory before it starts and to make the
-processor treat such numbers as zero on its real-time threads. *Not built.*
+program locks the memory it has once its threads run and everything they use
+is made (`unisono_runtime::memory`); its threads have small stacks, so that
+the whole of it fits within the usual limit on locked memory. The only
+recurrence on the audio path, the concealment's prediction, takes a value
+too small for full precision as silence, so such numbers do not arise there;
+the processor is not set to treat them as zero. Interrupts and the
+scheduler are the system's.
+
+**The network thread.** It enters the kernel by its nature. The kernel can
+be made to enforce a list of the system calls it may make. *Not built.*

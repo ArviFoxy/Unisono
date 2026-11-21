@@ -419,8 +419,12 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
                         self.playback.packet(&header, payload, arrival);
                     }
                     // The ring holds every buffer there is, so it has room
-                    // for this one, and the buffer is not freed here.
-                    let _ = self.end.spare.put(buffer);
+                    // for this one. Were it full, the buffer would be kept
+                    // rather than freed: freeing memory is not done on this
+                    // thread.
+                    if let Err(buffer) = self.end.spare.put(buffer) {
+                        std::mem::forget(buffer);
+                    }
                 }
                 Incoming::Answer(echo) => self.playback.echo(&echo),
                 Incoming::Departed { sequence, time } => self.playback.reported(sequence, time),

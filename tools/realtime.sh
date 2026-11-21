@@ -174,8 +174,50 @@ if ! nm -D --undefined-only "$probe_so" | awk '{ print $2 }' | grep -qx 'unisono
     failed=1
 fi
 
+# The cycles of the audio threads, which use the standard library: the
+# receiver's playback, with the pump, the resampler and the concealment, and
+# the sender's capture. The standard library's start-up code is in any
+# library made with it, so here the check follows the calls from the entry
+# points (tools/reachable.py).
+audio_target="$root/target/realtime-audio"
+audio_entries="realtime_playback_cycle realtime_capture_cycle"
+link_audio() {
+    # $1: the library; $2: the shared object; the rest: its entry points.
+    local library="$1" linked_audio="$2"
+    shift 2
+    {
+        echo "{ global:"
+        for entry in "$@"; do echo "  $entry;"; done
+        echo "local: *; };"
+    } > "$linked_audio.map"
+    local roots=()
+    for entry in "$@"; do roots+=("-Wl,-u,$entry"); done
+    cc -shared -nostdlib -Wl,--gc-sections "-Wl,--version-script=$linked_audio.map" \
+        "${roots[@]}" -o "$linked_audio" "$library"
+}
+cargo build --quiet --release \
+    --manifest-path "$root/tools/realtime-audio/Cargo.toml" --target-dir "$audio_target"
+# shellcheck disable=SC2086
+link_audio "$audio_target/release/libunisono_realtime_audio.a" "$audio_target/audio.so" $audio_entries
+# shellcheck disable=SC2086
+if ! audio_report="$(python3 "$root/tools/reachable.py" "$audio_target/audio.so" $audio_entries)"; then
+    echo "the cycles of the audio threads reach what they may not" >&2
+    failed=1
+fi
+
+# Self-test: a path to a panic in the same kind of library fails the check.
+cargo build --quiet --release --features panic-probe \
+    --manifest-path "$root/tools/realtime-audio/Cargo.toml" --target-dir "$audio_target/probe"
+link_audio "$audio_target/probe/release/libunisono_realtime_audio.a" "$audio_target/probe.so" \
+    realtime_panic_probe
+if python3 "$root/tools/reachable.py" "$audio_target/probe.so" realtime_panic_probe > /dev/null 2>&1; then
+    echo "the check of the audio threads did not catch realtime_panic_probe" >&2
+    failed=1
+fi
+
 if [ "$failed" -ne 0 ]; then
     exit 1
 fi
+echo "audio threads: $audio_report; no panic, no allocator, no library, no kernel entry"
 functions="$(nm --defined-only "$linked" | grep -c ' [tT] ')"
 echo "real-time code: $(echo "$entries" | wc -w) entry points, $functions functions, $(stat -c %s "$linked") bytes; no kernel entry, no allocator, no panic"

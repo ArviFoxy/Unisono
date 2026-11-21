@@ -301,7 +301,7 @@ impl Concealment {
         if self.channels == 0 {
             return;
         }
-        for frame in frames.chunks_exact_mut(self.channels) {
+        for frame in frames.chunks_exact_mut(self.channels.max(1)) {
             self.in_gap = false;
             if self.recovered < self.fade_in.frames() {
                 let weight = self.fade_in.rising(self.recovered);
@@ -326,7 +326,7 @@ impl Concealment {
         if !self.in_gap && frames.len() >= self.channels {
             self.begin_gap();
         }
-        for frame in frames.chunks_exact_mut(self.channels) {
+        for frame in frames.chunks_exact_mut(self.channels.max(1)) {
             let gain = self.gain();
             for (channel, sample) in frame.iter_mut().enumerate() {
                 *sample = self.continued(channel, gain);
@@ -387,7 +387,7 @@ impl Concealment {
     fn start_continuations(&mut self) {
         let Parameters { fitted, order, .. } = self.parameters;
         for channel in 0..self.channels {
-            let ring = self.history.chunks_exact(self.channels);
+            let ring = self.history.chunks_exact(self.channels.max(1));
             let (newer, older) = (ring.clone().take(self.oldest), ring.skip(self.oldest));
             let start = channel * order;
             if let Some(recent) = self.recent.get_mut(start..start + order) {
@@ -405,12 +405,12 @@ impl Concealment {
         let Parameters { fitted, order, .. } = self.parameters;
         for channel in 0..self.channels {
             // The frames in the order they left.
-            let ring = self.history.chunks_exact(self.channels);
+            let ring = self.history.chunks_exact(self.channels.max(1));
             let (newer, older) = (ring.clone().take(self.oldest), ring.skip(self.oldest));
             for (value, frame) in self.forward.iter_mut().zip(older.chain(newer)) {
                 *value = frame.get(channel).copied().map_or(0.0, f64::from);
             }
-            self.backward.copy_from_slice(&self.forward);
+            copy(&mut self.backward, &self.forward);
             let peak = self
                 .forward
                 .iter()
@@ -420,7 +420,7 @@ impl Concealment {
                 self.recent.get_mut(start..start + order),
                 self.forward.get(fitted - order..),
             ) {
-                recent.copy_from_slice(last);
+                copy(recent, last);
             }
             burg(
                 &mut self.forward,
@@ -476,19 +476,37 @@ impl Concealment {
         if let Some(newest) = recent.last_mut() {
             *newest = next;
         }
-        next.clamp(-peak, *peak)
+        // Two comparisons, where `clamp` would fail on a limit that is not a
+        // number; the limit is one, and not below zero, but the compiler
+        // does not know it.
+        if next > *peak {
+            *peak
+        } else if next < -*peak {
+            -*peak
+        } else {
+            next
+        }
     }
 
     /// Keeps a frame that has left, in place of the oldest one kept.
     fn remember(&mut self, frame: &[f32]) {
         let start = self.oldest * self.channels;
         if let Some(slot) = self.history.get_mut(start..start + self.channels) {
-            slot.copy_from_slice(frame);
+            copy(slot, frame);
             self.oldest += 1;
             if self.oldest == self.parameters.fitted {
                 self.oldest = 0;
             }
         }
+    }
+}
+
+/// Copies `from` into `to`, as far as the shorter of the two goes. Here the
+/// two have the same length; a copy that requires it would add a way to fail
+/// that never happens.
+fn copy<T: Copy>(to: &mut [T], from: &[T]) {
+    for (slot, value) in to.iter_mut().zip(from) {
+        *slot = *value;
     }
 }
 
@@ -527,15 +545,38 @@ fn burg(forward: &mut [f64], backward: &mut [f64], model: &mut [f64], shorter: &
         if squares <= 2e-12 * energy {
             break;
         }
-        let reflection = (-2.0 * product / squares).clamp(-1.0, 1.0);
-        shorter.copy_from_slice(model);
+        let ratio = -2.0 * product / squares;
+        // Within one either way, by two comparisons, which cannot fail where
+        // `clamp` checks its limits.
+        #[allow(clippy::manual_clamp)]
+        let reflection = if ratio > 1.0 {
+            1.0
+        } else if ratio < -1.0 {
+            -1.0
+        } else {
+            ratio
+        };
+        copy(shorter, model);
         for index in 1..=stage + 1 {
-            model[index] = shorter[index] + reflection * shorter[stage + 1 - index];
+            let (Some(&same), Some(&mirrored), Some(slot)) = (
+                shorter.get(index),
+                shorter.get(stage + 1 - index),
+                model.get_mut(index),
+            ) else {
+                break;
+            };
+            *slot = same + reflection * mirrored;
         }
         for index in (stage + 1..forward.len()).rev() {
-            let (f, b) = (forward[index], backward[index - 1]);
-            forward[index] = f + reflection * b;
-            backward[index] = b + reflection * f;
+            let (Some(&f), Some(&b)) = (forward.get(index), backward.get(index - 1)) else {
+                break;
+            };
+            if let Some(slot) = forward.get_mut(index) {
+                *slot = f + reflection * b;
+            }
+            if let Some(slot) = backward.get_mut(index) {
+                *slot = b + reflection * f;
+            }
         }
     }
 }

@@ -11,5 +11,6 @@ updates:
     directories:
       - /
       - /tools/realtime-check
+      - /tools/realtime-audio
     schedule:
       interval: weekly

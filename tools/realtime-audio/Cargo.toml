@@ -1,0 +1,27 @@
+[package]
+name = "unisono-realtime-audio"
+description = "The cycles of unisono's audio threads, built into one library whose machine code is then inspected."
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[features]
+# Exports a function with a path to a panic, so that tools/realtime.sh can
+# see the check fail on it.
+panic-probe = []
+
+[dependencies]
+unisono-runtime = { path = "../../crates/unisono-runtime" }
+
+[profile.release]
+panic = "abort"
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+debug = false
+
+[workspace]

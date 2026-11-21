@@ -120,12 +120,13 @@ impl Capture for CaptureEnd {
             self.dropped += 1;
             // The buffer is too small; it goes on as an empty cycle, so that
             // it comes back.
-            let _ = self.full.put(Captured {
+            let empty = Captured {
                 buffer,
                 frames: 0,
                 position,
                 time,
-            });
+            };
+            keep(self.full.put(empty));
             return;
         };
         place.copy_from_slice(frames);
@@ -137,9 +138,19 @@ impl Capture for CaptureEnd {
             time,
         };
         // The ring holds every buffer there is, so it has room for this one.
-        if self.full.put(item).is_err() {
+        if let Err(item) = self.full.put(item) {
             self.dropped += 1;
+            keep(Err(item));
         }
+    }
+}
+
+/// Keeps the buffer of an item that a full ring gave back, rather than
+/// freeing it: freeing memory is not done on the capture thread. The rings
+/// hold every buffer there is, so this does not happen.
+fn keep(result: Result<(), Captured>) {
+    if let Err(item) = result {
+        std::mem::forget(item.buffer);
     }
 }
 

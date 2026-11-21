@@ -238,7 +238,7 @@ impl Pump {
     /// through the resampler and concealment, then writes silence once the
     /// filter window has drained to zero.
     fn fade_tail(&mut self, output: &mut [f32]) {
-        let frames = output.len() / self.channels;
+        let frames = output.len().checked_div(self.channels).unwrap_or(0);
         let whole = frames * self.channels;
         if let Some(leftover) = output.get_mut(whole..) {
             leftover.fill(0.0);
@@ -288,7 +288,7 @@ impl Pump {
     /// Produces one block of fade-out tail frames at `(at, step)` using only
     /// frames already in `window` and concealment continuation frames.
     fn fade_tail_block(&mut self, at: Position, step: Step, output: &mut [f32]) -> usize {
-        let frames = output.len() / self.channels;
+        let frames = output.len().checked_div(self.channels).unwrap_or(0);
         if frames == 0 {
             return 0;
         }
@@ -365,7 +365,7 @@ impl Pump {
         output: &mut [f32],
         done: &mut Played,
     ) -> usize {
-        let frames = output.len() / self.channels;
+        let frames = output.len().checked_div(self.channels).unwrap_or(0);
         if frames == 0 {
             return 0;
         }
@@ -406,10 +406,17 @@ impl Pump {
             .checked_sub(self.first)
             .and_then(|dropped| usize::try_from(dropped).ok())
             .filter(|dropped| *dropped <= self.length);
-        match dropped {
-            Some(dropped) => {
-                self.window
-                    .copy_within(dropped * self.channels..self.length * self.channels, 0);
+        // The kept samples are within the window, and those that are kept on
+        // within them; the comparisons say so to the compiler as well, which
+        // then leaves no way to fail in the copy.
+        let kept = dropped.and_then(|dropped| {
+            let start = dropped.checked_mul(self.channels)?;
+            let end = self.length.checked_mul(self.channels)?;
+            (start <= end && end <= self.window.len()).then_some((dropped, start, end))
+        });
+        match kept {
+            Some((dropped, start, end)) => {
+                self.window.copy_within(start..end, 0);
                 self.length -= dropped;
             }
             None => self.length = 0,
