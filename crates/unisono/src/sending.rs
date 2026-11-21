@@ -2,26 +2,33 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono send`: a software capture device that makes a signal, and a
-//! sender that sends what it captures.
+//! `unisono send`: a capture device and a sender that sends what it captures.
 
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
 use unisono_metrics::FloatGauge;
+use unisono_runtime::audio::Capture;
 use unisono_runtime::level::{Choice, Weights};
+use unisono_runtime::network_thread::{NetworkLoop, NetworkThread};
 use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings};
-use unisono_runtime::socket::Socket;
+use unisono_runtime::socket::{self, Socket};
 use unisono_runtime::software::{Device, Input};
 use unisono_runtime::{clock, memory};
 
 use crate::exported::{Metrics, Tally};
 use crate::options::{Options, Wrong};
-use crate::{Signal, System, sleep_until};
+use crate::{MAX_CYCLE, Signal, System, sleep_until, validate_drift};
+
+/// Minimum capture ring buffer size in frames for real audio backends whose
+/// negotiated quantum or period may exceed `--cycle`.
+#[cfg_attr(not(any(feature = "pipewire", feature = "alsa")), allow(dead_code))]
+const AUDIO_RING_MIN_FRAMES: usize = 8_192;
 
 /// The options of `unisono send`.
 pub(crate) const OPTIONS: &[&str] = &[
@@ -58,7 +65,7 @@ unisono send --to ADDRESS [--to ADDRESS ...] [options]
 Captures a signal with a software device and sends it to each receiver.
 
   --to ADDRESS        a receiver; may be given more than once
-  --bind ADDRESS      where to send from (0.0.0.0:0)
+  --bind ADDRESS      where to send from (0.0.0.0:0 or [::]:0)
   --stream N          the stream's number (1)
   --rate HZ           frames per second (48000)
   --channels N        samples in a frame (2)
@@ -98,11 +105,28 @@ Captures a signal with a software device and sends it to each receiver.
                       move this process's clock (for tests on one host)
 ";
 
+/// Wraps [`CaptureEnd`] so its wait-free dropped-cycle count can be observed
+/// across software, PipeWire, and ALSA backends.
+struct TrackedCapture {
+    inner: CaptureEnd,
+    dropped: Arc<AtomicU64>,
+}
+
+impl Capture for TrackedCapture {
+    fn channels(&self) -> usize {
+        self.inner.channels()
+    }
+
+    fn cycle(&mut self, frames: &[f32], position: u64, time: i64) {
+        self.inner.cycle(frames, position, time);
+        self.dropped.store(self.inner.dropped(), Ordering::Relaxed);
+    }
+}
+
 /// What captures the frames.
 enum Capturing {
-    /// The thread of the software device, which says at its end how many
-    /// cycles it dropped.
-    Software(std::thread::JoinHandle<u64>),
+    /// The thread of the software device.
+    Software(std::thread::JoinHandle<()>),
     /// A PipeWire stream.
     #[cfg(feature = "pipewire")]
     PipeWire(unisono_pipewire::Running),
@@ -112,27 +136,33 @@ enum Capturing {
 }
 
 impl Capturing {
-    /// Stops capturing, and says how many cycles the device dropped.
-    fn finish(self) -> u64 {
+    /// Whether the capture thread or audio stream has already exited.
+    fn is_finished(&self) -> bool {
         match self {
-            Capturing::Software(thread) => thread.join().unwrap_or(0),
+            Capturing::Software(thread) => thread.is_finished(),
             #[cfg(feature = "pipewire")]
-            Capturing::PipeWire(running) => {
-                running.stop();
-                0
-            }
+            Capturing::PipeWire(running) => running.is_finished(),
             #[cfg(feature = "alsa")]
-            Capturing::Alsa(running) => {
-                running.stop();
-                0
+            Capturing::Alsa(running) => running.is_finished(),
+        }
+    }
+
+    /// Stops capturing.
+    fn finish(self) {
+        match self {
+            Capturing::Software(thread) => {
+                let _ = thread.join();
             }
+            #[cfg(feature = "pipewire")]
+            Capturing::PipeWire(running) => running.stop(),
+            #[cfg(feature = "alsa")]
+            Capturing::Alsa(running) => running.stop(),
         }
     }
 }
 
 /// Starts capturing with the device of `system`: frames per second, samples
-/// in a frame and frames in a cycle as `shape` says.
-// With the software device alone, `system` says nothing more.
+/// in a frame, requested cycle length, and ring buffer capacity in frames.
 #[cfg_attr(
     not(any(feature = "pipewire", feature = "alsa")),
     allow(clippy::needless_pass_by_value)
@@ -140,158 +170,269 @@ impl Capturing {
 fn start_capture<S: FnMut(u64, i64, &mut [f32]) + Send + 'static>(
     system: System,
     mut input: Input<S>,
-    mut capture_end: CaptureEnd,
+    mut capture: TrackedCapture,
     stop: Arc<AtomicBool>,
-    shape: (u32, u8, usize),
+    shape: (u32, u8, usize, usize),
 ) -> Result<Capturing, Wrong> {
+    let (rate, channels, cycle, ring_frames) = shape;
     match system {
         System::Software => {
-            // The software device needs nothing of the shape that it is not
-            // made with.
-            let _ = shape;
+            let _ = (rate, channels, cycle, ring_frames);
             let thread = std::thread::Builder::new()
                 .name("unisono-capture".into())
                 .stack_size(crate::STACK)
                 .spawn(move || {
                     while !stop.load(Ordering::Relaxed) {
-                        input.run(clock::raw(), &mut capture_end);
+                        input.run(clock::raw(), &mut capture);
                         sleep_until(input.due());
                     }
-                    capture_end.dropped()
                 })
                 .map_err(|error| Wrong(format!("starting the capture thread: {error}")))?;
             Ok(Capturing::Software(thread))
         }
         #[cfg(feature = "pipewire")]
         System::PipeWire(target) => {
-            let (rate, channels, cycle) = shape;
             let settings = unisono_pipewire::Settings {
                 name: "unisono-send".into(),
                 rate,
                 channels: u32::from(channels),
                 target,
                 monitor: false,
-                largest_cycle: 8_192,
-                cycle: u32::try_from(cycle).unwrap_or(256),
+                largest_cycle: ring_frames,
+                cycle: u32::try_from(cycle)
+                    .map_err(|_| Wrong("`--cycle` exceeds PipeWire limit".into()))?,
             };
-            let running = unisono_pipewire::capture(capture_end, settings)
+            let running = unisono_pipewire::capture(capture, settings)
                 .map_err(|error| Wrong(format!("capturing with PipeWire: {error}")))?;
             let _ = (input, stop);
             Ok(Capturing::PipeWire(running))
         }
         #[cfg(feature = "alsa")]
         System::Alsa(device) => {
-            let (rate, channels, cycle) = shape;
             let settings = unisono_alsa::Settings {
                 device,
                 rate,
                 channels: u32::from(channels),
-                cycle: u32::try_from(cycle).unwrap_or(256),
+                cycle: u32::try_from(cycle)
+                    .map_err(|_| Wrong("`--cycle` exceeds ALSA limit".into()))?,
                 cycles: 4,
             };
-            let running = unisono_alsa::capture(capture_end, &settings)
+            let running = unisono_alsa::capture(capture, &settings)
                 .map_err(|error| Wrong(format!("capturing with ALSA: {error}")))?;
+            let negotiated = running.cycle();
+            if negotiated > ring_frames {
+                running.stop();
+                return Err(Wrong(format!(
+                    "ALSA negotiated a cycle of {negotiated} frames, larger than the \
+                     capture ring buffer of {ring_frames} frames"
+                )));
+            }
+            if !running.realtime() {
+                eprintln!("unisono: the device's thread is not scheduled ahead of others");
+            }
             let _ = (input, stop);
             Ok(Capturing::Alsa(running))
         }
     }
 }
 
-/// Runs `unisono send`.
-pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
-    let receivers = options.addresses("to")?;
-    if receivers.is_empty() {
-        return Err(Wrong("`--to` must be given".into()));
-    }
-    let bind: SocketAddr = options.get("bind", SocketAddr::from(([0, 0, 0, 0], 0)))?;
-    let rate: u32 = options.get("rate", 48_000)?;
-    let channels: u8 = options.get("channels", 2)?;
-    let format = match options.get("bits", 24u8)? {
-        16 => Format::Signed16,
-        24 => Format::Signed24,
-        _ => return Err(Wrong("`--bits` is 16 or 24".into())),
-    };
-    let packet: u16 = options.get("packet", 240)?;
-    let level: i64 = options.get("level", 30)?;
-    let signal: Signal = options.get("signal", Signal::Tone)?;
-    let cycle: usize = options.get("cycle", 256)?;
-    let drift: i32 = options.get("drift", 0)?;
-    let seconds: i64 = options.get("seconds", 0)?;
-    let choice = level_choice(options, rate, options.get("window", 2_400)?)?;
-    let system = System::from_options(options)?;
-    if rate == 0 || channels == 0 || packet == 0 || cycle == 0 {
-        return Err(Wrong(
-            "the rate, channels, packet and cycle are not zero".into(),
-        ));
-    }
+/// Runs the sender network loop and mirrors its counters into Prometheus
+/// metrics without allocating or making additional syscalls.
+struct CountedSender {
+    network: SenderNetwork,
+    counters: Counters,
+    dropped: Arc<AtomicU64>,
+}
 
-    let socket = Socket::bind(bind).map_err(|error| Wrong(format!("binding {bind}: {error}")))?;
-    let start = clock::raw();
-    let device = Device {
-        rate,
-        channels: usize::from(channels),
-        cycle,
-        drift,
-        start,
-        lead: 1_000_000,
-        hidden: 0,
-    };
-    let input = Input::new(device, move |position, _, frame: &mut [f32]| {
-        signal.fill(position, rate, frame);
-    });
-    let (capture_end, sender_end) = send::link(64, cycle, usize::from(channels));
-    let network = SenderNetwork::new(
-        socket,
-        sender_end,
-        Settings {
+impl NetworkLoop for CountedSender {
+    fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
+        self.network.turn(milliseconds)?;
+        self.counters
+            .update(&self.network, self.dropped.load(Ordering::Relaxed));
+        Ok(())
+    }
+}
+
+/// Validated configuration parsed from `unisono send` CLI options.
+struct Config {
+    bind: SocketAddr,
+    rate: u32,
+    channels: u8,
+    signal: Signal,
+    cycle: usize,
+    drift: i32,
+    seconds: i64,
+    system: System,
+    settings: Settings,
+    metrics: Option<SocketAddr>,
+}
+
+impl Config {
+    fn from_options(options: &Options) -> Result<Config, Wrong> {
+        let receivers = options.addresses("to")?;
+        if receivers.is_empty() {
+            return Err(Wrong("`--to` must be given".into()));
+        }
+        let bind: SocketAddr = options
+            .one("bind")?
+            .unwrap_or_else(|| socket::unspecified_for(&receivers));
+        let rate: u32 = options.get("rate", 48_000)?;
+        let channels: u8 = options.get("channels", 2)?;
+        let format = match options.get("bits", 24u8)? {
+            16 => Format::Signed16,
+            24 => Format::Signed24,
+            _ => return Err(Wrong("`--bits` is 16 or 24".into())),
+        };
+        let packet: u16 = options.get("packet", 240)?;
+        let level = options
+            .get::<i64>("level", 30)?
+            .checked_mul(1_000_000)
+            .filter(|ns| *ns >= 0)
+            .ok_or_else(|| {
+                Wrong("`--level` must be a non-negative number of milliseconds".into())
+            })?;
+        let signal: Signal = options.get("signal", Signal::Tone)?;
+        let cycle: usize = options.get("cycle", 256)?;
+        let drift: i32 = options.get("drift", 0)?;
+        let seconds: i64 = options.get("seconds", 0)?;
+        let window: u32 = options.get("window", 2_400)?;
+        let choice = level_choice(options, rate, window)?;
+        let system = System::from_options(options)?;
+        if cycle == 0 || cycle > MAX_CYCLE {
+            return Err(Wrong(format!("`--cycle` must be in 1..={MAX_CYCLE}")));
+        }
+        if seconds < 0 {
+            return Err(Wrong("`--seconds` must not be negative".into()));
+        }
+        validate_drift(drift)?;
+
+        let settings = Settings {
             stream: StreamSettings {
                 stream: options.get("stream", 1)?,
                 rate,
                 channels,
                 format,
                 span: options.get("span", 2_000)?,
-                window: options.get("window", 2_400)?,
+                window,
                 clock: send::clock_identity(),
             },
             packet,
-            level: level.saturating_mul(1_000_000),
+            level,
             choice,
             timeline: send::first_timeline(),
             receivers,
             kept: kept_packets(options)?,
-        },
-    );
+        };
+        settings
+            .validate()
+            .map_err(|error| Wrong(error.to_string()))?;
+        let metrics = options.one("metrics")?;
+
+        Ok(Config {
+            bind,
+            rate,
+            channels,
+            signal,
+            cycle,
+            drift,
+            seconds,
+            system,
+            settings,
+            metrics,
+        })
+    }
+}
+
+/// Runs `unisono send`.
+pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
+    let config = Config::from_options(options)?;
+    let socket = Socket::bind(config.bind)
+        .map_err(|error| Wrong(format!("binding {}: {error}", config.bind)))?;
+    let start = clock::raw();
+    let device = Device {
+        rate: config.rate,
+        channels: usize::from(config.channels),
+        cycle: config.cycle,
+        drift: config.drift,
+        start,
+        lead: 1_000_000,
+        hidden: 0,
+    };
+    let signal = config.signal;
+    let rate = config.rate;
+    let input = Input::new(device, move |position, _, frame: &mut [f32]| {
+        signal.fill(position, rate, frame);
+    });
+    let ring_frames = match config.system {
+        System::Software => config.cycle,
+        #[cfg(any(feature = "pipewire", feature = "alsa"))]
+        _ => config.cycle.max(AUDIO_RING_MIN_FRAMES),
+    };
+    let (capture_end, sender_end) = send::link(64, ring_frames, usize::from(config.channels));
+    let dropped = Arc::new(AtomicU64::new(0));
+    let tracked = TrackedCapture {
+        inner: capture_end,
+        dropped: Arc::clone(&dropped),
+    };
+    let network = SenderNetwork::new(socket, sender_end, config.settings);
 
     let mut metrics = Metrics::new();
     let counters = Counters::new(&mut metrics)?;
-    if let Some(address) = options.addresses("metrics")?.first() {
+    if let Some(address) = config.metrics {
         metrics
-            .serve(*address)
+            .serve(address)
             .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
     }
 
     let stop = Arc::new(AtomicBool::new(false));
-    let shape = (rate, channels, cycle);
-    let capturing = start_capture(system, input, capture_end, Arc::clone(&stop), shape)?;
-    let ending = Arc::new(AtomicBool::new(false));
-    let networking = start_network(network, counters, Arc::clone(&ending))?;
+    let shape = (config.rate, config.channels, config.cycle, ring_frames);
+    let capturing = start_capture(config.system, input, tracked, Arc::clone(&stop), shape)?;
+    let networking = match NetworkThread::spawn(
+        "unisono-network",
+        CountedSender {
+            network,
+            counters,
+            dropped: Arc::clone(&dropped),
+        },
+        2,
+    ) {
+        Ok(thread) => thread,
+        Err(error) => {
+            stop.store(true, Ordering::Relaxed);
+            capturing.finish();
+            return Err(Wrong(format!("starting the network thread: {error}")));
+        }
+    };
+    if !networking.restricted() {
+        eprintln!("unisono: the network thread's system calls are not restricted");
+    }
     // Everything the threads use is made, and they are running.
     if let Err(error) = memory::lock() {
         eprintln!("unisono: memory is not locked: {error}");
     }
 
-    println!("capture start {start} rate {rate} drift {drift} cycle {cycle}");
-    let end = start.saturating_add(seconds.saturating_mul(1_000_000_000));
-    while (seconds == 0 || clock::raw() < end) && !networking.is_finished() {
+    println!(
+        "capture start {start} rate {} drift {} cycle {}",
+        config.rate, config.drift, config.cycle
+    );
+    let end = start.saturating_add(config.seconds.saturating_mul(1_000_000_000));
+    while (config.seconds == 0 || clock::raw() < end)
+        && !crate::interrupted()
+        && !networking.is_finished()
+        && !capturing.is_finished()
+    {
         std::thread::sleep(Duration::from_millis(5));
     }
-    ending.store(true, Ordering::Relaxed);
-    let network = networking
-        .join()
-        .map_err(|_| Wrong("the network thread failed".into()))??;
+    let stopped = networking
+        .stop()
+        .map_err(|_| Wrong("the network thread failed".into()))?;
     stop.store(true, Ordering::Relaxed);
-    let dropped = capturing.finish();
-    summarize(&network, dropped);
+    capturing.finish();
+    let total_dropped = dropped.load(Ordering::Relaxed);
+    summarize(&stopped.network.network, total_dropped);
+    if let Some(error) = stopped.error {
+        return Err(Wrong(format!("sending: {error}")));
+    }
     Ok(())
 }
 
@@ -322,37 +463,13 @@ fn kept_packets(options: &Options) -> Result<usize, Wrong> {
     }
 }
 
-/// Starts the network thread: it sends what the capture thread hands it,
-/// answers reports and keeps the counters, until `ending` is set, and gives
-/// the sender's network end back.
-fn start_network(
-    mut network: SenderNetwork,
-    mut counters: Counters,
-    ending: Arc<AtomicBool>,
-) -> Result<std::thread::JoinHandle<Result<SenderNetwork, Wrong>>, Wrong> {
-    std::thread::Builder::new()
-        .name("unisono-network".into())
-        .stack_size(crate::STACK)
-        .spawn(move || {
-            crate::restrict_network_thread();
-            while !ending.load(Ordering::Relaxed) {
-                network
-                    .turn(2)
-                    .map_err(|error| Wrong(format!("sending: {error}")))?;
-                counters.update(&network);
-                std::thread::sleep(Duration::from_micros(200));
-            }
-            Ok(network)
-        })
-        .map_err(|error| Wrong(format!("starting the network thread: {error}")))
-}
-
 /// The sender's counters among the metrics.
 struct Counters {
     packets: Tally,
     answers: Tally,
     filled: Tally,
     restarts: Tally,
+    dropped: Tally,
     moves: Tally,
     again: Tally,
     level: FloatGauge,
@@ -390,6 +507,12 @@ impl Counters {
                 .tally(
                     "unisono_sender_timeline_restarts_total",
                     "Timelines started after the first.",
+                )
+                .map_err(named)?,
+            dropped: metrics
+                .tally(
+                    "unisono_sender_dropped_cycles_total",
+                    "Cycles dropped by the capture thread before reaching the network thread.",
                 )
                 .map_err(named)?,
             moves: metrics
@@ -455,7 +578,7 @@ impl Counters {
         })
     }
 
-    fn update(&mut self, network: &SenderNetwork) {
+    fn update(&mut self, network: &SenderNetwork, dropped: u64) {
         let counts = network.counts();
         let level = network.sender().current_level();
         if let Some(checks) = network.checks() {
@@ -475,6 +598,7 @@ impl Counters {
         self.answers.update(counts.answers);
         self.filled.update(counts.filled);
         self.restarts.update(counts.restarts);
+        self.dropped.update(dropped);
     }
 }
 
@@ -505,9 +629,11 @@ fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choi
         return Err(Wrong("`--window` is not zero".into()));
     }
     let stretches = |seconds: u64| {
-        usize::try_from(seconds * u64::from(rate) / u64::from(window)).unwrap_or(usize::MAX)
+        usize::try_from(seconds * u64::from(rate) / u64::from(window))
+            .unwrap_or(usize::MAX)
+            .max(1)
     };
-    Ok(Some(Choice {
+    let choice = Choice {
         weights: Weights {
             latency: 1_000.0,
             target: 0,
@@ -520,5 +646,9 @@ fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choi
         },
         history: stretches(120),
         slope: slope.saturating_mul(1_000),
-    }))
+    };
+    choice
+        .validate()
+        .map_err(|error| Wrong(error.to_string()))?;
+    Ok(Some(choice))
 }
