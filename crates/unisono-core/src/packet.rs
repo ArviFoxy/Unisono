@@ -30,6 +30,9 @@ pub const KIND_REPORT: u8 = 2;
 /// The kind of the sender's answer to a report.
 pub const KIND_ECHO: u8 = 3;
 
+/// The kind of a receiver's request for frames to be sent again.
+pub const KIND_REQUEST: u8 = 4;
+
 /// The size of the header of an audio packet, in bytes.
 pub const HEADER: usize = 88;
 
@@ -39,6 +42,13 @@ pub const REPORT: usize = 32;
 
 /// The size of the sender's answer to a report, in bytes.
 pub const ECHO: usize = 32;
+
+/// The size of a request for frames to be sent again, in bytes.
+pub const REQUEST: usize = 32;
+
+/// The protection against loss in which the sender sends a packet again to a
+/// receiver that asks for its frames.
+pub const PROTECTION_ON_REQUEST: u16 = 1;
 
 /// The bit of the flags that says the packet carries the departure of an
 /// earlier packet.
@@ -126,7 +136,9 @@ pub struct Audio {
     pub window: u32,
     /// Bits that qualify the packet: [`FLAG_STAMPED`].
     pub flags: u16,
-    /// The protection against loss that the packet carries; 0 is none.
+    /// The protection against loss that the stream has: 0 is none, and
+    /// [`PROTECTION_ON_REQUEST`] that the sender sends frames again when a
+    /// receiver asks for them.
     pub protection: u16,
     /// The index of the first frame of an earlier packet of this timeline,
     /// if the flags say that the packet carries one.
@@ -230,7 +242,7 @@ fn validate_audio(header: &Audio) -> Result<(), Rejected> {
     if (header.flags & KNOWN_FLAGS) != header.flags {
         return Err(Rejected::Flags(header.flags));
     }
-    if header.protection != 0 {
+    if header.protection > PROTECTION_ON_REQUEST {
         return Err(Rejected::Protection(header.protection));
     }
     if header.drift < MIN_SLOPE || header.level_slope < MIN_SLOPE {
@@ -398,9 +410,23 @@ pub struct Echo {
     pub arrival: i64,
 }
 
+/// A receiver's request for frames that it misses to be sent again.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
+pub struct Request {
+    /// Which stream of the sender the receiver plays.
+    pub stream: u16,
+    /// The timeline that the frames belong to.
+    pub timeline: u64,
+    /// The index of the first frame that is missed.
+    pub first: u64,
+    /// How many frames from there on are missed.
+    pub frames: u64,
+}
+
 /// The kind of the packet in `bytes`, if it is a packet of this version:
-/// [`KIND_AUDIO`], [`KIND_REPORT`], [`KIND_ECHO`], or a kind this version
-/// does not know.
+/// [`KIND_AUDIO`], [`KIND_REPORT`], [`KIND_ECHO`], [`KIND_REQUEST`], or a
+/// kind this version does not know.
 ///
 /// # Errors
 ///
@@ -635,6 +661,57 @@ pub fn write_echo(echo: &Echo, bytes: &mut [u8]) -> Option<usize> {
     if written { Some(ECHO) } else { None }
 }
 
+/// Reads the request in `bytes`.
+///
+/// # Errors
+///
+/// The reason why `bytes` is not a request of this version.
+// The cast takes a number that was read from exactly as many bytes as the
+// field has.
+#[allow(clippy::cast_possible_truncation)]
+pub fn parse_request(bytes: &[u8]) -> Result<Request, Rejected> {
+    let found = match kind(bytes) {
+        Ok(found) => found,
+        Err(reason) => return Err(reason),
+    };
+    if found != KIND_REQUEST {
+        return Err(Rejected::Kind(found));
+    }
+    let (Some(stream), Some(timeline), Some(first), Some(frames)) = (
+        read(bytes, 6, 2),
+        read(bytes, 8, 8),
+        read(bytes, 16, 8),
+        read(bytes, 24, 8),
+    ) else {
+        return Err(Rejected::TooShort);
+    };
+    if bytes.len() != REQUEST {
+        return Err(Rejected::Length);
+    }
+    Ok(Request {
+        stream: stream as u16,
+        timeline,
+        first,
+        frames,
+    })
+}
+
+/// Writes `request` into the first [`REQUEST`] bytes of `bytes` and returns
+/// that length. `None` if `bytes` is shorter.
+pub fn write_request(request: &Request, bytes: &mut [u8]) -> Option<usize> {
+    if bytes.len() < REQUEST {
+        return None;
+    }
+    let mut written = write(bytes, 0, 4, MAGIC);
+    written &= write(bytes, 4, 1, VERSION as u64);
+    written &= write(bytes, 5, 1, KIND_REQUEST as u64);
+    written &= write(bytes, 6, 2, request.stream as u64);
+    written &= write(bytes, 8, 8, request.timeline);
+    written &= write(bytes, 16, 8, request.first);
+    written &= write(bytes, 24, 8, request.frames);
+    if written { Some(REQUEST) } else { None }
+}
+
 #[cfg(test)]
 mod tests {
     use std::vec;
@@ -740,8 +817,8 @@ mod tests {
         bytes[60..62].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(parse_audio(&bytes), Err(Rejected::Flags(2)));
         let mut bytes = good.clone();
-        bytes[62..64].copy_from_slice(&1u16.to_le_bytes());
-        assert_eq!(parse_audio(&bytes), Err(Rejected::Protection(1)));
+        bytes[62..64].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(parse_audio(&bytes), Err(Rejected::Protection(2)));
         let mut bytes = good.clone();
         bytes[80..84].copy_from_slice(&(-1_000_000_000i32).to_le_bytes());
         assert_eq!(parse_audio(&bytes), Err(Rejected::Pace));

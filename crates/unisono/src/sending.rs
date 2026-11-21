@@ -40,6 +40,7 @@ pub(crate) const OPTIONS: &[&str] = &[
     "missed-cost",
     "move-cost",
     "level-slope",
+    "protection",
     "signal",
     "cycle",
     "drift",
@@ -76,6 +77,8 @@ Captures a signal with a software device and sends it to each receiver.
                       at most 1000, by which the receivers change their
                       pace at most, and less to leave room for the drift of
                       their clocks (500)
+  --protection on|off whether packets are kept for a second, to be sent
+                      again to a receiver that asks for frames it misses (on)
   --signal ramp|tone|silence
                       what the device captures (tone): a ramp that says
                       which frame a sample is, a tone of 440 Hz, or silence
@@ -228,6 +231,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
             choice,
             timeline: send::first_timeline(),
             receivers,
+            kept: kept_packets(options)?,
         },
     );
 
@@ -260,19 +264,35 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         .map_err(|_| Wrong("the network thread failed".into()))??;
     stop.store(true, Ordering::Relaxed);
     let dropped = capturing.finish();
+    summarize(&network, dropped);
+    Ok(())
+}
+
+/// Says what the sender did.
+fn summarize(network: &SenderNetwork, dropped: u64) {
     let counts = network.counts();
     println!(
         "sent packets {} answers {} filled {} restarts {} unsent {} dropped-cycles {dropped} \
-         level-moves {} level {}",
+         level-moves {} level {} again {}",
         counts.packets,
         counts.answers,
         counts.filled,
         counts.restarts,
         counts.unsent,
         counts.moves,
-        network.sender().current_level()
+        network.sender().current_level(),
+        counts.again
     );
-    Ok(())
+}
+
+/// How many packets the sender keeps to send again, as the options say: a
+/// second and more of packets of five milliseconds, or none.
+fn kept_packets(options: &Options) -> Result<usize, Wrong> {
+    match options.get("protection", String::from("on"))?.as_str() {
+        "on" => Ok(256),
+        "off" => Ok(0),
+        _ => Err(Wrong("`--protection` is on or off".into())),
+    }
 }
 
 /// Starts the network thread: it sends what the capture thread hands it,
@@ -307,6 +327,7 @@ struct Counters {
     filled: Tally,
     restarts: Tally,
     moves: Tally,
+    again: Tally,
     level: FloatGauge,
     stretches: Tally,
     largest: Tally,
@@ -348,6 +369,12 @@ impl Counters {
                 .tally(
                     "unisono_sender_level_moves_total",
                     "Moves of the level that were begun.",
+                )
+                .map_err(named)?,
+            again: metrics
+                .tally(
+                    "unisono_sender_packets_sent_again_total",
+                    "Packets sent again to a receiver that asked for their frames.",
                 )
                 .map_err(named)?,
             level: metrics
@@ -413,6 +440,7 @@ impl Counters {
             self.outlasted.update(checks.outlasted);
         }
         self.moves.update(counts.moves);
+        self.again.update(counts.again);
         // A level is far below 2^53 nanoseconds, where an `f64` is exact.
         #[allow(clippy::cast_precision_loss)]
         self.level.set(level as f64 * 1e-9);

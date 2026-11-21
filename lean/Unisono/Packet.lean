@@ -448,7 +448,7 @@ def ValidAudio (h : packet.Audio) : Prop :=
   0 < h.rate.val
   ∧ 0 < h.channels.val
   ∧ (h.flags &&& packet.KNOWN_FLAGS) = h.flags
-  ∧ h.protection.val = 0
+  ∧ h.protection.val ≤ 1
   ∧ -1000000000 < h.drift.val
   ∧ -1000000000 < h.level_slope.val
 
@@ -457,6 +457,7 @@ theorem validate_audio_spec (h : packet.Audio) :
     packet.validate_audio h ⦃ r => (r = .Ok () ↔ ValidAudio h) ⦄ := by
   unfold packet.validate_audio
   have hmin : packet.MIN_SLOPE.val = -999999999 := by simp [packet.MIN_SLOPE]
+  have hprot : packet.PROTECTION_ON_REQUEST.val = 1 := by simp [packet.PROTECTION_ON_REQUEST]
   split
   · rename_i hr
     have hr0 : h.rate.val = 0 := by scalar_tac
@@ -482,10 +483,10 @@ theorem validate_audio_spec (h : packet.Audio) :
           exact UScalar.eq_of_val_eq (by simpa using hf)
         split
         · rename_i hp
-          have hpne : h.protection.val ≠ 0 := by scalar_tac
+          have hpne : ¬ h.protection.val ≤ 1 := by scalar_tac
           simp [ValidAudio, hpne]
         · rename_i hp
-          have hp0 : h.protection.val = 0 := by scalar_tac
+          have hp0 : h.protection.val ≤ 1 := by scalar_tac
           split
           · rename_i hd
             have hdlt : h.drift.val ≤ -1000000000 := by scalar_tac
@@ -789,6 +790,126 @@ theorem echo_roundtrip (e : packet.Echo) (bytes : Slice Std.U8)
   · exact UScalar.eq_of_val_eq hreceiver
   · exact UScalar.eq_of_val_eq hsequence
   · rw [har]; exact hcast_i64_u64_i64 _ arrival harrival
+
+/-! ## Request round-trip -/
+
+/-- Exact 32-byte wire layout produced by `write_request`. -/
+theorem write_request_spec (e : packet.Request) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.REQUEST.val) :
+    packet.write_request e bytes ⦃ out =>
+      out.1 = some packet.REQUEST
+      ∧ out.2.val.length = 32
+      ∧ HasLE out.2.val 0 4 packet.MAGIC.val
+      ∧ HasLE out.2.val 4 1 packet.VERSION.val
+      ∧ HasLE out.2.val 5 1 packet.KIND_REQUEST.val
+      ∧ HasLE out.2.val 6 2 e.stream.val
+      ∧ HasLE out.2.val 8 8 e.timeline.val
+      ∧ HasLE out.2.val 16 8 e.first.val
+      ∧ HasLE out.2.val 24 8 e.frames.val ⦄ := by
+  have hrequest : packet.REQUEST.val = 32 := by simp [packet.REQUEST]
+  have hlen32 : bytes.val.length = 32 := by omega
+  unfold packet.write_request
+  have hnotlt : ¬ bytes.len < packet.REQUEST := by
+    have : bytes.len.val = bytes.val.length := rfl
+    scalar_tac
+  simp only [hnotlt, ↓reduceIte]
+  step with write_spec bytes 0#usize 4#usize packet.MAGIC (by scalar_tac) (by decide)
+    as ⟨b0, bs1, hb0, hl1, hm1, _⟩
+  step as ⟨iv, hiv⟩
+  step with write_spec bs1 4#usize 1#usize iv (by scalar_tac) (by decide)
+    as ⟨b1, bs2, hb1, hl2, hv2, ho2⟩
+  step as ⟨ik, hik⟩
+  step with write_spec bs2 5#usize 1#usize ik (by scalar_tac) (by decide)
+    as ⟨b2, bs3, hb2, hl3, hk3, ho3⟩
+  step as ⟨is, his⟩
+  step with write_spec bs3 6#usize 2#usize is (by scalar_tac) (by decide)
+    as ⟨b3, bs4, hb3, hl4, hs4, ho4⟩
+  step with write_spec bs4 8#usize 8#usize e.timeline (by scalar_tac) (by decide)
+    as ⟨b4, bs5, hb4, hl5, hr5, ho5⟩
+  step with write_spec bs5 16#usize 8#usize e.first (by scalar_tac) (by decide)
+    as ⟨b5, bs6, hb5, hl6, hq6, ho6⟩
+  step with write_spec bs6 24#usize 8#usize e.frames (by scalar_tac) (by decide)
+    as ⟨b6, bs7, hb6, hl7, ha7, ho7⟩
+  simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, Bool.and_self, ↓reduceIte]
+  rw [WP.spec_ok]
+  dsimp only
+  have hv_eq : iv.val = packet.VERSION.val := by rw [hiv]; exact cast_u8_u64_val _
+  have hk_eq : ik.val = packet.KIND_REQUEST.val := by rw [hik]; exact cast_u8_u64_val _
+  have hs_eq : is.val = e.stream.val := by rw [his]; exact cast_u16_u64_val _
+  refine ⟨rfl, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
+      |>.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide))
+  · rw [← hv_eq]
+    exact (((((hv2.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · rw [← hk_eq]
+    exact ((((hk3.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · rw [← hs_eq]
+    exact (((hs4.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · exact ((hr5.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · exact hq6.preserve hl7 ho7 (Or.inl (by decide))
+  · exact ha7
+
+/-- Writing a `Request` into a 32-byte buffer and parsing it back recovers the
+exact `Request`. -/
+theorem request_roundtrip (e : packet.Request) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.REQUEST.val) :
+    (do
+      let out ← packet.write_request e bytes
+      match out.1 with
+      | some _ => packet.parse_request out.2
+      | none => ok (.Err .TooShort))
+    ⦃ r => r = .Ok e ⦄ := by
+  have hrequest : packet.REQUEST.val = 32 := by simp [packet.REQUEST]
+  step with write_request_spec e bytes hlen
+    as ⟨out, hsome, hlen7, hm7, hv7, hk7, hs7, hr7, hq7, ha7⟩
+  rw [hsome]
+  have hs_lt : e.stream.val < 2 ^ (8 * 2) := by scalar_tac
+  have htl_lt : e.timeline.val < 2 ^ (8 * 8) := by scalar_tac
+  have hfirst_lt : e.first.val < 2 ^ (8 * 8) := by scalar_tac
+  have hframes_lt : e.frames.val < 2 ^ (8 * 8) := by scalar_tac
+  unfold packet.parse_request
+  step with kind_of_hasLE out.2 packet.KIND_REQUEST hm7 hv7 hk7 as ⟨rk, hrk⟩
+  rw [hrk]
+  simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step with read_of_hasLE out.2 6#usize 2#usize e.stream.val hs7 (by decide) hs_lt
+    as ⟨o0, stream, ho0, hstream⟩
+  step with read_of_hasLE out.2 8#usize 8#usize e.timeline.val hr7 (by decide) htl_lt
+    as ⟨o1, timeline, ho1, htimeline⟩
+  step with read_of_hasLE out.2 16#usize 8#usize e.first.val hq7 (by decide) hfirst_lt
+    as ⟨o2, first, ho2', hfirst⟩
+  step with read_of_hasLE out.2 24#usize 8#usize e.frames.val ha7 (by decide) hframes_lt
+    as ⟨o3, frames, ho3', hframes⟩
+  rw [ho0, ho1, ho2', ho3']
+  have hlen_eq : out.2.len = packet.REQUEST := by
+    apply UScalar.eq_of_val_eq
+    have : out.2.len.val = out.2.val.length := rfl
+    omega
+  simp only [hlen_eq, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step as ⟨st, hst⟩
+  congr 1
+  cases e
+  congr 1
+  · rw [hst]
+    apply UScalar.eq_of_val_eq
+    rw [UScalar.cast_val_mod_pow_of_inBounds_eq, hstream]
+    scalar_tac
+  · exact UScalar.eq_of_val_eq htimeline
+  · exact UScalar.eq_of_val_eq hfirst
+  · exact UScalar.eq_of_val_eq hframes
 
 /-! ## Report round-trip -/
 
@@ -1343,6 +1464,17 @@ theorem write_echo_total (e : packet.Echo) (bytes : Slice Std.U8) :
   simp only
   step*
 
+theorem parse_request_total (bytes : Slice Std.U8) :
+    packet.parse_request bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_request
+  step*
+
+theorem write_request_total (e : packet.Request) (bytes : Slice Std.U8) :
+    packet.write_request e bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_request
+  simp only
+  step*
+
 @[step]
 theorem write_report_loop_total (bytes : Slice Std.U8) (length : Std.Usize)
     (written : Bool) (place : Std.Usize) :
@@ -1517,6 +1649,24 @@ theorem parse_echo_kind (bytes : Slice Std.U8) :
       simp only [Bool.false_eq_true, ↓reduceIte]
       have hf : found = packet.KIND_ECHO := by simpa using hne
       have hgoal : kindOf bytes = .Ok packet.KIND_ECHO := by rw [← hrk, hf]
+      step*
+
+/-- `parse_request` succeeds only when `kind` returns `Ok KIND_REQUEST`. -/
+theorem parse_request_kind (bytes : Slice Std.U8) :
+    packet.parse_request bytes ⦃ r =>
+      (∃ e, r = .Ok e) → kindOf bytes = .Ok packet.KIND_REQUEST ⦄ := by
+  unfold packet.parse_request
+  step with kind_spec bytes as ⟨rk, hrk⟩
+  cases rk with
+  | Err _ => simp
+  | Ok found =>
+    dsimp only
+    cases hne : (found != packet.KIND_REQUEST) with
+    | true => simp
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hf : found = packet.KIND_REQUEST := by simpa using hne
+      have hgoal : kindOf bytes = .Ok packet.KIND_REQUEST := by rw [← hrk, hf]
       step*
 
 end Unisono.Packet

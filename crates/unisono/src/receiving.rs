@@ -414,7 +414,7 @@ impl Seen {
 fn summarize(counts: &NetworkCounts, seen: &Seen) {
     println!(
         "received packets {} answers {} reports {} dropped {} played {} concealed {} jumps {} \
-         delay {}",
+         delay {} requests {}",
         counts.packets,
         counts.answers,
         counts.reports,
@@ -422,7 +422,8 @@ fn summarize(counts: &NetworkCounts, seen: &Seen) {
         seen.played.get(),
         seen.concealed.get(),
         seen.jumps.get(),
-        (seen.delay.get() * 1e9).round()
+        (seen.delay.get() * 1e9).round(),
+        counts.requests
     );
 }
 

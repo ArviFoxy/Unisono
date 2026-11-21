@@ -452,6 +452,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Packet.echo_roundtrip
 
+/-- info: 'Unisono.Packet.write_request_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_request_spec
+
+/-- info: 'Unisono.Packet.request_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.request_roundtrip
+
+/-- info: 'Unisono.Packet.parse_request_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_request_total
+
+/-- info: 'Unisono.Packet.write_request_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_request_total
+
+/-- info: 'Unisono.Packet.parse_request_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_request_kind
+
 /-- info: 'Unisono.Packet.kind_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Packet.kind_spec

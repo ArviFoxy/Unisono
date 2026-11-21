@@ -5,9 +5,10 @@ the software, so there is one layout and nothing to negotiate: a datagram of
 another version is rejected. Every number is written least significant byte
 first.
 
-There are three kinds of datagram: audio from the sender, reports from
-receivers, and the sender's answers to reports. All begin with the same six
-bytes: the letters `unis`, the version, and the kind.
+There are four kinds of datagram: audio from the sender, reports from
+receivers, the sender's answers to reports, and requests of receivers for
+frames to be sent again. All begin with the same six bytes: the letters
+`unis`, the version, and the kind.
 
 ## The audio packet
 
@@ -37,7 +38,7 @@ Times are in nanoseconds on the sender's raw clock.
 | 52 | 4 | span | how long a receiver remembers samples for its estimate of the sender's clock, in milliseconds |
 | 56 | 4 | window | the number of frames that make up one window of that estimate |
 | 60 | 2 | flags | bit 0: the packet carries the departure of an earlier packet |
-| 62 | 2 | protection | the protection against loss that the packet carries; 0 is none |
+| 62 | 2 | protection | the protection against loss that the stream has: 0 is none; 1 says that the sender sends a packet again to a receiver that asks for its frames |
 | 64 | 8 | stamped index | the index of the first frame of an earlier packet of this timeline, if bit 0 of the flags is set |
 | 72 | 8 | stamped departure | when that earlier packet left the sender (signed) |
 | 80 | 4 | drift | how much faster than the rate the capture device runs against the sender's clock, in parts per billion (signed) |
@@ -154,4 +155,43 @@ and back in which the clocks cancel. The receiver keeps the shortest of the
 last minute and takes half of it for the path from the sender. How long the
 answer itself takes does not matter: it only carries a number. A receiver
 sends twenty reports a second for its first five seconds and five a second
-after; a receiver that is told the delay of its path sends none.
+after. A receiver that is told the delay of its path sends them as well, for
+the needs they carry, and does not measure the path from the answers.
+
+## The request for frames
+
+When the packets of a stream say so in their `protection` field, a receiver
+that misses frames asks the sender for them, with a datagram of exactly 32
+bytes sent to the address the audio packets come from.
+
+| Offset | Bytes | Field | Meaning |
+|---|---|---|---|
+| 0 | 4 | magic | the letters `unis` |
+| 4 | 1 | version | 1 |
+| 5 | 1 | kind | 4 for a request |
+| 6 | 2 | stream | which stream of the sender the receiver plays |
+| 8 | 8 | timeline | the timeline of the frames |
+| 16 | 8 | first | the index of the first frame that is missed |
+| 24 | 8 | frames | how many frames from there on are missed |
+
+The sender sends again every packet it still keeps that has one of those
+frames, exactly as it was sent before, to the address the request came from,
+if that address is one of its receivers; a request from anywhere else gets
+nothing, so the sender cannot be made to send a stream to a third party. It
+keeps the packets of about the last second. A packet that arrives twice
+changes nothing at a receiver.
+
+A receiver finds frames missing when a packet arrives whose first frame is
+beyond the frame after the last that arrived. It asks at once and again
+every ten milliseconds, until the frames have arrived or the level has
+passed since it found them missing, after which they would be too late. Of
+a long run it asks only for the frames that the level reaches back to. A
+packet that was overtaken on the way is asked for and arrives twice, which
+costs one packet.
+
+A packet that is sent again arrives late, and a receiver measures what its
+frames needed as for any other packet. The needs that the sender chooses the
+level from therefore contain what the repairs need: where packets are lost
+often enough, the level settles where the repairs are in time. The model,
+section 6.6, gives the comparison that led to this way of protecting a
+stream.

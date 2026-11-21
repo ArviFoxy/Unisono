@@ -964,6 +964,7 @@ fn report_cases(out: &mut impl Write) -> io::Result<()> {
             echo.arrival,
             bytes_of(&answer)
         )?;
+        let (asked, asked_size) = request_case(out, &mut sequence)?;
         let used = written.unwrap_or(0);
         let mut changed = buffer[..used].to_vec();
         let place = usize::try_from(sequence.next() % 32).unwrap_or(0);
@@ -974,6 +975,10 @@ fn report_cases(out: &mut impl Write) -> io::Result<()> {
         if let Some(byte) = changed_answer.get_mut(place) {
             *byte ^= 1 << (sequence.next() % 8);
         }
+        let mut changed_asked = asked[..asked_size].to_vec();
+        if let Some(byte) = changed_asked.get_mut(place) {
+            *byte ^= 1 << (sequence.next() % 8);
+        }
         for bytes in [
             &buffer[..used],
             &changed[..],
@@ -981,6 +986,9 @@ fn report_cases(out: &mut impl Write) -> io::Result<()> {
             &answer[..size],
             &changed_answer[..],
             &answer[..=size],
+            &asked[..asked_size],
+            &changed_asked[..],
+            &asked[..=asked_size],
         ] {
             writeln!(
                 out,
@@ -994,9 +1002,39 @@ fn report_cases(out: &mut impl Write) -> io::Result<()> {
                 bytes_of(bytes),
                 join(&echo_numbers(bytes))
             )?;
+            writeln!(
+                out,
+                "parse_request {} -> {}",
+                bytes_of(bytes),
+                join(&request_numbers(bytes))
+            )?;
         }
     }
     Ok(())
+}
+
+/// Writes a request with fields from `sequence` into 40 zero bytes, prints
+/// the case, and returns the bytes and the length written.
+fn request_case(out: &mut impl Write, sequence: &mut Sequence) -> io::Result<([u8; 40], usize)> {
+    #[allow(clippy::cast_possible_truncation)]
+    let request = packet::Request {
+        stream: sequence.next() as u16,
+        timeline: sequence.next(),
+        first: sequence.next(),
+        frames: sequence.next(),
+    };
+    let mut asked = [0u8; 40];
+    let size = packet::write_request(&request, &mut asked).unwrap_or(0);
+    writeln!(
+        out,
+        "write_request {} {} {} {} -> {size} {}",
+        request.stream,
+        request.timeline,
+        request.first,
+        request.frames,
+        bytes_of(&asked)
+    )?;
+    Ok((asked, size))
 }
 
 /// A reason for rejection as two numbers: which reason, and its detail.
@@ -1026,6 +1064,24 @@ fn report_numbers(bytes: &[u8]) -> [i128; 5] {
             i128::from(report.timeline),
             i128::from(report.receiver),
             i128::from(report.sequence),
+        ],
+        Err(reason) => {
+            let [code, detail] = rejection(reason);
+            [code, detail, 0, 0, 0]
+        }
+    }
+}
+
+/// What reading a request gives, as numbers: 0 and its fields, or the
+/// reason for rejection and zeros.
+fn request_numbers(bytes: &[u8]) -> [i128; 5] {
+    match packet::parse_request(bytes) {
+        Ok(request) => [
+            0,
+            i128::from(request.stream),
+            i128::from(request.timeline),
+            i128::from(request.first),
+            i128::from(request.frames),
         ],
         Err(reason) => {
             let [code, detail] = rejection(reason);

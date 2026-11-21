@@ -316,6 +316,24 @@ def runParseEcho (values : List Int) : Result (List Int) := do
   | .Ok e => pure [0, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val]
   | .Err reason => pure (rejection reason ++ [0, 0, 0])
 
+/-- What reading a request gives, as numbers. -/
+def runParseRequest (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_request (byteSlice values)
+  match parsed with
+  | .Ok r => pure [0, r.stream.val, r.timeline.val, r.first.val, r.frames.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+
+/-- Writes a request into 40 zero bytes, and returns the length that writing
+reports, or 0, and the bytes. -/
+def runWriteRequest (stream timeline first frames : Int) : Result (List Int) := do
+  let out ← packet.write_request
+    ⟨unsigned .U16 stream, unsigned .U64 timeline, unsigned .U64 first, unsigned .U64 frames⟩
+    (byteSlice (List.replicate 40 0))
+  let written : Int := match out.1 with
+    | some n => n.val
+    | none => 0
+  pure (written :: out.2.val.map (·.val))
+
 /-- Writes a report into 96 bytes of the value 165, and returns the length
 that writing reports, or -1, and the bytes. -/
 def runWriteReport (stream timeline receiver number length : Int) : Result (List Int) := do
@@ -445,6 +463,9 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
     | none => .error "reports are not quads"
   | "parse_report", bytes => result (runParseReport bytes) id
   | "parse_echo", bytes => result (runParseEcho bytes) id
+  | "parse_request", bytes => result (runParseRequest bytes) id
+  | "write_request", [stream, timeline, first, frames] =>
+    result (runWriteRequest stream timeline first frames) id
   | "write_report", [stream, timeline, receiver, number, length] =>
     result (runWriteReport stream timeline receiver number length) id
   | "write_echo", [stream, receiver, number, arrival] =>

@@ -1683,13 +1683,13 @@ def needs.Needs.get
   else ok none
 
 /-- [unisono_core::packet::UNKNOWN_NEED]
-    Source: 'crates/unisono-core/src/packet.rs', lines 489:0-489:39
+    Source: 'crates/unisono-core/src/packet.rs', lines 515:0-515:39
     Visibility: public -/
 @[global_simps, irreducible]
 def packet.UNKNOWN_NEED : Std.I32 := core.num.I32.MIN
 
 /-- [unisono_core::packet::{unisono_core::packet::Recent}::NONE]
-    Source: 'crates/unisono-core/src/packet.rs', lines 513:4-517:6
+    Source: 'crates/unisono-core/src/packet.rs', lines 539:4-543:6
     Visibility: public -/
 @[global_simps, irreducible]
 def packet.Recent.NONE : packet.Recent :=
@@ -1697,7 +1697,7 @@ def packet.Recent.NONE : packet.Recent :=
   { newest := 0#u64, count := 0#u8, needs := a }
 
 /-- [unisono_core::packet::RECENT]
-    Source: 'crates/unisono-core/src/packet.rs', lines 482:0-482:29
+    Source: 'crates/unisono-core/src/packet.rs', lines 508:0-508:29
     Visibility: public -/
 @[global_simps, irreducible] def packet.RECENT : Std.Usize := 11#usize
 
@@ -1820,65 +1820,81 @@ def needs.Needs.recent
     Visibility: public -/
 @[global_simps, irreducible] def packet.KIND_ECHO : Std.U8 := 3#u8
 
+/-- [unisono_core::packet::KIND_REQUEST]
+    Source: 'crates/unisono-core/src/packet.rs', lines 34:0-34:31
+    Visibility: public -/
+@[global_simps, irreducible] def packet.KIND_REQUEST : Std.U8 := 4#u8
+
 /-- [unisono_core::packet::HEADER]
-    Source: 'crates/unisono-core/src/packet.rs', lines 34:0-34:29
+    Source: 'crates/unisono-core/src/packet.rs', lines 37:0-37:29
     Visibility: public -/
 @[global_simps, irreducible] def packet.HEADER : Std.Usize := 88#usize
 
 /-- [unisono_core::packet::REPORT]
-    Source: 'crates/unisono-core/src/packet.rs', lines 38:0-38:29
+    Source: 'crates/unisono-core/src/packet.rs', lines 41:0-41:29
     Visibility: public -/
 @[global_simps, irreducible] def packet.REPORT : Std.Usize := 32#usize
 
 /-- [unisono_core::packet::ECHO]
-    Source: 'crates/unisono-core/src/packet.rs', lines 41:0-41:27
+    Source: 'crates/unisono-core/src/packet.rs', lines 44:0-44:27
     Visibility: public -/
 @[global_simps, irreducible] def packet.ECHO : Std.Usize := 32#usize
 
+/-- [unisono_core::packet::REQUEST]
+    Source: 'crates/unisono-core/src/packet.rs', lines 47:0-47:30
+    Visibility: public -/
+@[global_simps, irreducible] def packet.REQUEST : Std.Usize := 32#usize
+
+/-- [unisono_core::packet::PROTECTION_ON_REQUEST]
+    Source: 'crates/unisono-core/src/packet.rs', lines 51:0-51:41
+    Visibility: public -/
+@[global_simps, irreducible]
+def packet.PROTECTION_ON_REQUEST : Std.U16 := 1#u16
+
 /-- [unisono_core::packet::FLAG_STAMPED]
-    Source: 'crates/unisono-core/src/packet.rs', lines 45:0-45:32
+    Source: 'crates/unisono-core/src/packet.rs', lines 55:0-55:32
     Visibility: public -/
 @[global_simps, irreducible] def packet.FLAG_STAMPED : Std.U16 := 1#u16
 
 /-- [unisono_core::packet::KNOWN_FLAGS]
-    Source: 'crates/unisono-core/src/packet.rs', lines 48:0-48:38 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 58:0-58:38 -/
 @[global_simps, irreducible]
 def packet.KNOWN_FLAGS : Std.U16 := packet.FLAG_STAMPED
 
 /-- [unisono_core::packet::MIN_SLOPE]
-    Source: 'crates/unisono-core/src/packet.rs', lines 52:0-52:36 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 62:0-62:36 -/
 @[global_simps, irreducible] def packet.MIN_SLOPE : Std.I32 := (-999999999)#i32
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Format}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:9-55:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:9-65:14
     Visibility: public -/
 def packet.Format.Insts.CoreCloneClone.clone
   (self : packet.Format) : Result packet.Format := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Format}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:9-55:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:9-65:14 -/
 @[reducible]
 def packet.Format.Insts.CoreCloneClone : core.clone.Clone packet.Format := {
   clone := packet.Format.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Format}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:16-55:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:16-65:20 -/
 @[reducible]
 def packet.Format.Insts.CoreMarkerCopy : core.marker.Copy packet.Format := {
   cloneInst := packet.Format.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Format}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:22-55:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:22-65:31 -/
 @[reducible]
 def packet.Format.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Format := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Format> for unisono_core::packet::Format}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:22-55:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:22-65:31
     Visibility: public -/
 def packet.Format.Insts.CoreCmpPartialEqFormat.eq
   (self : packet.Format) (other : packet.Format) : Result Bool := do
@@ -1887,7 +1903,7 @@ def packet.Format.Insts.CoreCmpPartialEqFormat.eq
   ok (self1 = other1)
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Format> for unisono_core::packet::Format}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:22-55:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:22-65:31 -/
 @[reducible]
 def packet.Format.Insts.CoreCmpPartialEqFormat : core.cmp.PartialEq
   packet.Format packet.Format := {
@@ -1895,7 +1911,7 @@ def packet.Format.Insts.CoreCmpPartialEqFormat : core.cmp.PartialEq
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Format}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 55:33-55:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 65:33-65:35 -/
 @[reducible]
 impl_def packet.Format.Insts.CoreCmpEq : core.cmp.Eq packet.Format := {
   partialEqInst := packet.Format.Insts.CoreCmpPartialEqFormat
@@ -1904,7 +1920,7 @@ impl_def packet.Format.Insts.CoreCmpEq : core.cmp.Eq packet.Format := {
 }
 
 /-- [unisono_core::packet::{unisono_core::packet::Format}::bytes]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 67:4-72:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 77:4-82:5
     Visibility: public -/
 def packet.Format.bytes (self : packet.Format) : Result Std.Usize := do
   match self with
@@ -1912,14 +1928,14 @@ def packet.Format.bytes (self : packet.Format) : Result Std.Usize := do
   | packet.Format.Signed24 => ok 3#usize
 
 /-- [unisono_core::packet::{unisono_core::packet::Format}::code]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 74:4-79:5 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 84:4-89:5 -/
 def packet.Format.code (self : packet.Format) : Result Std.U8 := do
   match self with
   | packet.Format.Signed16 => ok 1#u8
   | packet.Format.Signed24 => ok 2#u8
 
 /-- [unisono_core::packet::{unisono_core::packet::Format}::from_code]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 81:4-87:5 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 91:4-97:5 -/
 def packet.Format.from_code
   (code : Std.U8) : Result (Option packet.Format) := do
   match code with
@@ -1928,35 +1944,35 @@ def packet.Format.from_code
   | _ => ok none
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Audio}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:9-94:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:9-104:14
     Visibility: public -/
 def packet.Audio.Insts.CoreCloneClone.clone
   (self : packet.Audio) : Result packet.Audio := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Audio}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:9-94:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:9-104:14 -/
 @[reducible]
 def packet.Audio.Insts.CoreCloneClone : core.clone.Clone packet.Audio := {
   clone := packet.Audio.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Audio}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:16-94:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:16-104:20 -/
 @[reducible]
 def packet.Audio.Insts.CoreMarkerCopy : core.marker.Copy packet.Audio := {
   cloneInst := packet.Audio.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Audio}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:22-94:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:22-104:31 -/
 @[reducible]
 def packet.Audio.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Audio := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Audio> for unisono_core::packet::Audio}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:22-94:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:22-104:31
     Visibility: public -/
 def packet.Audio.Insts.CoreCmpPartialEqAudio.eq
   (self : packet.Audio) (other : packet.Audio) : Result Bool := do
@@ -2016,7 +2032,7 @@ def packet.Audio.Insts.CoreCmpPartialEqAudio.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Audio> for unisono_core::packet::Audio}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:22-94:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:22-104:31 -/
 @[reducible]
 def packet.Audio.Insts.CoreCmpPartialEqAudio : core.cmp.PartialEq packet.Audio
   packet.Audio := {
@@ -2024,14 +2040,14 @@ def packet.Audio.Insts.CoreCmpPartialEqAudio : core.cmp.PartialEq packet.Audio
 }
 
 /-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Audio}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:33-94:35
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:33-104:35
     Visibility: public -/
 def packet.Audio.Insts.CoreCmpEq.assert_fields_are_eq
   (self : packet.Audio) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Audio}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 94:33-94:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 104:33-104:35 -/
 @[reducible]
 def packet.Audio.Insts.CoreCmpEq : core.cmp.Eq packet.Audio := {
   partialEqInst := packet.Audio.Insts.CoreCmpPartialEqAudio
@@ -2039,14 +2055,14 @@ def packet.Audio.Insts.CoreCmpEq : core.cmp.Eq packet.Audio := {
 }
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Rejected}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:9-142:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:9-154:14
     Visibility: public -/
 def packet.Rejected.Insts.CoreCloneClone.clone
   (self : packet.Rejected) : Result packet.Rejected := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Rejected}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:9-142:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:9-154:14 -/
 @[reducible]
 def packet.Rejected.Insts.CoreCloneClone : core.clone.Clone packet.Rejected
   := {
@@ -2054,7 +2070,7 @@ def packet.Rejected.Insts.CoreCloneClone : core.clone.Clone packet.Rejected
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Rejected}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:16-142:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:16-154:20 -/
 @[reducible]
 def packet.Rejected.Insts.CoreMarkerCopy : core.marker.Copy packet.Rejected
   := {
@@ -2062,14 +2078,14 @@ def packet.Rejected.Insts.CoreMarkerCopy : core.marker.Copy packet.Rejected
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Rejected}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:22-142:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:22-154:31 -/
 @[reducible]
 def packet.Rejected.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Rejected := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Rejected> for unisono_core::packet::Rejected}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:22-142:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:22-154:31
     Visibility: public -/
 def packet.Rejected.Insts.CoreCmpPartialEqRejected.eq
   (self : packet.Rejected) (other : packet.Rejected) : Result Bool := do
@@ -2157,7 +2173,7 @@ def packet.Rejected.Insts.CoreCmpPartialEqRejected.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Rejected> for unisono_core::packet::Rejected}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:22-142:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:22-154:31 -/
 @[reducible]
 def packet.Rejected.Insts.CoreCmpPartialEqRejected : core.cmp.PartialEq
   packet.Rejected packet.Rejected := {
@@ -2165,14 +2181,14 @@ def packet.Rejected.Insts.CoreCmpPartialEqRejected : core.cmp.PartialEq
 }
 
 /-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Rejected}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:33-142:35
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:33-154:35
     Visibility: public -/
 def packet.Rejected.Insts.CoreCmpEq.assert_fields_are_eq
   (self : packet.Rejected) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Rejected}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 142:33-142:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 154:33-154:35 -/
 @[reducible]
 def packet.Rejected.Insts.CoreCmpEq : core.cmp.Eq packet.Rejected := {
   partialEqInst := packet.Rejected.Insts.CoreCmpPartialEqRejected
@@ -2180,7 +2196,7 @@ def packet.Rejected.Insts.CoreCmpEq : core.cmp.Eq packet.Rejected := {
 }
 
 /-- [unisono_core::packet::read]: loop body 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 174:4-188:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 186:4-200:1 -/
 @[rust_loop_body]
 def packet.read_loop.body
   (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
@@ -2209,7 +2225,7 @@ def packet.read_loop.body
   else ok (done (some value))
 
 /-- [unisono_core::packet::read]: loop 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 174:4-188:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 186:4-200:1 -/
 @[rust_loop]
 def packet.read_loop
   (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
@@ -2221,7 +2237,7 @@ def packet.read_loop
     (value, i)
 
 /-- [unisono_core::packet::read]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 171:0-188:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 183:0-200:1 -/
 @[reducible]
 def packet.read
   (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize) :
@@ -2230,7 +2246,7 @@ def packet.read
   packet.read_loop bytes «at» count 0#u64 0#usize
 
 /-- [unisono_core::packet::write]: loop body 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 195:4-212:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 207:4-224:1 -/
 @[rust_loop_body]
 def packet.write_loop.body
   («at» : Std.Usize) (count : Std.Usize) (value : Std.U64)
@@ -2260,7 +2276,7 @@ def packet.write_loop.body
   else ok (done (true, bytes))
 
 /-- [unisono_core::packet::write]: loop 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 195:4-212:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 207:4-224:1 -/
 @[rust_loop]
 def packet.write_loop
   (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
@@ -2272,7 +2288,7 @@ def packet.write_loop
     (bytes, i)
 
 /-- [unisono_core::packet::write]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 193:0-212:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 205:0-224:1 -/
 @[reducible]
 def packet.write
   (bytes : Slice Std.U8) («at» : Std.Usize) (count : Std.Usize)
@@ -2282,7 +2298,7 @@ def packet.write
   packet.write_loop bytes «at» count value 0#usize
 
 /-- [unisono_core::packet::payload]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 215:0-220:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 227:0-232:1 -/
 def packet.payload (header : packet.Audio) : Result Std.Usize := do
   let i ← lift (UScalar.cast .Usize header.frames)
   let i1 ← lift (UScalar.cast .Usize header.channels)
@@ -2291,7 +2307,7 @@ def packet.payload (header : packet.Audio) : Result Std.Usize := do
   ok (core.num.Usize.wrapping_mul i2 i3)
 
 /-- [unisono_core::packet::validate_audio]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 223:0-240:1 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 235:0-252:1 -/
 def packet.validate_audio
   (header : packet.Audio) :
   Result (core.result.Result Unit packet.Rejected)
@@ -2306,7 +2322,7 @@ def packet.validate_audio
       if i != header.flags
       then ok (core.result.Result.Err (packet.Rejected.Flags header.flags))
       else
-        if header.protection != 0#u16
+        if header.protection > packet.PROTECTION_ON_REQUEST
         then
           ok (core.result.Result.Err (packet.Rejected.Protection
             header.protection))
@@ -2319,7 +2335,7 @@ def packet.validate_audio
             else ok (core.result.Result.Ok ())
 
 /-- [unisono_core::packet::kind]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 410:0-423:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 436:0-449:1
     Visibility: public -/
 def packet.kind
   (bytes : Slice Std.U8) :
@@ -2350,7 +2366,7 @@ def packet.kind
             ok (core.result.Result.Ok i1)
 
 /-- [unisono_core::packet::parse_audio]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 252:0-332:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 264:0-344:1
     Visibility: public -/
 def packet.parse_audio
   (bytes : Slice Std.U8) :
@@ -2597,7 +2613,7 @@ def packet.parse_audio
     | core.result.Result.Err reason => ok (core.result.Result.Err reason)
 
 /-- [unisono_core::packet::write_audio]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 339:0-371:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 351:0-383:1
     Visibility: public -/
 def packet.write_audio
   (header : packet.Audio) (bytes : Slice Std.U8) :
@@ -2659,35 +2675,35 @@ def packet.write_audio
     else ok (none, bytes21)
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Report}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:9-374:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:9-386:14
     Visibility: public -/
 def packet.Report.Insts.CoreCloneClone.clone
   (self : packet.Report) : Result packet.Report := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Report}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:9-374:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:9-386:14 -/
 @[reducible]
 def packet.Report.Insts.CoreCloneClone : core.clone.Clone packet.Report := {
   clone := packet.Report.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Report}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:16-374:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:16-386:20 -/
 @[reducible]
 def packet.Report.Insts.CoreMarkerCopy : core.marker.Copy packet.Report := {
   cloneInst := packet.Report.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Report}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:22-374:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:22-386:31 -/
 @[reducible]
 def packet.Report.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Report := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Report> for unisono_core::packet::Report}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:22-374:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:22-386:31
     Visibility: public -/
 def packet.Report.Insts.CoreCmpPartialEqReport.eq
   (self : packet.Report) (other : packet.Report) : Result Bool := do
@@ -2702,7 +2718,7 @@ def packet.Report.Insts.CoreCmpPartialEqReport.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Report> for unisono_core::packet::Report}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:22-374:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:22-386:31 -/
 @[reducible]
 def packet.Report.Insts.CoreCmpPartialEqReport : core.cmp.PartialEq
   packet.Report packet.Report := {
@@ -2710,14 +2726,14 @@ def packet.Report.Insts.CoreCmpPartialEqReport : core.cmp.PartialEq
 }
 
 /-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Report}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:33-374:35
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:33-386:35
     Visibility: public -/
 def packet.Report.Insts.CoreCmpEq.assert_fields_are_eq
   (self : packet.Report) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Report}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 374:33-374:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 386:33-386:35 -/
 @[reducible]
 def packet.Report.Insts.CoreCmpEq : core.cmp.Eq packet.Report := {
   partialEqInst := packet.Report.Insts.CoreCmpPartialEqReport
@@ -2725,35 +2741,35 @@ def packet.Report.Insts.CoreCmpEq : core.cmp.Eq packet.Report := {
 }
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Echo}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:9-388:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:9-400:14
     Visibility: public -/
 def packet.Echo.Insts.CoreCloneClone.clone
   (self : packet.Echo) : Result packet.Echo := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Echo}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:9-388:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:9-400:14 -/
 @[reducible]
 def packet.Echo.Insts.CoreCloneClone : core.clone.Clone packet.Echo := {
   clone := packet.Echo.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Echo}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:16-388:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:16-400:20 -/
 @[reducible]
 def packet.Echo.Insts.CoreMarkerCopy : core.marker.Copy packet.Echo := {
   cloneInst := packet.Echo.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Echo}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:22-388:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:22-400:31 -/
 @[reducible]
 def packet.Echo.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Echo := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Echo> for unisono_core::packet::Echo}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:22-388:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:22-400:31
     Visibility: public -/
 def packet.Echo.Insts.CoreCmpPartialEqEcho.eq
   (self : packet.Echo) (other : packet.Echo) : Result Bool := do
@@ -2768,7 +2784,7 @@ def packet.Echo.Insts.CoreCmpPartialEqEcho.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Echo> for unisono_core::packet::Echo}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:22-388:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:22-400:31 -/
 @[reducible]
 def packet.Echo.Insts.CoreCmpPartialEqEcho : core.cmp.PartialEq packet.Echo
   packet.Echo := {
@@ -2776,22 +2792,88 @@ def packet.Echo.Insts.CoreCmpPartialEqEcho : core.cmp.PartialEq packet.Echo
 }
 
 /-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Echo}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:33-388:35
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:33-400:35
     Visibility: public -/
 def packet.Echo.Insts.CoreCmpEq.assert_fields_are_eq
   (self : packet.Echo) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Echo}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:33-388:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 400:33-400:35 -/
 @[reducible]
 def packet.Echo.Insts.CoreCmpEq : core.cmp.Eq packet.Echo := {
   partialEqInst := packet.Echo.Insts.CoreCmpPartialEqEcho
   assert_fields_are_eq := packet.Echo.Insts.CoreCmpEq.assert_fields_are_eq
 }
 
+/-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Request}::clone]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:9-414:14
+    Visibility: public -/
+def packet.Request.Insts.CoreCloneClone.clone
+  (self : packet.Request) : Result packet.Request := do
+  ok self
+
+/-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Request}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:9-414:14 -/
+@[reducible]
+def packet.Request.Insts.CoreCloneClone : core.clone.Clone packet.Request := {
+  clone := packet.Request.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Request}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:16-414:20 -/
+@[reducible]
+def packet.Request.Insts.CoreMarkerCopy : core.marker.Copy packet.Request := {
+  cloneInst := packet.Request.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Request}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:22-414:31 -/
+@[reducible]
+def packet.Request.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq packet.Request := {
+}
+
+/-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Request> for unisono_core::packet::Request}::eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:22-414:31
+    Visibility: public -/
+def packet.Request.Insts.CoreCmpPartialEqRequest.eq
+  (self : packet.Request) (other : packet.Request) : Result Bool := do
+  if self.stream = other.stream
+  then
+    if self.timeline = other.timeline
+    then
+      if self.first = other.first
+      then ok (self.frames = other.frames)
+      else ok false
+    else ok false
+  else ok false
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Request> for unisono_core::packet::Request}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:22-414:31 -/
+@[reducible]
+def packet.Request.Insts.CoreCmpPartialEqRequest : core.cmp.PartialEq
+  packet.Request packet.Request := {
+  eq := packet.Request.Insts.CoreCmpPartialEqRequest.eq
+}
+
+/-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Request}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:33-414:35
+    Visibility: public -/
+def packet.Request.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : packet.Request) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Request}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 414:33-414:35 -/
+@[reducible]
+def packet.Request.Insts.CoreCmpEq : core.cmp.Eq packet.Request := {
+  partialEqInst := packet.Request.Insts.CoreCmpPartialEqRequest
+  assert_fields_are_eq := packet.Request.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
 /-- [unisono_core::packet::parse_report]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 434:0-456:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 460:0-482:1
     Visibility: public -/
 def packet.parse_report
   (bytes : Slice Std.U8) :
@@ -2825,7 +2907,7 @@ def packet.parse_report
   | core.result.Result.Err reason => ok (core.result.Result.Err reason)
 
 /-- [unisono_core::packet::write_report]: loop body 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 474:4-477:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 500:4-503:5
     Visibility: public -/
 @[rust_loop_body]
 def packet.write_report_loop.body
@@ -2842,7 +2924,7 @@ def packet.write_report_loop.body
   else ok (done (bytes, written))
 
 /-- [unisono_core::packet::write_report]: loop 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 474:4-477:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 500:4-503:5
     Visibility: public -/
 @[rust_loop]
 def packet.write_report_loop
@@ -2856,7 +2938,7 @@ def packet.write_report_loop
     (bytes, written, place)
 
 /-- [unisono_core::packet::write_report]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 461:0-479:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 487:0-505:1
     Visibility: public -/
 def packet.write_report
   (report : packet.Report) (bytes : Slice Std.U8) (length : Std.Usize) :
@@ -2888,7 +2970,7 @@ def packet.write_report
     else ok (none, bytes8)
 
 /-- [unisono_core::packet::NEEDS]
-    Source: 'crates/unisono-core/src/packet.rs', lines 486:0-486:40
+    Source: 'crates/unisono-core/src/packet.rs', lines 512:0-512:40
     Visibility: public -/
 @[global_simps, irreducible]
 def packet.NEEDS : Result Std.Usize := do
@@ -2896,35 +2978,35 @@ def packet.NEEDS : Result Std.Usize := do
   9#usize + i
 
 /-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Recent}::clone]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:9-498:14
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:9-524:14
     Visibility: public -/
 def packet.Recent.Insts.CoreCloneClone.clone
   (self : packet.Recent) : Result packet.Recent := do
   ok self
 
 /-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Recent}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:9-498:14 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:9-524:14 -/
 @[reducible]
 def packet.Recent.Insts.CoreCloneClone : core.clone.Clone packet.Recent := {
   clone := packet.Recent.Insts.CoreCloneClone.clone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Recent}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:16-498:20 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:16-524:20 -/
 @[reducible]
 def packet.Recent.Insts.CoreMarkerCopy : core.marker.Copy packet.Recent := {
   cloneInst := packet.Recent.Insts.CoreCloneClone
 }
 
 /-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Recent}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:22-524:31 -/
 @[reducible]
 def packet.Recent.Insts.CoreMarkerStructuralPartialEq :
   core.marker.StructuralPartialEq packet.Recent := {
 }
 
 /-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Recent> for unisono_core::packet::Recent}::eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:22-524:31
     Visibility: public -/
 def packet.Recent.Insts.CoreCmpPartialEqRecent.eq
   (self : packet.Recent) (other : packet.Recent) : Result Bool := do
@@ -2938,7 +3020,7 @@ def packet.Recent.Insts.CoreCmpPartialEqRecent.eq
   else ok false
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Recent> for unisono_core::packet::Recent}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:22-524:31 -/
 @[reducible]
 def packet.Recent.Insts.CoreCmpPartialEqRecent : core.cmp.PartialEq
   packet.Recent packet.Recent := {
@@ -2946,14 +3028,14 @@ def packet.Recent.Insts.CoreCmpPartialEqRecent : core.cmp.PartialEq
 }
 
 /-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Recent}::assert_fields_are_eq]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:33-498:35
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:33-524:35
     Visibility: public -/
 def packet.Recent.Insts.CoreCmpEq.assert_fields_are_eq
   (self : packet.Recent) : Result Unit := do
   ok ()
 
 /-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Recent}]
-    Source: 'crates/unisono-core/src/packet.rs', lines 498:33-498:35 -/
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:33-524:35 -/
 @[reducible]
 def packet.Recent.Insts.CoreCmpEq : core.cmp.Eq packet.Recent := {
   partialEqInst := packet.Recent.Insts.CoreCmpPartialEqRecent
@@ -2961,7 +3043,7 @@ def packet.Recent.Insts.CoreCmpEq : core.cmp.Eq packet.Recent := {
 }
 
 /-- [unisono_core::packet::write_needs]: loop body 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 534:4-543:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 560:4-569:5
     Visibility: public -/
 @[rust_loop_body]
 def packet.write_needs_loop.body
@@ -2990,7 +3072,7 @@ def packet.write_needs_loop.body
   else ok (done (written, bytes))
 
 /-- [unisono_core::packet::write_needs]: loop 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 534:4-543:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 560:4-569:5
     Visibility: public -/
 @[rust_loop]
 def packet.write_needs_loop
@@ -3004,7 +3086,7 @@ def packet.write_needs_loop
     (bytes, written, i)
 
 /-- [unisono_core::packet::write_needs]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 524:0-545:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 550:0-571:1
     Visibility: public -/
 def packet.write_needs
   (recent : packet.Recent) (bytes : Slice Std.U8) :
@@ -3023,7 +3105,7 @@ def packet.write_needs
   packet.write_needs_loop recent.needs bytes2 count (written && b) 0#usize
 
 /-- [unisono_core::packet::parse_needs]: loop body 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 570:4-580:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 596:4-606:5
     Visibility: public -/
 @[rust_loop_body]
 def packet.parse_needs_loop.body
@@ -3061,7 +3143,7 @@ def packet.parse_needs_loop.body
   else ok (done (i, a))
 
 /-- [unisono_core::packet::parse_needs]: loop 0:
-    Source: 'crates/unisono-core/src/packet.rs', lines 570:4-580:5
+    Source: 'crates/unisono-core/src/packet.rs', lines 596:4-606:5
     Visibility: public -/
 @[rust_loop]
 def packet.parse_needs_loop
@@ -3074,7 +3156,7 @@ def packet.parse_needs_loop
     (i, a, i1)
 
 /-- [unisono_core::packet::parse_needs]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 555:0-582:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 581:0-608:1
     Visibility: public -/
 def packet.parse_needs (bytes : Slice Std.U8) : Result packet.Recent := do
   let o ← packet.read bytes packet.REPORT 8#usize
@@ -3097,7 +3179,7 @@ def packet.parse_needs (bytes : Slice Std.U8) : Result packet.Recent := do
       ok { newest, count := i2, needs := a }
 
 /-- [unisono_core::packet::parse_echo]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 593:0-618:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 619:0-644:1
     Visibility: public -/
 def packet.parse_echo
   (bytes : Slice Std.U8) :
@@ -3136,7 +3218,7 @@ def packet.parse_echo
   | core.result.Result.Err reason => ok (core.result.Result.Err reason)
 
 /-- [unisono_core::packet::write_echo]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 624:0-636:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 650:0-662:1
     Visibility: public -/
 def packet.write_echo
   (echo : packet.Echo) (bytes : Slice Std.U8) :
@@ -3159,6 +3241,69 @@ def packet.write_echo
     let (b5, bytes7) ← packet.write bytes6 24#usize 8#usize i4
     if (((((written && b) && b1) && b2) && b3) && b4) && b5
     then ok (some packet.ECHO, bytes7)
+    else ok (none, bytes7)
+
+/-- [unisono_core::packet::parse_request]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 672:0-697:1
+    Visibility: public -/
+def packet.parse_request
+  (bytes : Slice Std.U8) :
+  Result (core.result.Result packet.Request packet.Rejected)
+  := do
+  let r ← packet.kind bytes
+  match r with
+  | core.result.Result.Ok found =>
+    if found != packet.KIND_REQUEST
+    then ok (core.result.Result.Err (packet.Rejected.Kind found))
+    else
+      let o ← packet.read bytes 6#usize 2#usize
+      let o1 ← packet.read bytes 8#usize 8#usize
+      let o2 ← packet.read bytes 16#usize 8#usize
+      let o3 ← packet.read bytes 24#usize 8#usize
+      match o with
+      | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+      | some stream =>
+        match o1 with
+        | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+        | some timeline =>
+          match o2 with
+          | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+          | some first =>
+            match o3 with
+            | none => ok (core.result.Result.Err packet.Rejected.TooShort)
+            | some frames =>
+              let i := Slice.len bytes
+              if i != packet.REQUEST
+              then ok (core.result.Result.Err packet.Rejected.Length)
+              else
+                let i1 ← lift (UScalar.cast .U16 stream)
+                ok (core.result.Result.Ok
+                  { stream := i1, timeline, first, frames })
+  | core.result.Result.Err reason => ok (core.result.Result.Err reason)
+
+/-- [unisono_core::packet::write_request]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 701:0-713:1
+    Visibility: public -/
+def packet.write_request
+  (request : packet.Request) (bytes : Slice Std.U8) :
+  Result ((Option Std.Usize) × (Slice Std.U8))
+  := do
+  let i := Slice.len bytes
+  if i < packet.REQUEST
+  then ok (none, bytes)
+  else
+    let (written, bytes1) ← packet.write bytes 0#usize 4#usize packet.MAGIC
+    let i1 ← lift (UScalar.cast .U64 packet.VERSION)
+    let (b, bytes2) ← packet.write bytes1 4#usize 1#usize i1
+    let i2 ← lift (UScalar.cast .U64 packet.KIND_REQUEST)
+    let (b1, bytes3) ← packet.write bytes2 5#usize 1#usize i2
+    let i3 ← lift (UScalar.cast .U64 request.stream)
+    let (b2, bytes4) ← packet.write bytes3 6#usize 2#usize i3
+    let (b3, bytes5) ← packet.write bytes4 8#usize 8#usize request.timeline
+    let (b4, bytes6) ← packet.write bytes5 16#usize 8#usize request.first
+    let (b5, bytes7) ← packet.write bytes6 24#usize 8#usize request.frames
+    if (((((written && b) && b1) && b2) && b3) && b4) && b5
+    then ok (some packet.REQUEST, bytes7)
     else ok (none, bytes7)
 
 /-- [unisono_core::player::BILLION]

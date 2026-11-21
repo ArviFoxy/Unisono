@@ -108,6 +108,7 @@ fn run(choice: Option<Choice>, limit: u32, seconds: i64) -> Run {
             choice,
             timeline: send::first_timeline(),
             receivers: vec![address],
+            kept: 0,
         },
     );
 

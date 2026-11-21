@@ -106,7 +106,7 @@ structure needs.Needs (S : Std.Usize) where
   newest : Std.U64
 
 /-- [unisono_core::packet::Recent]
-    Source: 'crates/unisono-core/src/packet.rs', lines 500:0-509:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 526:0-535:1
     Visibility: public -/
 structure packet.Recent where
   newest : Std.U64
@@ -114,7 +114,7 @@ structure packet.Recent where
   needs : Array Std.I32 11#usize
 
 /-- [unisono_core::packet::Format]
-    Source: 'crates/unisono-core/src/packet.rs', lines 57:0-62:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 67:0-72:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Format where
@@ -122,7 +122,7 @@ inductive packet.Format where
 | Signed24 : packet.Format
 
 /-- [unisono_core::packet::Audio]
-    Source: 'crates/unisono-core/src/packet.rs', lines 96:0-139:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 106:0-151:1
     Visibility: public -/
 structure packet.Audio where
   stream : Std.U16
@@ -145,7 +145,7 @@ structure packet.Audio where
   clock : Std.U32
 
 /-- [unisono_core::packet::Rejected]
-    Source: 'crates/unisono-core/src/packet.rs', lines 144:0-167:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 156:0-179:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Rejected where
@@ -162,7 +162,7 @@ inductive packet.Rejected where
 | Pace : packet.Rejected
 
 /-- [unisono_core::packet::Report]
-    Source: 'crates/unisono-core/src/packet.rs', lines 376:0-385:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 388:0-397:1
     Visibility: public -/
 structure packet.Report where
   stream : Std.U16
@@ -171,13 +171,22 @@ structure packet.Report where
   sequence : Std.U64
 
 /-- [unisono_core::packet::Echo]
-    Source: 'crates/unisono-core/src/packet.rs', lines 390:0-399:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 402:0-411:1
     Visibility: public -/
 structure packet.Echo where
   stream : Std.U16
   receiver : Std.U64
   sequence : Std.U64
   arrival : Std.I64
+
+/-- [unisono_core::packet::Request]
+    Source: 'crates/unisono-core/src/packet.rs', lines 416:0-425:1
+    Visibility: public -/
+structure packet.Request where
+  stream : Std.U16
+  timeline : Std.U64
+  first : Std.U64
+  frames : Std.U64
 
 /-- [unisono_core::player::Regulation]
     Source: 'crates/unisono-core/src/player.rs', lines 75:0-87:1

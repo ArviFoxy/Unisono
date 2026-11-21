@@ -405,15 +405,18 @@ fn a_poor_link_and_a_receiver_that_starts_again() {
     #[allow(clippy::cast_precision_loss)]
     let began = own.host(start as f64);
 
-    // Behind the poor link frames are lost and concealed, and the frames
-    // that play from the stream play on time.
-    let concealed: u64 = steady_out
-        .split_whitespace()
-        .skip_while(|word| *word != "concealed")
-        .nth(1)
-        .and_then(|count| count.parse().ok())
-        .unwrap_or(0);
-    assert!(concealed > 2_000, "{steady_out}");
+    // Behind the poor link packets are lost, the receiver asks for their
+    // frames and the sender sends them again in time: but for a few frames,
+    // all that are due in the settled seconds play from the stream, on time.
+    let count = |text: &str, name: &str| -> u64 {
+        text.split_whitespace()
+            .skip_while(|word| *word != name)
+            .nth(1)
+            .and_then(|count| count.parse().ok())
+            .unwrap_or(0)
+    };
+    assert!(count(&steady_out, "requests") > 20, "{steady_out}");
+    assert!(count(&sent, "again") > 20, "{sent}");
     let played = read_record(&record("steady.raw"));
     let steady_errors = errors(&played, clock, &capture, began + 3e9, began + 9e9);
     let on_time: Vec<f64> = steady_errors
@@ -422,7 +425,7 @@ fn a_poor_link_and_a_receiver_that_starts_again() {
         .filter(|e| e.abs() < 1e-3)
         .collect();
     assert!(
-        on_time.len() > 250_000,
+        on_time.len() > 286_000,
         "{} frames on time; {steady_out}",
         on_time.len()
     );

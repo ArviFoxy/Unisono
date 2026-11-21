@@ -81,12 +81,12 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 
 | Theorem | What it says |
 |---|---|
-| `audio_roundtrip`, `report_roundtrip`, `echo_roundtrip` | A header that is written and read back is the same header. |
-| `write_audio_spec`, `write_report_spec`, `write_echo_spec` | The exact bytes of each kind of packet. |
+| `audio_roundtrip`, `report_roundtrip`, `echo_roundtrip`, `request_roundtrip` | A header that is written and read back is the same header. |
+| `write_audio_spec`, `write_report_spec`, `write_echo_spec`, `write_request_spec` | The exact bytes of each kind of packet. |
 | `parse_audio_valid`, `validate_audio_spec`, `payload_spec` | A header that is accepted is a valid one, with a payload of exactly the length the header says. |
-| `kind_spec`, `parse_audio_kind`, `parse_report_kind`, `parse_echo_kind` | A packet is read as one kind only. |
+| `kind_spec`, `parse_audio_kind`, `parse_report_kind`, `parse_echo_kind`, `parse_request_kind` | A packet is read as one kind only. |
 | `read_spec`, `write_spec` | Reading and writing a number of up to eight bytes at a place. |
-| `parse_audio_total`, `write_audio_total`, `parse_report_total`, `write_report_total`, `parse_echo_total`, `write_echo_total`, `parse_needs_total`, `write_needs_total` | Reading and writing return for every input: no bytes from the network can make a parser fail. |
+| `parse_audio_total`, `write_audio_total`, `parse_report_total`, `write_report_total`, `parse_echo_total`, `write_echo_total`, `parse_request_total`, `write_request_total`, `parse_needs_total`, `write_needs_total` | Reading and writing return for every input: no bytes from the network can make a parser fail. |
 
 ### 2.3 The clock estimate (`Relation`, `Estimate`)
 

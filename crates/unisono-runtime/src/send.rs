@@ -34,7 +34,8 @@ use std::net::SocketAddr;
 
 use unisono_core::device::Device;
 use unisono_core::packet::{
-    self, Audio, Format, KIND_REPORT, parse_needs, parse_report, write_audio, write_echo,
+    self, Audio, Format, KIND_REPORT, KIND_REQUEST, PROTECTION_ON_REQUEST, Request, parse_needs,
+    parse_report, parse_request, write_audio, write_echo,
 };
 use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::format::{to_signed16, to_signed24};
@@ -174,6 +175,10 @@ pub struct Settings {
     pub timeline: u64,
     /// Where the packets go.
     pub receivers: Vec<SocketAddr>,
+    /// How many of the last packets are kept, to be sent again to a
+    /// receiver that asks for their frames; none for a stream without
+    /// protection against loss.
+    pub kept: usize,
 }
 
 /// What the network thread of a sender has done so far.
@@ -191,7 +196,24 @@ pub struct SenderCounts {
     pub unsent: u64,
     /// Moves of the level that were begun.
     pub moves: u64,
+    /// Packets sent again to a receiver that asked for their frames.
+    pub again: u64,
 }
+
+/// A packet that is kept to be sent again.
+#[derive(Clone, Copy, Default)]
+struct Kept {
+    timeline: u64,
+    /// Its first frame and the number of its frames.
+    index: u64,
+    frames: u16,
+    /// Its length in bytes; zero where nothing is kept.
+    length: usize,
+}
+
+/// The most packets that are sent again for one request: a second of the
+/// stream at five milliseconds a packet.
+const MOST_AGAIN: usize = 200;
 
 /// The network thread of a sender.
 pub struct SenderNetwork {
@@ -216,6 +238,12 @@ pub struct SenderNetwork {
     target: Option<i64>,
     /// The index of the next frame when the level was last chosen.
     chosen: u64,
+    /// The last packets sent, each in as many bytes as a packet has at
+    /// most, and what each is.
+    kept: Box<[u8]>,
+    places: Box<[Kept]>,
+    /// The place that the next packet is kept at.
+    place: usize,
     counts: SenderCounts,
 }
 
@@ -224,7 +252,8 @@ pub struct SenderNetwork {
 /// before is told apart.
 const INDEX_BITS: u32 = 48;
 
-/// The tag of the departures of answers, which are not taken in.
+/// The tag of the departures of answers and of packets sent again, which
+/// are not taken in: a packet's departure is that of its first sending.
 const ANSWER: u64 = u64::MAX;
 
 impl SenderNetwork {
@@ -248,6 +277,10 @@ impl SenderNetwork {
                 .map(|choice| Chooser::new(choice, stream.window, stream.rate)),
             target: None,
             chosen: 0,
+            kept: vec![0u8; settings.kept * (packet::HEADER + samples * stream.format.bytes())]
+                .into_boxed_slice(),
+            places: vec![Kept::default(); settings.kept].into_boxed_slice(),
+            place: 0,
             settings,
             counts: SenderCounts::default(),
         }
@@ -362,13 +395,17 @@ impl SenderNetwork {
             };
             self.steer();
             let drift = self.drift(position);
-            let header = self.sender.packet(self.settings.packet, capture, drift);
+            let mut header = self.sender.packet(self.settings.packet, capture, drift);
+            if !self.places.is_empty() {
+                header.protection = PROTECTION_ON_REQUEST;
+            }
             let length = self.write(&header, samples);
             self.waiting.drain(..samples);
             self.counts.packets += 1;
             let Some(length) = length else {
                 continue;
             };
+            self.remember(&header, length);
             let tag = tag(header.timeline, header.index);
             for &to in &self.settings.receivers {
                 let bytes = self.bytes.get(..length).unwrap_or(&[]);
@@ -448,13 +485,83 @@ impl SenderNetwork {
         Ok(())
     }
 
-    /// Answers the reports that arrived.
+    /// Keeps the packet with `header`, whose `length` bytes were just
+    /// written, in the place of the oldest packet kept.
+    fn remember(&mut self, header: &Audio, length: usize) {
+        let room = self.bytes.len();
+        let Some(slot) = self.places.get_mut(self.place) else {
+            return;
+        };
+        let from = self.place * room;
+        if let (Some(to), Some(bytes)) = (
+            self.kept.get_mut(from..from + length),
+            self.bytes.get(..length),
+        ) {
+            to.copy_from_slice(bytes);
+            *slot = Kept {
+                timeline: header.timeline,
+                index: header.index,
+                frames: header.frames,
+                length,
+            };
+            self.place = (self.place + 1) % self.places.len();
+        }
+    }
+
+    /// Sends the kept packets with frames that `request` names again to the
+    /// receiver at `to`, oldest first, if it is a receiver of the stream.
+    fn again(&mut self, request: &Request, to: SocketAddr) -> io::Result<()> {
+        if request.stream != self.settings.stream.stream || !self.settings.receivers.contains(&to) {
+            return Ok(());
+        }
+        let room = self.bytes.len();
+        let end = request.first.saturating_add(request.frames);
+        let mut sent = 0;
+        for step in 0..self.places.len() {
+            let place = (self.place + step) % self.places.len();
+            let Some(kept) = self.places.get(place).copied() else {
+                continue;
+            };
+            let named = kept.length > 0
+                && kept.timeline == request.timeline
+                && kept.index < end
+                && kept.index.saturating_add(u64::from(kept.frames)) > request.first;
+            if !named {
+                continue;
+            }
+            let bytes = self
+                .kept
+                .get(place * room..place * room + kept.length)
+                .unwrap_or(&[]);
+            match self.socket.send_to(bytes, to, ANSWER) {
+                Ok(_) => self.counts.again += 1,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    self.counts.unsent += 1;
+                }
+                Err(error) => return Err(error),
+            }
+            sent += 1;
+            if sent >= MOST_AGAIN {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Answers the reports that arrived, and sends again what receivers ask
+    /// for.
     fn answer(&mut self) -> io::Result<()> {
         let mut out = [0u8; packet::ECHO];
         while let Some(received) = self.socket.receive(&mut self.incoming)? {
             let Some(bytes) = self.incoming.get(..received.length) else {
                 continue;
             };
+            if packet::kind(bytes) == Ok(KIND_REQUEST) {
+                if let Ok(request) = parse_request(bytes) {
+                    self.again(&request, received.from)?;
+                }
+                continue;
+            }
             if packet::kind(bytes) != Ok(KIND_REPORT) {
                 continue;
             }

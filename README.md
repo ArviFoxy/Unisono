@@ -22,12 +22,15 @@ Built and tested on Linux, without audio hardware:
   in time and report it; the sender chooses the latency that all receivers
   hold from those reports and moves it along a line that every receiver
   follows at once.
-- Frames that do not arrive in time are concealed.
+- A receiver asks for the frames of packets that were lost, and the sender
+  sends them again; in simulation this costs less than any copy or code sent
+  in advance, and adds only what was lost. Frames that still do not arrive
+  in time are concealed.
 - Counters and gauges in the Prometheus text format (`--metrics`), among them
   counts that hold each assumption of the model against what happens.
 
-Not built yet: protection against loss, a backend for ALSA, an interface for
-C, platforms other than Linux, and any measurement on audio hardware.
+Not built yet: a backend for ALSA, an interface for C, platforms other than
+Linux, and any measurement on audio hardware.
 
 `docs/model.md` states the problem and what is assumed, `docs/theorems.md`
 lists what is proved, and `docs/protocol.md` gives the packets.

@@ -886,6 +886,72 @@ be followed faster than 3 ms a second.
 core; and how the cost $c$ of a move follows from the weight on changes of
 pace in section 6.4, which is left as a weight of its own.
 
+### 6.6 Lost packets
+
+A packet that is lost leaves a gap whatever the level is. Something has to
+give its frames a second way to the receiver, and that way takes time: the
+frames then need more, and the level has to be at least that for the repair
+to be in time. So protection against loss is part of the problem of the
+level: each way of protecting a stream changes what the frames need, at a
+price in traffic, and the level is chosen from the needs as before. A pause
+that holds packets back and then delivers them is not loss, and no way of
+protecting changes it.
+
+The ways that were compared, in simulation
+(`unisono_sim::protection`, `crates/unisono-sim/tests/protection.rs`): a
+copy of every packet sent 20, 40 or 80 ms later; blocks of packets with
+added packets from which lost ones are worked out (the sum of four, four
+with two more at once, four with four more after 40 ms, eight with eight
+more after 80 ms); a code for bursts, which repairs a run of lost packets
+from the packets that follow and adds the least that any code can for its
+burst and its wait (4 in 8, 4 in 16, 8 in 16, 16 in 32 packets); and the
+receiver asking for what it misses, at once and again every 10 ms. The
+path loses packets in outages, during which nothing arrives in either
+direction; a packet is sent every 5 ms; and each way is run over the same
+outages. The cost is that of the best level, with the weights the program
+takes by default: a gap as a millisecond of level held for ten minutes, a
+millisecond of missed frames as a millisecond of level held for one minute.
+
+| Path | nothing | best copy | best block | best burst code | asked again | asked, half of the requests lost |
+|---|---|---|---|---|---|---|
+| wired, one packet in ten million lost | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 | 2.0 |
+| outages of 19 ms every 10 s | 193 | 71 | 78 | 133 | 67 | 89 |
+| outages of 19 ms every 2 s | 876 | 127 | 150 | 290 | 106 | 145 |
+| outages of 100 ms every 30 s | 273 | 192 | 207 | 272 | 191 | 210 |
+| traffic added | none | 100% | 25 to 100% | 25 to 50% | 0.2 to 1.1% | 0.2 to 1.2% |
+
+Asking again costs least on every path that loses packets, and adds to the
+stream only what was lost. The reason is that a copy or a code has to wait
+a fixed time that covers the longest outage it is meant for, and every
+repaired frame needs that long, while a request goes out when the first
+packet after the outage arrives, so a frame needs the length of its own
+outage and the time there and back. The 19 ms are the mean length of the
+bursts of loss seen on a wireless link. On the wired path nothing is lost
+and nothing is gained by any of them.
+
+The expectation before the comparison was that asking again does badly on a
+wireless link, because a request sent during an outage waits for the same
+outage. It does not have to: the receiver finds frames missing only when a
+packet arrives again, which is after the outage. What does hurt is a way
+back that is worse than the way there. With half of the requests lost on
+their own, asking again costs a tenth to a quarter more than the best copy,
+still with a hundredth of the traffic. A link
+on which requests are lost that often is the one case for a copy; it is not
+built.
+
+So the stream is protected by requests (`docs/protocol.md`,
+`unisono_runtime::asking`). A receiver measures what the frames of a packet
+that was sent again needed as for any other packet, so the level takes the
+repairs in without anything further. Behind a link that loses one datagram
+in fifty, with the level held at 30 ms, 99.7% of the frames play from the
+stream on time, against 97% without the requests
+(`crates/unisono/tests/processes.rs`).
+
+*Assumed:* loss comes in outages that take both directions, and the time
+there and back is short against the outages. *Not stated in Lean:* anything
+about the requests beyond the packet itself (`Unisono.Packet.request_roundtrip`);
+the logic is in the runtime and is tested.
+
 ## 7. Assumptions at a glance
 
 A monitor marked *counted* is among the metrics that the program serves; the
@@ -903,4 +969,5 @@ others are not counted yet.
 | The laws of the delivery delay hold over the time the evidence covers | 6.5 | level | short-window against long-window estimates |
 | Nothing sets the next stretch apart from those seen | 6.5 | the level | how often a need exceeds all before it, against one in the number seen (counted) |
 | A stretch that needs more than all seen: the law of how much more | 6.5 | the level | how far each new largest need lay above the one before (counted) |
+| Loss comes in outages that take both directions of a path, and the time there and back is short against them | 6.6 | protection by requests | packets sent again and frames still concealed (counted) |
 | The moment of a choice is as likely in any part of the time over which the needs keep their law as in any other | 6.5 | when the level moves | how long a chosen level stayed the best, against the time of the evidence it was chosen from (counted) |

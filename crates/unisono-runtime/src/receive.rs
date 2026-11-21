@@ -37,11 +37,13 @@ use std::io;
 use std::net::SocketAddr;
 
 use unisono_core::packet::{
-    self, Echo, KIND_AUDIO, KIND_ECHO, Recent, Report, parse_audio, parse_echo, write_needs,
-    write_report,
+    self, Echo, KIND_AUDIO, KIND_ECHO, Recent, Report, Request, parse_audio, parse_echo,
+    write_needs, write_report, write_request,
 };
 
+use crate::asking::Asking;
 use crate::audio::Playback;
+use crate::clock;
 use crate::pump::ReceiverPlayback;
 use crate::ring::{Consumer, Producer, ring};
 use crate::socket::Socket;
@@ -175,6 +177,8 @@ pub struct NetworkCounts {
     pub answers: u64,
     /// Reports sent.
     pub reports: u64,
+    /// Requests sent for frames to be sent again.
+    pub requests: u64,
     /// Datagrams dropped because the audio thread had not handed back a
     /// buffer, or had no room for another item.
     pub dropped: u64,
@@ -197,8 +201,14 @@ pub struct ReceiverNetwork {
     sender: Option<SocketAddr>,
     /// The length of that packet, to which reports are padded.
     length: usize,
+    /// The frames that are missing and asked for.
+    asking: Asking,
     counts: NetworkCounts,
 }
+
+/// The tag of the departures of requests, which are not handed on: the
+/// departures of reports carry the reports' numbers.
+const REQUESTED: u64 = u64::MAX;
 
 impl ReceiverNetwork {
     /// The network thread of a receiver of `stream` that receives on
@@ -214,6 +224,7 @@ impl ReceiverNetwork {
                 .into_boxed_slice(),
             sender: None,
             length: 0,
+            asking: Asking::new(),
             counts: NetworkCounts::default(),
         }
     }
@@ -241,6 +252,9 @@ impl ReceiverNetwork {
         self.socket.wait(milliseconds)?;
         while self.receive()? {}
         while let Some(departure) = self.socket.departure()? {
+            if departure.tag == REQUESTED {
+                continue;
+            }
             let departed = Incoming::Departed {
                 sequence: departure.tag,
                 time: departure.stamp.time,
@@ -251,6 +265,34 @@ impl ReceiverNetwork {
         }
         while let Some(outgoing) = self.end.reports.take() {
             self.send(&outgoing)?;
+        }
+        self.ask()
+    }
+
+    /// Asks the sender for the frames that are missing and due to be asked
+    /// for.
+    fn ask(&mut self) -> io::Result<()> {
+        let Some(to) = self.sender else {
+            return Ok(());
+        };
+        let now = clock::raw();
+        while let Some(wanted) = self.asking.due(now) {
+            let request = Request {
+                stream: self.stream,
+                timeline: wanted.timeline,
+                first: wanted.first,
+                frames: wanted.frames,
+            };
+            let Some(length) = write_request(&request, &mut self.outgoing) else {
+                break;
+            };
+            let bytes = self.outgoing.get(..length).unwrap_or(&[]);
+            match self.socket.send_to(bytes, to, REQUESTED) {
+                Ok(_) => self.counts.requests += 1,
+                // It is asked again in ten milliseconds.
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => break,
+                Err(error) => return Err(error),
+            }
         }
         Ok(())
     }
@@ -279,6 +321,7 @@ impl ReceiverNetwork {
                 Ok(header) if header.stream == self.stream => {
                     self.sender = Some(received.from);
                     self.length = received.length;
+                    self.asking.arrived(&header, received.arrival.time);
                     if let Some(buffer) = self.end.kept.take() {
                         let item = Incoming::Packet {
                             buffer,
