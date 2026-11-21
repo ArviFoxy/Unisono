@@ -137,6 +137,23 @@ jobs:
           key: translation-${{ hashFiles('tools/proof-tools.sh') }}
       - run: just translation
 
+  # The specification of the problem, built as a PDF and kept with the run.
+  spec:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - name: Install LaTeX
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes --no-install-recommends
+          latexmk texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
+      - run: just spec
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: specification
+          path: target/spec/specification.pdf
+
   # Known vulnerabilities in what the crates depend on, the licences of the
   # dependencies, and where they come from.
   dependencies:

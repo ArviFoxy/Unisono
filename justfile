@@ -6,12 +6,18 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: sizes format-check lint test targets realtime cost translation prove translation-check
+check: sizes format-check lint test targets realtime cost translation prove translation-check spec
 
 # No file of the repository is larger than a megabyte: the largest by far is
 # the translation of the core, a quarter of that.
 sizes:
     @git ls-files -z | xargs -0 du --bytes | awk '$1 > 1048576 { print "too large: " $2; large = 1 } END { exit large }'
+
+# Build the specification of the problem as a PDF, target/spec/specification.pdf.
+# The build fails on any LaTeX warning, such as a line that runs into the margin.
+spec:
+    latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=target/spec docs/specification.tex
+    @! grep -E "Warning|Overfull|Underfull" target/spec/specification.log
 
 # Rewrite the Rust sources in the standard format.
 format:
