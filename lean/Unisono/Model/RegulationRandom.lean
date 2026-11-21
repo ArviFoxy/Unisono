@@ -47,6 +47,15 @@ The law makes the last part zero and is admissible (`admissible_lawful`), so
 it is best among all admissible ways of playing, for every `n`
 (`mean_cost_law_le`), and what any other way loses against it is exactly that
 last part.
+
+In the long run this is a statement about the mean cost of a cycle alone.
+When the mean value of every revision is at least `s`, no admissible way of
+playing keeps the mean cost of a cycle below `s` (`mean_cost_rate`): a way of
+playing that did would leave states of ever larger mean value, and a state
+of large value is paid for within two cycles (`mean_value_le_costs`). Under
+the law the mean value of the state stays bounded (`mean_value_law_le`), so
+its mean cost of a cycle tends to `s` when the mean value of every revision
+is `s`.
 -/
 
 @[expose] public noncomputable section
@@ -380,6 +389,189 @@ theorem mean_value_law_le {g s : ℝ} (hg0 : 0 < g) (hg1 : g < 1)
       linarith
     have hkeep := mul_le_mul_of_nonneg_left ih (by linarith : (0 : ℝ) ≤ 1 - g)
     linarith [hs k]
+
+/-! ## The mean cost of a cycle in the long run -/
+
+omit [IsProbabilityMeasure μ] in
+/-- The cost of a cycle has a mean. -/
+theorem integrable_cost (g : ℝ) (h : Admissible ℱ μ x₀ w ξ) (k : ℕ) :
+    Integrable (fun ω => cost g (path x₀ w ξ k ω) (w k ω)) μ := by
+  have := integrable_form (known_path h k).1.2 (h.change k).2 (weight g) 0 1
+  refine this.congr (ae_of_all _ fun ω => ?_)
+  simp only [cost]
+  ring
+
+omit [IsProbabilityMeasure μ] in
+/-- The value of the state before a cycle has a mean. -/
+theorem integrable_path_value (g : ℝ) (h : Admissible ℱ μ x₀ w ξ) (k : ℕ) :
+    Integrable (fun ω => value g (path x₀ w ξ k ω)) μ :=
+  integrable_value g (known_path h k).1.2 (known_path h k).2.2
+
+omit [IsProbabilityMeasure μ] in
+/-- The mean value of the state before a cycle is at most a multiple of the
+mean costs of that cycle and of the next, plus four times the mean squared
+revision of the position. -/
+theorem mean_value_le_costs {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) (h : Admissible ℱ μ x₀ w ξ)
+    (k : ℕ) :
+    ∫ ω, value g (path x₀ w ξ k ω) ∂μ
+      ≤ (4 + 4 / weight g + 1 / g)
+          * (∫ ω, cost g (path x₀ w ξ k ω) (w k ω) ∂μ
+            + ∫ ω, cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω) ∂μ)
+        + 4 * ∫ ω, (ξ k ω).1 ^ 2 ∂μ := by
+  have hw := weight_pos hg0 hg1
+  have hK : 0 ≤ 4 + 4 / weight g + 1 / g := by positivity
+  have i1 := integrable_cost g h k
+  have i2 := integrable_cost g h (k + 1)
+  have i3 : Integrable (fun ω => (ξ k ω).1 ^ 2) μ := (h.revised_position k).1.2.integrable_sq
+  have i12 : Integrable (fun ω => cost g (path x₀ w ξ k ω) (w k ω)
+      + cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω)) μ := i1.add i2
+  have i12' : Integrable (fun ω => (4 + 4 / weight g + 1 / g)
+      * (cost g (path x₀ w ξ k ω) (w k ω)
+        + cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω))) μ := i12.const_mul _
+  have i3' : Integrable (fun ω => 4 * (ξ k ω).1 ^ 2) μ := i3.const_mul 4
+  have hpoint : ∀ ω, value g (path x₀ w ξ k ω)
+      ≤ (4 + 4 / weight g + 1 / g)
+          * (cost g (path x₀ w ξ k ω) (w k ω)
+            + cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω))
+        + 4 * (ξ k ω).1 ^ 2 := by
+    intro ω
+    have hle := value_le_costs hg0 hg1 (path x₀ w ξ k ω) (w k ω) (ξ k ω)
+    have hnext : path x₀ w ξ (k + 1) ω = next (path x₀ w ξ k ω) (w k ω) (ξ k ω) := rfl
+    have hcost : weight g * (next (path x₀ w ξ k ω) (w k ω) (ξ k ω)).1 ^ 2
+        ≤ cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω) := by
+      rw [hnext]
+      simp only [cost]
+      nlinarith [sq_nonneg (w (k + 1) ω)]
+    have := mul_le_mul_of_nonneg_left
+      (add_le_add_left hcost (cost g (path x₀ w ξ k ω) (w k ω))) hK
+    linarith
+  calc ∫ ω, value g (path x₀ w ξ k ω) ∂μ
+      ≤ ∫ ω, ((4 + 4 / weight g + 1 / g)
+            * (cost g (path x₀ w ξ k ω) (w k ω)
+              + cost g (path x₀ w ξ (k + 1) ω) (w (k + 1) ω))
+          + 4 * (ξ k ω).1 ^ 2) ∂μ :=
+        integral_mono (integrable_path_value g h k) (i12'.add i3') hpoint
+    _ = _ := by
+        rw [integral_add i12' i3', integral_const_mul, integral_add i1 i2, integral_const_mul]
+
+/-- **No way of playing costs less in the long run.** Let the mean value of
+every revision be at least `s`, and the mean squared revisions of the
+position be bounded. Then for every admissible way of playing, the mean cost
+of the first `n` cycles exceeds `(s - ε) n` for some `n` beyond any given
+number, however small `ε` is: the mean cost of a cycle does not stay below
+`s`. Under the law it tends to `s` when the mean value of every revision is
+`s` (`mean_cost_law`, `mean_value_law_le`). -/
+theorem mean_cost_rate {g s q : ℝ} (hg0 : 0 < g) (hg1 : g < 1) (h : Admissible ℱ μ x₀ w ξ)
+    (hs : ∀ k, s ≤ ∫ ω, value g (ξ k ω) ∂μ) (hq : ∀ k, ∫ ω, (ξ k ω).1 ^ 2 ∂μ ≤ q)
+    {ε : ℝ} (hε : 0 < ε) (N : ℕ) :
+    ∃ n, N ≤ n ∧ (s - ε) * n
+      < ∑ k ∈ Finset.range n, ∫ ω, cost g (path x₀ w ξ k ω) (w k ω) ∂μ := by
+  by_contra hcon
+  push Not at hcon
+  have hw := weight_pos hg0 hg1
+  set c : ℕ → ℝ := fun k => ∫ ω, cost g (path x₀ w ξ k ω) (w k ω) ∂μ with hc
+  set a : ℕ → ℝ := fun k => ∫ ω, value g (path x₀ w ξ k ω) ∂μ with ha
+  set K : ℝ := 4 + 4 / weight g + 1 / g with hKdef
+  have hK : 0 < K := by positivity
+  have hc0 : ∀ k, 0 ≤ c k := fun k => integral_nonneg fun ω => by
+    simp only [cost]
+    positivity
+  have ha0 : ∀ k, 0 ≤ a k := fun k => integral_nonneg fun ω => value_nonneg hg0 hg1 _
+  have hq0 : 0 ≤ q := le_trans (integral_nonneg fun ω => sq_nonneg _) (hq 0)
+  -- the cost of `n` cycles and the value after them make up for the revisions
+  have hA : ∀ n : ℕ, (n : ℝ) * s ≤ (∑ k ∈ Finset.range n, c k) + a n := by
+    intro n
+    have hge := mean_cost_ge hg0 hg1 h n
+    have hsum : (n : ℝ) * s ≤ ∑ k ∈ Finset.range n, ∫ ω, value g (ξ k ω) ∂μ := by
+      have := Finset.sum_le_sum (s := Finset.range n) fun k _ => hs k
+      simpa using this
+    have h0 : 0 ≤ ∫ ω, value g (x₀ ω) ∂μ := integral_nonneg fun ω => value_nonneg hg0 hg1 _
+    linarith
+  -- so the value grows with the number of cycles
+  have hlow : ∀ n : ℕ, N ≤ n → ε * n ≤ a n := by
+    intro n hn
+    nlinarith [hA n, hcon n hn]
+  -- but it is paid for within two cycles
+  have hB : ∀ n, a n ≤ K * (c n + c (n + 1)) + 4 * q := by
+    intro n
+    have := mean_value_le_costs hg0 hg1 h n
+    nlinarith [hq n]
+  -- a cost cannot be negative
+  have hnonneg : 0 ≤ s - ε := by
+    by_contra hneg
+    have hneg' : s - ε < 0 := lt_of_not_ge hneg
+    have h1 := hcon (N + 1) (Nat.le_succ N)
+    have h2 : 0 ≤ ∑ k ∈ Finset.range (N + 1), c k := Finset.sum_nonneg fun k _ => hc0 k
+    have h3 : (s - ε) * ((N + 1 : ℕ) : ℝ) < 0 :=
+      mul_neg_of_neg_of_pos hneg' (by positivity)
+    linarith
+  -- take a number of cycles beyond which the two cannot both hold
+  obtain ⟨m, hm⟩ := exists_nat_gt ((6 * K * (s - ε) + 4 * q) / ε)
+  set n₀ : ℕ := max (max N m) 1 with hn₀
+  have hN : N ≤ n₀ := le_trans (le_max_left N m) (le_max_left _ _)
+  have hm' : (m : ℝ) ≤ n₀ := by
+    exact_mod_cast le_trans (le_max_right N m) (le_max_left _ _)
+  have h1 : (1 : ℝ) ≤ n₀ := by exact_mod_cast le_max_right (max N m) 1
+  have hbig : 6 * K * (s - ε) + 4 * q < ε * n₀ := by
+    rw [div_lt_iff₀ hε] at hm
+    nlinarith
+  -- over the cycles from `n₀` to twice `n₀`
+  have hsumlow : ε * n₀ * n₀ ≤ ∑ n ∈ Finset.Ico n₀ (2 * n₀), a n := by
+    have : ∑ _n ∈ Finset.Ico n₀ (2 * n₀), ε * (n₀ : ℝ) ≤ ∑ n ∈ Finset.Ico n₀ (2 * n₀), a n := by
+      apply Finset.sum_le_sum
+      intro n hn
+      have hn' := (Finset.mem_Ico.mp hn).1
+      have : ε * (n₀ : ℝ) ≤ ε * n := by
+        have : (n₀ : ℝ) ≤ n := by exact_mod_cast hn'
+        nlinarith
+      exact le_trans this (hlow n (le_trans hN hn'))
+    simp only [Finset.sum_const, Nat.card_Ico, nsmul_eq_mul] at this
+    have hcard : ((2 * n₀ - n₀ : ℕ) : ℝ) = n₀ := by
+      have : 2 * n₀ - n₀ = n₀ := by omega
+      rw [this]
+    rw [hcard] at this
+    linarith
+  have hsumhigh : ∑ n ∈ Finset.Ico n₀ (2 * n₀), a n
+      ≤ 2 * K * (∑ k ∈ Finset.range (2 * n₀ + 1), c k) + 4 * q * n₀ := by
+    have hterm : ∑ n ∈ Finset.Ico n₀ (2 * n₀), a n
+        ≤ ∑ n ∈ Finset.Ico n₀ (2 * n₀), (K * (c n + c (n + 1)) + 4 * q) :=
+      Finset.sum_le_sum fun n _ => hB n
+    have hfirst : ∑ n ∈ Finset.Ico n₀ (2 * n₀), c n ≤ ∑ k ∈ Finset.range (2 * n₀ + 1), c k := by
+      apply Finset.sum_le_sum_of_subset_of_nonneg
+      · intro n hn
+        have := (Finset.mem_Ico.mp hn).2
+        exact Finset.mem_range.mpr (by omega)
+      · intro k _ _
+        exact hc0 k
+    have hsecond : ∑ n ∈ Finset.Ico n₀ (2 * n₀), c (n + 1)
+        ≤ ∑ k ∈ Finset.range (2 * n₀ + 1), c k := by
+      rw [Finset.sum_Ico_add' c n₀ (2 * n₀) 1]
+      apply Finset.sum_le_sum_of_subset_of_nonneg
+      · intro n hn
+        have := (Finset.mem_Ico.mp hn).2
+        exact Finset.mem_range.mpr (by omega)
+      · intro k _ _
+        exact hc0 k
+    have hsplit : ∑ n ∈ Finset.Ico n₀ (2 * n₀), (K * (c n + c (n + 1)) + 4 * q)
+        = K * (∑ n ∈ Finset.Ico n₀ (2 * n₀), c n + ∑ n ∈ Finset.Ico n₀ (2 * n₀), c (n + 1))
+          + 4 * q * n₀ := by
+      rw [Finset.sum_add_distrib, ← Finset.mul_sum, Finset.sum_add_distrib]
+      simp only [Finset.sum_const, Nat.card_Ico, nsmul_eq_mul]
+      have : 2 * n₀ - n₀ = n₀ := by omega
+      rw [this]
+      ring
+    rw [hsplit] at hterm
+    nlinarith
+  have hcosts := hcon (2 * n₀ + 1) (by omega)
+  have hcast : ((2 * n₀ + 1 : ℕ) : ℝ) ≤ 3 * n₀ := by
+    push_cast
+    linarith
+  have hfinal : ε * n₀ * n₀ ≤ (6 * K * (s - ε) + 4 * q) * n₀ := by
+    have : (s - ε) * ((2 * n₀ + 1 : ℕ) : ℝ) ≤ (s - ε) * (3 * n₀) :=
+      mul_le_mul_of_nonneg_left hcast hnonneg
+    nlinarith
+  have hpos : (0 : ℝ) < n₀ := by linarith
+  nlinarith
 
 /-! ## The schedule that the receiver follows
 

@@ -550,12 +550,16 @@ $g$ between 0 and 1 belongs to the weight $a^4$ (`gain_unique`).
   values of the revisions, plus the mean of $(w - w^\ast)^2/(1-g)$ over the
   cycles (`mean_cost_sum`). The first two parts are the same for every way of
   playing; the law makes the third zero (`mean_cost_law_le`). What any other
-  way of playing loses against the law is exactly that third part. Under the
-  law the mean value of the state stays bounded when the mean values of the
-  revisions are (`mean_value_law_le`), so over many cycles its mean cost of a
-  cycle is the mean value of a revision; another way of playing can cost
-  less over a number of cycles only by ending in a state whose mean value is
-  larger by the difference.
+  way of playing loses against the law is exactly that third part.
+- *In the long run.* Under the law the mean value of the state stays bounded
+  when the mean values of the revisions are (`mean_value_law_le`), so over
+  many cycles its mean cost of a cycle is the mean value of a revision. No
+  other way of playing does better: when the mean value of every revision is
+  at least $s$ and the mean squared revisions of the position are bounded,
+  the mean cost of a cycle does not stay below $s$, for any way of choosing
+  the pace from what has been seen (`mean_cost_rate`). A way of playing can
+  cost less over some cycles only by leaving a state of larger mean value,
+  and such a state is paid for within two cycles (`mean_value_le_costs`).
 - *The true schedule.* The receiver follows its estimate, and $E$ is the
   distance to the estimate. When the estimate of a quantity is its mean given
   what the receiver has seen, the mean squared distance of the receiver's

@@ -640,3 +640,7 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.RegulationRandom.mean_value_law_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.RegulationRandom.mean_value_law_le
+
+/-- info: 'Unisono.Model.RegulationRandom.mean_cost_rate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.mean_cost_rate

@@ -404,6 +404,53 @@ theorem total_cost_law {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) (x : ℝ × ℝ) :
     simp only [cost]
     positivity
 
+/-! ## The value against the costs of two cycles -/
+
+/-- The value of a state is at most a multiple of the cost of the cycle that
+starts in it and of the squared distance after that cycle, plus four times
+the squared revision of the position: a state of large value is paid for
+within two cycles, however the pace is changed. -/
+theorem value_le_costs {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) (x : ℝ × ℝ) (w : ℝ) (ξ : ℝ × ℝ) :
+    value g x ≤ (4 + 4 / weight g + 1 / g) * (cost g x w + weight g * (next x w ξ).1 ^ 2)
+      + 4 * ξ.1 ^ 2 := by
+  have hw := weight_pos hg0 hg1
+  have h2 : 0 < 2 - g := by linarith
+  rw [value_eq_squares hg0 hg1]
+  set E' := (next x w ξ).1 with hE'
+  have hsplit : x.2 - g / (2 - g) * x.1 = (1 - g / (2 - g)) * x.1 + -E' + -w + ξ.1 := by
+    simp only [hE', next]
+    ring
+  have hfour : ∀ a b c d : ℝ, (a + b + c + d) ^ 2 ≤ 4 * (a ^ 2 + b ^ 2 + c ^ 2 + d ^ 2) := by
+    intro a b c d
+    nlinarith [sq_nonneg (a - b), sq_nonneg (a - c), sq_nonneg (a - d), sq_nonneg (b - c),
+      sq_nonneg (b - d), sq_nonneg (c - d)]
+  have hγ0 : 0 ≤ g / (2 - g) := by positivity
+  have hγ1 : g / (2 - g) ≤ 1 := by rw [div_le_one h2]; linarith
+  have hshare : (1 - g / (2 - g)) ^ 2 ≤ 1 := by nlinarith
+  have hsq := hfour ((1 - g / (2 - g)) * x.1) (-E') (-w) ξ.1
+  have hfirst : g * (x.2 - g / (2 - g) * x.1) ^ 2
+      ≤ 4 * (x.1 ^ 2 + E' ^ 2 + w ^ 2 + ξ.1 ^ 2) := by
+    rw [hsplit]
+    have hx : ((1 - g / (2 - g)) * x.1) ^ 2 ≤ x.1 ^ 2 := by
+      rw [mul_pow]
+      nlinarith [sq_nonneg x.1]
+    have hbound : ((1 - g / (2 - g)) * x.1 + -E' + -w + ξ.1) ^ 2
+        ≤ 4 * (x.1 ^ 2 + E' ^ 2 + w ^ 2 + ξ.1 ^ 2) := by
+      nlinarith [hsq, hx]
+    have hnonneg : 0 ≤ ((1 - g / (2 - g)) * x.1 + -E' + -w + ξ.1) ^ 2 := sq_nonneg _
+    nlinarith
+  have hexpand : (4 + 4 / weight g + 1 / g) * (cost g x w + weight g * E' ^ 2)
+      = 4 * x.1 ^ 2 + 4 * E' ^ 2 + 4 * w ^ 2 + weight g / g * x.1 ^ 2
+        + (4 * weight g * x.1 ^ 2 + 4 * weight g * E' ^ 2 + 4 * w ^ 2 / weight g + w ^ 2 / g
+          + weight g * E' ^ 2 / g) := by
+    simp only [cost]
+    field_simp
+    ring
+  have hrest : 0 ≤ 4 * weight g * x.1 ^ 2 + 4 * weight g * E' ^ 2 + 4 * w ^ 2 / weight g
+      + w ^ 2 / g + weight g * E' ^ 2 / g := by positivity
+  rw [hexpand]
+  linarith
+
 /-! ## The gain for given weights
 
 The weight `ρ` of the squared distance is a number of the stream and of the
