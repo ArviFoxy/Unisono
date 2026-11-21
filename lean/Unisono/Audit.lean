@@ -7,8 +7,10 @@ module
 public import Unisono.Arrivals
 public import Unisono.Device
 public import Unisono.Fixed
+public import Unisono.Gains
 public import Unisono.Answers
 public import Unisono.Model.Exchange
+public import Unisono.Model.Gains
 public import Unisono.Model.Level
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
@@ -320,6 +322,38 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Player.cycle_step_small' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Player.cycle_step_small
+
+/-- info: 'Unisono.Player.gain_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.gain_spec
+
+/-- info: 'Unisono.Player.gains_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.gains_spec
+
+/-- info: 'Unisono.Player.regulate_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Player.regulate_spec
+
+/-- info: 'Unisono.Model.Gains.gains_close' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Gains.gains_close
+
+/-- info: 'Unisono.Model.Gains.gains_of_integers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Gains.gains_of_integers
+
+/-- info: 'Unisono.Model.Gains.law_close' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Gains.law_close
+
+/-- info: 'Unisono.Model.Gains.planned' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Gains.planned
+
+/-- info: 'Unisono.Model.Gains.cost_of_distance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Gains.cost_of_distance
 
 /-- info: 'Unisono.Fixed.div_floor_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

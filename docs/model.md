@@ -636,17 +636,40 @@ against the formulas above to eight decimal places for cycles from a tenth of
 a millisecond to a quarter of a second. The gain of a cycle is held at one or
 below.
 
-About the code, in Lean: the square root returns the largest whole number
-whose square is at most its argument (`Unisono.Fixed.root_spec`); planning a
-cycle returns for every state, schedule
-and reading of the clock, and the step of its plan is within the limit of the
-pace, however far the schedule advances over the cycle and whatever the state
-of the regulator (`Unisono.Player.cycle_spec`). The limit counts as three in
-a thousand when it is set higher, so every step is one that the resampler
-takes (`cycle_step_small`). Planning a cycle changes nothing of a receiver
-but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
-how far the computation in whole numbers is from the recursion in real
-numbers, and that after the limit has let go it does not take hold again.
+About the code, in Lean. The square root returns the largest whole number
+whose square is at most its argument (`Unisono.Fixed.root_spec`). The gain of
+a cycle is the gain per second times the length of the cycle, rounded down to
+a multiple of $2^{-32}$ and held at one or below (`Unisono.Player.gain_spec`);
+this rounded number is the $a$ of the statements that follow, and $d$ is the
+$d$ of the solution above for it. The two gains that the code computes are
+within $4 \cdot 2^{-32}$ of $d^2$ and within $a^2 \cdot 2^{-31} + 2^{-48}$ of
+$a^2 d$ (`gains_spec`, from `Unisono.Model.Gains.gains_of_integers`, which
+follows the rounding of each division and each root). With $v$ and $E$ in
+frames, what the code has a cycle read further than the schedule advances is
+therefore within
+
+$$4 \cdot 2^{-32}\,|v| + \bigl(a^2 \cdot 2^{-31} + 2^{-48}\bigr)\,|E| + 2 \cdot 2^{-48}$$
+
+frames of $d^2 v + a^2 d\,E$, which is what the best law for the weight $a^4$
+has it read (`regulate_spec`, `Unisono.Model.Gains.planned`); a number beyond
+$2^{15}$ frames either way is held at that, and the limit of the pace is far
+below it. For a pace one frame a cycle off the schedule's and a distance of a
+hundred frames, at $a = 0.01$, that is a billionth of a frame. A cycle whose
+change of pace is $\varepsilon$ away from the law's costs, with all the
+cycles after it, $\varepsilon^2 / d^2$ more than the least
+(`cost_of_distance`).
+
+Planning a cycle returns for every state, schedule and reading of the clock,
+and the step of its plan is within the limit of the pace, however far the
+schedule advances over the cycle and whatever the state of the regulator
+(`Unisono.Player.cycle_spec`). The limit counts as three in a thousand when
+it is set higher, so every step is one that the resampler takes
+(`cycle_step_small`). Planning a cycle changes nothing of a receiver but its
+regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:* the
+rounding of the step itself, which is the number above divided by the frames
+of the cycle and rounded down to a multiple of $2^{-64}$ frame, and of $v$,
+which is rounded to $2^{-48}$ frame; and that after the limit has let go it
+does not take hold again.
 
 In simulation (`crates/unisono-sim/tests/timing.rs`), with the cycle lengths
 taken from a device that is 120 parts per million off its nominal rate, the

@@ -59,11 +59,84 @@ theorem advance_total (start : timing.Position) (frames : Std.U32) (step : Std.I
   unfold timing.advance
   run
 
+/-- The gain of a cycle of `duration` nanoseconds, in units of `2⁻³²`: the
+gain per second, which the settings give in units of `2⁻¹⁶`, times the length
+of the cycle, which counts as at most `2⁴⁰` nanoseconds and as zero when it is
+negative; rounded down, and at most one. -/
+def cycleGain (p : player.Player) (duration : ℤ) : ℤ :=
+  min (2 ^ 32) (p.regulation.gain.val * max 0 (min duration (2 ^ 40)) * 2 ^ 16 / 10 ^ 9)
+
+theorem cycleGain_bounds (p : player.Player) (duration : ℤ) :
+    0 ≤ cycleGain p duration ∧ cycleGain p duration ≤ 2 ^ 32 := by
+  unfold cycleGain
+  have hgain : (0 : ℤ) ≤ p.regulation.gain.val := by positivity
+  have hspan : (0 : ℤ) ≤ max 0 (min duration (2 ^ 40)) := le_max_left _ _
+  have hquot : (0 : ℤ) ≤ p.regulation.gain.val * max 0 (min duration (2 ^ 40)) * 2 ^ 16 / 10 ^ 9 :=
+    Int.ediv_nonneg (by positivity) (by norm_num)
+  exact ⟨le_min (by norm_num) hquot, min_le_left _ _⟩
+
+/-- The gain that the code computes for a cycle. -/
 @[step]
-theorem gain_total (p : player.Player) (duration : Std.I64) :
-    player.Player.gain p duration ⦃ _ => True ⦄ := by
+theorem gain_spec (p : player.Player) (duration : Std.I64) :
+    player.Player.gain p duration ⦃ r => r.val = cycleGain p duration.val ⦄ := by
   unfold player.Player.gain
-  run
+  have hbillion : player.BILLION.val = 10 ^ 9 := by simp [player.BILLION]
+  have hlongest : player.LONGEST_CYCLE.val = 2 ^ 40 := by simp [player.LONGEST_CYCLE]
+  have hlargest : player.LARGEST_GAIN.val = 2 ^ 32 := by simp [player.LARGEST_GAIN]
+  apply WP.spec_bind
+    (Pₘ := fun span : Std.I64 => span.val = max 0 (min duration.val (2 ^ 40)))
+  · split
+    · rename_i hneg
+      have : duration.val < 0 := by scalar_tac
+      rw [WP.spec_ok]
+      have h0 : (0#i64).val = 0 := rfl
+      rw [h0]
+      omega
+    · rename_i hneg
+      have hd0 : 0 ≤ duration.val := by scalar_tac
+      split
+      · rename_i hlong
+        have : 2 ^ 40 < duration.val := by rw [← hlongest]; scalar_tac
+        rw [WP.spec_ok, hlongest]
+        omega
+      · rename_i hlong
+        have : duration.val ≤ 2 ^ 40 := by rw [← hlongest]; scalar_tac
+        rw [WP.spec_ok]
+        omega
+  · intro span hspan
+    have hspan0 : 0 ≤ span.val := by rw [hspan]; exact le_max_left _ _
+    have hspan1 : span.val ≤ 2 ^ 40 := by rw [hspan]; omega
+    have hgain0 : (0 : ℤ) ≤ p.regulation.gain.val := by positivity
+    have hgain1 : (p.regulation.gain.val : ℤ) ≤ 2 ^ 32 := by scalar_tac
+    have hprod0 : 0 ≤ (p.regulation.gain.val : ℤ) * span.val := mul_nonneg hgain0 hspan0
+    have hprod1 : (p.regulation.gain.val : ℤ) * span.val ≤ 2 ^ 32 * 2 ^ 40 :=
+      mul_le_mul hgain1 hspan1 hspan0 (by norm_num)
+    step as ⟨i, hi⟩
+    step as ⟨i1, hi1⟩
+    step as ⟨i2, hi2⟩
+    step as ⟨scaled, hscaled⟩
+    have hiv : i.val = p.regulation.gain.val := by rw [hi, U32.hcast_I128_val]
+    have hi1v : i1.val = span.val := by rw [hi1, I64.cast_I128_val]
+    have hi2v : i2.val = p.regulation.gain.val * span.val := by
+      rw [hi2, I128.wrapping_mul_val _ _ (by rw [hiv, hi1v]; constructor <;> linarith), hiv, hi1v]
+    have hsixteen : (16#u32).val = 16 := rfl
+    have hscaledv : scaled.val = p.regulation.gain.val * span.val * 2 ^ 16 := by
+      rw [hscaled, I128.wrapping_shl_val _ _ (by rw [hsixteen]; norm_num)
+        (by rw [hsixteen, hi2v]; constructor <;> linarith), hsixteen, hi2v]
+    step as ⟨gain, hgain, hzero⟩
+    have hgainv : gain.val = p.regulation.gain.val * span.val * 2 ^ 16 / 10 ^ 9 := by
+      rw [hgain (by rw [hbillion]; norm_num), hscaledv, hbillion]
+    unfold cycleGain
+    rw [← hspan, ← hgainv]
+    split
+    · rename_i hgt
+      have : 2 ^ 32 < gain.val := by rw [← hlargest]; scalar_tac
+      rw [WP.spec_ok, hlargest]
+      omega
+    · rename_i hgt
+      have : gain.val ≤ 2 ^ 32 := by rw [← hlargest]; scalar_tac
+      rw [WP.spec_ok]
+      omega
 
 @[step]
 theorem gains_total (p : player.Player) (duration : Std.I64) :

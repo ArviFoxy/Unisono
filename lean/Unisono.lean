@@ -4,8 +4,10 @@ public import Unisono.Arrivals
 public import Unisono.Audit
 public import Unisono.Device
 public import Unisono.Fixed
+public import Unisono.Gains
 public import Unisono.Lists
 public import Unisono.Model.Exchange
+public import Unisono.Model.Gains
 public import Unisono.Model.Level
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
