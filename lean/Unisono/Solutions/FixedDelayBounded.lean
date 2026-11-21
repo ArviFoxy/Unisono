@@ -830,4 +830,92 @@ theorem offset_recent (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
     rw [le_mul_inv_iff₀ hpos]
     linarith
 
+omit [DecidableEq H] in
+/-- The sound at the position that a time stands for, counted at the nominal
+rate from frame `f`, was captured within `ε` times that time's distance from
+the capture of `f`. -/
+theorem captured_nominal (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.rate ε) (f : ℕ)
+    (τ : ℝ) :
+    |w.captured (f + (τ - w.source.capture f) * w.rate) - τ|
+      ≤ ε * |τ - w.source.capture f| := by
+  have hrate := w.rate_pos
+  have hcf : w.captured f = w.source.capture f := w.captured_natCast f
+  set cf := w.source.capture f
+  rcases le_total cf τ with h | h
+  · have hle : (f : ℝ) ≤ f + (τ - cf) * w.rate := by nlinarith
+    have hm := w.captured_sub_mem hd hle
+    rw [hcf] at hm
+    have e1 : (1 - ε) / w.rate * (f + (τ - cf) * w.rate - f) = (1 - ε) * (τ - cf) := by
+      field_simp; ring
+    have e2 : (1 + ε) / w.rate * (f + (τ - cf) * w.rate - f) = (1 + ε) * (τ - cf) := by
+      field_simp; ring
+    rw [e1] at hm
+    rw [e2] at hm
+    rw [abs_of_nonneg (sub_nonneg.mpr h), abs_le]
+    constructor <;> nlinarith [hm.1, hm.2]
+  · have hle : (f : ℝ) + (τ - cf) * w.rate ≤ f := by nlinarith
+    have hm := w.captured_sub_mem hd hle
+    rw [hcf] at hm
+    have e1 : (1 - ε) / w.rate * (f - (f + (τ - cf) * w.rate)) = (1 - ε) * (cf - τ) := by
+      field_simp; ring
+    have e2 : (1 + ε) / w.rate * (f - (f + (τ - cf) * w.rate)) = (1 + ε) * (cf - τ) := by
+      field_simp; ring
+    rw [e1] at hm
+    rw [e2] at hm
+    rw [abs_of_nonpos (sub_nonpos.mpr h), abs_le]
+    constructor <;> nlinarith [hm.1, hm.2]
+
+omit [DecidableEq H] in
+/-- **How far the baseline's target was captured from where it should be.**
+In a world within bounds, the sound at the target that speaker `r`'s host
+gives output sample `k` of block `b`, from block `b'` and a clock estimate
+within `e` of the true difference at `s₂`, was captured within
+`err + ε_D (|o(k) - L - c(f)| + err)` of `o(k) - L`, where `err` is the
+bound of `target_time_error`. -/
+theorem captured_target (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R)
+    {b b' k : ℕ} (hk : (w.speaker r).first b ≤ k) {s₂ θ L e : ℝ}
+    (hθ : |θ - ((w.clock w.sender).read s₂ - (w.clock (w.host r)).read s₂)| ≤ e) :
+    |w.captured (w.source.first b'
+        + ((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate + θ - L
+          - w.source.reported b') * w.rate)
+        - ((w.speaker r).out k - L)|
+      ≤ (2 * B.report + e
+          + 2 * B.clockRate * |(w.speaker r).out ((w.speaker r).first b) - s₂|
+          + B.clockRate * |(w.speaker r).out ((w.speaker r).first b)
+              - w.source.capture (w.source.first b')|
+          + B.deviceRate * ((k : ℝ) - (w.speaker r).first b) / w.rate)
+        + B.deviceRate * (|(w.speaker r).out k - L - w.source.capture (w.source.first b')|
+          + (2 * B.report + e
+            + 2 * B.clockRate * |(w.speaker r).out ((w.speaker r).first b) - s₂|
+            + B.clockRate * |(w.speaker r).out ((w.speaker r).first b)
+                - w.source.capture (w.source.first b')|
+            + B.deviceRate * ((k : ℝ) - (w.speaker r).first b) / w.rate)) := by
+  have hτ := target_time_error w B hw r (b' := b') hk (L := L) hθ
+  set cf := w.source.capture (w.source.first b')
+  set τ := cf + ((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate + θ - L
+    - w.source.reported b') with hτdef
+  set err := 2 * B.report + e
+    + 2 * B.clockRate * |(w.speaker r).out ((w.speaker r).first b) - s₂|
+    + B.clockRate * |(w.speaker r).out ((w.speaker r).first b) - cf|
+    + B.deviceRate * ((k : ℝ) - (w.speaker r).first b) / w.rate
+  have hpos : ((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate + θ - L
+      - w.source.reported b') = τ - cf := by rw [hτdef]; ring
+  rw [hpos]
+  have hcap := captured_nominal w hw.2.1 (w.source.first b') τ
+  have hε := B.deviceRate_nonneg
+  have h1 : |τ - cf| ≤ |(w.speaker r).out k - L - cf| + err := by
+    calc |τ - cf| = |(τ - ((w.speaker r).out k - L)) + ((w.speaker r).out k - L - cf)| := by ring_nf
+      _ ≤ |τ - ((w.speaker r).out k - L)| + |(w.speaker r).out k - L - cf| := abs_add_le _ _
+      _ ≤ err + |(w.speaker r).out k - L - cf| := by linarith
+      _ = |(w.speaker r).out k - L - cf| + err := by ring
+  calc |w.captured (w.source.first b' + (τ - cf) * w.rate) - ((w.speaker r).out k - L)|
+      = |(w.captured (w.source.first b' + (τ - cf) * w.rate) - τ) + (τ - ((w.speaker r).out k - L))| := by
+        ring_nf
+    _ ≤ |w.captured (w.source.first b' + (τ - cf) * w.rate) - τ| + |τ - ((w.speaker r).out k - L)| :=
+        abs_add_le _ _
+    _ ≤ B.deviceRate * |τ - cf| + err := add_le_add hcap hτ
+    _ ≤ B.deviceRate * (|(w.speaker r).out k - L - cf| + err) + err :=
+        by gcongr
+    _ = err + B.deviceRate * (|(w.speaker r).out k - L - cf| + err) := by ring
+
 end Unisono.Solutions.FixedDelay

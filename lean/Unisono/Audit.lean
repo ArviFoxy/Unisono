@@ -1128,3 +1128,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.offset_recent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.offset_recent
+
+/-- info: 'Unisono.Solutions.FixedDelay.captured_nominal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.captured_nominal
+
+/-- info: 'Unisono.Solutions.FixedDelay.captured_target' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.captured_target
