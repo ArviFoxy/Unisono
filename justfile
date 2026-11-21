@@ -11,17 +11,26 @@ check: sizes format-check lint test targets realtime cost translation prove tran
 # No file of the repository is larger than a megabyte: the largest by far is
 # the translation of the core, a quarter of that.
 sizes:
-    @git ls-files -z | xargs -0 du --bytes | awk '$1 > 1048576 { print "too large: " $2; large = 1 } END { exit large }'
+    @git ls-files -z | xargs -0 sh -c 'large=0; for f in "$@"; do [ -f "$f" ] || continue; n=$(wc -c < "$f"); if [ "$n" -gt 1048576 ]; then echo "too large: $f ($n bytes)"; large=1; fi; done; exit $large' _
 
 # Rewrite the Rust sources in the standard format.
 format:
     cargo fmt --all
+    cargo fmt --manifest-path tools/realtime-check/Cargo.toml
+    cargo fmt --manifest-path tools/realtime-audio/Cargo.toml
 
 format-check:
     cargo fmt --all --check
+    cargo fmt --manifest-path tools/realtime-check/Cargo.toml --check
+    cargo fmt --manifest-path tools/realtime-audio/Cargo.toml --check
 
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --package unisono --features pipewire --all-targets -- -D warnings
+    cargo clippy --package unisono --features alsa --all-targets -- -D warnings
+    cargo clippy --package unisono --all-features --all-targets -- -D warnings
+    cargo clippy --manifest-path tools/realtime-check/Cargo.toml --lib --release --target-dir target/tools -- -D warnings
+    cargo clippy --manifest-path tools/realtime-audio/Cargo.toml --lib --release --target-dir target/tools -- -D warnings
 
 test: interleavings
     cargo test --workspace
@@ -85,4 +94,6 @@ alsa:
 # and sources. Needs cargo-deny; continuous integration runs it too.
 dependencies:
     cargo deny check
+    cargo deny --manifest-path tools/realtime-check/Cargo.toml check
+    cargo deny --manifest-path tools/realtime-audio/Cargo.toml check
 
