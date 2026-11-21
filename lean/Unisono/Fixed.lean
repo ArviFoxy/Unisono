@@ -243,27 +243,184 @@ theorem mul_shift_spec (a b : Std.I64) (shift : Std.U32) :
     have hmin : min shift.val 64 = shift.val := by omega
     rw [r_post, i3_post, i2_post, product_post, i_post, i1_post, key, hmin]
 
-/-- The square root returns for every number: its sixty-four rounds end. -/
+/-! ## The square root
+
+One round of `fixed.root` tries one bit of the root. Before it, `Q` is the
+root found so far, a multiple of twice the weight `q` of the bit that is
+tried, with `Q² ≤ x < (Q + 2q)²`; `rest` is `x - Q²`, `found` is `2 Q q` and
+`bit` is `q²`. The round sets the bit when `(Q + q)² ≤ x`, which it tells by
+comparing `rest` with `2 Q q + q²`. The lemmas below give the values that the
+round computes; none of its sums leaves the range of the numbers. -/
+
+private theorem shr_one_val (v : Std.I128) :
+    (core.num.I128.wrapping_shr v 1#u32).val = v.val / 2 := by
+  rw [I128.wrapping_shr_val _ _ (by decide)]
+  rfl
+
+private theorem shr_two_val (v : Std.I128) :
+    (core.num.I128.wrapping_shr v 2#u32).val = v.val / 4 := by
+  rw [I128.wrapping_shr_val _ _ (by decide)]
+  rfl
+
+/-- The number that a round compares the rest with. -/
+private theorem trial_bounds (Q q : ℤ) (hQ0 : 0 ≤ Q) (hq1 : 1 ≤ q)
+    (hfit : Q + 2 * q ≤ 2 ^ 64) :
+    0 ≤ 2 * Q * q + q * q ∧ 2 * Q * q + q * q < 2 ^ 127 := by
+  have h1 : Q * q ≤ (2 ^ 64 - 2 * q) * q :=
+    mul_le_mul_of_nonneg_right (by linarith) (by linarith)
+  have h2 : 0 ≤ Q * q := mul_nonneg hQ0 (by linarith)
+  have h3 : 0 ≤ (3 * q - 2 ^ 64) ^ 2 := sq_nonneg _
+  constructor
+  · nlinarith
+  · nlinarith
+
+/-- The root found after a round that sets its bit, times the weight of the
+bit. -/
+private theorem found_bounds (Q q : ℤ) (hQ0 : 0 ≤ Q) (hq1 : 1 ≤ q)
+    (hfit : Q + 2 * q ≤ 2 ^ 64) :
+    0 ≤ Q * q + q * q ∧ Q * q + q * q < 2 ^ 127 := by
+  have h1 : Q * q ≤ (2 ^ 64 - 2 * q) * q :=
+    mul_le_mul_of_nonneg_right (by linarith) (by linarith)
+  have h2 : 0 ≤ Q * q := mul_nonneg hQ0 (by linarith)
+  have h3 : 0 ≤ (q - 2 ^ 63) ^ 2 := sq_nonneg _
+  constructor
+  · nlinarith
+  · nlinarith
+
+private theorem trial_val (found bit : Std.I128) (Q q : ℤ) (hQ0 : 0 ≤ Q) (hq1 : 1 ≤ q)
+    (hfit : Q + 2 * q ≤ 2 ^ 64) (hfound : found.val = 2 * Q * q) (hbit : bit.val = q * q) :
+    (core.num.I128.wrapping_add found bit).val = 2 * Q * q + q * q := by
+  have hb := trial_bounds Q q hQ0 hq1 hfit
+  rw [I128.wrapping_add_val _ _ (by rw [hfound, hbit]; constructor <;> linarith), hfound, hbit]
+
+private theorem half_val (found : Std.I128) (Q q : ℤ) (hfound : found.val = 2 * Q * q) :
+    (core.num.I128.wrapping_shr found 1#u32).val = Q * q := by
+  rw [shr_one_val, hfound, mul_assoc]
+  exact Int.mul_ediv_cancel_left _ (by decide)
+
+/-- The weight of the bits not yet tried before a round is twice their weight
+after it. -/
+private theorem weight_split (n : ℕ) (h : n < 64) :
+    (2 : ℤ) ^ (64 - n) = 2 * 2 ^ (64 - (n + 1)) := by
+  have hsplit : 64 - n = (64 - (n + 1)) + 1 := by omega
+  conv_lhs => rw [hsplit, pow_succ]
+  ring
+
+/-- What holds before each round of the root of `x`, of the root `Q` found so
+far and the weight `p` of the bits not yet tried. -/
+private def RootState (x : ℤ) (rest found bit : ℤ) (Q p : ℤ) : Prop :=
+  0 ≤ Q ∧ 1 ≤ p ∧ Q + p ≤ 2 ^ 64 ∧ rest = x - Q * Q ∧ found = Q * p ∧ bit = p * p / 4
+    ∧ Q * Q ≤ x ∧ x < (Q + p) * (Q + p)
+
+/-- A round that sets its bit. -/
+private theorem state_set (x Q q : ℤ) (hQ0 : 0 ≤ Q) (hq1 : 1 ≤ q)
+    (hfit : Q + 2 * q ≤ 2 ^ 64) (hhigh : x < (Q + 2 * q) * (Q + 2 * q))
+    (hset : 2 * Q * q + q * q ≤ x - Q * Q) :
+    RootState x (x - Q * Q - (2 * Q * q + q * q)) (Q * q + q * q) (q * q / 4) (Q + q) q := by
+  refine ⟨by linarith, hq1, by linarith, by ring, by ring, rfl, by nlinarith, ?_⟩
+  have : (Q + q + q) * (Q + q + q) = (Q + 2 * q) * (Q + 2 * q) := by ring
+  rw [this]
+  exact hhigh
+
+/-- A round that leaves its bit unset. -/
+private theorem state_unset (x Q q : ℤ) (hQ0 : 0 ≤ Q) (hq1 : 1 ≤ q)
+    (hfit : Q + 2 * q ≤ 2 ^ 64) (hlow : Q * Q ≤ x)
+    (hunset : x - Q * Q < 2 * Q * q + q * q) :
+    RootState x (x - Q * Q) (Q * q) (q * q / 4) Q q := by
+  refine ⟨hQ0, hq1, by linarith, rfl, rfl, rfl, hlow, by nlinarith⟩
+
+/-- **The square root is the root, rounded down.** For a positive `x`,
+`fixed.root` returns the largest integer whose square is at most `x`; for
+any other `x` it returns zero. -/
 @[step]
-theorem root_total (x : Std.I128) : fixed.root x ⦃ _ => True ⦄ := by
+theorem root_spec (x : Std.I128) :
+    fixed.root x ⦃ r => 0 ≤ r.val ∧ (x.val ≤ 0 → r.val = 0)
+      ∧ (0 < x.val → r.val * r.val ≤ x.val ∧ x.val < (r.val + 1) * (r.val + 1)) ⦄ := by
   unfold fixed.root
   split
-  · simp
-  · unfold fixed.root_loop
+  · rename_i hle
+    have hx : x.val ≤ 0 := by scalar_tac
+    rw [WP.spec_ok]
+    exact ⟨le_refl _, fun _ => rfl, fun h => absurd h (not_lt.mpr hx)⟩
+  · rename_i hle
+    have hx : 0 < x.val := by scalar_tac
+    have hxmax : x.val < 2 ^ 127 := by scalar_tac
+    unfold fixed.root_loop
     apply loop.spec_decr_nat
       (measure := fun s : Std.I128 × Std.I128 × Std.I128 × Std.U32 => 64 - s.2.2.2.val)
-      (inv := fun _ => True)
-    · rintro ⟨rest, found, bit, round⟩ -
+      (inv := fun s : Std.I128 × Std.I128 × Std.I128 × Std.U32 =>
+        s.2.2.2.val ≤ 64 ∧ ∃ Q : ℤ,
+          RootState x.val s.1.val s.2.1.val s.2.2.1.val Q (2 ^ (64 - s.2.2.2.val)))
+    · rintro ⟨rest, found, bit, round⟩ ⟨hround, Q, hstate⟩
+      dsimp only at hround hstate
       unfold fixed.root_loop.body
       simp only
       split
       · have hlt : round.val < 64 := by scalar_tac
         have hnext : (core.num.U32.saturating_add round 1#u32).val = round.val + 1 :=
           U32.saturating_add_one_val round 64 hlt (by scalar_tac)
+        have hweight := weight_split round.val hlt
+        have hq1 : (1 : ℤ) ≤ 2 ^ (64 - (round.val + 1)) := one_le_pow₀ (by norm_num)
+        rw [hweight] at hstate
+        obtain ⟨q, hq⟩ : ∃ q : ℤ, q = 2 ^ (64 - (round.val + 1)) := ⟨_, rfl⟩
+        rw [← hq] at hstate hq1
+        obtain ⟨hQ0, -, hfit, hrest, hfound, hbit, hlow, hhigh⟩ := hstate
+        have hfound' : found.val = 2 * Q * q := by rw [hfound]; ring
+        have hbit' : bit.val = q * q := by
+          rw [hbit]
+          have : 2 * q * (2 * q) = 4 * (q * q) := by ring
+          rw [this]
+          exact Int.mul_ediv_cancel_left _ (by decide)
+        have htrial := trial_val found bit Q q hQ0 hq1 hfit hfound' hbit'
+        have hhalf := half_val found Q q hfound'
+        have hquarter : (core.num.I128.wrapping_shr bit 2#u32).val = q * q / 4 := by
+          rw [shr_two_val, hbit']
         simp only [lift, bind_ok]
-        split <;>
-          (simp only [bind_ok, Std.uncurry, WP.spec_ok]; exact ⟨trivial, by rw [hnext]; omega⟩)
-      · simp
-    · trivial
+        split
+        · rename_i hge
+          have hset : 2 * Q * q + q * q ≤ x.val - Q * Q := by
+            rw [← htrial, ← hrest]; scalar_tac
+          have hb := trial_bounds Q q hQ0 hq1 hfit
+          have hf := found_bounds Q q hQ0 hq1 hfit
+          have hsquare := mul_self_nonneg Q
+          have hsub : (core.num.I128.wrapping_sub rest
+              (core.num.I128.wrapping_add found bit)).val
+              = x.val - Q * Q - (2 * Q * q + q * q) := by
+            rw [I128.wrapping_sub_val _ _ (by rw [htrial, hrest]; constructor <;> linarith),
+              htrial, hrest]
+          have hadd : (core.num.I128.wrapping_add (core.num.I128.wrapping_shr found 1#u32)
+              bit).val = Q * q + q * q := by
+            rw [I128.wrapping_add_val _ _ (by rw [hhalf, hbit']; constructor <;> linarith),
+              hhalf, hbit']
+          simp only [bind_ok, Std.uncurry, WP.spec_ok]
+          refine ⟨⟨by rw [hnext]; omega, Q + q, ?_⟩, by rw [hnext]; omega⟩
+          rw [hsub, hadd, hquarter, hnext, ← hq]
+          exact state_set x.val Q q hQ0 hq1 hfit hhigh hset
+        · rename_i hge
+          have hunset : x.val - Q * Q < 2 * Q * q + q * q := by
+            rw [← htrial, ← hrest]; scalar_tac
+          simp only [bind_ok, Std.uncurry, WP.spec_ok]
+          refine ⟨⟨by rw [hnext]; omega, Q, ?_⟩, by rw [hnext]; omega⟩
+          rw [hhalf, hquarter, hnext, hrest, ← hq]
+          exact state_unset x.val Q q hQ0 hq1 hfit hlow hunset
+      · have hend : round.val = 64 := by scalar_tac
+        rw [hend] at hstate
+        obtain ⟨hQ0, -, -, -, hfound, -, hlow, hhigh⟩ := hstate
+        have hQ : found.val = Q := by rw [hfound]; norm_num
+        rw [WP.spec_ok]
+        dsimp only
+        rw [hQ]
+        exact ⟨hQ0, fun h => absurd hx (not_lt.mpr h), fun _ => ⟨hlow, by simpa using hhigh⟩⟩
+    · have hzero : (0#u32).val = 0 := rfl
+      have hnone : (0#i128).val = 0 := rfl
+      have hbit : fixed.LARGEST_POWER_OF_FOUR.val = 2 ^ 126 := by
+        unfold fixed.LARGEST_POWER_OF_FOUR
+        rfl
+      dsimp only
+      rw [hzero, hnone, hbit]
+      refine ⟨by norm_num, 0, le_refl _, by norm_num, by norm_num, by ring, by norm_num,
+        by norm_num, by simpa using hx.le, ?_⟩
+      norm_num
+      linarith
 
 end Unisono.Fixed

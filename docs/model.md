@@ -636,7 +636,9 @@ against the formulas above to eight decimal places for cycles from a tenth of
 a millisecond to a quarter of a second. The gain of a cycle is held at one or
 below.
 
-About the code, in Lean: planning a cycle returns for every state, schedule
+About the code, in Lean: the square root returns the largest whole number
+whose square is at most its argument (`Unisono.Fixed.root_spec`); planning a
+cycle returns for every state, schedule
 and reading of the clock, and the step of its plan is within the limit of the
 pace, however far the schedule advances over the cycle and whatever the state
 of the regulator (`Unisono.Player.cycle_spec`). The limit counts as three in
