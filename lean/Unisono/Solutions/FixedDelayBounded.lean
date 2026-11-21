@@ -1085,4 +1085,304 @@ theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahe
       split_ifs <;> simp [weight, List.sum_replicate]
     | answer s r => simp [act, weight]
 
+omit [DecidableEq H] in
+/-- **The last term before a time, in a sequence with bounded gaps.** In an
+increasing sequence whose steps are at most `G`, when `a 0 + D < a b` with
+`D ≥ 0`, some earlier term has `a b₀ + D < a b ≤ a b₀ + D + G`. -/
+theorem exists_last_before {a : ℕ → ℝ} {G D : ℝ} (hD : 0 ≤ D) (hgap : ∀ b, a (b + 1) - a b ≤ G)
+    {b : ℕ} (hb : a 0 + D < a b) :
+    ∃ b₀ < b, a b₀ + D < a b ∧ a b ≤ a b₀ + D + G := by
+  classical
+  set b₀ := Nat.findGreatest (fun j => a j + D < a b) b with hb₀
+  have hP : a b₀ + D < a b := Nat.findGreatest_spec (P := fun j => a j + D < a b) (Nat.zero_le b) hb
+  have hle : b₀ ≤ b := Nat.findGreatest_le b
+  have hlt : b₀ < b := by
+    rcases hle.lt_or_eq with h | h
+    · exact h
+    · rw [h] at hP; linarith
+  refine ⟨b₀, hlt, hP, ?_⟩
+  have hnot : ¬ (a (b₀ + 1) + D < a b) :=
+    Nat.findGreatest_is_greatest (P := fun j => a j + D < a b) (Nat.lt_succ_self b₀) (by omega)
+  have := hgap b₀
+  linarith
+
+omit [DecidableEq H] in
+/-- In a world within bounds, a speaker requests its blocks at most
+`m_B (1 + ε_D) / ρ + λ_max` seconds apart. -/
+theorem asked_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R) (b : ℕ) :
+    (w.speaker r).asked (b + 1) - (w.speaker r).asked b
+      ≤ B.blockMost * (1 + B.deviceRate) / w.rate + B.leadMost := by
+  obtain ⟨-, -, hspk, -, -, -, hlead, -, hblocks, -, -⟩ := hw
+  have h1 := (hlead r (b + 1)).1
+  have h2 := (hlead r b).2
+  have hfirst : (w.speaker r).first b ≤ (w.speaker r).first (b + 1) :=
+    (w.speaker r).first_strictMono.monotone (Nat.le_succ b)
+  have hout := (PlaybackDevice.out_sub_mem (hspk r) hfirst).2
+  have hsize := (hblocks r b).2
+  have hcast : (((w.speaker r).first (b + 1) : ℕ) : ℝ) - (w.speaker r).first b ≤ B.blockMost := by
+    have : (w.speaker r).first (b + 1) ≤ (w.speaker r).first b + B.blockMost := by omega
+    have : (((w.speaker r).first (b + 1) : ℕ) : ℝ) ≤ (w.speaker r).first b + B.blockMost := by
+      exact_mod_cast this
+    linarith
+  have hcoef : 0 ≤ (1 + B.deviceRate) / w.rate :=
+    div_nonneg (by linarith [B.deviceRate_nonneg]) w.rate_pos.le
+  have := mul_le_mul_of_nonneg_left hcast hcoef
+  have hlp := B.leadLeast_pos
+  have e : (B.blockMost : ℝ) * (1 + B.deviceRate) / w.rate
+      = (1 + B.deviceRate) / w.rate * B.blockMost := by ring
+  rw [e]
+  linarith
+
+omit [DecidableEq H] in
+/-- In a world within bounds, the capture device hands over its blocks at
+most `m_B (1 + ε_D) / ρ + η` seconds apart. -/
+theorem handed_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (b : ℕ) :
+    w.source.handed (b + 1) - w.source.handed b
+      ≤ B.blockMost * (1 + B.deviceRate) / w.rate + B.handoff := by
+  obtain ⟨-, hsrc, -, -, -, hhand, -, hblocks, -, -, -⟩ := hw
+  have h1 := hhand (b + 1)
+  have h2 := w.source.handed_after b
+  have hf1 : 1 ≤ w.source.first (b + 1) := by
+    have := w.source.first_strictMono (Nat.lt_succ_self b)
+    simp only [Nat.succ_eq_add_one] at this
+    omega
+  have hle : w.source.first (b + 1) - 1 ≤ w.source.first (b + 1 + 1) - 1 := by
+    have := w.source.first_strictMono (Nat.lt_succ_self (b + 1))
+    simp only [Nat.succ_eq_add_one] at this
+    omega
+  have hcap := (CaptureDevice.capture_sub_mem hsrc hle).2
+  have hsize := (hblocks (b + 1)).2
+  have hcast : (((w.source.first (b + 1 + 1) - 1 : ℕ) : ℝ)) - ((w.source.first (b + 1) - 1 : ℕ) : ℝ)
+      ≤ B.blockMost := by
+    have : w.source.first (b + 1 + 1) - 1 ≤ (w.source.first (b + 1) - 1) + B.blockMost := by omega
+    have : (((w.source.first (b + 1 + 1) - 1 : ℕ) : ℝ))
+        ≤ ((w.source.first (b + 1) - 1 : ℕ) : ℝ) + B.blockMost := by exact_mod_cast this
+    linarith
+  have hcoef : 0 ≤ (1 + B.deviceRate) / w.rate :=
+    div_nonneg (by linarith [B.deviceRate_nonneg]) w.rate_pos.le
+  have := mul_le_mul_of_nonneg_left hcast hcoef
+  have e : (B.blockMost : ℝ) * (1 + B.deviceRate) / w.rate
+      = (1 + B.deviceRate) / w.rate * B.blockMost := by ring
+  rw [e]
+  linarith
+
+
+/-- **Every request is handled.** In a world within bounds, the baseline's
+run handles every request of every speaker at some step. -/
+theorem request_step (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (r : Fin R) (b : ℕ) :
+    ∃ n, ((solution p : Solution H R Payload).states w lookahead n).askedNext r = b ∧
+      earliest (((solution p : Solution H R Payload).states w lookahead n).key w)
+        ((solution p : Solution H R Payload).states w lookahead n).due = some (.asked r b) := by
+  obtain ⟨m, hm⟩ := progress p w B hw lookahead ((w.speaker r).asked b)
+  obtain ⟨n, -, h1, h2⟩ := Solution.exists_asked_step w (solution p) lookahead
+    (Solution.lt_askedNext (solution p) w lookahead hm)
+  exact ⟨n, h1, h2⟩
+
+/-- **The baseline's target at a request.** In a world within bounds, let
+speaker `r`'s host `h`, not the sender's, handle request `b` at step `n`, and
+let an earlier request `b₀` of `r` come more than the longest delays to the
+sender and back, and a block `b''` be handed over more than the longest
+delay from the sender, before request `b`. Then every output sample `k` of
+the block has a target, and the sound at the target was captured within an
+explicit error of `o(k) - L`, which grows with the ages
+`A₁ = a(b) - a(b₀)` and `A₂ = a(b) - h(b'')`. -/
+theorem target_band (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (hsender : p.sender = w.sender) (hrate : p.rate = w.rate) (hnodup : p.speakers.Nodup)
+    (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period) (hL : 0 ≤ p.latency)
+    {r : Fin R} (hh : w.host r ∈ p.speakers) (hhs : w.host r ≠ w.sender)
+    {n b : ℕ}
+    (he : earliest (((solution p : Solution H R Payload).states w lookahead n).key w)
+      ((solution p : Solution H R Payload).states w lookahead n).due = some (.asked r b))
+    {b₀ b'' : ℕ}
+    (hb₀ : (w.speaker r).asked b₀ + B.delayMost (w.host r) w.sender + B.delayMost w.sender (w.host r)
+      < (w.speaker r).asked b)
+    (hb'' : w.source.handed b'' + B.delayMost w.sender (w.host r) < (w.speaker r).asked b)
+    {k : ℕ} (hk : k ∈ (w.speaker r).block b) :
+    ∃ x, target p (memoryOf p (w.host r)
+        (((solution p : Solution H R Payload).states w lookahead n).views (w.host r)))
+        ((w.speaker r).first b) ((w.speaker r).reported b) k = some x ∧
+      |w.captured x - ((w.speaker r).out k - p.latency)|
+        ≤ (2 * B.report
+            + (max (B.delayMost (w.host r) w.sender - B.delayLeast w.sender (w.host r))
+                (B.delayMost w.sender (w.host r) - B.delayLeast (w.host r) w.sender)
+              + B.clockRate * (B.delayMost (w.host r) w.sender + B.delayMost w.sender (w.host r))) / 2
+            + 2 * B.clockRate * (B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
+                + p.period / (1 - B.clockRate))
+            + B.clockRate * (B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+                + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate)
+            + B.deviceRate * (B.blockMost - 1) / w.rate)
+          + B.deviceRate * (p.latency + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate
+            + (B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+                + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate)
+            + (2 * B.report
+            + (max (B.delayMost (w.host r) w.sender - B.delayLeast w.sender (w.host r))
+                (B.delayMost w.sender (w.host r) - B.delayLeast (w.host r) w.sender)
+              + B.clockRate * (B.delayMost (w.host r) w.sender + B.delayMost w.sender (w.host r))) / 2
+            + 2 * B.clockRate * (B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
+                + p.period / (1 - B.clockRate))
+            + B.clockRate * (B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+                + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate)
+            + B.deviceRate * (B.blockMost - 1) / w.rate)) := by
+  set h := w.host r with hhdef
+  have hw' := hw
+  obtain ⟨hclocks, hsrc, hspk, -, -, hhand, hlead, hblocks, hblocksr, hdelays, -⟩ := hw'
+  -- The step's event is the request.
+  have hn := Solution.handled_of_asked w (solution p) lookahead he
+  have htime : (solution p : Solution H R Payload).eventTime w lookahead n = (w.speaker r).asked b :=
+    Solution.handled_time w (solution p) lookahead hn
+  -- The block remembered.
+  obtain ⟨β, hblock, hββ, hβt⟩ := block_memory p w B hw lookahead hsender hnodup hcopies hh hhs
+    (k := n) (by rw [htime]; exact hb'')
+  rw [htime] at hβt
+  -- The clock estimate remembered, from a recent question.
+  obtain ⟨n₀, hn₀b, he₀⟩ := request_step p w B hw lookahead r b₀
+  have hh₀ := Solution.handled_of_asked w (solution p) lookahead he₀
+  obtain ⟨t₁, θ, s, hoff, hst₁, hs⟩ := offset_recent p w B hw lookahead hsender hcopies hperiod
+    hhs hh₀ (k := n) (by rw [htime]; linarith)
+  obtain ⟨s₁, s₂, s₄, hs₁, hs₄, hd1, hd1', hd2, hd2', hθ⟩ :=
+    offset_sample p w B hw lookahead hsender hhs hoff
+  rw [htime] at hs₄
+  have hpos₁ := B.delayLeast_pos h w.sender
+  have hpos₂ := B.delayLeast_pos w.sender h
+  have hNTP := offset_error (S := w.clock w.sender) (hclocks h) hd1 hd1' hd2 hd2' hpos₁ hpos₂
+  rw [← hθ] at hNTP
+  have hss₁ : s ≤ s₁ := by
+    rw [← hs₁] at hst₁
+    exact (w.clock h).strictMono.le_iff_le.mp hst₁
+  -- The target.
+  have htarget : target p (memoryOf p h (((solution p : Solution H R Payload).states w lookahead n).views h))
+      ((w.speaker r).first b) ((w.speaker r).reported b) k
+      = some (w.source.first β + (((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate
+          + θ - p.latency) - w.source.reported β) * w.rate) := by
+    simp only [target, hblock, hoff, hrate]
+  refine ⟨_, htarget, ?_⟩
+  have hkb : (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
+    unfold PlaybackDevice.block at hk
+    rw [List.mem_range'_1] at hk
+    have := (w.speaker r).first_strictMono (Nat.lt_succ_self b)
+    omega
+  have hcap := captured_target w B hw r (b' := β) hkb.1 (L := p.latency) hNTP
+  have e1 : w.source.first β + ((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate
+        + θ - p.latency - w.source.reported β) * w.rate
+      = w.source.first β + (((w.speaker r).reported b + ((k : ℝ) - (w.speaker r).first b) / w.rate
+        + θ - p.latency) - w.source.reported β) * w.rate := by ring
+  rw [e1] at hcap
+  refine hcap.trans ?_
+  -- The spans in the bound.
+  set g := (w.speaker r).first b
+  set og := (w.speaker r).out g
+  set cf := w.source.capture (w.source.first β)
+  have hrate0 := w.rate_pos
+  have hεC := B.clockRate_nonneg
+  have hεD := B.deviceRate_nonneg
+  have hεD1 := B.deviceRate_lt_one
+  have hεC1 := B.clockRate_lt_one
+  have hleadb := hlead r b
+  have hbefore := (w.speaker r).asked_before b
+  -- The question's span.
+  have hspan₁ : |og - s₂| ≤ B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
+      + p.period / (1 - B.clockRate) := by
+    rw [abs_of_nonneg (by linarith)]
+    linarith
+  -- The block's span.
+  have hcfβ : cf ≤ w.source.handed β := by
+    have h1 := w.source.handed_after β
+    have h2 : w.source.first β ≤ w.source.first (β + 1) - 1 := by
+      have := w.source.first_strictMono (Nat.lt_succ_self β)
+      simp only [Nat.succ_eq_add_one] at this
+      omega
+    have := w.source.capture_strictMono.monotone h2
+    linarith
+  have hcf'' : w.source.handed b'' - B.handoff - (B.blockMost - 1) * (1 + B.deviceRate) / w.rate
+      ≤ cf := by
+    have h1 := hhand b''
+    have hfirst : w.source.first b'' ≤ w.source.first (b'' + 1) - 1 := by
+      have := w.source.first_strictMono (Nat.lt_succ_self b'')
+      simp only [Nat.succ_eq_add_one] at this
+      omega
+    have hspan := (CaptureDevice.capture_sub_mem hsrc hfirst).2
+    have hsize := (hblocks b'').2
+    have hcast : ((w.source.first (b'' + 1) - 1 : ℕ) : ℝ) - (w.source.first b'' : ℝ)
+        ≤ (B.blockMost : ℝ) - 1 := by
+      have hb1 := B.blockLeast_pos.trans_le B.blockLeast_le
+      have : w.source.first (b'' + 1) - 1 ≤ w.source.first b'' + (B.blockMost - 1) := by omega
+      have : ((w.source.first (b'' + 1) - 1 : ℕ) : ℝ) ≤ (w.source.first b'' : ℝ)
+          + ((B.blockMost - 1 : ℕ) : ℝ) := by exact_mod_cast this
+      have h3 : ((B.blockMost - 1 : ℕ) : ℝ) = (B.blockMost : ℝ) - 1 := by
+        rw [Nat.cast_sub (by omega : 1 ≤ B.blockMost)]; simp
+      linarith
+    have hcoef : 0 ≤ (1 + B.deviceRate) / w.rate := div_nonneg (by linarith) hrate0.le
+    have hmul := mul_le_mul_of_nonneg_left hcast hcoef
+    have hmono : w.source.capture (w.source.first b'') ≤ cf :=
+      w.source.capture_strictMono.monotone (w.source.first_strictMono.monotone hββ)
+    have e : (B.blockMost - 1 : ℝ) * (1 + B.deviceRate) / w.rate
+        = (1 + B.deviceRate) / w.rate * (B.blockMost - 1) := by ring
+    rw [e]
+    linarith
+  have hspan₂ : |og - cf| ≤ B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+      + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate := by
+    rw [abs_of_nonneg (by linarith)]
+    linarith
+  -- The output sample's place in its block.
+  have hkg : ((k : ℝ) - g) ≤ (B.blockMost : ℝ) - 1 := by
+    have hsize := (hblocksr r b).2
+    have : k ≤ g + (B.blockMost - 1) := by omega
+    have hb1 := B.blockLeast_pos.trans_le B.blockLeast_le
+    have : (k : ℝ) ≤ (g : ℝ) + ((B.blockMost - 1 : ℕ) : ℝ) := by exact_mod_cast this
+    have h3 : ((B.blockMost - 1 : ℕ) : ℝ) = (B.blockMost : ℝ) - 1 := by
+      rw [Nat.cast_sub (by omega : 1 ≤ B.blockMost)]; simp
+    linarith
+  have hkg0 : (0 : ℝ) ≤ (k : ℝ) - g := by
+    have : (g : ℝ) ≤ k := by exact_mod_cast hkb.1
+    linarith
+  have hout := (PlaybackDevice.out_sub_mem (hspk r) hkb.1).2
+  have hcoef : 0 ≤ (1 + B.deviceRate) / w.rate := div_nonneg (by linarith) hrate0.le
+  have hok : (w.speaker r).out k - og ≤ (B.blockMost - 1) * (1 + B.deviceRate) / w.rate := by
+    have := mul_le_mul_of_nonneg_left hkg hcoef
+    have e : (B.blockMost - 1 : ℝ) * (1 + B.deviceRate) / w.rate
+        = (1 + B.deviceRate) / w.rate * (B.blockMost - 1) := by ring
+    rw [e]
+    linarith
+  have hspan₃ : |(w.speaker r).out k - p.latency - cf| ≤ p.latency
+      + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate
+      + (B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+        + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate) := by
+    have hok0 : og ≤ (w.speaker r).out k :=
+      (w.speaker r).out_strictMono.monotone hkb.1
+    have hcfo : cf ≤ og := by linarith
+    have hspan0 : 0 ≤ (B.blockMost - 1 : ℝ) * (1 + B.deviceRate) / w.rate := by
+      have hb1 : (1 : ℝ) ≤ B.blockMost := by
+        exact_mod_cast B.blockLeast_pos.trans_le B.blockLeast_le
+      apply div_nonneg _ hrate0.le
+      exact mul_nonneg (by linarith) (by linarith)
+    have hS2 : 0 ≤ B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+        + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate := le_trans (abs_nonneg _) hspan₂
+    have hoc := le_abs_self (og - cf)
+    rw [abs_le]
+    constructor
+    · linarith
+    · linarith
+  have hkgρ : B.deviceRate * ((k : ℝ) - g) / w.rate ≤ B.deviceRate * (B.blockMost - 1) / w.rate := by
+    apply div_le_div_of_nonneg_right _ hrate0.le
+    exact mul_le_mul_of_nonneg_left hkg hεD
+  have h1 := mul_le_mul_of_nonneg_left hspan₁ (show 0 ≤ 2 * B.clockRate by linarith)
+  have h2 := mul_le_mul_of_nonneg_left hspan₂ hεC
+  have herr : 2 * B.report
+        + (max (B.delayMost h w.sender - B.delayLeast w.sender h)
+            (B.delayMost w.sender h - B.delayLeast h w.sender)
+          + B.clockRate * (B.delayMost h w.sender + B.delayMost w.sender h)) / 2
+        + 2 * B.clockRate * |og - s₂| + B.clockRate * |og - cf| + B.deviceRate * ((k : ℝ) - g) / w.rate
+      ≤ 2 * B.report
+        + (max (B.delayMost h w.sender - B.delayLeast w.sender h)
+            (B.delayMost w.sender h - B.delayLeast h w.sender)
+          + B.clockRate * (B.delayMost h w.sender + B.delayMost w.sender h)) / 2
+        + 2 * B.clockRate * (B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
+            + p.period / (1 - B.clockRate))
+        + B.clockRate * (B.leadMost + ((w.speaker r).asked b - w.source.handed b'') + B.handoff
+            + (B.blockMost - 1) * (1 + B.deviceRate) / w.rate)
+        + B.deviceRate * (B.blockMost - 1) / w.rate := by
+    linarith
+  exact add_le_add herr (mul_le_mul_of_nonneg_left (add_le_add hspan₃ herr) hεD)
+
 end Unisono.Solutions.FixedDelay

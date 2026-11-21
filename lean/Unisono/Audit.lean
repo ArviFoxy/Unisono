@@ -1164,3 +1164,23 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.progress
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_last_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_last_before
+
+/-- info: 'Unisono.Solutions.FixedDelay.asked_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.asked_gap
+
+/-- info: 'Unisono.Solutions.FixedDelay.handed_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.handed_gap
+
+/-- info: 'Unisono.Solutions.FixedDelay.request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.request_step
+
+/-- info: 'Unisono.Solutions.FixedDelay.target_band' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.target_band
