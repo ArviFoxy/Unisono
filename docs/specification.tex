@@ -487,7 +487,8 @@ every world within the bounds (\lean{World.WithinBounds}), the worst case.
 Its parameters (\lean{Bounds}) are the rate errors
 $\varepsilon_C, \varepsilon_D \in [0, 1)$, the timestamp error
 $\varepsilon_R \ge 0$, the handoff delay $\eta \ge 0$, the request leads
-$0 < \lambda_{\min} \le \lambda_{\max}$, the block size $m_B \ge 1$, the
+$0 < \lambda_{\min} \le \lambda_{\max}$, the block sizes
+$1 \le \ell_B \le m_B$, the
 delays $0 < d_{\min}(i,j) \le d_{\max}(i,j)$ of each link, and the number
 $m_L \in \N$ of consecutive losses. A world is within the bounds when:
 \begin{itemize}
@@ -501,12 +502,18 @@ $m_L \in \N$ of consecutive losses. A world is within the bounds when:
 \item handoff: $h(b) - c(f(b+1) - 1) \le \eta$;
 \item request lead: $\lambda_{\min} \le o_r(g_r(b)) - a_r(b) \le
   \lambda_{\max}$;
-\item block size: $f(b+1) - f(b) \le m_B$ and $g_r(b+1) - g_r(b) \le m_B$;
+\item block size: $\ell_B \le f(b+1) - f(b) \le m_B$ and
+  $\ell_B \le g_r(b+1) - g_r(b) \le m_B$;
 \item delays: every delivered message from $i$ to $j$ takes between
   $d_{\min}(i,j)$ and $d_{\max}(i,j)$;
 \item losses: of any $m_L + 1$ consecutive messages on a link, at least one
   is delivered, whenever they are sent.
 \end{itemize}
+The model counts losses per message, not in time: the bound on losses holds
+even for messages sent at the same moment. It therefore describes isolated
+drops and not outages, in which a link loses everything sent during some
+time, and it has no pauses, in which a link holds messages back; a pause
+enters only through $d_{\max}$. The model of the next section has both.
 A random world can be required to be within bounds almost surely
 (\lean{AlmostSurelyWithin}). The model is not empty
 (\lean{Bounds.example\_within}).

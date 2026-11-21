@@ -61,21 +61,28 @@ specification is used throughout.
 
 \paragraph{Parameters} (\lean{Params}): the sender's host and the hosts of
 the speakers; the nominal rate $\rho$; the latency $L$; the number of copies
-$c$ of each message; and the slew $w$, the largest correction of the
-position per output sample, in frames.
+$c$ of each message; the period $P$ of the questions for the sender's
+clock, in seconds of the asking host's clock; and the slew $w$, the largest
+correction of the position per output sample, in frames.
 
 \paragraph{The stream.} When the capture device hands over block $b$, the
-sender sends its frames to every speaker's host, with the block's first
-frame $f(b)$ and its timestamp $\hat c(b)$, a reading of the sender's clock.
-Each message is sent $c$ times, so that a link that drops at most $c - 1$
-consecutive messages still delivers one. A host keeps, of the blocks that
-have arrived, the latest: its first frame $f$ and timestamp $\hat c$.
+sender sends its frames to the host of every speaker other than its own,
+with the block's first frame $f(b)$ and its timestamp $\hat c(b)$, a reading
+of the sender's clock. Each message is sent $c$ times, so that a link that
+drops at most $c - 1$ consecutive messages still delivers one. The copies
+leave at the same moment, so they protect against isolated drops only: an
+outage, in which a link loses everything sent during some time, takes all
+of them. A host keeps, of the blocks that have arrived, the latest: its
+first frame $f$ and timestamp $\hat c$.
 
-\paragraph{The clocks.} At every request of one of its devices, a speaker's
-host other than the sender's asks the sender for its clock: it sends its
-reading $t_1$. When the question arrives, the sender answers with $t_1$ and
-its own reading $t_2$. When the answer arrives at the host's reading $t_4$,
-the host estimates the sender's clock minus its own as
+\paragraph{The clocks.} At a request of one of its devices, a speaker's host
+other than the sender's asks the sender for its clock, unless it asked
+within the last $P$ seconds of its own clock: it sends its reading $t_1$.
+When a question arrives, the sender answers with $t_1$ and its own reading
+$t_2$, unless it has already answered a question of that host whose reading
+is as late or later; it thus answers each question once, whichever copy
+arrives first. When the answer arrives at the host's reading $t_4$, the host
+estimates the sender's clock minus its own as
 \[
   \hat\theta = t_2 - \frac{t_1 + t_4}{2},
 \]
@@ -97,17 +104,22 @@ on the host's clock, converted to the sender's clock, less $L$. The latest
 block converts that capture time to a position, at the nominal rate.
 
 \paragraph{The pace} (\lean{advance}, \lean{positions}). A speaker does not
-jump to its target. If it played position $x_{k-1}$ at the output sample
-before, it plays
+jump to its target. If it chose position $x_{k-1}$ for the output sample
+before, it chooses
 \[
   x_k = x_{k-1} + 1 + \clamp_w\bigl(x^*_k - x_{k-1} - 1\bigr),
   \qquad \clamp_w(y) = \max\bigl(-w, \min(w, y)\bigr):
 \]
 one frame on, corrected towards the target by at most $w$ frames. The
 position thus advances by between $1 - w$ and $1 + w$ frames per output
-sample, and the speed stays within about $w$ of one. A speaker that has
-nothing to continue from, at its first output sample or after a non-source
-output, starts at its target.
+sample. The correction is not smoothed: when the target jumps, at a new
+block or a new clock estimate, the advance changes by up to $w$ from one
+output sample to the next, and by up to $2w$ when the correction reverses.
+A speaker continues from the position it chose for its previous output
+sample, whether or not the frames for that sample had arrived, so that it
+stays on its course through a gap; it starts at its target when it chose
+no position there, at its first output sample or while it has no
+estimates.
 
 Nothing is retransmitted on request; losses are covered by the copies.
 
@@ -134,8 +146,9 @@ frames be captured at most $\delta_c$ apart. Then, in the long run:
 \item it misses no samples and has no discontinuities
   (\lean{missed\_eq\_zero}, \lean{discontinuities\_eq\_zero});
 \item its latency is at most $L + E + \delta$ (\lean{meanLatency\_le});
-\item its synchronization cost is at most $2(E + \delta)^2$
-  (\lean{sync\_le});
+\item its synchronization cost is at most $(E + \delta)^2$
+  (\lean{sync\_le}), which is attained when half of the speakers play every
+  frame $E + \delta$ early and the other half $E + \delta$ late;
 \item its tracking cost is at most $(D + E + \delta)^2$ when every target
   latency is within $D$ of $L$ (\lean{tracking\_le}).
 \end{itemize}
@@ -144,16 +157,34 @@ frames be captured at most $\delta_c$ apart. Then, in the long run:
 The proofs bound the cost of each frame and of each output sample from some
 point on, and use that a cost accrued at most linearly in time, $B\,T + C$
 with $C$ finite, has a long-run average at most $B$ (\lean{longRun\_le}).
+The bound on synchronization uses that for values $d_1, \dots, d_R$ within
+$M$ of zero, $\sum_{r < r'} (d_r - d_{r'})^2 = R \sum_r d_r^2 - (\sum_r
+d_r)^2 \le R^2 M^2$ (\lean{sum\_pairs\_sq\_sub\_le}), Popoviciu's inequality
+for the variance.
+
+Playback at a latency says nothing about the sixth objective, roughness:
+within $E$ a speaker can change its speed as often as it likes, so a bound on
+roughness needs a bound on how a solution changes its speed. A change of
+speed by $\Delta v$ between two consecutive steps costs about $\rho\,\Delta
+v^2$, since the two steps are about $1/\rho$ apart. The baseline changes its
+advance by up to $2w$ at once whenever its target jumps, and its target can
+jump at every new block and every new clock estimate, so its roughness is
+large; it is not bounded here.
 
 \subsection{The baseline in a bounded world}
 
 \begin{theorem}[The stream]\label{thm:stream}
 In a world within the bounds of the bounded model, let the baseline send
 each message more times than a link can drop in a row, $c > m_L$. Then every
-speaker's host $j$ holds the frames of block $b$ at every step of the run
-whose event comes later than $h(b) + d_{\max}(\text{sender}, j)$
-(\lean{block\_arrives}).
+speaker's host $j$ other than the sender's holds the frames of block $b$ at
+every step of the run whose event comes later than
+$h(b) + d_{\max}(\text{sender}, j)$ (\lean{block\_arrives}).
 \end{theorem}
+
+The theorem relies on the bounded model counting losses per message: the
+$c$ copies leave at the same moment and are still consecutive messages on
+the link, of which one arrives. A link with outages in time would lose all
+of them.
 
 The proof rests on facts about the run of any solution
 (\path{lean/Unisono/Spec/Run.lean}): a host keeps the frames it holds; a
@@ -191,17 +222,35 @@ each bounding one source of error:
   exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff
   delay $\eta$, the request lead $\lambda_{\max}$, and the spans of two
   blocks and of the lookahead.
-\item \emph{Progress:} the baseline sets no timers and every message leads
-  to at most one further message, so finitely many events happen before any
-  time, and the run advances past every true time.
+\item \emph{Progress:} the baseline sets no timers, and it sends messages
+  only at handoffs and requests, of which finitely many happen before any
+  time, and when a question arrives; it answers each question at most once,
+  and blocks and answers lead to no message. So finitely many events happen
+  before any time, and the run advances past every true time.
 \end{enumerate}
 Together with Theorem~\ref{thm:atlatency}, this gives the baseline's
-guarantees under the bounded model. Each speaker's clock estimate errs by up
-to $(d_{\max} - d_{\min})/2$, so two speakers can be up to
-$d_{\max} - d_{\min}$ apart. By the theorem of Lundelius and Lynch on clock
-synchronization, no algorithm keeps the clocks of $n$ hosts closer than
-$(1 - 1/n)(d_{\max} - d_{\min})$ when message delays are known only within
-$[d_{\min}, d_{\max}]$; carried over to playback, that is the limit the
+guarantees under the bounded model.
+
+The estimate $\hat\theta$ errs by up to half the largest difference of the
+delays of the question and the answer. When every link's delays lie within
+the same $[d_{\min}, d_{\max}]$, that is $(d_{\max} - d_{\min})/2$, so two
+speakers can be $d_{\max} - d_{\min}$ apart. When the two directions of a
+link have different bounds, the midpoint carries a bias of up to half the
+difference of the two delays even when they do not vary, and no exchange of
+this kind can detect it. With the same bounds on every link, the theorem of
+Lundelius and Lynch on clock synchronization says that no algorithm keeps
+the clocks of $n$ hosts closer than $(1 - 1/n)(d_{\max} - d_{\min})$. Hosts
+that all exchange readings with each other attain it, which gains most when
+there are few hosts: with three, the limit is two thirds of
+$d_{\max} - d_{\min}$, while exchanges with the sender alone, as in the
+baseline, allow all of it. Carried over to playback, that is the limit the
 baseline will be compared with.
+
+A pause, in which a link holds messages back and releases them later,
+enters the bounded model only through $d_{\max}$. A link that holds messages
+for tens of milliseconds therefore makes the baseline's clock estimate err
+by tens of milliseconds. Keeping the estimates of the exchanges with the
+shortest round trip, as NTP's clock filter does, avoids most of that error,
+and is the first improvement on the baseline that this suggests.
 
 \end{document}

@@ -76,14 +76,14 @@ theorem replicate_entries {α : Type} [DecidableEq H] (c : ℕ) (x : H → α) :
 variable [DecidableEq H] (p : Params H)
 
 /-- The baseline's action when the capture device hands over block `b` at
-the sender's host: it sends the block's frames to every speaker's host, `c`
-times each. -/
+the sender's host: it sends the block's frames to every speaker's host other
+than its own, `c` times each. -/
 theorem solution_handed_sends (w : World H R) (hsender : p.sender = w.sender)
     (l : List (Event H R Payload)) (reading : ℝ) (b : ℕ) :
     ((solution p : Solution H R Payload) w.sender
         (l ++ [⟨reading, .handed ((w.source.block b).map fun n => (n, w.target n))
           (w.source.reported b)⟩])).sends
-      = p.speakers.flatMap fun j => List.replicate p.copies
+      = (p.speakers.filter (· ≠ p.sender)).flatMap fun j => List.replicate p.copies
           (j, Payload.block (w.source.first b) (w.source.reported b), (w.source.block b).toFinset) := by
   have hne : 0 < w.source.first (b + 1) - w.source.first b :=
     Nat.sub_pos_of_lt (w.source.first_strictMono (Nat.lt_succ_self b))
@@ -102,12 +102,13 @@ theorem solution_handed_sends (w : World H R) (hsender : p.sender = w.sender)
 
 /-- **Every block reaches every speaker's host within the longest delay.** In
 a world within bounds, when the baseline sends each message more times than
-a link can drop in a row, every speaker host `j` holds the frames of block
-`b` at every step of the run whose event comes later than the block's
-handoff plus the longest delay from the sender to `j`. -/
+a link can drop in a row, every speaker host `j` other than the sender's
+holds the frames of block `b` at every step of the run whose event comes
+later than the block's handoff plus the longest delay from the sender to
+`j`. -/
 theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
-    {j : H} (hj : j ∈ p.speakers) {b k : ℕ}
+    {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
     (hk : w.source.handed b + B.delayMost w.sender j
       < (solution p : Solution H R Payload).eventTime w lookahead k) :
     (w.source.block b).toFinset
@@ -137,11 +138,15 @@ theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   obtain ⟨arr, harr⟩ := Option.isSome_iff_exists.mp hsome
   have hdelay := (hdelays w.sender j t _ arr harr).2
   -- That copy is in transit after the handoff.
-  obtain ⟨i0, hi0⟩ := replicate_entries p.copies x p.speakers hnodup hj
+  have hjf : j ∈ p.speakers.filter (· ≠ p.sender) := by
+    rw [List.mem_filter, hsender]
+    exact ⟨hj, by simpa using hjs⟩
+  obtain ⟨i0, hi0⟩ := replicate_entries p.copies x _ (hnodup.filter _) hjf
   obtain ⟨hi, hget, hcount⟩ := hi0 k' (lt_of_le_of_lt hk' hcopies)
   set sends := (σ w.sender (st.views w.sender ++ [⟨(w.clock w.sender).read t, obs⟩])).sends
     with hsendsdef
-  have hsends : sends = p.speakers.flatMap fun j => List.replicate p.copies (j, x j) :=
+  have hsends : sends = (p.speakers.filter (· ≠ p.sender)).flatMap fun j =>
+      List.replicate p.copies (j, x j) :=
     solution_handed_sends p w hsender (st.views w.sender) ((w.clock w.sender).read t) b
   have hi' : i0 + k' < sends.length := hsends ▸ hi
   have hget' : sends[i0 + k'] = (j, x j) := (List.getElem_of_eq hsends hi').trans hget
@@ -182,19 +187,21 @@ theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
       · rename_i f t' hhead
         simp only [List.mem_flatMap, List.mem_replicate] at hs
         obtain ⟨j, hj, -, rfl⟩ := hs
-        exact Or.inl ⟨frames, stamp, f, t', hobs, hh, hhead, hj, rfl, rfl⟩
+        exact Or.inl ⟨frames, stamp, f, t', hobs, hh, hhead, (List.mem_filter.mp hj).1, rfl, rfl⟩
       · simp at hs
     · simp at hs
   · rename_i i sent F hobs
     split_ifs at hs with hh
     · simp only [List.mem_replicate] at hs
-      exact Or.inr (Or.inl ⟨i, sent, F, hobs, hh, hs.2⟩)
+      exact Or.inr (Or.inl ⟨i, sent, F, hobs, hh.1, hs.2⟩)
     · simp at hs
   · rename_i r outputs stamp hobs
-    split_ifs at hs with hh
-    · simp at hs
+    split_ifs at hs with hask
     · simp only [List.mem_replicate] at hs
-      exact Or.inr (Or.inr ⟨r, outputs, stamp, hobs, hh, hs.2⟩)
+      refine Or.inr (Or.inr ⟨r, outputs, stamp, hobs, ?_, hs.2⟩)
+      simp only [asks, Bool.and_eq_true, bne_iff_ne] at hask
+      exact hask.1
+    · simp at hs
   · simp at hs
 
 omit [DecidableEq H] in

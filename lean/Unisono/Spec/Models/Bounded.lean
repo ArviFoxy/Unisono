@@ -21,8 +21,17 @@ network, and a statement under it holds for every world within the bounds,
 the worst case. The bounds include everything an upper bound on latency or
 on missed samples needs: how many consecutive messages the network may drop,
 how late a capture device may hand over a block, how early a playback
-device may request one, and how large a block may be. A random world can be
-required to be within bounds almost surely (`AlmostSurelyWithin`).
+device may request one, and how small and how large a block may be. A random
+world can be required to be within bounds almost surely
+(`AlmostSurelyWithin`).
+
+The model counts losses per message, not in time: of any `m + 1`
+consecutive messages on a link one arrives, even when all of them are sent
+at the same moment. It therefore describes isolated drops and not outages,
+in which a link loses everything sent during some time, and it has no
+pauses, in which a link holds messages back; a pause enters only through
+the largest delay. The model of delays (`Unisono.Spec.Models.Delays`) has
+both.
 
 Two facts about clocks within bounds: an NTP-style estimate of the
 difference of two clocks errs by at most half the largest difference of the
@@ -74,13 +83,15 @@ before the block's first output sample leaves. -/
 def PlaybackDevice.LeadWithin (d : PlaybackDevice) (least most : ℝ) : Prop :=
   ∀ b, least ≤ d.out (d.first b) - d.asked b ∧ d.out (d.first b) - d.asked b ≤ most
 
-/-- Every block of the capture device holds at most `most` frames. -/
-def CaptureDevice.BlocksAtMost (d : CaptureDevice) (most : ℕ) : Prop :=
-  ∀ b, d.first (b + 1) - d.first b ≤ most
+/-- Every block of the capture device holds at least `least` and at most
+`most` frames. -/
+def CaptureDevice.BlocksWithin (d : CaptureDevice) (least most : ℕ) : Prop :=
+  ∀ b, least ≤ d.first (b + 1) - d.first b ∧ d.first (b + 1) - d.first b ≤ most
 
-/-- Every block of a playback device holds at most `most` output samples. -/
-def PlaybackDevice.BlocksAtMost (d : PlaybackDevice) (most : ℕ) : Prop :=
-  ∀ b, d.first (b + 1) - d.first b ≤ most
+/-- Every block of a playback device holds at least `least` and at most
+`most` output samples. -/
+def PlaybackDevice.BlocksWithin (d : PlaybackDevice) (least most : ℕ) : Prop :=
+  ∀ b, least ≤ d.first (b + 1) - d.first b ∧ d.first (b + 1) - d.first b ≤ most
 
 /-- The messages from host `i` to host `j` that arrive take between `least`
 and `most` seconds. -/
@@ -89,7 +100,8 @@ def Network.DelaysWithin (net : Network H) (i j : H) (least most : ℝ) : Prop :
 
 /-- Of any `m + 1` consecutive messages from host `i` to host `j`, at least
 one arrives, whenever they are sent: `send k` is when message `q + k` is
-sent. -/
+sent. Losses are counted per message: the bound holds even for messages
+sent at the same moment, so it rules out outages in time. -/
 def Network.LossesWithin (net : Network H) (i j : H) (m : ℕ) : Prop :=
   ∀ (q : ℕ) (send : ℕ → Time), ∃ k ≤ m, (net.deliver i j (send k) (q + k)).isSome
 
@@ -117,9 +129,11 @@ structure Bounds (H : Type) where
   leadMost : ℝ
   leadLeast_pos : 0 < leadLeast
   leadLeast_le : leadLeast ≤ leadMost
-  /-- The most frames, or output samples, in a block. -/
+  /-- The fewest and the most frames, or output samples, in a block. -/
+  blockLeast : ℕ
   blockMost : ℕ
-  blockMost_pos : 0 < blockMost
+  blockLeast_pos : 0 < blockLeast
+  blockLeast_le : blockLeast ≤ blockMost
   /-- The least and the most time that a message from one host to another
   takes, in seconds. -/
   delayLeast : H → H → ℝ
@@ -139,8 +153,8 @@ def World.WithinBounds (w : World H R) (B : Bounds H) : Prop :=
     ∧ (∀ r, (w.speaker r).ReportsWithin (w.clock (w.host r)) B.report)
     ∧ w.source.HandoffWithin B.handoff
     ∧ (∀ r, (w.speaker r).LeadWithin B.leadLeast B.leadMost)
-    ∧ w.source.BlocksAtMost B.blockMost
-    ∧ (∀ r, (w.speaker r).BlocksAtMost B.blockMost)
+    ∧ w.source.BlocksWithin B.blockLeast B.blockMost
+    ∧ (∀ r, (w.speaker r).BlocksWithin B.blockLeast B.blockMost)
     ∧ (∀ i j, w.network.DelaysWithin i j (B.delayLeast i j) (B.delayMost i j))
     ∧ (∀ i j, w.network.LossesWithin i j B.lossRun)
 

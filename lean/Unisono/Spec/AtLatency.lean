@@ -19,9 +19,12 @@ plays at a latency.
 * Such a playback misses no samples and has no discontinuities in the long
   run (`missed_eq_zero`, `discontinuities_eq_zero`).
 * Its long-run latency is at most `L + E + δ` (`meanLatency_le`), its
-  synchronization cost at most `2 (E + δ)²` (`sync_le`), and its tracking
+  synchronization cost at most `(E + δ)²` (`sync_le`), and its tracking
   cost at most `(D + E + δ)²` when every target latency is within `D` of `L`
   (`tracking_le`), where `δ` bounds the time between two output samples.
+* Playback at a latency says nothing about roughness: within `E` a speaker
+  can change its speed as often as it likes. A bound on roughness needs a
+  bound on how a solution changes its speed.
 * A cost accrued at most linearly in time has a long-run average at most its
   slope (`longRun_le`), which turns bounds on each frame and each output
   sample into bounds on the objectives.
@@ -361,56 +364,67 @@ theorem meanLatency_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L
   · unfold World.latencyAt
     split <;> simp
 
-/-- Of the ordered pairs of speakers, at most half have the first before the
-second. -/
-theorem two_mul_card_pairs_le : 2 * (Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2)).card
-    ≤ R ^ 2 := by
-  set s := Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2)
-  set s' := Finset.univ.filter (fun p : Fin R × Fin R => p.2 < p.1)
-  have himage : s.image Prod.swap = s' := by
-    ext p
-    simp only [Finset.mem_image, Finset.mem_filter, Finset.mem_univ, true_and, s, s']
-    constructor
-    · rintro ⟨q, hq, rfl⟩
-      exact hq
-    · intro hp
-      exact ⟨p.swap, hp, Prod.swap_swap p⟩
-  have hcard : s'.card = s.card := by
-    rw [← himage, Finset.card_image_of_injective _ Prod.swap_injective]
-  have hdisj : Disjoint s s' := by
-    rw [Finset.disjoint_filter]
-    intro p _ h1 h2
-    exact lt_asymm h1 h2
-  have hunion := Finset.card_union_of_disjoint hdisj
-  have hsub : (s ∪ s').card ≤ R ^ 2 := by
-    have := Finset.card_le_univ (s ∪ s')
-    simpa [Fintype.card_prod, Fintype.card_fin, sq] using this
-  omega
+/-- A function of two speakers that is symmetric and zero when both are the
+same sums over the pairs of distinct speakers, each counted once, to half
+its sum over all ordered pairs. -/
+theorem two_mul_sum_pairs (f : Fin R → Fin R → ℝ) (hsymm : ∀ a b, f a b = f b a)
+    (hdiag : ∀ a, f a a = 0) :
+    2 * ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), f p.1 p.2
+      = ∑ a, ∑ b, f a b := by
+  have hpairs : ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), f p.1 p.2
+      = ∑ a, ∑ b, if a < b then f a b else 0 := by
+    rw [Finset.sum_filter, ← Finset.univ_product_univ, Finset.sum_product]
+  have hsplit : ∀ a b, f a b = (if a < b then f a b else 0) + (if b < a then f a b else 0) := by
+    intro a b
+    rcases lt_trichotomy a b with hab | hab | hab
+    · simp [hab, not_lt.mpr hab.le]
+    · subst hab
+      simp [hdiag]
+    · simp [hab, not_lt.mpr hab.le]
+  have hswap : ∑ a, ∑ b, (if b < a then f a b else 0)
+      = ∑ a, ∑ b, (if a < b then f a b else 0) := by
+    rw [Finset.sum_comm]
+    refine Finset.sum_congr rfl fun a _ => Finset.sum_congr rfl fun b _ => ?_
+    rw [hsymm]
+  calc 2 * ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), f p.1 p.2
+      = (∑ a, ∑ b, if a < b then f a b else 0) + ∑ a, ∑ b, if a < b then f a b else 0 := by
+        rw [hpairs]; ring
+    _ = (∑ a, ∑ b, if a < b then f a b else 0) + ∑ a, ∑ b, if b < a then f a b else 0 := by
+        rw [hswap]
+    _ = ∑ a, ∑ b, f a b := by
+        rw [← Finset.sum_add_distrib]
+        refine Finset.sum_congr rfl fun a _ => ?_
+        rw [← Finset.sum_add_distrib]
+        exact Finset.sum_congr rfl fun b _ => (hsplit a b).symm
+
+/-- **Popoviciu's bound for pairs.** For `R` values within `M` of zero, the
+squares of their differences, summed over the pairs, are at most `R² M²`:
+the sum is `R` times the sum of the squares less the square of the sum. -/
+theorem sum_pairs_sq_sub_le (d : Fin R → ℝ) {M : ℝ} (hd : ∀ r, |d r| ≤ M) :
+    ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), (d p.1 - d p.2) ^ 2
+      ≤ (R : ℝ) ^ 2 * M ^ 2 := by
+  have h2 := two_mul_sum_pairs (fun a b => (d a - d b) ^ 2) (fun a b => by ring) (fun a => by ring)
+  have hexp : ∑ a, ∑ b, (d a - d b) ^ 2 = 2 * (R : ℝ) * ∑ a, d a ^ 2 - 2 * (∑ a, d a) ^ 2 := by
+    have : ∀ a b, (d a - d b) ^ 2 = d a ^ 2 + d b ^ 2 - 2 * d a * d b := fun a b => by ring
+    simp only [this, Finset.sum_add_distrib, Finset.sum_sub_distrib, Finset.sum_const,
+      Finset.card_univ, Fintype.card_fin, nsmul_eq_mul, ← Finset.mul_sum, ← Finset.sum_mul]
+    ring
+  have hsq : ∀ a, d a ^ 2 ≤ M ^ 2 := fun a => sq_le_sq' (abs_le.mp (hd a)).1 (abs_le.mp (hd a)).2
+  have hsum : ∑ a, d a ^ 2 ≤ R * M ^ 2 := by
+    calc ∑ a, d a ^ 2 ≤ ∑ _a : Fin R, M ^ 2 := Finset.sum_le_sum fun a _ => hsq a
+      _ = R * M ^ 2 := by simp
+  have hR : (0 : ℝ) ≤ R := Nat.cast_nonneg R
+  nlinarith [sq_nonneg (∑ a, d a)]
 
 /-- **The long-run synchronization cost of a playback at a latency** is at
-most `2 (E + δ)²`. -/
+most `(E + δ)²`. The bound is attained when half of the speakers play every
+frame `E + δ` early and the other half `E + δ` late. -/
 theorem sync_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ δc : ℝ} {K : ℕ}
     (h : w.PlaysAtLatency plays L E K)
     (hδ : ∀ r k, K ≤ k → (w.speaker r).out (k + 1) - (w.speaker r).out k ≤ δ)
     (hc : ∀ n, w.source.capture (n + 1) - w.source.capture n ≤ δc) :
-    w.sync plays ≤ ENNReal.ofReal (2 * (E + δ) ^ 2) := by
+    w.sync plays ≤ ENNReal.ofReal ((E + δ) ^ 2) := by
   obtain ⟨N, hN⟩ := exists_frame_beyond plays K
-  have hpair : ∀ n, N ≤ n → ∀ r r', w.pairCost plays r r' n ≤ ENNReal.ofReal (4 * (E + δ) ^ 2) := by
-    intro n hn r r'
-    unfold World.pairCost
-    split
-    · rename_i t t' ht ht'
-      have hl : w.latency plays r n = some (t - w.source.capture n) := by
-        simp [World.latency, ht]
-      have hl' : w.latency plays r' n = some (t' - w.source.capture n) := by
-        simp [World.latency, ht']
-      obtain ⟨a1, a2⟩ := w.latency_near plays h hδ (fun k hk => hN r k n hk hn) hl
-      obtain ⟨b1, b2⟩ := w.latency_near plays h hδ (fun k hk => hN r' k n hk hn) hl'
-      apply ENNReal.ofReal_le_ofReal
-      have h1 : t - t' ≤ 2 * (E + δ) := by linarith
-      have h2 : -(2 * (E + δ)) ≤ t - t' := by linarith
-      nlinarith
-    · exact zero_le
   have hfin : ∀ n, w.syncCost plays n ≠ ⊤ := by
     intro n
     unfold World.syncCost
@@ -422,29 +436,55 @@ theorem sync_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ �
       split <;> simp
   refine w.longRun_frames_le _ N (fun n hn => ?_) ENNReal.ofReal_ne_top hfin hc
   unfold World.syncCost
+  rcases Nat.eq_zero_or_pos R with hR | hR
+  · subst hR
+    simp
+  -- How far each speaker plays frame `n` from its capture plus `L`; zero
+  -- for a speaker that does not play it.
+  set dev : Fin R → ℝ := fun r => match w.playTime plays r n with
+    | some t => t - w.source.capture n - L
+    | none => 0 with hdevdef
+  have hM : 0 ≤ E + δ := by
+    obtain ⟨-, x, -, hx⟩ := h ⟨0, hR⟩ K le_rfl
+    have hE : 0 ≤ E := le_trans (abs_nonneg _) hx
+    have hout := (w.speaker ⟨0, hR⟩).out_strictMono (Nat.lt_succ_self K)
+    linarith [hδ ⟨0, hR⟩ K le_rfl]
+  have hdev : ∀ r, |dev r| ≤ E + δ := by
+    intro r
+    simp only [hdevdef]
+    split
+    · rename_i t ht
+      have hl : w.latency plays r n = some (t - w.source.capture n) := by
+        simp [World.latency, ht]
+      obtain ⟨a1, a2⟩ := w.latency_near plays h hδ (fun k hk => hN r k n hk hn) hl
+      rw [abs_le]
+      constructor <;> linarith
+    · simpa using hM
+  have hpair : ∀ r r', w.pairCost plays r r' n ≤ ENNReal.ofReal ((dev r - dev r') ^ 2) := by
+    intro r r'
+    unfold World.pairCost
+    split
+    · rename_i t t' ht ht'
+      simp only [hdevdef, ht, ht']
+      apply le_of_eq
+      congr 1
+      ring
+    · exact zero_le
   set s := Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2)
-  have hd : 0 ≤ 2 * (E + δ) ^ 2 := by positivity
+  have hR0 : ((R : ℝ≥0∞) ^ 2) ≠ 0 := by simpa using hR.ne'
+  have hRt : ((R : ℝ≥0∞) ^ 2) ≠ ⊤ := by simp
   calc ((R : ℝ≥0∞) ^ 2)⁻¹ * ∑ p ∈ s, w.pairCost plays p.1 p.2 n
-      ≤ ((R : ℝ≥0∞) ^ 2)⁻¹ * ∑ _p ∈ s, ENNReal.ofReal (4 * (E + δ) ^ 2) := by
+      ≤ ((R : ℝ≥0∞) ^ 2)⁻¹ * ∑ p ∈ s, ENNReal.ofReal ((dev p.1 - dev p.2) ^ 2) := by
         gcongr with p
-        exact hpair n hn _ _
-    _ = ((R : ℝ≥0∞) ^ 2)⁻¹ * (((2 * s.card : ℕ) : ℝ≥0∞) * ENNReal.ofReal (2 * (E + δ) ^ 2)) := by
-        rw [Finset.sum_const, nsmul_eq_mul, show (4 : ℝ) * (E + δ) ^ 2 = 2 * (2 * (E + δ) ^ 2) by ring,
-          ENNReal.ofReal_mul (by norm_num)]
-        push_cast
-        simp only [ENNReal.ofReal_ofNat]
-        ring
-    _ ≤ ((R : ℝ≥0∞) ^ 2)⁻¹ * (((R ^ 2 : ℕ) : ℝ≥0∞) * ENNReal.ofReal (2 * (E + δ) ^ 2)) := by
+        exact hpair _ _
+    _ = ((R : ℝ≥0∞) ^ 2)⁻¹ * ENNReal.ofReal (∑ p ∈ s, (dev p.1 - dev p.2) ^ 2) := by
+        rw [ENNReal.ofReal_sum_of_nonneg (fun p _ => sq_nonneg _)]
+    _ ≤ ((R : ℝ≥0∞) ^ 2)⁻¹ * ENNReal.ofReal ((R : ℝ) ^ 2 * (E + δ) ^ 2) := by
         gcongr
-        exact two_mul_card_pairs_le
-    _ ≤ ENNReal.ofReal (2 * (E + δ) ^ 2) := by
-        rcases Nat.eq_zero_or_pos R with hR | hR
-        · subst hR
-          simp
-        · have hR0 : ((R : ℝ≥0∞) ^ 2) ≠ 0 := by simpa using hR.ne'
-          have hRt : ((R : ℝ≥0∞) ^ 2) ≠ ⊤ := by simp
-          push_cast
-          rw [← mul_assoc, ENNReal.inv_mul_cancel hR0 hRt, one_mul]
+        exact sum_pairs_sq_sub_le dev hdev
+    _ = ENNReal.ofReal ((E + δ) ^ 2) := by
+        rw [ENNReal.ofReal_mul (by positivity), ENNReal.ofReal_pow (Nat.cast_nonneg _),
+          ENNReal.ofReal_natCast, ← mul_assoc, ENNReal.inv_mul_cancel hR0 hRt, one_mul]
 
 /-- **The long-run tracking cost of a playback at a latency** is at most
 `(D + E + δ)²`, when every target latency is within `D` of `L`. -/

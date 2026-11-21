@@ -744,8 +744,10 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
       leadMost := 1 / 2
       leadLeast_pos := by norm_num
       leadLeast_le := le_rfl
+      blockLeast := 1
       blockMost := 1
-      blockMost_pos := one_pos
+      blockLeast_pos := one_pos
+      blockLeast_le := le_rfl
       delayLeast := fun _ _ => 1
       delayMost := fun _ _ => 1
       delayLeast_pos := fun _ _ => one_pos
