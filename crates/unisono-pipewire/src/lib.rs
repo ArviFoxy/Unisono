@@ -37,7 +37,7 @@ use pw::properties::properties;
 use pw::spa;
 use pw::spa::pod::Pod;
 use unisono_runtime::audio::{Capture, Playback};
-use unisono_runtime::clock::{self, Other, Tracker};
+use unisono_runtime::clock::{self, Monotonic, MonotonicNs, Tracker};
 
 /// How far a time of PipeWire may be from the latest measurement of the
 /// monotonic clock against the raw clock, in nanoseconds: 50 ms.
@@ -149,7 +149,7 @@ impl Capture for NoCapture {
 /// What the stream's callback keeps.
 struct State<P, C> {
     side: Side<P, C>,
-    tracker: Tracker,
+    tracker: Tracker<Monotonic>,
     /// The samples of a cycle, made once.
     samples: Box<[f32]>,
     channels: usize,
@@ -160,12 +160,11 @@ struct State<P, C> {
 impl<P: Playback, C: Capture> State<P, C> {
     /// The raw clock's time for a time of the monotonic clock.
     fn raw(&mut self, monotonic: i64) -> i64 {
-        self.tracker.refresh_if_older(clock::raw(), REFRESH);
-        match self.tracker.to_raw(monotonic) {
-            Ok(converted) => converted.time,
-            // Only before the first measurement, which `run` makes.
-            Err(_) => monotonic,
-        }
+        let now = clock::raw_ns();
+        self.tracker.refresh_if_older(now, REFRESH);
+        self.tracker
+            .to_raw(MonotonicNs(monotonic))
+            .map_or(now.as_i64(), |converted| converted.time.as_i64())
     }
 
     /// One cycle of the graph.
@@ -304,7 +303,7 @@ where
     let stream = pw::stream::StreamBox::new(&core, &settings.name, properties)
         .map_err(failed("making the stream"))?;
     let channels = usize::try_from(settings.channels).unwrap_or(0);
-    let mut tracker = Tracker::of(Other::Monotonic, LONGEST_AGE);
+    let mut tracker = Tracker::monotonic(LONGEST_AGE);
     tracker.refresh();
     let state = State {
         side,

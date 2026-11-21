@@ -42,9 +42,9 @@
 //! more. Nothing in sending, receiving or reporting allocates memory.
 
 use std::io;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, UdpSocket};
 
-use crate::clock::{self, Tracker};
+use crate::clock::{self, System, SystemNs, Tracker};
 
 /// How far a kernel stamp may be from the latest measurement of the clocks
 /// and still be converted, in nanoseconds: 50 ms.
@@ -58,6 +58,61 @@ const REFRESH: i64 = 100_000;
 /// departures can wait to be read. A caller that sends more than this many
 /// datagrams without reading departures loses the oldest ones.
 pub const WAITING: usize = 64;
+
+/// Maximum kernel error-queue reports inspected during a single
+/// [`Socket::departure`] call, large enough to drain every [`WAITING`]
+/// scheduled/delivered pair plus bursts of unrelated error-queue messages.
+const MAX_REPORTS_PER_CALL: usize = WAITING * 8;
+
+/// Canonicalizes a peer address for equality comparisons: IPv4-mapped IPv6
+/// addresses (`::ffff:a.b.c.d`) are folded to their IPv4 form so dual-stack
+/// sockets match IPv4 peer entries.
+#[must_use]
+pub fn canonical_addr(address: SocketAddr) -> SocketAddr {
+    match address {
+        SocketAddr::V4(_) => address,
+        SocketAddr::V6(v6) => match v6.ip().to_ipv4_mapped() {
+            Some(v4) => SocketAddr::V4(SocketAddrV4::new(v4, v6.port())),
+            None => address,
+        },
+    }
+}
+
+/// Returns an ephemeral unspecified bind address matching the address family
+/// of `peers` (`[::]:0` if any peer is IPv6, otherwise `0.0.0.0:0`).
+#[must_use]
+pub fn unspecified_for(peers: &[SocketAddr]) -> SocketAddr {
+    if peers.iter().any(SocketAddr::is_ipv6) {
+        SocketAddr::from((Ipv6Addr::UNSPECIFIED, 0))
+    } else {
+        SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0))
+    }
+}
+
+/// Whether a UDP `send_to` error is transient or peer-specific and should be
+/// counted as an unsent datagram instead of terminating the network thread.
+#[must_use]
+pub fn is_transient_send_error(error: &io::Error) -> bool {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::WouldBlock
+            | io::ErrorKind::Interrupted
+            | io::ErrorKind::NetworkUnreachable
+            | io::ErrorKind::HostUnreachable
+            | io::ErrorKind::NetworkDown
+            | io::ErrorKind::ConnectionRefused
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::AddrNotAvailable
+            | io::ErrorKind::PermissionDenied
+    ) {
+        return true;
+    }
+    #[cfg(unix)]
+    if error.raw_os_error() == Some(libc::ENOBUFS) {
+        return true;
+    }
+    false
+}
 
 /// After how many datagrams with a stamp of the packet scheduler and none of
 /// the device the socket concludes that the device gives none. Large enough
@@ -135,7 +190,9 @@ pub struct Ready {
 /// report.
 #[derive(Clone, Copy)]
 struct Awaited {
-    tag: u64,
+    /// Tag to hand back with the departure, or `None` for untagged sends
+    /// whose kernel key must still be tracked without reporting a departure.
+    tag: Option<u64>,
     before: i64,
     /// The key the kernel gives the datagram in its reports, if no send that
     /// failed since the last report took a key.
@@ -150,7 +207,7 @@ struct Awaited {
 }
 
 const NOTHING: Awaited = Awaited {
-    tag: 0,
+    tag: None,
     before: 0,
     key: 0,
     slack: 0,
@@ -261,16 +318,19 @@ impl Ledger {
         self.failed = self.failed.saturating_add(1);
     }
 
-    /// Takes in that a datagram was sent.
-    fn sent(&mut self, tag: u64, before: i64) {
+    /// Takes in that a datagram was sent, with an optional `tag` to report
+    /// when its departure is known.
+    fn sent(&mut self, tag: Option<u64>, before: i64) {
         if self.decided == Some(Source::Program) {
             // The kernel counts the datagram whether or not it reports.
             self.next_key = self.next_key.wrapping_add(1);
-            self.hand_out(Known {
-                tag,
-                before,
-                kernel: None,
-            });
+            if let Some(tag) = tag {
+                self.hand_out(Known {
+                    tag,
+                    before,
+                    kernel: None,
+                });
+            }
             return;
         }
         if self.waiting == WAITING {
@@ -307,14 +367,16 @@ impl Ledger {
         if unreported <= SILENCE {
             return;
         }
-        // Hand out the program's stamps for everything that waits, and from
-        // now on.
+        // Hand out the program's stamps for everything tagged that waits, and
+        // from now on.
         self.decided = Some(Source::Program);
         for step in 0..self.waiting {
             let at = place(self.oldest + step);
-            if let Some(awaited) = self.awaited.get(at).copied().filter(|awaited| awaited.open) {
+            if let Some(awaited) = self.awaited.get(at).copied().filter(|awaited| awaited.open)
+                && let Some(tag) = awaited.tag
+            {
                 self.hand_out(Known {
-                    tag: awaited.tag,
+                    tag,
                     before: awaited.before,
                     kernel: None,
                 });
@@ -410,7 +472,8 @@ impl Ledger {
         self.forget_closed();
     }
 
-    /// Hands out the departure of the awaited datagram at place `at`.
+    /// Hands out the departure of the awaited datagram at place `at`, if it
+    /// carried a tag.
     fn close(&mut self, at: usize, system: i64, source: Source) {
         let Some(awaited) = self.awaited.get(at).copied() else {
             return;
@@ -418,11 +481,13 @@ impl Ledger {
         if let Some(slot) = self.awaited.get_mut(at) {
             slot.open = false;
         }
-        self.hand_out(Known {
-            tag: awaited.tag,
-            before: awaited.before,
-            kernel: Some((system, source)),
-        });
+        if let Some(tag) = awaited.tag {
+            self.hand_out(Known {
+                tag,
+                before: awaited.before,
+                kernel: Some((system, source)),
+            });
+        }
     }
 
     /// Concludes that the device stamps nothing, and hands out the stamps of
@@ -446,7 +511,7 @@ impl Ledger {
 /// A UDP socket that gives the times of arrival and departure.
 pub struct Socket {
     inner: UdpSocket,
-    tracker: Tracker,
+    tracker: Tracker<System>,
     /// Whether the kernel stamps arrivals on this socket.
     arrivals: bool,
     ledger: Ledger,
@@ -469,7 +534,7 @@ impl Socket {
         let socket = UdpSocket::bind(address)?;
         socket.set_nonblocking(true)?;
         let (arrivals, reports) = sys::enable(&socket);
-        let mut tracker = Tracker::new(LONGEST_AGE);
+        let mut tracker = Tracker::system(LONGEST_AGE);
         tracker.refresh();
         Ok(Socket {
             inner: socket,
@@ -539,10 +604,10 @@ impl Socket {
     /// A stamp of the kernel on the raw clock, or the program's stamp if
     /// the kernel's cannot be converted.
     fn converted(&mut self, system: i64, source: Source, own: i64) -> Stamp {
-        self.tracker.refresh_if_older(clock::raw(), REFRESH);
-        match self.tracker.to_raw(system) {
+        self.tracker.refresh_if_older(clock::raw_ns(), REFRESH);
+        match self.tracker.to_raw(SystemNs(system)) {
             Ok(converted) => Stamp {
-                time: converted.time,
+                time: converted.time.as_i64(),
                 error: converted.error,
                 source,
             },
@@ -573,12 +638,9 @@ impl Socket {
         }))
     }
 
-    /// Sends `bytes` to `to`. `tag` comes back with the departure.
-    ///
-    /// # Errors
-    ///
-    /// What the system says; `WouldBlock` when the socket's buffer is full.
-    pub fn send_to(&mut self, bytes: &[u8], to: SocketAddr, tag: u64) -> io::Result<Sent> {
+    /// Sends `bytes` to `to`, optionally tracking `tag` for a departure
+    /// report while always keeping kernel timestamp keys synchronized.
+    fn send_raw(&mut self, bytes: &[u8], to: SocketAddr, tag: Option<u64>) -> io::Result<Sent> {
         let before = clock::raw();
         if let Err(error) = self.inner.send_to(bytes, to) {
             self.ledger.failed();
@@ -586,6 +648,25 @@ impl Socket {
         }
         self.ledger.sent(tag, before);
         Ok(Sent { before })
+    }
+
+    /// Sends `bytes` to `to`. `tag` comes back with the departure.
+    ///
+    /// # Errors
+    ///
+    /// What the system says; `WouldBlock` when the socket's buffer is full.
+    pub fn send_to(&mut self, bytes: &[u8], to: SocketAddr, tag: u64) -> io::Result<Sent> {
+        self.send_raw(bytes, to, Some(tag))
+    }
+
+    /// Sends `bytes` to `to` without reporting a departure, while still
+    /// keeping the kernel's per-datagram timestamp sequence aligned.
+    ///
+    /// # Errors
+    ///
+    /// What the system says; `WouldBlock` when the socket's buffer is full.
+    pub fn send_untagged(&mut self, bytes: &[u8], to: SocketAddr) -> io::Result<Sent> {
+        self.send_raw(bytes, to, None)
     }
 
     /// The departure of a datagram that was sent earlier, if one is known
@@ -597,8 +678,10 @@ impl Socket {
     ///
     /// What the system says.
     pub fn departure(&mut self) -> io::Result<Option<Departure>> {
-        // Each round takes one report from the kernel.
-        for _ in 0..WAITING {
+        // Each round takes one report from the kernel; the budget covers all
+        // `WAITING` scheduled/delivered pairs plus bursts of non-timestamp
+        // error-queue messages.
+        for _ in 0..MAX_REPORTS_PER_CALL {
             if let Some(known) = self.ledger.next() {
                 let stamp = match known.kernel {
                     Some((system, source)) => self.converted(system, source, known.before),
@@ -903,10 +986,7 @@ mod sys {
             return Ok(None);
         };
         let Some(from) = found.from else {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "a datagram without an Internet address",
-            ));
+            return Err(io::Error::from(io::ErrorKind::InvalidData));
         };
         Ok(Some(Datagram {
             length: found.length,
@@ -998,7 +1078,14 @@ mod sys {
                 from,
                 stamped: None,
             })),
-            Err(error) if error.kind() == io::ErrorKind::WouldBlock => Ok(None),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                ) =>
+            {
+                Ok(None)
+            }
             Err(error) => Err(error),
         }
     }
@@ -1014,7 +1101,10 @@ mod tests {
     use std::net::SocketAddr;
     use std::time::{Duration, Instant};
 
-    use super::{Departure, Known, Ledger, PATIENCE, Received, SILENCE, Socket, Source, WAITING};
+    use super::{
+        Departure, Known, Ledger, PATIENCE, Received, SILENCE, Socket, Source, WAITING,
+        canonical_addr, unspecified_for,
+    };
 
     #[allow(clippy::unnecessary_wraps)] // it is compared with what `next` returns
     fn kernel(tag: u64, system: i64, source: Source) -> Option<Known> {
@@ -1028,7 +1118,7 @@ mod tests {
     /// Takes in that the datagram with `tag` was sent; its own stamp is the
     /// tag, so that a mix-up of datagrams shows in either number.
     fn send(ledger: &mut Ledger, tag: u64) {
-        ledger.sent(tag, i64::try_from(tag).unwrap_or(0));
+        ledger.sent(Some(tag), i64::try_from(tag).unwrap_or(0));
     }
 
     /// Both reports of the datagram with `key`, with stamps that tell the
@@ -1432,6 +1522,36 @@ mod tests {
             left.iter()
                 .all(|departure| departure.stamp.source == Source::Kernel)
         );
+    }
+
+    #[test]
+    fn untagged_sends_preserve_keys_without_reporting_departures() {
+        let mut ledger = Ledger::new(true);
+        send(&mut ledger, 10);
+        ledger.sent(None, 11);
+        ledger.sent(None, 12);
+        send(&mut ledger, 13);
+        for key in 0..4 {
+            report(&mut ledger, key);
+        }
+        assert_eq!(ledger.next(), kernel(10, 2_000, Source::Kernel));
+        assert_eq!(ledger.next(), kernel(13, 2_003, Source::Kernel));
+        assert_eq!(ledger.next(), None);
+        assert_eq!(ledger.waiting, 0);
+    }
+
+    #[test]
+    fn canonical_addr_folds_ipv4_mapped_ipv6_and_unspecified_for_matches_family() {
+        let v4: SocketAddr = "127.0.0.1:5000".parse().expect("v4");
+        let mapped: SocketAddr = "[::ffff:127.0.0.1]:5000".parse().expect("mapped");
+        let v6: SocketAddr = "[::1]:5000".parse().expect("v6");
+        assert_eq!(canonical_addr(v4), v4);
+        assert_eq!(canonical_addr(mapped), v4);
+        assert_eq!(canonical_addr(v6), v6);
+        assert!(unspecified_for(&[]).is_ipv4());
+        assert!(unspecified_for(&[v4]).is_ipv4());
+        assert!(unspecified_for(&[v4, v6]).is_ipv6());
+        assert!(unspecified_for(&[mapped]).is_ipv6());
     }
 
     #[cfg(target_os = "linux")]

@@ -44,7 +44,7 @@ use std::thread::JoinHandle;
 use alsa::pcm::{Access, Format, Frames, HwParams, PCM, State, TstampType};
 use alsa::{Direction, ValueOr};
 use unisono_runtime::audio::{Capture, Playback};
-use unisono_runtime::clock::{self, Other, Tracker};
+use unisono_runtime::clock::{self, Monotonic, MonotonicNs, System, SystemNs, Tracker};
 
 /// How far a time of the device may be from the latest measurement of the
 /// monotonic clock against the raw clock, in nanoseconds: 50 ms.
@@ -111,6 +111,56 @@ impl Running {
     }
 }
 
+/// Converts ALSA timestamps from the device's negotiated clock domain to the
+/// host's raw monotonic clock.
+enum StampClock {
+    /// Device already stamps with `CLOCK_MONOTONIC_RAW`.
+    Raw,
+    /// Device stamps with `CLOCK_MONOTONIC`.
+    Monotonic(Tracker<Monotonic>),
+    /// Device stamps with `CLOCK_REALTIME` (`gettimeofday`).
+    System(Tracker<System>),
+}
+
+impl StampClock {
+    fn for_type(stamps: TstampType) -> StampClock {
+        match stamps {
+            TstampType::MonotonicRaw => StampClock::Raw,
+            TstampType::Monotonic => {
+                let mut tracker = Tracker::monotonic(LONGEST_AGE);
+                tracker.refresh();
+                StampClock::Monotonic(tracker)
+            }
+            TstampType::Gettimeofday => {
+                let mut tracker = Tracker::system(LONGEST_AGE);
+                tracker.refresh();
+                StampClock::System(tracker)
+            }
+        }
+    }
+
+    fn convert(&mut self, stamped: i64, now: clock::RawNs) -> i64 {
+        if stamped == 0 {
+            return now.as_i64();
+        }
+        match self {
+            StampClock::Raw => stamped,
+            StampClock::Monotonic(tracker) => {
+                tracker.refresh_if_older(now, REFRESH);
+                tracker
+                    .to_raw(MonotonicNs(stamped))
+                    .map_or(now.as_i64(), |converted| converted.time.as_i64())
+            }
+            StampClock::System(tracker) => {
+                tracker.refresh_if_older(now, REFRESH);
+                tracker
+                    .to_raw(SystemNs(stamped))
+                    .map_or(now.as_i64(), |converted| converted.time.as_i64())
+            }
+        }
+    }
+}
+
 /// A device that is open, and what its cycles are like.
 struct Device {
     pcm: PCM,
@@ -118,9 +168,8 @@ struct Device {
     cycle: usize,
     channels: usize,
     rate: u32,
-    /// The clock that the device gives its times on.
-    stamps: TstampType,
-    tracker: Tracker,
+    /// Converts the device's timestamps to the raw clock.
+    clock: StampClock,
 }
 
 impl Device {
@@ -167,15 +216,12 @@ impl Device {
                 .map_err(|error| wrong("the settings", error))?;
             software.get_tstamp_type().unwrap_or(TstampType::Monotonic)
         };
-        let mut tracker = Tracker::of(Other::Monotonic, LONGEST_AGE);
-        tracker.refresh();
         Ok(Device {
             pcm,
             cycle: usize::try_from(cycle).unwrap_or(0),
             channels: usize::try_from(settings.channels).unwrap_or(0),
             rate: settings.rate.max(1),
-            stamps,
-            tracker,
+            clock: StampClock::for_type(stamps),
         })
     }
 
@@ -212,18 +258,8 @@ impl Device {
         let stamped = i64::from(stamp.tv_sec)
             .saturating_mul(1_000_000_000)
             .saturating_add(i64::from(stamp.tv_nsec));
-        let now = clock::raw();
-        let time = if stamped == 0 {
-            // The device gives no time.
-            now
-        } else if self.stamps == TstampType::MonotonicRaw {
-            stamped
-        } else {
-            self.tracker.refresh_if_older(now, REFRESH);
-            self.tracker
-                .to_raw(stamped)
-                .map_or(now, |converted| converted.time)
-        };
+        let now = clock::raw_ns();
+        let time = self.clock.convert(stamped, now);
         Some((time, i64::from(status.get_delay())))
     }
 
