@@ -61,8 +61,8 @@ specification is used throughout.
 
 \paragraph{Parameters} (\lean{Params}): the sender's host and the hosts of
 the speakers; the nominal rate $\rho$; the latency $L$; the number of copies
-$c$ of each message; the period $P$ of the clock exchange; and the slew $w$,
-the largest correction of the position per output sample, in frames.
+$c$ of each message; and the slew $w$, the largest correction of the
+position per output sample, in frames.
 
 \paragraph{The stream.} When the capture device hands over block $b$, the
 sender sends its frames to every speaker's host, with the block's first
@@ -71,18 +71,19 @@ Each message is sent $c$ times, so that a link that drops at most $c - 1$
 consecutive messages still delivers one. A host keeps, of the blocks that
 have arrived, the latest: its first frame $f$ and timestamp $\hat c$.
 
-\paragraph{The clocks.} At a request of one of its devices, a speaker's host
-other than the sender's asks the sender for its clock, unless it asked
-within the last $P$ seconds of its own clock: it sends its reading $t_1$.
-When the question arrives, the sender answers with $t_1$ and its own reading
-$t_2$. When the answer arrives at the host's reading $t_4$, the host
-estimates the sender's clock minus its own as
+\paragraph{The clocks.} At every request of one of its devices, a speaker's
+host other than the sender's asks the sender for its clock: it sends its
+reading $t_1$. When the question arrives, the sender answers with $t_1$ and
+its own reading $t_2$. When the answer arrives at the host's reading $t_4$,
+the host estimates the sender's clock minus its own as
 \[
   \hat\theta = t_2 - \frac{t_1 + t_4}{2},
 \]
 which is NTP's estimate with the sender's two readings taken at the same
-moment. Questions and answers are also sent $c$ times. The sender's host
-uses $\hat\theta = 0$.
+moment. The host keeps the estimate of the latest question answered, the
+one with the largest $t_1$; answers that arrive out of order do not replace
+a newer estimate. Questions and answers are also sent $c$ times. The
+sender's host uses $\hat\theta = 0$.
 
 \paragraph{The target} (\lean{target}). When speaker $r$'s device requests a
 block whose first output sample is $g$, with timestamp $\hat o$, the host

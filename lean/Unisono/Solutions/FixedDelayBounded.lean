@@ -191,12 +191,10 @@ theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
       exact Or.inr (Or.inl ⟨i, sent, F, hobs, hh, hs.2⟩)
     · simp at hs
   · rename_i r outputs stamp hobs
-    split_ifs at hs with hask
-    · simp only [List.mem_replicate] at hs
-      refine Or.inr (Or.inr ⟨r, outputs, stamp, hobs, ?_, hs.2⟩)
-      simp only [asks, Bool.and_eq_true, bne_iff_ne] at hask
-      exact hask.1
+    split_ifs at hs with hh
     · simp at hs
+    · simp only [List.mem_replicate] at hs
+      exact Or.inr (Or.inr ⟨r, outputs, stamp, hobs, hh, hs.2⟩)
   · simp at hs
 
 omit [DecidableEq H] in

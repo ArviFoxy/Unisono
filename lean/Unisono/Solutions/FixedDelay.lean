@@ -19,14 +19,15 @@ with.
   first frame and its timestamp, a reading of the sender's clock. Each
   message is sent `copies` times, so that a link that drops at most
   `copies - 1` consecutive messages still delivers one.
-* **The clocks.** A speaker's host asks the sender for its clock at most
-  once a `period`, at a request of one of its devices: it sends its own
+* **The clocks.** At every request of one of its devices, a speaker's host
+  other than the sender's asks the sender for its clock: it sends its own
   reading `t₁`, and the sender answers with `t₁` and its own reading `t₂`
   when the question arrived. When the answer arrives at the host's reading
   `t₄`, the host estimates the sender's clock minus its own as
   `t₂ - (t₁ + t₄) / 2`, as NTP does with the two readings of the sender
-  taken at the same moment. Each question and each answer is sent `copies`
-  times as well. The sender's host itself uses its own clock.
+  taken at the same moment. It keeps the estimate of the latest question
+  answered. Each question and each answer is sent `copies` times as well.
+  The sender's host itself uses its own clock.
 * **The target.** When a speaker's device requests a block, the host
   estimates the reading of the sender's clock at which each output sample
   leaves: the device's timestamp of the block, plus the time of the sample
@@ -75,9 +76,6 @@ structure Params (H : Type) where
   latency : ℝ
   /-- How many times each message is sent. -/
   copies : ℕ
-  /-- The least time between two questions for the sender's clock, seconds
-  of the asking host's clock. -/
-  period : ℝ
   /-- The largest correction of the position per output sample, frames. -/
   slew : ℝ
 
@@ -85,10 +83,10 @@ structure Params (H : Type) where
 structure Memory (R : ℕ) where
   /-- The latest block of the source: its first frame and its timestamp. -/
   block : Option (ℕ × ℝ)
-  /-- The estimate of the sender's clock minus this host's clock. -/
-  offset : Option ℝ
-  /-- This host's reading when it last asked the sender for its clock. -/
-  asked : Option ℝ
+  /-- Of the latest question for the sender's clock that was answered: the
+  host's reading when it sent the question, and the estimate of the
+  sender's clock minus this host's clock. -/
+  offset : Option (ℝ × ℝ)
   /-- For each speaker: its last output sample and the position it plays. -/
   last : Fin R → Option (ℕ × ℝ)
 
@@ -96,7 +94,6 @@ structure Memory (R : ℕ) where
 def Memory.empty : Memory R where
   block := none
   offset := none
-  asked := none
   last := fun _ => none
 
 /-- A value moved into the interval from `-w` to `w`. -/
@@ -109,7 +106,7 @@ before the sample leaves, by the estimates. `first` is the block's first
 output sample and `stamp` the device's timestamp of it. -/
 def target (m : Memory R) (first : ℕ) (stamp : ℝ) (k : ℕ) : Option ℝ :=
   match m.block, m.offset with
-  | some (f, captured), some offset =>
+  | some (f, captured), some (_, offset) =>
       some (f + ((stamp + ((k : ℝ) - first) / p.rate + offset - p.latency) - captured)
         * p.rate)
   | _, _ => none
@@ -145,20 +142,12 @@ def lastPlayed (decided : List (ℕ × Option ℝ)) : Option (ℕ × ℝ) :=
 
 variable [DecidableEq H]
 
-/-- Whether host `h` asks the sender for its clock at an event at its
-reading `reading`: it is not the sender, and it has not asked within the
-last `period`. -/
-def asks (h : H) (m : Memory R) (reading : ℝ) : Bool :=
-  h != p.sender && (match m.asked with
-    | none => true
-    | some t => decide (t + p.period ≤ reading))
-
 /-- How a host's memory changes with an event that it observes. -/
 def remember (h : H) (m : Memory R) (e : Event H R Payload) : Memory R :=
   match e.observation with
   | .handed frames stamp =>
       if h = p.sender then
-        { m with block := (frames.head?.map Prod.fst).map fun f => (f, stamp), offset := some 0 }
+        { m with block := (frames.head?.map Prod.fst).map fun f => (f, stamp), offset := some (0, 0) }
       else m
   | .received _ (.block f stamp) _ =>
       match m.block with
@@ -166,11 +155,13 @@ def remember (h : H) (m : Memory R) (e : Event H R Payload) : Memory R :=
       | none => { m with block := some (f, stamp) }
   | .received _ (.answer sent received) _ =>
       if h = p.sender then m
-      else { m with offset := some (received - (sent + e.reading) / 2) }
+      else
+        let estimate := (sent, received - (sent + e.reading) / 2)
+        match m.offset with
+        | some (asked, _) => if asked < sent then { m with offset := some estimate } else m
+        | none => { m with offset := some estimate }
   | .asked r outputs stamp =>
-      { m with
-        last := Function.update m.last r (lastPlayed (positions p m r outputs stamp))
-        asked := if asks p h m e.reading then some e.reading else m.asked }
+      { m with last := Function.update m.last r (lastPlayed (positions p m r outputs stamp)) }
   | _ => m
 
 /-- What a host does at an event, with what it remembers from the events
@@ -195,8 +186,8 @@ def act (h : H) (m : Memory R) (e : Event H R Payload) : Action H Payload :=
       else ⟨[], [], fun _ => none⟩
   | .asked r outputs stamp =>
       let decided := positions p m r outputs stamp
-      { sends := if asks p h m e.reading then
-          List.replicate p.copies (p.sender, Payload.ask e.reading, ∅) else []
+      { sends := if h = p.sender then []
+          else List.replicate p.copies (p.sender, Payload.ask e.reading, ∅)
         timers := []
         plays := fun k => (decided.lookup k).join }
   | _ => ⟨[], [], fun _ => none⟩
