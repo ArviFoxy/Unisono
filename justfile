@@ -6,7 +6,12 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: format-check lint test targets realtime cost translation prove translation-check
+check: sizes format-check lint test targets realtime cost translation prove translation-check
+
+# No file of the repository is larger than a megabyte: the largest by far is
+# the translation of the core, a quarter of that.
+sizes:
+    @git ls-files -z | xargs -0 du --bytes | awk '$1 > 1048576 { print "too large: " $2; large = 1 } END { exit large }'
 
 # Rewrite the Rust sources in the standard format.
 format:

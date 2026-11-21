@@ -35,7 +35,7 @@ jobs:
       # The crate for PipeWire builds against PipeWire's headers, with clang.
       - name: Install PipeWire's headers
         run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libclang-dev
-      - run: just format-check lint test targets realtime cost
+      - run: just sizes format-check lint test targets realtime cost
 
   # The tests against a running PipeWire, in a container.
   pipewire:
