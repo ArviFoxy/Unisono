@@ -64,7 +64,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 
 | Theorem | What it says |
 |---|---|
-| `measure_largest` | When nothing sets the next stretch apart from the stretches seen, it needs more than all of them with the probability one in their number and one, whatever the law of the needs. |
+| `measure_largest`, `measure_largest_le` | When nothing sets the next stretch apart from the stretches seen, it needs strictly more than all of them with probability at most one in their number and one (`measure_largest_le`), and with equality when ties have probability zero (`measure_largest`), whatever the law of the needs. |
 | `integral_predictive` | The mean cost of the next stretch, under the law that the choice takes. |
 | `volume_missed`, `missed_le`, `missed_ge` | The time for which a stretch is missed at a level, for a pause that holds packets back: the count used never understates it, and overstates it by at most the time from the start of the stretch to the start of the pause. |
 | `volume_lasts`, `move_pays_iff` | When the present is as likely in any part of the time over which the needs keep their law, a move of the level more likely than not pays for itself exactly when what it saves over the time of the evidence exceeds its cost. |
@@ -75,7 +75,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 
 | Theorem | What it says |
 |---|---|
-| `saturate_spec`, `mul_shift_spec`, `div_floor_spec`, `div_floor_wide_spec` | Saturation, a rounded product, and division rounded down return the stated numbers. |
+| `saturate_spec`, `mul_shift_spec`, `div_floor_spec`, `div_floor_wide_spec`, `rem_euclid_wide_spec` | Saturation, a rounded product, division rounded down, and Euclidean remainder return the stated numbers (with `none` for remainder modulo zero). |
 | `root_spec` | The square root returns the largest whole number whose square is at most its argument. |
 
 ### 2.2 Packets (`Packet`)
@@ -83,7 +83,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 | Theorem | What it says |
 |---|---|
 | `audio_roundtrip`, `report_roundtrip`, `echo_roundtrip`, `request_roundtrip` | A header that is written and read back is the same header. |
-| `write_audio_spec`, `write_report_spec`, `write_echo_spec`, `write_request_spec` | The exact bytes of each kind of packet. |
+| `write_audio_spec`, `write_report_spec`, `write_echo_spec`, `write_request_spec` | The exact bytes, returned lengths, and report padding zeros of each kind of packet. |
 | `parse_audio_valid`, `validate_audio_spec`, `payload_spec` | A header that is accepted is a valid one, with a payload of exactly the length the header says. |
 | `kind_spec`, `parse_audio_kind`, `parse_report_kind`, `parse_echo_kind`, `parse_request_kind` | A packet is read as one kind only. |
 | `read_spec`, `write_spec` | Reading and writing a number of up to eight bytes at a place. |
@@ -93,11 +93,11 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 
 | Theorem | What it says |
 |---|---|
-| `fit_spec` | The fit changes nothing but the line, and a line it stores passes through a kept sample with no kept sample below it. It is the line through two kept samples around the mean of their times, or its slope is at the limit. |
+| `fit_spec` | The fit changes nothing but the line, and a line it stores passes through a kept sample with no kept sample below it and its slope within `limit`. It is the line through two kept samples around the mean of their times, or its slope is at the limit over one second. |
 | `mean_time_spec`, `anchor_near_mean` | That mean, rounded down to a nanosecond. |
 | `through_best`, `through_excess` | Read in real numbers, the stored line is the best line of section 1.1: the highest at the mean of the times, and the most likely one up to the rounding. |
-| `side_spec`, `is_under_spec`, `bridge_spec`, `limited_spec` | The parts of the fit: the side of a line a sample lies on, whether a line is under all kept samples, the two samples the line is drawn through, and the line at the slope limit. |
-| `put_spec`, `drop_oldest_spec`, `forget_before_spec`, `new_spec`, `remember_spec`, `reset_window_spec`, `consider_spec`, `overtaken_spec` | Keeping and forgetting samples change what they say and nothing else. |
+| `side_spec`, `is_under_spec`, `bridge_spec`, `slope_within_spec`, `limited_spec`, `eval_spec` | The parts of the fit and line evaluation: the side of a line a sample lies on, whether a line is under all kept samples, the two samples the line is drawn through, the exact slope-bound test, the line at the slope limit, and exact clamped line evaluation. |
+| `put_spec`, `drop_oldest_spec`, `forget_before_spec`, `append_spec`, `keep_spec`, `end_window_spec`, `new_spec`, `remember_spec`, `reset_window_spec`, `consider_spec`, `overtaken_spec` | Keeping, bounding, and forgetting samples change what they say and nothing else, preserving the kept-count bound `len ≤ M`. |
 | `observe_spec`, `observe_later`, `observe_in_order` | From any state: a sample that can come from an overtaken packet leaves the estimator exactly as it is, and every other one is taken in. So an estimator takes a stream in again within the time it remembers, whatever it held. |
 | `observe_total`, `end_window_total` | Taking in a packet and ending a window return for every input. |
 
@@ -105,10 +105,10 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 
 | Theorem | What it says |
 |---|---|
-| `when_spec`, `when_cycle_spec` | When a frame leaves the device, and how long a cycle takes: no sum or product wraps, and the result is the stated function of the kept reports. |
+| `fit_spec`, `when_spec`, `when_cycle_spec` | Fitting sums/spread/tilt, when a frame leaves the device, and how long a cycle takes: no sum or product wraps, and the result is the stated function of the kept reports. |
 | `beyondZ_eq_floor_lineFit`, `beyondSlopeQ16Z_eq_floor_lineFit` | That function is the least-squares line of section 1.1 through the reports, rounded down. |
 | `observe_spec`, `observe_after_aside`, `step_spec` | A report is kept, or set aside with everything else as it was, and that only when nothing was set aside before: of two reports in a row the second is kept, so the line follows the device again from any state. |
-| `push_spec`, `start_spec`, `shift_spec` | Keeping a report, starting anew and moving the kept reports by a step. |
+| `push_spec`, `start_spec`, `shift_spec` | Keeping a report, starting anew (keeping only the new report with `len = 1` when `W > 0`), and shifting every kept report's timestamp while preserving positions and unkept slots. |
 | `observe_total`, `when_total` | Both return for every input. |
 
 ### 2.5 The frames a receiver holds (`Presence`)
@@ -125,11 +125,11 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 |---|---|
 | `packet_spec` | What a receiver does with a packet, in every case: another stream's is ignored; a timeline is taken up, kept, or a stray one remembered for a second packet to confirm. |
 | `follows_after_silence`, `late_run_is_short`, `restart_stores` | From any state, a receiver sent packets of one timeline follows it within the set time of silence, and holds the packet it starts anew at. |
-| `wrong_stream_packet_noop`, `wrong_stream_echo_noop`, `single_stray_timeline_noop` | Packets of another stream, and one stray packet of another timeline, change nothing that is played. |
+| `wrong_stream_packet_noop`, `wrong_stream_echo_noop`, `single_stray_timeline_noop` | Packets of another stream, and one stray packet of another timeline, leave playback, schedule, clock estimate, path delay, answers, and report departures unchanged. |
 | `take_spec`, `take_idle`, `skip_spec` | The run of frames handed to the device is all held or all missing, starts at the playhead, and the playhead never moves back. |
-| `cycle_spec`, `due_at_total` | Planning a cycle returns for every state and reading of the clock and changes only the regulator. |
+| `cycle_spec`, `due_at_total` | Planning a cycle returns for every state and reading of the clock and changes only the schedules and the regulator. |
 | `echo_spec`, `report_spec`, `reported_spec` | Measuring the delay of the path changes nothing about the timeline or the frames held. |
-| `adopt_spec`, `keep_newest_spec`, `new_spec` | Taking up a timeline, moving to the newest frames, and a new receiver. |
+| `adopt_spec`, `keep_newest_spec`, `new_spec` | Taking up a timeline (preserving path answers and report departures on the same clock, and clearing them on a new clock), moving to the newest frames, and a new receiver. |
 
 ### 2.7 The regulator and timing (`Player`, `Gains`, `Due`)
 
@@ -137,7 +137,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 |---|---|
 | `cycle_spec`, `cycle_step_small`, `step_clamped_spec` | Planning a cycle returns for every state and schedule, and its step is within the limit of the pace, which is a step the resampler takes. |
 | `gain_spec`, `gains_spec`, `regulate_spec` | The gain of a cycle, and that the two gains the code computes and what it has the cycle read are within stated bounds of the best law's (section 1.3). |
-| `Due.due_spec` | The position that the code takes to be due at a time is the one the schedule says (section 1.2), rounded down to `2⁻³²` frame. |
+| `Due.due_spec`, `Due.dueUnits_eq_floor` | `timing::due` returns `none` if and only if rate, pace, or stretch is non-positive or the frame falls outside `[0, 2⁶⁴)`, and otherwise returns the exact position from section 1.2 rounded down to `2⁻³²` frame. |
 | `sender_time_total`, `due_total`, `position_units_total`, `position_from_units_total`, `step_units_total`, `step_new_total`, `position_advance_total`, `step_from_parts_per_billion_total` | The conversions between times, positions and steps return for every input. |
 
 ### 2.8 The sender (`Sender`)
@@ -153,7 +153,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 | Theorem | What it says |
 |---|---|
 | `Needs.observe_total`, `recent_total`, `new_total`, `clear_total`, `newest_total`, `get_total` | Keeping the largest need of each stretch returns for every input. |
-| `Answers.observe_total`, `shortest_total`, `new_total` | Keeping the answers with the shortest time there and back returns for every input. |
+| `Answers.observe_total`, `shortest_total`, `new_total`, `clear_spec` | Keeping the answers with the shortest time there and back returns for every input, and `clear` marks every slot empty. |
 | `Arrivals.find_spec`, `record_spec` | The table of arrival times keeps the first arrival of each report and finds it. |
 
 ### 2.10 How long loops run (`Rounds`)
@@ -161,7 +161,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 | Theorem | What it says |
 |---|---|
 | `endsWithin_of_measure` | A loop whose every round lowers a number that cannot go below zero ends within that many rounds. |
-| `mark_rounds`, `run_rounds`, `gap_rounds`, `advance_rounds`, `clear_rounds`, `find_rounds`, `sums_rounds` | The loops on the audio thread take at most one round for each frame, word, arrival or report they go through. |
+| `mark_rounds`, `run_rounds`, `gap_rounds`, `advance_rounds`, `clear_rounds`, `find_rounds`, `sums_rounds`, `shift_rounds` | The loops on the audio thread take at most one round for each frame, word, arrival or report they go through. |
 
 ## 3. What is not proved
 

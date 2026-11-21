@@ -81,55 +81,6 @@ theorem ediv_of_tdiv (a b : ℤ) (hb : 0 < b) :
   · exact ((Int.ediv_emod_unique hb).mpr
       ⟨by linarith, by omega, by omega⟩ : a / b = a.tdiv b ∧ a % b = a.tmod b).1
 
-/-- `div_floor` divides by a positive number rounding toward negative
-infinity, which is what `/` on the integers does, and gives zero for a divisor
-that is not positive. -/
-@[step]
-theorem div_floor_spec (a : Std.I128) (b : Std.I64) :
-    fixed.div_floor a b ⦃ r => (0 < b.val → r.val = a.val / b.val) ∧ (b.val ≤ 0 → r.val = 0) ⦄ := by
-  unfold fixed.div_floor
-  split
-  · simp
-    scalar_tac
-  · step as ⟨divisor, hdiv⟩
-    have hd : divisor.val = b.val := by scalar_tac
-    have hb : 0 < b.val := by scalar_tac
-    have hq := I128.checked_div_bv_spec a divisor
-    have hr := I128.checked_rem_bv_spec a divisor
-    simp only [lift, I128.checked_div_eq, I128.checked_rem_eq]
-    cases hq' : core.num.checked_div_IScalar a divisor <;>
-      cases hr' : core.num.checked_rem_IScalar a divisor <;>
-      simp only [hq', hr'] at hq hr ⊢ <;> simp only [bind_ok]
-    · omega
-    · rcases hq with h | ⟨_, h⟩ <;> omega
-    · omega
-    · rename_i q r
-      obtain ⟨-, -, hqv, -⟩ := hq
-      obtain ⟨-, hrv, -⟩ := hr
-      rw [hd] at hqv hrv
-      have hfloor := ediv_of_tdiv a.val b.val hb
-      split
-      · have hrneg : a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
-        -- A negative remainder leaves room below the quotient.
-        have hroom : -2^127 < q.val := by
-          have ha : -2^127 ≤ a.val := by scalar_tac
-          have hsum := Int.mul_tdiv_add_tmod a.val b.val
-          rw [hqv]
-          by_contra hcon
-          have : b.val * a.val.tdiv b.val ≤ a.val.tdiv b.val := by nlinarith
-          omega
-        have h1 : (1#i128).val = 1 := by rfl
-        have hv := I128.wrapping_sub_val q 1#i128 (by rw [h1]; scalar_tac)
-        simp only [WP.spec_ok]
-        refine ⟨fun _ => ?_, fun h => by omega⟩
-        rw [hv, h1, hfloor, hqv]
-        simp only [hrneg, ↓reduceIte]
-      · have hrpos : ¬ a.val.tmod b.val < 0 := by rw [← hrv]; scalar_tac
-        simp only [WP.spec_ok]
-        refine ⟨fun _ => ?_, fun h => by omega⟩
-        rw [hfloor, hqv]
-        simp only [hrpos, ↓reduceIte]
-
 /-- `div_floor_wide` divides by a positive 128-bit number rounding toward
 negative infinity, and gives zero for a divisor that is not positive. -/
 @[step]
@@ -173,6 +124,80 @@ theorem div_floor_wide_spec (a b : Std.I128) :
         refine ⟨fun _ => ?_, fun h => by omega⟩
         rw [hfloor, hqv]
         simp only [hrpos, ↓reduceIte]
+
+/-- `div_floor` divides by a positive number rounding toward negative
+infinity, which is what `/` on the integers does, and gives zero for a divisor
+that is not positive. -/
+@[step]
+theorem div_floor_spec (a : Std.I128) (b : Std.I64) :
+    fixed.div_floor a b ⦃ r => (0 < b.val → r.val = a.val / b.val) ∧ (b.val ≤ 0 → r.val = 0) ⦄ := by
+  unfold fixed.div_floor
+  step as ⟨i, hi⟩
+  have hd : i.val = b.val := by rw [hi, I64.cast_I128_val]
+  apply WP.spec_mono (div_floor_wide_spec a i)
+  intro r hr
+  simpa [hd] using hr
+
+/-- `rem_euclid_wide` returns the Euclidean remainder `a % b` in `0..b` for
+positive `b`, and `none` when `b` is zero. -/
+@[step]
+theorem rem_euclid_wide_spec (a : Std.I128) (b : Std.Usize) :
+    fixed.rem_euclid_wide a b ⦃ r =>
+      (b.val = 0 → r = none)
+      ∧ (0 < b.val → ∃ p, r = some p ∧ (p.val : ℤ) = a.val % (b.val : ℤ) ∧ p.val < b.val) ⦄ := by
+  unfold fixed.rem_euclid_wide
+  split
+  · rename_i h0
+    have hb0 : b.val = 0 := by scalar_tac
+    rw [WP.spec_ok]
+    exact ⟨fun _ => rfl, fun h => by omega⟩
+  · rename_i hne
+    have hbpos : 0 < b.val := by scalar_tac
+    have hbmax : b.val ≤ Usize.max := by scalar_tac
+    step as ⟨divisor, hdiv⟩
+    have hdv : divisor.val = b.val := by rw [hdiv, Usize.hcast_I128_val]
+    have hdp : (0 : ℤ) < divisor.val := by omega
+    have hdb : divisor.val < 2 ^ 127 := by scalar_tac
+    have hr := I128.checked_rem_bv_spec a divisor
+    simp only [lift, I128.checked_rem_eq]
+    cases hr' : core.num.checked_rem_IScalar a divisor <;>
+      simp only [hr'] at hr ⊢ <;> simp only [bind_ok]
+    · omega
+    · rename_i rem
+      obtain ⟨-, hrv, -⟩ := hr
+      have h1 : a.val.tmod divisor.val < divisor.val := Int.tmod_lt_of_pos a.val hdp
+      have h2 : -divisor.val < a.val.tmod divisor.val := Int.lt_tmod_of_pos a.val hdp
+      have hsum := Int.mul_tdiv_add_tmod a.val divisor.val
+      have hnonneg :
+          (if rem < 0#i128 then ok (core.num.I128.wrapping_add rem divisor) else ok rem)
+            ⦃ nn => nn.val = a.val % (b.val : ℤ) ∧ 0 ≤ nn.val ∧ nn.val < (b.val : ℤ) ⦄ := by
+        split
+        · rename_i hlt
+          have hneg : rem.val < 0 := by scalar_tac
+          have hadd : (core.num.I128.wrapping_add rem divisor).val = rem.val + divisor.val := by
+            rw [I128.wrapping_add_val _ _ (by rw [hrv]; omega)]
+          have heq : a.val % divisor.val = a.val.tmod divisor.val + divisor.val :=
+            ((Int.ediv_emod_unique hdp).mpr
+              ⟨by linarith, by omega, by omega⟩ :
+                a.val / divisor.val = a.val.tdiv divisor.val - 1
+                  ∧ a.val % divisor.val = a.val.tmod divisor.val + divisor.val).2
+          rw [WP.spec_ok, hadd, hrv, ← heq, hdv]
+          exact ⟨rfl, Int.emod_nonneg _ (by omega), Int.emod_lt_of_pos _ (by omega)⟩
+        · rename_i hge
+          have hpos : 0 ≤ rem.val := by scalar_tac
+          have heq : a.val % divisor.val = a.val.tmod divisor.val :=
+            ((Int.ediv_emod_unique hdp).mpr
+              ⟨by linarith, by omega, by omega⟩ :
+                a.val / divisor.val = a.val.tdiv divisor.val
+                  ∧ a.val % divisor.val = a.val.tmod divisor.val).2
+          rw [WP.spec_ok, hrv, ← heq, hdv]
+          exact ⟨rfl, Int.emod_nonneg _ (by omega), Int.emod_lt_of_pos _ (by omega)⟩
+      apply WP.spec_bind hnonneg
+      intro nn ⟨hnn_mod, hnn0, hnnlt⟩
+      rw [WP.spec_ok]
+      have hpv : ((IScalar.hcast .Usize nn).val : ℤ) = nn.val :=
+        I128.hcast_Usize_val nn hnn0 (by omega)
+      exact ⟨fun h => by omega, fun _ => ⟨IScalar.hcast .Usize nn, rfl, by rw [hpv, hnn_mod], by omega⟩⟩
 
 theorem roundShift_zero (x : ℤ) : roundShift x 0 = x := by
   rw [roundShift_eq_ediv]

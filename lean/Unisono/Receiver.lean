@@ -220,24 +220,28 @@ theorem adopts_spec (r : receiver.Receiver N M K) (timeline : Std.U64) (t : Std.
 
 /-- Taking up the timeline of a packet: the receiver follows it, holds
 nothing, has no other timeline waiting, and has its playhead at the packet's
-first frame. What is known about the delay of the path stays as it is, and
-so do the departures of reports. When the timeline is on the clock of the one
-before, the estimate of that clock stays; on another clock it is dropped. -/
+first frame. What is known about the delay of the path stays as it is. When
+the timeline is on the clock of the one before, the estimate of that clock,
+the path answers, and the departures of reports stay; on another clock (or on
+first adoption) the clock estimate and path answers are cleared and report
+departures are reset. -/
 @[step]
 theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.adopt r h ⦃ r' =>
       r'.stream = r.stream ∧ r'.following = true ∧ r'.timeline = h.timeline
       ∧ r'.clock_id = h.clock ∧ r'.has_candidate = false
       ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh ∧ r'.silence = r.silence ∧ r'.limit = r.limit
-      ∧ r'.path = r.path ∧ r'.answers = r.answers ∧ r'.departures = r.departures
+      ∧ r'.path = r.path
       ∧ r'.presence.base = h.index ∧ (∀ j, ¬ Held r'.presence j)
       ∧ (r.following = true → h.clock = r.clock_id →
-          r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
+          r'.answers = r.answers ∧ r'.departures = r.departures
+          ∧ r'.clock.latest = core.num.I64.MIN ∧ r'.clock.window = 0#u64
           ∧ (r.clock.lowest = none →
               r'.clock.kept = r.clock.kept ∧ r'.clock.len = r.clock.len
               ∧ r'.clock.line = r.clock.line))
-      ∧ (r.following = true → h.clock ≠ r.clock_id →
-          r'.clock.len.val = 0 ∧ r'.clock.line = none) ⦄ := by
+      ∧ (r.following = false ∨ h.clock ≠ r.clock_id →
+          r'.clock.len.val = 0 ∧ r'.clock.line = none ∧ r'.departures = r'.arrived
+          ∧ ∀ k, k < (8#usize).val → ∀ p, r'.answers.places.val[k]? = some p → p.held = false) ⦄ := by
   unfold receiver.Receiver.adopt
   split
   · rename_i hf
@@ -256,28 +260,32 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
         refine ⟨he1_hw, he1_win, fun hlo => ?_⟩
         obtain ⟨hk, hl, hli⟩ := he1_keep (by rw [he_low]; exact hlo)
         exact ⟨hk.trans he_kept, hl.trans he_len, hli.trans he_line⟩
-      · intro _ hne
-        exact absurd hclk' hne
+      · rintro (hf0 | hne)
+        · rw [hf] at hf0; cases hf0
+        · exact absurd hclk' hne
     · rename_i hclk
       have hclk' : h.clock ≠ r.clock_id := by simpa using hclk
-      simp only [hf]
       step as ⟨i1⟩
       step as ⟨e, _, _, _, _, he_len, _, _, he_line⟩
+      step with Unisono.Answers.clear_spec as ⟨a1, ha1⟩
       refine ⟨hpb, hph, ?_, ?_⟩
-      · intro heq
+      · intro _ heq
         exact absurd heq hclk'
       · intro _
-        exact ⟨he_len, he_line⟩
+        exact ⟨he_len, he_line, ha1⟩
   · rename_i hnf
     have hnf' : r.following = false := by simpa using hnf
     simp only [bind_ok]
     step as ⟨p, hpb, hph⟩
     step as ⟨a⟩
     step with Unisono.Player.stop_total as ⟨p1⟩
-    simp only [hnf', Bool.false_eq_true, ↓reduceIte]
+    simp only [Bool.false_eq_true, ↓reduceIte]
     step as ⟨i1⟩
-    step as ⟨e⟩
-    refine ⟨hpb, hph, ?_, ?_⟩ <;> (intro hc; cases hc)
+    step as ⟨e, _, _, _, _, he_len, _, _, he_line⟩
+    step with Unisono.Answers.clear_spec as ⟨a1, ha1⟩
+    refine ⟨hpb, hph, ?_, ?_⟩
+    · intro hc; rw [hnf'] at hc; cases hc
+    · intro _; exact ⟨he_len, he_line, ha1⟩
 
 /-! ## Keeping the newest frames before the clock is known -/
 
@@ -658,7 +666,10 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
           ∧ out.2.clock_id = r.clock_id
           ∧ out.2.has_candidate = true ∧ out.2.candidate = h.timeline
           ∧ out.2.heard = heardBy r t ∧ out.2.presence = r.presence
-          ∧ out.2.fresh = r.fresh)
+          ∧ out.2.fresh = r.fresh
+          ∧ out.2.player = r.player ∧ out.2.schedule = r.schedule
+          ∧ out.2.clock = r.clock ∧ out.2.path = r.path
+          ∧ out.2.answers = r.answers ∧ out.2.departures = r.departures)
       ∧ (h.stream = r.stream → ¬ Adopts r h.timeline t → h.timeline = r.timeline →
           out.1.adopted = false ∧ out.1.ignored = false
           ∧ out.2.following = r.following ∧ out.2.timeline = r.timeline
@@ -701,7 +712,7 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
     split
     · rename_i hyes
       have hA : Adopts r h.timeline t := hiff.mp hyes
-      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, cpath, cround, cdep, c10, c11, _, _⟩
+      step as ⟨r1, c1, c2, c3, c4, c5, c6, c7, c8, c9, cpath, c10, c11, _, _⟩
       step as ⟨out, d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14, d15⟩
       refine ⟨d3.trans c1, d10.trans c8, d11.trans c9,
         fun hne => absurd hsame_s' hne,
@@ -725,7 +736,8 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
         refine ⟨rfl, rfl, rfl,
           fun hdiff => absurd hsame_s' hdiff,
           fun _ hc => absurd hc hA,
-          fun _ _ _ => ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩,
+          fun _ _ _ => ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl,
+            rfl, rfl, rfl, rfl, rfl, rfl⟩,
           fun _ _ heq => absurd heq hne'⟩
       · rename_i heq
         have heq' : h.timeline = r.timeline := by
@@ -751,8 +763,10 @@ theorem wrong_stream_packet_noop (r : receiver.Receiver N M K) (h : packet.Audio
   exact ⟨hi, ha, heq⟩
 
 /-- One stray packet of another timeline, while a timeline is followed and no
-other is waiting, is left out: the timeline, the playhead and the held frames
-stay. Its timeline is only remembered, for a second packet to confirm. -/
+other is waiting, is left out: the timeline, the playhead, the held frames,
+the regulator, the schedule, the clock estimate, the path delay, the answers,
+and the report departures all stay. Its timeline is only remembered, for a
+second packet to confirm. -/
 theorem single_stray_timeline_noop (r : receiver.Receiver N M K) (h : packet.Audio)
     (t : Std.I64) (hstream : h.stream = r.stream) (hf : r.following = true)
     (hnc : r.has_candidate = false) (hdiff : h.timeline ≠ r.timeline) :
@@ -760,15 +774,19 @@ theorem single_stray_timeline_noop (r : receiver.Receiver N M K) (h : packet.Aud
       out.1.ignored = true ∧ out.1.adopted = false
       ∧ out.2.following = true ∧ out.2.timeline = r.timeline
       ∧ out.2.presence = r.presence ∧ out.2.fresh = r.fresh
-      ∧ out.2.has_candidate = true ∧ out.2.candidate = h.timeline ⦄ := by
+      ∧ out.2.has_candidate = true ∧ out.2.candidate = h.timeline
+      ∧ out.2.player = r.player ∧ out.2.schedule = r.schedule
+      ∧ out.2.clock = r.clock ∧ out.2.path = r.path
+      ∧ out.2.answers = r.answers ∧ out.2.departures = r.departures ⦄ := by
   have hnotA : ¬ Adopts r h.timeline t := by
     rintro (hc | ⟨-, hc, -⟩)
     · rw [hf] at hc; cases hc
     · rw [hnc] at hc; cases hc
   apply WP.spec_mono (packet_spec r h t)
   rintro out ⟨-, -, -, -, -, hother, -⟩
-  obtain ⟨ha, hi, hfo, htl, -, hcand, hct, -, hpr, hfr⟩ := hother hstream hnotA hdiff
-  exact ⟨hi, ha, hfo.trans hf, htl, hpr, hfr, hcand, hct⟩
+  obtain ⟨ha, hi, hfo, htl, -, hcand, hct, -, hpr, hfr, hpl, hsc, hcl, hpa, han, hde⟩ :=
+    hother hstream hnotA hdiff
+  exact ⟨hi, ha, hfo.trans hf, htl, hpr, hfr, hcand, hct, hpl, hsc, hcl, hpa, han, hde⟩
 
 /-! ## Following the packets that arrive, from any state -/
 
@@ -1197,21 +1215,34 @@ theorem restart_stores (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std
 
 /-! ## A cycle of the device -/
 
-/-- Taking the next schedule into use when the position due has reached it
+/-- Taking queued schedules into use when the position due has reached them
 changes the schedules and nothing else. -/
 @[step]
-theorem reached_spec (r : receiver.Receiver N M K) (now : timing.Position) (first : Std.I64) :
-    receiver.Receiver.reached r now first ⦃ out => SameStream out.2 r ⦄ := by
+theorem reached_spec (r : receiver.Receiver N M K) (schedule : timing.Schedule)
+    (now : timing.Position) (first : Std.I64) :
+    receiver.Receiver.reached r schedule now first ⦃ out => SameStream out.2 r ⦄ := by
   unfold receiver.Receiver.reached
   cases r.next with
   | none => simp [SameStream]
   | some next =>
     simp only
     split
-    · simp [SameStream]
-    · step as ⟨r1, hsame⟩
+    · step as ⟨r1, hsame1⟩
       step as ⟨o⟩
-      cases o <;> simpa [SameStream] using hsame
+      cases o with
+      | none => simpa [SameStream] using hsame1
+      | some turned =>
+        simp only
+        cases r1.next with
+        | none => simpa [SameStream] using hsame1
+        | some next1 =>
+          simp only
+          split
+          · step as ⟨r2, hsame2⟩
+            step as ⟨o1⟩
+            cases o1 <;> simpa [SameStream] using hsame2.trans hsame1
+          · simpa [SameStream] using hsame1
+    · simp [SameStream]
 
 /-- Asking which position is due at a time returns for every state and every
 time. -/
@@ -1234,7 +1265,7 @@ theorem due_at_total (r : receiver.Receiver N M K) (time : Std.I64) :
 
 /-- Planning a cycle of the device returns for every state and every reading
 of the clock, and changes nothing about the timeline that is followed or the
-frames that are held: only the regulator moves. -/
+frames that are held: only the schedules and the regulator move. -/
 theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
     (frames : Std.U32) :
     receiver.Receiver.cycle r time duration frames ⦃ out => SameStream out.2 r ⦄ := by
@@ -1259,18 +1290,10 @@ theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
           simp only
           step as ⟨o2, r1, hsame⟩
           cases o2 with
-          | none =>
-            simp only [bind_ok]
-            step as ⟨o3⟩
-            cases o3 with
-            | none => simpa [SameStream] using hsame
-            | some later =>
-              simp only
-              step as ⟨out⟩
-              simpa [SameStream] using hsame
+          | none => simpa [SameStream] using hsame
           | some turned =>
             obtain ⟨schedule1, now1⟩ := turned
-            simp only [bind_ok]
+            simp only
             step as ⟨o3⟩
             cases o3 with
             | none => simpa [SameStream] using hsame

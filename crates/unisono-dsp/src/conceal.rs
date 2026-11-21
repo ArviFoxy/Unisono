@@ -301,6 +301,7 @@ impl Concealment {
         if self.channels == 0 {
             return;
         }
+        // `.max(1)` proves the chunk size is nonzero so LLVM drops the panic path.
         for frame in frames.chunks_exact_mut(self.channels.max(1)) {
             self.in_gap = false;
             if self.recovered < self.fade_in.frames() {
@@ -326,6 +327,7 @@ impl Concealment {
         if !self.in_gap && frames.len() >= self.channels {
             self.begin_gap();
         }
+        // `.max(1)` proves the chunk size is nonzero so LLVM drops the panic path.
         for frame in frames.chunks_exact_mut(self.channels.max(1)) {
             let gain = self.gain();
             for (channel, sample) in frame.iter_mut().enumerate() {
@@ -374,8 +376,7 @@ impl Concealment {
         if self.entered > 0.0 {
             if self.fitted_in_cycle {
                 self.start_continuations();
-            } else {
-                self.fit();
+            } else if self.fit() {
                 self.fitted_in_cycle = self.in_cycles;
                 self.fits = self.fits.saturating_add(1);
             }
@@ -383,12 +384,26 @@ impl Concealment {
     }
 
     /// Starts each channel's continuation from the last frames that left,
-    /// with the model as it is.
+    /// refreshes each channel's peak clamp, and keeps the model as it is.
     fn start_continuations(&mut self) {
+        if self.channels == 0 {
+            return;
+        }
         let Parameters { fitted, order, .. } = self.parameters;
+        let ring = self.history.chunks_exact(self.channels.max(1));
         for channel in 0..self.channels {
-            let ring = self.history.chunks_exact(self.channels.max(1));
-            let (newer, older) = (ring.clone().take(self.oldest), ring.skip(self.oldest));
+            let (newer, older) = (
+                ring.clone().take(self.oldest),
+                ring.clone().skip(self.oldest),
+            );
+            let mut peak = 0.0f64;
+            for frame in older.clone().chain(newer.clone()) {
+                let sample = frame.get(channel).copied().map_or(0.0, f64::from);
+                peak = peak.max(sample.abs());
+            }
+            if let Some(slot) = self.peak.get_mut(channel) {
+                *slot = if peak.is_finite() { peak } else { 0.0 };
+            }
             let start = channel * order;
             if let Some(recent) = self.recent.get_mut(start..start + order) {
                 let last = older.chain(newer).skip(fitted - order);
@@ -400,13 +415,21 @@ impl Concealment {
     }
 
     /// Fits each channel's model to the frames that have left, and starts
-    /// each continuation from the last of them.
-    fn fit(&mut self) {
+    /// each continuation from the last of them. Returns `true` if at least
+    /// one channel had finite positive energy and ran Burg's recursion.
+    fn fit(&mut self) -> bool {
+        if self.channels == 0 {
+            return false;
+        }
         let Parameters { fitted, order, .. } = self.parameters;
+        let ring = self.history.chunks_exact(self.channels.max(1));
+        let mut fitted_any = false;
         for channel in 0..self.channels {
             // The frames in the order they left.
-            let ring = self.history.chunks_exact(self.channels.max(1));
-            let (newer, older) = (ring.clone().take(self.oldest), ring.skip(self.oldest));
+            let (newer, older) = (
+                ring.clone().take(self.oldest),
+                ring.clone().skip(self.oldest),
+            );
             for (value, frame) in self.forward.iter_mut().zip(older.chain(newer)) {
                 *value = frame.get(channel).copied().map_or(0.0, f64::from);
             }
@@ -422,12 +445,14 @@ impl Concealment {
             ) {
                 copy(recent, last);
             }
-            burg(
+            if burg(
                 &mut self.forward,
                 &mut self.backward,
                 &mut self.model,
                 &mut self.shorter,
-            );
+            ) {
+                fitted_any = true;
+            }
             // The model says x[n] + a[1] x[n-1] + ... + a[order] x[n-order]
             // is small, so the prediction of x[n] weighs x[n-i] by -a[i].
             if let Some(weights) = self.weights.get_mut(start..start + order) {
@@ -439,6 +464,7 @@ impl Concealment {
                 *slot = if peak.is_finite() { peak } else { 0.0 };
             }
         }
+        fitted_any
     }
 
     /// The next sample of the continuation of `channel`.
@@ -523,16 +549,16 @@ fn copy<T: Copy>(to: &mut [T], from: &[T]) {
 /// what keeps the model's free response from growing. The fitting stops
 /// early when the error left is 120 dB below the samples: what is left is
 /// rounding, and fitting it would only add noise to the model.
-fn burg(forward: &mut [f64], backward: &mut [f64], model: &mut [f64], shorter: &mut [f64]) {
+fn burg(forward: &mut [f64], backward: &mut [f64], model: &mut [f64], shorter: &mut [f64]) -> bool {
     model.fill(0.0);
     let Some((first, _)) = model.split_first_mut() else {
-        return;
+        return false;
     };
     *first = 1.0;
     let order = model.len() - 1;
     let energy: f64 = forward.iter().map(|x| x * x).sum();
     if !(energy > 0.0 && energy.is_finite()) {
-        return;
+        return false;
     }
     for stage in 0..order.min(forward.len().saturating_sub(1)) {
         let ahead = forward.iter().skip(stage + 1);
@@ -579,6 +605,7 @@ fn burg(forward: &mut [f64], backward: &mut [f64], model: &mut [f64], shorter: &
             }
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -656,5 +683,34 @@ mod tests {
         let mut gap = [0.0f32; 16];
         concealment.fill(&mut gap);
         assert_eq!(concealment.fits(), 2);
+    }
+
+    #[test]
+    fn silent_first_gap_does_not_spend_fit_budget_and_second_gap_refreshes_peak() {
+        let parameters = Parameters::for_rate(48_000);
+        let mut concealment = Concealment::new(1, parameters);
+        // Silent history: first gap in cycle does not run Burg or consume fit budget.
+        concealment.cycle_begins();
+        let mut gap = [0.0f32; 16];
+        concealment.fill(&mut gap);
+        assert_eq!(concealment.fits(), 0);
+
+        // Loud audio arrives in the same cycle, then a real gap must still fit.
+        let mut loud: Vec<f32> = (0..parameters.fitted)
+            .map(|n| (f32::from(u16::try_from(n).unwrap_or(0)) * 0.05).sin() * 0.8)
+            .collect();
+        concealment.pass(&mut loud);
+        let mut gap2 = [0.0f32; 16];
+        concealment.fill(&mut gap2);
+        assert_eq!(concealment.fits(), 1);
+        assert!(gap2.iter().any(|s| s.abs() > 0.2));
+
+        // Quiet audio passes in the same cycle, then another gap must clamp to quiet peak.
+        let mut quiet = vec![0.01f32; parameters.fitted];
+        concealment.pass(&mut quiet);
+        let mut gap3 = [0.0f32; 16];
+        concealment.fill(&mut gap3);
+        assert_eq!(concealment.fits(), 1);
+        assert!(gap3.iter().all(|s| s.abs() <= 0.011));
     }
 }

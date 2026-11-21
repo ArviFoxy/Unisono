@@ -376,6 +376,80 @@ def runDevice (rate : Int) (reports : List (Int × Int × Int × Int)) : Result 
     (start, [])
   pure final.2
 
+/-- Runs operations on `Needs<6>` and returns the per-operation outputs and the
+final `recent` record. -/
+def needsStep (state : needs.Needs 6#usize × List Int) (operation : Int × Int × Int) :
+    Result (needs.Needs 6#usize × List Int) := do
+  let n := state.1
+  let results := state.2
+  if operation.1 = 1 then
+    let n1 ← needs.Needs.clear n
+    let newest ← needs.Needs.impl.newest n1
+    let nw : Int := match newest with | some s => s.val | none => -1
+    pure (n1, results ++ [nw])
+  else if operation.1 = 2 then
+    let got ← needs.Needs.get n (unsigned .U64 operation.2.1)
+    let out : List Int := match got with | some v => [1, v.val] | none => [0, 0]
+    pure (n, results ++ out)
+  else
+    let n1 ← needs.Needs.observe n (unsigned .U64 operation.2.1) (signed .I64 operation.2.2)
+    let newest ← needs.Needs.impl.newest n1
+    let nw : Int := match newest with | some s => s.val | none => -1
+    let got ← needs.Needs.get n1 (unsigned .U64 operation.2.1)
+    let out : List Int := match got with | some v => [1, v.val] | none => [0, 0]
+    pure (n1, results ++ [nw] ++ out)
+
+def runNeeds (operations : List (Int × Int × Int)) : Result (List Int) := do
+  let start ← needs.Needs.new 6#usize
+  let final ← operations.foldlM needsStep (start, [])
+  let recent ← needs.Needs.recent final.1
+  pure (final.2 ++ [(recent.count.val : Int), (recent.newest.val : Int)] ++
+    recent.needs.val.map (·.val))
+
+/-- Writes a `Recent` needs record into `bufLen` bytes filled with 165. -/
+def runWriteNeeds (args : List Int) : Result (List Int) := do
+  match args with
+  | count :: newest :: bufLen :: rest =>
+    let vals := rest.map (signed .I32)
+    if h : vals.length = (11#usize).val then
+      let arr : Array Std.I32 11#usize := Array.from vals h
+      let recent : packet.Recent :=
+        { count := unsigned .U8 count, newest := unsigned .U64 newest, needs := arr }
+      let len := bufLen.toNat
+      let out ← packet.write_needs recent (byteSlice (List.replicate len 165))
+      let written : Int := bit out.1
+      pure (written :: out.2.val.map (fun b => (b.val : Int)))
+    else pure [-2]
+  | _ => pure [-2]
+
+/-- Reads needs from a report tail. -/
+def runParseNeeds (bytes : List Int) : Result (List Int) := do
+  let recent ← packet.parse_needs (byteSlice bytes)
+  pure ([(recent.count.val : Int), (recent.newest.val : Int)] ++ recent.needs.val.map (·.val))
+
+/-- Runs operations on `Answers<3>` with positive and negative departure times. -/
+def answersStep (state : answers.Answers 3#usize × List Int) (operation : List Int) :
+    Result (answers.Answers 3#usize × List Int) :=
+  match operation with
+  | [kind, dep, arr, ltime, lval, lrise, lrun] => do
+    let line : relation.Line :=
+      { time := signed .I64 ltime, value := signed .I64 lval,
+        rise := signed .I64 lrise, run := signed .I64 lrun }
+    let answer : answers.Answer :=
+      { departure := signed .I64 dep, arrival := signed .I64 arr }
+    let a1 ←
+      if kind = 1 then answers.Answers.clear state.1
+      else answers.Answers.observe state.1 answer line
+    let shortest ← answers.Answers.shortest a1 line
+    let out : List Int := match shortest with | some v => [1, v.val] | none => [0, 0]
+    pure (a1, state.2 ++ out)
+  | _ => pure (state.1, state.2 ++ [-2])
+
+def runAnswers (length : Int) (operations : List (List Int)) : Result (List Int) := do
+  let start ← answers.Answers.new 3#usize (signed .I64 length)
+  let final ← operations.foldlM answersStep (start, [])
+  pure final.2
+
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
@@ -388,6 +462,25 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
     result (fixed.div_floor (signed .I128 a) (signed .I64 b)) (fun r => [r.val])
   | "div_floor_wide", [a, b] =>
     result (fixed.div_floor_wide (signed .I128 a) (signed .I128 b)) (fun r => [r.val])
+  | "rem_euclid_wide", [a, m] =>
+    result (fixed.rem_euclid_wide (signed .I128 a) (unsigned .Usize m))
+      (fun r => match r with
+        | some v => [1, v.val]
+        | none => [0, 0])
+  | "needs", count :: rest =>
+    match triples rest with
+    | some operations =>
+      if operations.length = count then result (runNeeds operations) id
+      else .error "the number of operations is not the stated one"
+    | none => .error "operations are not triples"
+  | "write_needs", args => result (runWriteNeeds args) id
+  | "parse_needs", bytes => result (runParseNeeds bytes) id
+  | "answers", length :: count :: rest =>
+    match groups 7 rest with
+    | some operations =>
+      if operations.length = count then result (runAnswers length operations) id
+      else .error "the number of operations is not the stated one"
+    | none => .error "operations are not groups of seven"
   | "relation", span :: limit :: count :: rest =>
     match triples rest with
     | some packets =>

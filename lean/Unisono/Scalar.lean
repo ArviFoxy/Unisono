@@ -107,6 +107,28 @@ theorem U64.hcast_I128_val (x : U64) : (UScalar.hcast .I128 x).val = x.val := by
   apply Int.bmod_pow2_eq_of_inBounds' <;> simp
   scalar_tac
 
+theorem Usize.hcast_I128_val (x : Usize) : (UScalar.hcast .I128 x).val = x.val := by
+  simp only [UScalar.hcast_val_eq]
+  have hx : x.val ≤ Usize.max := by scalar_tac
+  have hmax : Usize.max ≤ U64.max := by
+    rcases Usize.bounds_eq with h | h
+    · rw [h]; scalar_tac
+    · exact le_of_eq h
+  have : U64.max < 2 ^ 64 := by scalar_tac
+  apply Int.bmod_pow2_eq_of_inBounds' <;> simp; omega
+
+theorem I128.hcast_Usize_val (x : I128) (h0 : 0 ≤ x.val) (h1 : x.val ≤ Usize.max) :
+    ((IScalar.hcast .Usize x).val : ℤ) = x.val := by
+  rw [IScalar.hcast_val_eq]
+  have hlt : x.val < (2 ^ UScalarTy.Usize.numBits : ℕ) := by
+    have hm : UScalar.max UScalarTy.Usize = Usize.max := by
+      rw [UScalar.max_def, Usize.max_def, Usize.numBits_def]
+    rw [UScalar.max_def] at hm
+    have : 0 < 2 ^ UScalarTy.Usize.numBits := by positivity
+    omega
+  rw [Int.emod_eq_of_lt h0 (by exact_mod_cast hlt)]
+  exact Int.toNat_of_nonneg h0
+
 theorem Usize.hcast_I64_val (x : Usize) (h : x.val < 2 ^ 63) :
     (UScalar.hcast .I64 x).val = x.val := by
   simp only [UScalar.hcast_val_eq]
