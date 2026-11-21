@@ -29,6 +29,7 @@ public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.Run
 public import Unisono.Spec.Models.Delays
 
 /-!
@@ -877,3 +878,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.tracking_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.tracking_le
+
+/-- info: 'Unisono.Spec.Solution.held_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.held_mono
+
+/-- info: 'Unisono.Spec.Solution.frames_arrive' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.frames_arrive
+
+/-- info: 'Unisono.Spec.State.sendAll_delivered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.sendAll_delivered
