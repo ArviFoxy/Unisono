@@ -1,0 +1,185 @@
+% This Source Code Form is subject to the terms of the Mozilla Public
+% License, v. 2.0. If a copy of the MPL was not distributed with this
+% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{needspace}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% The same source gives the same PDF: no dates, no random identifier and no
+% description of the machine that built it. `just pdfs` passes the SHA-256
+% of this file as \sourcehash, and the PDF records it, so that
+% `just pdfs-check` can tell whether the committed PDF was built from the
+% current source.
+\ifdefined\pdfinfoomitdate
+  \pdfinfoomitdate=1
+  \pdftrailerid{}
+  \pdfsuppressptexinfo=-1
+\fi
+\providecommand{\sourcehash}{unknown}
+\hypersetup{
+  pdftitle={A baseline solution: fixed playout delay},
+  pdfsubject={Built from docs/fixed-playout-delay.tex with SHA-256 \sourcehash}
+}
+
+\setlist{itemsep=2pt,topsep=4pt,parsep=0pt}
+\emergencystretch=3em
+\clubpenalty=10000
+\widowpenalty=10000
+
+\newcommand{\lean}[1]{\texttt{#1}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\clamp}{\operatorname{clamp}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{remark}[definition]{Remark}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries A baseline solution: fixed playout delay\par}
+\end{center}
+\medskip
+
+This document describes the first solution to the problem of
+\path{docs/specification.pdf}, the baseline that later solutions are
+compared with, and what is proved about it. Every speaker plays each frame
+of the source a fixed latency $L$ after the frame was captured, as well as it
+can tell from its host's clock. The solution is defined in
+\path{lean/Unisono/Solutions/FixedDelay.lean}; the notation of the
+specification is used throughout.
+
+\section{The solution}
+
+\paragraph{Parameters} (\lean{Params}): the sender's host and the hosts of
+the speakers; the nominal rate $\rho$; the latency $L$; the number of copies
+$c$ of each message; the period $P$ of the clock exchange; and the slew $w$,
+the largest correction of the position per output sample, in frames.
+
+\paragraph{The stream.} When the capture device hands over block $b$, the
+sender sends its frames to every speaker's host, with the block's first
+frame $f(b)$ and its timestamp $\hat c(b)$, a reading of the sender's clock.
+Each message is sent $c$ times, so that a link that drops at most $c - 1$
+consecutive messages still delivers one. A host keeps, of the blocks that
+have arrived, the latest: its first frame $f$ and timestamp $\hat c$.
+
+\paragraph{The clocks.} At a request of one of its devices, a speaker's host
+other than the sender's asks the sender for its clock, unless it asked
+within the last $P$ seconds of its own clock: it sends its reading $t_1$.
+When the question arrives, the sender answers with $t_1$ and its own reading
+$t_2$. When the answer arrives at the host's reading $t_4$, the host
+estimates the sender's clock minus its own as
+\[
+  \hat\theta = t_2 - \frac{t_1 + t_4}{2},
+\]
+which is NTP's estimate with the sender's two readings taken at the same
+moment. Questions and answers are also sent $c$ times. The sender's host
+uses $\hat\theta = 0$.
+
+\paragraph{The target} (\lean{target}). When speaker $r$'s device requests a
+block whose first output sample is $g$, with timestamp $\hat o$, the host
+gives output sample $k$ of the block the target position
+\[
+  x^*_k = f + \Bigl(\hat o + \frac{k - g}{\rho} + \hat\theta - L - \hat c\Bigr)\,\rho .
+\]
+The bracket estimates, on the sender's clock, when the sound that output
+sample $k$ should play was captured: the time at which the sample leaves,
+on the host's clock, converted to the sender's clock, less $L$. The latest
+block converts that capture time to a position, at the nominal rate.
+
+\paragraph{The pace} (\lean{advance}, \lean{positions}). A speaker does not
+jump to its target. If it played position $x_{k-1}$ at the output sample
+before, it plays
+\[
+  x_k = x_{k-1} + 1 + \clamp_w\bigl(x^*_k - x_{k-1} - 1\bigr),
+  \qquad \clamp_w(y) = \max\bigl(-w, \min(w, y)\bigr):
+\]
+one frame on, corrected towards the target by at most $w$ frames. The
+position thus advances by between $1 - w$ and $1 + w$ frames per output
+sample, and the speed stays within about $w$ of one. A speaker that has
+nothing to continue from, at its first output sample or after a non-source
+output, starts at its target.
+
+Nothing is retransmitted on request; losses are covered by the copies.
+
+\section{What is proved}
+
+\subsection{Playback at a latency}
+
+The guarantees of a solution follow from one property of its playback. The
+file \path{lean/Unisono/Spec/AtLatency.lean} states it for any solution.
+
+\begin{definition}[Playback at a latency]
+A playback is \emph{at latency $L$ within $E$ from output sample $K$}
+(\lean{World.PlaysAtLatency}) when, for every speaker $r$ and every output
+sample $k \ge K$, playback is continuous from $k$ to $k + 1$ and the sound
+that $k$ plays was captured within $E$ of $o_r(k) - L$:
+$|c(x_{r,k}) - (o_r(k) - L)| \le E$.
+\end{definition}
+
+\begin{theorem}\label{thm:atlatency}
+Let a playback be at latency $L$ within $E$ from some output sample on, let
+$\delta$ bound the time between two output samples from there on, and let
+frames be captured at most $\delta_c$ apart. Then, in the long run:
+\begin{itemize}
+\item it misses no samples and has no discontinuities
+  (\lean{missed\_eq\_zero}, \lean{discontinuities\_eq\_zero});
+\item its latency is at most $L + E + \delta$ (\lean{meanLatency\_le});
+\item its synchronization cost is at most $2(E + \delta)^2$
+  (\lean{sync\_le});
+\item its tracking cost is at most $(D + E + \delta)^2$ when every target
+  latency is within $D$ of $L$ (\lean{tracking\_le}).
+\end{itemize}
+\end{theorem}
+
+The proofs bound the cost of each frame and of each output sample from some
+point on, and use that a cost accrued at most linearly in time, $B\,T + C$
+with $C$ finite, has a long-run average at most $B$ (\lean{longRun\_le}).
+
+\subsection{The baseline in a bounded world: the next step}
+
+What remains is to show that the baseline's run is at a latency, in every
+world within the bounds of the bounded model, with an explicit $E$ and for
+every $L$ above an explicit minimum. The proof follows the solution's parts,
+each bounding one source of error:
+\begin{enumerate}
+\item \emph{The run:} a message sent at true time $s$ on a link that
+  delivers it by $s + d_{\max}$ is handled before any event after
+  $s + d_{\max}$, and a host's view is the list of the events it handled,
+  with its clock's readings.
+\item \emph{The clocks:} the estimate $\hat\theta$ errs by at most
+  $(d_{\max} - d_{\min})/2$, plus the drift of the two clocks during the
+  exchange and since it.
+\item \emph{The target:} the capture time of $x^*_k$ errs from
+  $o_r(k) - L$ by at most the clock error, the timestamps' errors
+  $2\varepsilon_R$, and the rate errors over the extrapolated spans.
+\item \emph{The pace:} when $w$ exceeds the drift of the target per output
+  sample by enough to absorb a jump of the target within one block, $x_k$
+  follows $x^*_k$ within one such jump.
+\item \emph{The data:} the frames that $x_k$ needs, within the resampler's
+  lookahead $a$, have arrived when the device requests the block once $L$
+  exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff
+  delay $\eta$, the request lead $\lambda_{\max}$, and the spans of two
+  blocks and of the lookahead.
+\item \emph{Progress:} the baseline sets no timers and every message leads
+  to at most one further message, so finitely many events happen before any
+  time, and the run advances past every true time.
+\end{enumerate}
+Together with Theorem~\ref{thm:atlatency}, this gives the baseline's
+guarantees under the bounded model. Each speaker's clock estimate errs by up
+to $(d_{\max} - d_{\min})/2$, so two speakers can be up to
+$d_{\max} - d_{\min}$ apart. By the theorem of Lundelius and Lynch on clock
+synchronization, no algorithm keeps the clocks of $n$ hosts closer than
+$(1 - 1/n)(d_{\max} - d_{\min})$ when message delays are known only within
+$[d_{\min}, d_{\max}]$; carried over to playback, that is the limit the
+baseline will be compared with.
+
+\end{document}

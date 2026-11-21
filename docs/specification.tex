@@ -13,19 +13,19 @@
 \usepackage[hidelinks]{hyperref}
 
 % The same source gives the same PDF: no dates, no random identifier and no
-% description of the machine that built it. `just spec` passes the SHA-256
-% of this file as \specsource, and the PDF records it, so that
-% `just spec-check` can tell whether the committed PDF was built from the
+% description of the machine that built it. `just pdfs` passes the SHA-256
+% of this file as \sourcehash, and the PDF records it, so that
+% `just pdfs-check` can tell whether the committed PDF was built from the
 % current source.
 \ifdefined\pdfinfoomitdate
   \pdfinfoomitdate=1
   \pdftrailerid{}
   \pdfsuppressptexinfo=-1
 \fi
-\providecommand{\specsource}{unknown}
+\providecommand{\sourcehash}{unknown}
 \hypersetup{
   pdftitle={The problem that unisono solves},
-  pdfsubject={Built from docs/specification.tex with SHA-256 \specsource}
+  pdfsubject={Built from docs/specification.tex with SHA-256 \sourcehash}
 }
 
 \setlist{itemsep=2pt,topsep=4pt,parsep=0pt}

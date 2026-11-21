@@ -137,9 +137,9 @@ jobs:
           key: translation-${{ hashFiles('tools/proof-tools.sh') }}
       - run: just translation
 
-  # The specification of the problem: the PDF in the repository is built from
-  # the current source, and the source builds without a LaTeX warning.
-  spec:
+  # The documents written in LaTeX: each PDF in the repository is built from
+  # its current source, and each source builds without a LaTeX warning.
+  pdfs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -150,7 +150,7 @@ jobs:
           sudo apt-get update && sudo apt-get install --yes --no-install-recommends
           latexmk texlive-latex-recommended texlive-latex-extra texlive-fonts-recommended
           poppler-utils
-      - run: just spec-check spec
+      - run: just pdfs-check pdfs
 
   # Known vulnerabilities in what the crates depend on, the licences of the
   # dependencies, and where they come from.
