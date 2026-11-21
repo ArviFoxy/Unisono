@@ -44,34 +44,79 @@ pub struct Run {
     /// The outages, each from its start to its end, in order, not
     /// overlapping.
     outages: Vec<(f64, f64)>,
+    /// Latest simulated time already covered by `outages`.
+    horizon: f64,
+    /// Last drawn outage arrival time.
+    outage_cursor: f64,
+    /// Pending outage start already drawn beyond `horizon`.
+    next_outage: Option<f64>,
     generator: Generator,
 }
 
 impl Run {
     /// A run of `path` of `seconds` seconds.
     #[must_use]
-    pub fn new(path: Path, seconds: f64, mut generator: Generator) -> Run {
-        let mut outages: Vec<(f64, f64)> = Vec::new();
-        let mut time = 0.0;
-        if path.outage_rate > 0.0 {
-            loop {
-                time += generator.exponential(1.0 / path.outage_rate);
-                // Repairs are sent after the stream ends as well.
-                if time > seconds + 10.0 {
+    pub fn new(path: Path, seconds: f64, generator: Generator) -> Run {
+        let horizon = if seconds.is_finite() {
+            seconds.max(0.0) + 10.0
+        } else {
+            10.0
+        };
+        let mut run = Run {
+            path,
+            outages: Vec::new(),
+            horizon: 0.0,
+            outage_cursor: 0.0,
+            next_outage: None,
+            generator,
+        };
+        run.extend_outages(horizon);
+        run
+    }
+
+    /// Generates any outages up to `until`, guarding against non-finite or
+    /// extreme parameters that would otherwise fail to advance time.
+    fn extend_outages(&mut self, until: f64) {
+        if !(until.is_finite()
+            && self.path.outage_rate.is_finite()
+            && self.path.outage_rate > 0.0
+            && self.path.outage_length.is_finite()
+            && self.path.outage_length >= 0.0)
+        {
+            if until.is_finite() {
+                self.horizon = self.horizon.max(until);
+            }
+            return;
+        }
+        let mean_gap = 1.0 / self.path.outage_rate;
+        if !(mean_gap.is_finite() && mean_gap > 0.0) {
+            self.horizon = self.horizon.max(until);
+            return;
+        }
+        loop {
+            let start = if let Some(start) = self.next_outage {
+                start
+            } else {
+                let step = self.generator.exponential(mean_gap);
+                let next = self.outage_cursor + step;
+                if !(next.is_finite() && next > self.outage_cursor) {
                     break;
                 }
-                let end = time + generator.exponential(path.outage_length);
-                match outages.last_mut() {
-                    Some(last) if last.1 >= time => last.1 = last.1.max(end),
-                    _ => outages.push((time, end)),
-                }
+                self.outage_cursor = next;
+                next
+            };
+            if start > until {
+                self.next_outage = Some(start);
+                break;
+            }
+            self.next_outage = None;
+            let end = start + self.generator.exponential(self.path.outage_length);
+            match self.outages.last_mut() {
+                Some(last) if last.1 >= start => last.1 = last.1.max(end),
+                _ => self.outages.push((start, end)),
             }
         }
-        Run {
-            path,
-            outages,
-            generator,
-        }
+        self.horizon = self.horizon.max(until);
     }
 
     /// Whether an outage is on at `time`.
@@ -86,6 +131,9 @@ impl Run {
 
     /// When a packet sent at `sent` arrives, if it does.
     pub fn deliver(&mut self, sent: f64) -> Option<f64> {
+        if sent.is_finite() && sent > self.horizon {
+            self.extend_outages(sent + 10.0);
+        }
         let delay = self.path.minimum + self.generator.exponential(self.path.excess);
         if self.out(sent) || self.generator.chance(self.path.stray) {
             None
@@ -182,88 +230,134 @@ pub fn simulate(scheme: Scheme, run: &mut Run, packets: usize, period: f64) -> O
             parity,
             delay,
         } => {
-            for block in 0..packets / data.max(1) {
-                let first = block * data;
-                let after = sent(first + data - 1) + delay;
-                let mut there: Vec<f64> = (first..first + data).filter_map(direct).collect();
-                there.extend((0..parity).filter_map(|_| run.deliver(after)));
-                added += parity as f64;
-                // Any `data` packets of the block give all of it: at the
-                // time the last of the earliest `data` arrives.
-                there.sort_by(f64::total_cmp);
-                if let Some(&complete) = there.get(data.saturating_sub(1)) {
-                    for (index, need) in needs.iter_mut().enumerate().skip(first).take(data) {
-                        *need = need.min(complete - sent(index));
+            if let Some(blocks) = packets.checked_div(data) {
+                for block in 0..blocks {
+                    let first = block * data;
+                    let after = sent(first + data - 1) + delay;
+                    let mut there: Vec<f64> = (first..first + data).filter_map(direct).collect();
+                    there.extend((0..parity).filter_map(|_| run.deliver(after)));
+                    added += parity as f64;
+                    // Any `data` packets of the block give all of it: at the
+                    // time the last of the earliest `data` arrives.
+                    there.sort_by(f64::total_cmp);
+                    if let Some(&complete) = there.get(data - 1) {
+                        for (index, need) in needs.iter_mut().enumerate().skip(first).take(data) {
+                            *need = need.min(complete - sent(index));
+                        }
                     }
                 }
             }
         }
         Scheme::Burst { burst, wait } => {
-            let mut index = 0;
-            while index < packets {
-                if direct(index).is_some() {
-                    index += 1;
-                    continue;
-                }
-                // A run of lost packets from `index` on.
-                let mut end = index;
-                while end < packets && direct(end).is_none() {
-                    end += 1;
-                }
-                // It is repaired if it is short enough and the packets that
-                // follow it, up to `wait` after its start, all arrive.
-                let clear = (end..=index + wait).all(|i| direct(i).is_some());
-                if end - index <= burst && clear {
-                    for (lost, need) in needs.iter_mut().enumerate().take(end).skip(index) {
-                        if let Some(arrival) = direct(lost + wait) {
-                            *need = arrival - sent(lost);
+            if burst > 0 && wait > 0 && burst <= wait {
+                let mut index = 0;
+                while index < packets {
+                    if direct(index).is_some() {
+                        index += 1;
+                        continue;
+                    }
+                    // A run of lost packets from `index` on.
+                    let mut end = index;
+                    while end < packets && direct(end).is_none() {
+                        end += 1;
+                    }
+                    // Repaired when the burst is within `burst`, has a guard
+                    // space of `wait` received packets before it, and every
+                    // packet needed up through `(end - 1) + wait` arrives.
+                    let pre_clear =
+                        (index.saturating_sub(wait)..index).all(|i| direct(i).is_some());
+                    let post_clear = (end..=end - 1 + wait).all(|i| direct(i).is_some());
+                    if end - index <= burst && pre_clear && post_clear {
+                        for (lost, need) in needs.iter_mut().enumerate().take(end).skip(index) {
+                            let complete = (end..=lost + wait)
+                                .filter_map(direct)
+                                .fold(f64::NEG_INFINITY, f64::max);
+                            if complete.is_finite() {
+                                *need = need.min(complete - sent(lost));
+                            }
                         }
                     }
+                    index = end;
                 }
-                index = end;
             }
-            added = packets as f64 * burst as f64 / wait.max(1) as f64;
+            if wait > 0 {
+                added = packets as f64 * burst as f64 / wait as f64;
+            }
         }
         Scheme::Request {
             again,
             patience,
             unheard,
         } => {
-            // The time of the first arrival of a later packet, for each
-            // packet: when the receiver can find it missing.
-            let mut found = vec![f64::INFINITY; packets];
-            let mut earliest = f64::INFINITY;
-            for index in (0..packets).rev() {
-                found[index] = earliest;
-                if let Some(arrival) = direct(index) {
-                    earliest = earliest.min(arrival);
-                }
-            }
-            for index in 0..packets {
-                if direct(index).is_some() || !found[index].is_finite() {
-                    continue;
-                }
-                let mut asked = found[index];
-                while asked - found[index] <= patience {
-                    // The request, and the packet sent again on its arrival.
-                    added += 0.1;
-                    let heard = run.deliver(asked);
-                    if let Some(heard) = heard.filter(|_| !run.generator.chance(unheard)) {
-                        added += 1.0;
-                        if let Some(arrival) = run.deliver(heard) {
-                            needs[index] = arrival - sent(index);
-                            break;
-                        }
-                    }
-                    asked += again;
-                }
-            }
+            added = simulate_request(run, &arrivals, period, again, patience, unheard, &mut needs);
         }
     }
     Outcome {
         needs,
         added: added / packets.max(1) as f64,
     }
+}
+
+/// Simulates causal retransmission requests for lost packets in `arrivals`,
+/// updating `needs` and returning the total overhead in packets.
+#[allow(clippy::cast_precision_loss)]
+fn simulate_request(
+    run: &mut Run,
+    arrivals: &[Option<f64>],
+    period: f64,
+    again: f64,
+    patience: f64,
+    unheard: f64,
+    needs: &mut [f64],
+) -> f64 {
+    if !(patience.is_finite() && patience >= 0.0) {
+        return 0.0;
+    }
+    let packets = arrivals.len();
+    // The time of the first arrival of a later packet, for each packet: when
+    // the receiver can find it missing.
+    let mut found = vec![f64::INFINITY; packets];
+    let mut earliest = f64::INFINITY;
+    for index in (0..packets).rev() {
+        found[index] = earliest;
+        if let Some(arrival) = arrivals[index] {
+            earliest = earliest.min(arrival);
+        }
+    }
+    let mut added = 0.0;
+    for index in 0..packets {
+        if arrivals[index].is_some() || !found[index].is_finite() {
+            continue;
+        }
+        let mut asked = found[index];
+        let mut earliest_repair = f64::INFINITY;
+        // Causally keep asking until a repair has actually arrived or patience
+        // runs out (do not peek ahead at in-flight replies that have not yet
+        // reached the receiver).
+        while asked - found[index] <= patience && asked < earliest_repair {
+            // The request, and the packet sent again on its arrival.
+            added += 0.1;
+            let heard = run.deliver(asked);
+            if let Some(heard) = heard.filter(|_| !run.generator.chance(unheard)) {
+                added += 1.0;
+                if let Some(arrival) = run.deliver(heard) {
+                    earliest_repair = earliest_repair.min(arrival);
+                }
+            }
+            if !(again.is_finite() && again > 0.0) {
+                break;
+            }
+            let next = asked + again;
+            if !(next.is_finite() && next > asked) {
+                break;
+            }
+            asked = next;
+        }
+        if earliest_repair.is_finite() {
+            needs[index] = needs[index].min(earliest_repair - index as f64 * period);
+        }
+    }
+    added
 }
 
 /// What a stream costs per second at its best level, and what it is like
@@ -295,6 +389,14 @@ pub fn evaluate(
     gap: f64,
     missed: f64,
 ) -> Verdict {
+    if needs.is_empty() || !(period.is_finite() && period > 0.0) {
+        return Verdict {
+            level: 0.0,
+            cost: 0.0,
+            gaps: 0.0,
+            missed: 0.0,
+        };
+    }
     let time = needs.len() as f64 * period;
     let mut best = Verdict {
         level: 0.0,
@@ -302,20 +404,31 @@ pub fn evaluate(
         gaps: 0.0,
         missed: 0.0,
     };
+    if highest.is_nan() || highest < 0.0 {
+        return best;
+    }
+    let cap = if highest.is_finite() {
+        highest
+    } else {
+        needs
+            .iter()
+            .copied()
+            .filter(|need| need.is_finite())
+            .fold(0.0_f64, f64::max)
+    };
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let max_step = ((cap * 1_000.0 + 1e-9).floor()).min(f64::from(u32::MAX)) as u32;
     // The packets that are late at the level, by their place in the stream:
     // fewer and fewer as the level rises.
     let mut late: Vec<(usize, f64)> = needs.iter().copied().enumerate().collect();
-    let mut step = 0u32;
-    loop {
+    for step in 0..=max_step {
         let level = f64::from(step) * 0.001;
-        if level > highest {
-            break;
-        }
         late.retain(|&(_, need)| need > level);
         let mut gaps = 0.0;
-        let mut before = None;
+        let mut before: Option<usize> = None;
         for &(place, _) in &late {
-            if before != place.checked_sub(1) {
+            let continuation = before.is_some_and(|prev| prev + 1 == place);
+            if !continuation {
                 gaps += 1.0;
             }
             before = Some(place);
@@ -327,10 +440,9 @@ pub fn evaluate(
                 level,
                 cost,
                 gaps: gaps / time,
-                missed: lost / needs.len().max(1) as f64,
+                missed: lost / needs.len() as f64,
             };
         }
-        step += 1;
     }
     best
 }
@@ -397,6 +509,104 @@ mod tests {
         assert!(
             outcome.added > 0.003 && outcome.added < 0.03,
             "{}",
+            outcome.added
+        );
+    }
+
+    #[test]
+    fn evaluate_counts_gap_at_packet_zero_handles_empty_and_includes_highest_boundary() {
+        let empty = evaluate(&[], 0.005, 0.5, 1_000.0, 600.0, 60_000.0);
+        assert_eq!(empty.cost, 0.0);
+        assert_eq!(empty.gaps, 0.0);
+        assert_eq!(empty.missed, 0.0);
+
+        // Packet 0 late alone must count as 1 gap (previously missed because
+        // `None == 0usize.checked_sub(1)`).
+        let at_zero = evaluate(&[f64::INFINITY, 0.001], 0.005, 0.01, 0.0, 600.0, 0.0);
+        assert!(
+            (at_zero.gaps - 100.0).abs() < 1e-6,
+            "1 gap in 0.01s = 100 gaps/s, got {:?}",
+            at_zero.gaps
+        );
+
+        // `0.3` in IEEE 754 is slightly below `300.0 * 0.001`, yet step 300
+        // (level = 0.300s) must still be evaluated so a packet needing 0.2995s
+        // is saved.
+        let needs = [0.2995; 20];
+        let verdict = evaluate(&needs, 0.005, 0.3, 1.0, 10_000.0, 10_000.0);
+        assert!(
+            (verdict.level - 0.3).abs() < 1e-9,
+            "expected 0.3s level to be evaluated, got {verdict:?}"
+        );
+        assert_eq!(verdict.missed, 0.0);
+    }
+
+    #[test]
+    fn degenerate_parameters_do_not_panic_or_loop_forever() {
+        let inf_rate = Path {
+            outage_rate: f64::INFINITY,
+            ..PATH
+        };
+        let mut run = Run::new(inf_rate, 1.0, Generator::new(10));
+        let block = simulate(
+            Scheme::Block {
+                data: 0,
+                parity: 2,
+                delay: 0.01,
+            },
+            &mut run,
+            10,
+            0.005,
+        );
+        assert_eq!(block.needs.len(), 10);
+
+        let mut run = Run::new(PATH, 1.0, Generator::new(11));
+        let req = simulate(
+            Scheme::Request {
+                again: 0.0,
+                patience: 1.0,
+                unheard: 0.0,
+            },
+            &mut run,
+            50,
+            0.005,
+        );
+        assert_eq!(req.needs.len(), 50);
+
+        let mut run = Run::new(PATH, 1.0, Generator::new(12));
+        let bad_burst = simulate(Scheme::Burst { burst: 8, wait: 4 }, &mut run, 50, 0.005);
+        assert_eq!(bad_burst.needs.len(), 50);
+    }
+
+    #[test]
+    fn request_sends_causal_retries_while_rtt_exceeds_retry_interval() {
+        // Long RTT (minimum 25 ms each way -> 50 ms RTT) with retry every 10 ms:
+        // receiver cannot know the first request succeeded until 50 ms later,
+        // so it must emit multiple requests before the first repair arrives.
+        let slow_path = Path {
+            minimum: 0.025,
+            excess: 0.0,
+            outage_rate: 0.0,
+            outage_length: 0.0,
+            stray: 0.05,
+        };
+        let mut run = Run::new(slow_path, 10.0, Generator::new(7));
+        let outcome = simulate(
+            Scheme::Request {
+                again: 0.01,
+                patience: 0.5,
+                unheard: 0.0,
+            },
+            &mut run,
+            1_000,
+            0.005,
+        );
+        // Each lost packet causes ~5 requests (0, 10, 20, 30, 40 ms) before
+        // the first repair arrives at ~50 ms -> ~5 * 1.1 = 5.5 added per lost
+        // packet * 0.05 loss ~= 0.275 (much higher than non-causal ~0.055).
+        assert!(
+            outcome.added > 0.15,
+            "expected causal retries while repair is in flight, added={}",
             outcome.added
         );
     }
