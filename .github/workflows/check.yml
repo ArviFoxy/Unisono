@@ -48,6 +48,26 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - run: cargo test --workspace --exclude unisono-pipewire --exclude unisono-alsa
 
+  # ARMv7 without hardware floating point, emulated: the tests of the core,
+  # of the signal processing and of the metrics, which are where arithmetic
+  # could differ.
+  armv7:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER: arm-linux-gnueabi-gcc
+      CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUNNER: qemu-arm -L /usr/arm-linux-gnueabi
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - name: Install the emulator and the C toolchain for ARM
+        run: >-
+          sudo apt-get update && sudo apt-get install --yes
+          qemu-user gcc-arm-linux-gnueabi libc6-dev-armel-cross
+      - run: >-
+          cargo test --target armv7-unknown-linux-gnueabi
+          --package unisono-core --package unisono-dsp --package unisono-metrics
+
   # macOS, whose kernel stamps no departures: everything builds, and the
   # tests that need no such stamps run. The tests of the runtime and of the
   # program hold timing to microseconds and are run on Linux.

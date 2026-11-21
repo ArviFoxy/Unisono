@@ -104,7 +104,10 @@ the whole of it fits within the usual limit on locked memory. The only
 recurrence on the audio path, the concealment's prediction, takes a value
 too small for full precision as silence, so such numbers do not arise there;
 the processor is not set to treat them as zero. Interrupts and the
-scheduler are the system's.
+scheduler are the system's: the thread of an ALSA device asks the system to
+schedule it ahead of ordinary threads and says whether it does
+(`unisono_alsa::Running::realtime`), and PipeWire schedules the thread of its
+graph itself.
 
 **The network thread.** It enters the kernel by its nature, and it reads
 bytes that anyone who reaches its socket can send. The kernel holds it to a
