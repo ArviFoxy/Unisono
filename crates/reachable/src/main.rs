@@ -177,6 +177,61 @@ struct Relocation {
     target: String,
 }
 
+/// Parses virtual address ranges `[lo, hi)` that are immutable after dynamic
+/// linking from `objdump -p`: `PT_GNU_RELRO` (`RELRO`) segments and
+/// non-writable `LOAD` segments.
+fn immutable_ranges(program_headers: &str) -> Vec<(u64, u64)> {
+    let mut ranges = Vec::new();
+    let mut pending: Option<(bool, u64)> = None;
+    for line in program_headers.lines() {
+        let trimmed = line.trim();
+        if let Some((kind, rest)) = split_token(trimmed) {
+            if kind == "RELRO" || kind == "LOAD" {
+                let vaddr = rest
+                    .split_whitespace()
+                    .skip_while(|&tok| tok != "vaddr")
+                    .nth(1)
+                    .and_then(hex);
+                pending = vaddr.map(|addr| (kind == "RELRO", addr));
+                continue;
+            }
+            if kind == "filesz"
+                && let Some((is_relro, vaddr)) = pending.take()
+            {
+                let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+                let memsz = tokens
+                    .iter()
+                    .position(|&tok| tok == "memsz")
+                    .and_then(|pos| tokens.get(pos + 1))
+                    .and_then(|val| hex(val));
+                let flags = tokens
+                    .iter()
+                    .position(|&tok| tok == "flags")
+                    .and_then(|pos| tokens.get(pos + 1))
+                    .copied()
+                    .unwrap_or("");
+                let read_only = is_relro || !flags.contains('w');
+                if read_only
+                    && let Some(size) = memsz
+                    && size > 0
+                {
+                    ranges.push((vaddr, vaddr.saturating_add(size)));
+                }
+            }
+        }
+    }
+    ranges
+}
+
+/// Whether the 8-byte pointer slot at `slot` lies completely inside an
+/// immutable (`PT_GNU_RELRO` or non-writable `LOAD`) segment.
+fn slot_is_immutable(slot: u64, immutable: &[(u64, u64)]) -> bool {
+    let Some(end) = slot.checked_add(8) else {
+        return false;
+    };
+    immutable.iter().any(|&(lo, hi)| slot >= lo && end <= hi)
+}
+
 /// The table of addresses: relocation type and target for each offset.
 fn table(text: &str) -> HashMap<u64, Relocation> {
     let mut table = HashMap::new();
@@ -258,17 +313,35 @@ fn parse_instruction(line: &str) -> Option<(&str, &str)> {
     }
 }
 
-/// Whether `mnemonic` enters the kernel, traps, halts, or makes a far branch.
+/// Strips x86-64 branch-prediction hint suffixes (`,pt` / `,pn`) that
+/// `objdump` attaches to conditional jump mnemonics.
+fn base_mnemonic(mnemonic: &str) -> &str {
+    mnemonic
+        .strip_suffix(",pt")
+        .or_else(|| mnemonic.strip_suffix(",pn"))
+        .unwrap_or(mnemonic)
+}
+
+/// Whether `mnemonic` enters the kernel, traps, halts, starts an RTM
+/// transaction, fails to decode, or makes a far branch.
 fn is_forbidden(mnemonic: &str) -> bool {
     matches!(
-        mnemonic,
+        base_mnemonic(mnemonic),
         "syscall"
             | "sysenter"
+            | "sysret"
+            | "sysretq"
+            | "sysexit"
             | "int"
             | "int3"
             | "int1"
             | "into"
             | "icebp"
+            | "iret"
+            | "iretd"
+            | "iretq"
+            | "vmcall"
+            | "vmmcall"
             | "svc"
             | "swi"
             | "hvc"
@@ -279,60 +352,26 @@ fn is_forbidden(mnemonic: &str) -> bool {
             | "ud2"
             | "brk"
             | "hlt"
+            | "xbegin"
             | "lcall"
+            | "lcallw"
             | "lcallq"
             | "ljmp"
+            | "ljmpw"
             | "ljmpq"
+            | "(bad)"
+            | ".byte"
     )
 }
 
 /// Whether `mnemonic` is a direct or indirect call, jump, or conditional branch.
+///
+/// Fails closed across all x86-64 branch families (including hinted jumps like
+/// `je,pt` and 16-bit forms like `callw`/`jmpw`): no non-branch x86-64
+/// mnemonic starts with `j`, `call`, or `loop`.
 fn is_branch_or_call(mnemonic: &str) -> bool {
-    matches!(
-        mnemonic,
-        "call"
-            | "callq"
-            | "jmp"
-            | "jmpq"
-            | "jo"
-            | "jno"
-            | "jb"
-            | "jnae"
-            | "jc"
-            | "jnb"
-            | "jae"
-            | "jnc"
-            | "jz"
-            | "je"
-            | "jnz"
-            | "jne"
-            | "jbe"
-            | "jna"
-            | "jnbe"
-            | "ja"
-            | "js"
-            | "jns"
-            | "jp"
-            | "jpe"
-            | "jnp"
-            | "jpo"
-            | "jl"
-            | "jnge"
-            | "jnl"
-            | "jge"
-            | "jle"
-            | "jng"
-            | "jnle"
-            | "jg"
-            | "jcxz"
-            | "jecxz"
-            | "jrcxz"
-            | "loop"
-            | "loope"
-            | "loopz"
-            | "loopne"
-            | "loopnz"
-    )
+    let base = base_mnemonic(mnemonic);
+    base.starts_with('j') || base.starts_with("call") || base.starts_with("loop")
 }
 
 /// Whether `mnemonic` is padding that does not terminate control flow.
@@ -342,7 +381,10 @@ fn is_nop(mnemonic: &str) -> bool {
 
 /// Whether `mnemonic` prevents execution from falling through to the next function.
 fn is_terminator(mnemonic: &str) -> bool {
-    matches!(mnemonic, "ret" | "retq" | "jmp" | "jmpq")
+    matches!(
+        base_mnemonic(mnemonic),
+        "ret" | "retw" | "retq" | "jmp" | "jmpw" | "jmpq"
+    )
 }
 
 /// Parses a direct branch/call operand `ADDR <SYMBOL[+0xOFFSET][@plt]>`.
@@ -385,6 +427,7 @@ enum Target {
 fn check(
     disassembly: &Disassembly,
     table: &HashMap<u64, Relocation>,
+    immutable: &[(u64, u64)],
     entries: &[String],
 ) -> (BTreeSet<String>, usize) {
     let mut problems = BTreeSet::new();
@@ -439,6 +482,7 @@ fn check(
             function,
             disassembly,
             table,
+            immutable,
             &mut todo,
             &mut problems,
         );
@@ -453,6 +497,7 @@ fn audit_function(
     function: &Function,
     disassembly: &Disassembly,
     table: &HashMap<u64, Relocation>,
+    immutable: &[(u64, u64)],
     todo: &mut Vec<Target>,
     problems: &mut BTreeSet<String>,
 ) {
@@ -477,7 +522,16 @@ fn audit_function(
             continue;
         }
         if operands.starts_with('*') {
-            audit_indirect(name, line, operands, disassembly, table, todo, problems);
+            audit_indirect(
+                name,
+                line,
+                operands,
+                disassembly,
+                table,
+                immutable,
+                todo,
+                problems,
+            );
             continue;
         }
         let Some((target_addr, target_name)) = parse_direct_target(operands) else {
@@ -487,13 +541,28 @@ fn audit_function(
             ));
             continue;
         };
-        if let Some((dest_start, dest_name)) = disassembly.containing(target_addr)
-            && dest_name == target_name
-        {
-            if dest_start != start {
-                todo.push(Target::Address(dest_start));
+        if let Some((dest_start, dest_name)) = disassembly.containing(target_addr) {
+            if dest_name != target_name {
+                problems.insert(format!(
+                    "{name} direct branch target mismatch ({target_name} vs {dest_name}): {}",
+                    line.trim()
+                ));
+            } else if dest_start != start {
+                if !ours(dest_name) && target_addr != dest_start {
+                    problems.insert(format!(
+                        "{name} branches into middle of {dest_name}: {}",
+                        line.trim()
+                    ));
+                } else {
+                    todo.push(Target::Address(dest_start));
+                }
             }
-        } else if target_name != name {
+        } else if target_name == name {
+            problems.insert(format!(
+                "{name} branches outside library to 0x{target_addr:x}: {}",
+                line.trim()
+            ));
+        } else {
             todo.push(Target::Name(target_name.to_string()));
         }
     }
@@ -509,13 +578,16 @@ fn audit_function(
     }
 }
 
-/// Resolves a relocation-backed indirect branch/call or records a failure.
+/// Resolves an immutable relocation-backed indirect branch/call or records a
+/// failure.
+#[allow(clippy::too_many_arguments)]
 fn audit_indirect(
     name: &str,
     line: &str,
     operands: &str,
     disassembly: &Disassembly,
     table: &HashMap<u64, Relocation>,
+    immutable: &[(u64, u64)],
     todo: &mut Vec<Target>,
     problems: &mut BTreeSet<String>,
 ) {
@@ -526,6 +598,13 @@ fn audit_indirect(
         ));
         return;
     };
+    if !slot_is_immutable(slot, immutable) {
+        problems.insert(format!(
+            "{name} branches through writable slot 0x{slot:x}: {}",
+            line.trim()
+        ));
+        return;
+    }
     let Some(reloc) = table.get(&slot) else {
         problems.insert(format!(
             "{name} branches through unmapped GOT slot 0x{slot:x}: {}",
@@ -575,17 +654,29 @@ fn main() -> ExitCode {
 
     let read = objdump(&["-f"], library)
         .and_then(|headers| check_architecture(&headers))
-        .and_then(|()| objdump(&["-d", "-C", "--no-show-raw-insn"], library))
-        .and_then(|code| objdump(&["-R", "-C"], library).map(|relocations| (code, relocations)));
-    let (code, relocations) = match read {
-        Ok(both) => both,
+        .and_then(|()| objdump(&["-p"], library))
+        .and_then(|program_headers| {
+            objdump(&["-d", "-C", "--no-show-raw-insn"], library)
+                .map(|code| (program_headers, code))
+        })
+        .and_then(|(program_headers, code)| {
+            objdump(&["-R", "-C"], library).map(|relocations| (program_headers, code, relocations))
+        });
+    let (program_headers, code, relocations) = match read {
+        Ok(all) => all,
         Err(error) => {
             eprintln!("{error}");
             return ExitCode::from(2);
         }
     };
 
-    let (problems, reached) = check(&Disassembly::read(&code), &table(&relocations), entries);
+    let immutable = immutable_ranges(&program_headers);
+    let (problems, reached) = check(
+        &Disassembly::read(&code),
+        &table(&relocations),
+        &immutable,
+        entries,
+    );
     for problem in &problems {
         eprintln!("{problem}");
     }
@@ -603,10 +694,12 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        Disassembly, check, check_architecture, ours, parse_direct_target, parse_indirect_slot,
-        parse_instruction, table,
+        Disassembly, check, check_architecture, immutable_ranges, ours, parse_direct_target,
+        parse_indirect_slot, parse_instruction, table,
     };
     use std::collections::HashMap;
+
+    const RELRO: &[(u64, u64)] = &[(0x5000, 0x5100)];
 
     #[test]
     fn ours_rejects_stdlib_generics_over_unisono_types() {
@@ -673,7 +766,12 @@ mod tests {
     2000:\tud2
 ";
         let disassembly = Disassembly::read(code);
-        let (problems, _) = check(&disassembly, &HashMap::new(), &["realtime_entry".into()]);
+        let (problems, _) = check(
+            &disassembly,
+            &HashMap::new(),
+            RELRO,
+            &["realtime_entry".into()],
+        );
         assert!(
             problems
                 .iter()
@@ -699,7 +797,7 @@ mod tests {
 ";
         let disassembly = Disassembly::read(code);
         let relocs = table("0000000000005000 R_X86_64_RELATIVE *ABS*+0x0000000000002000\n");
-        let (problems, reached) = check(&disassembly, &relocs, &["realtime_entry".into()]);
+        let (problems, reached) = check(&disassembly, &relocs, RELRO, &["realtime_entry".into()]);
         assert_eq!(reached, 1);
         assert!(problems.is_empty(), "unexpected problems: {problems:?}");
     }
@@ -721,7 +819,7 @@ mod tests {
 0000000000005008 R_X86_64_RELATIVE  *ABS*+0x0000000000000001
 ",
         );
-        let (problems, _) = check(&disassembly, &relocs, &["realtime_entry".into()]);
+        let (problems, _) = check(&disassembly, &relocs, RELRO, &["realtime_entry".into()]);
         assert!(problems.iter().any(|p| p.contains("R_X86_64_IRELATIVE")));
         assert!(
             problems
@@ -749,7 +847,72 @@ mod tests {
     2000:\tret
 ";
         let disassembly = Disassembly::read(code);
-        let (problems, _) = check(&disassembly, &HashMap::new(), &["realtime_entry".into()]);
+        let (problems, _) = check(
+            &disassembly,
+            &HashMap::new(),
+            RELRO,
+            &["realtime_entry".into()],
+        );
         assert!(problems.iter().any(|p| p.contains("duplicate definitions")));
+    }
+
+    #[test]
+    fn rejects_writable_slot_hinted_branch_rarer_opcodes_mid_helper_and_label_mismatch() {
+        let ph = "\
+Program Header:
+    LOAD off    0x0000000000002e38 vaddr 0x0000000000003e38 paddr 0x0000000000003e38 align 2**12
+         filesz 0x00000000000001d8 memsz 0x00000000000001e0 flags rw-
+   RELRO off    0x0000000000002e38 vaddr 0x0000000000003e38 paddr 0x0000000000003e38 align 2**0
+         filesz 0x00000000000001c8 memsz 0x00000000000001c8 flags r--
+";
+        let immutable = immutable_ranges(ph);
+        assert_eq!(immutable, vec![(0x3e38, 0x4000)]);
+
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tjmp    *0x2ef2(%rip)        # 4008 <hook>
+    1006:\tje,pt  2000 <forbidden_fn>
+    100c:\txbegin 2000 <forbidden_fn>
+    1012:\tcallw  2000 <forbidden_fn>
+    1018:\t(bad)
+    101a:\tjmp    3008 <memcpy+0x8>
+    1020:\tjmp    2000 <realtime_entry>
+    1025:\tret
+0000000000002000 <forbidden_fn>:
+    2000:\tsyscall
+    2002:\tret
+0000000000003000 <memcpy>:
+    3000:\tret
+    3008:\tsyscall
+";
+        let disassembly = Disassembly::read(code);
+        let relocs = table("0000000000004008 R_X86_64_RELATIVE *ABS*+0x0000000000001000\n");
+        let (problems, _) = check(
+            &disassembly,
+            &relocs,
+            &immutable,
+            &["realtime_entry".into()],
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("writable slot 0x4008")),
+            "{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p == "reaches forbidden_fn"),
+            "{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("xbegin")),
+            "{problems:?}"
+        );
+        assert!(problems.iter().any(|p| p.contains("(bad)")), "{problems:?}");
+        assert!(
+            problems.iter().any(|p| p.contains("middle of memcpy")),
+            "{problems:?}"
+        );
+        assert!(
+            problems.iter().any(|p| p.contains("target mismatch")),
+            "{problems:?}"
+        );
     }
 }

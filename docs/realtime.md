@@ -26,9 +26,14 @@ time or for the start and length of a cycle, and read and write packets. The che
   run the check also builds a function that does panic and fails unless that
   reference appears: the check is seen to catch what it is for;
 - **every reached function is audited fail-closed by `crates/reachable`,**
-  with jump tables disabled (`-max-jump-table-size=0`), so no direct call,
-  unconditional or conditional jump, linear fallthrough, or indirect branch
-  can leave unisono's own code or reach a trap or kernel entry.
+  with jump tables disabled (`-max-jump-table-size=0`) and eager RELRO
+  linking (`-Wl,-z,relro,-z,now`), so no direct call, unconditional or
+  conditional jump (including hinted branches), linear fallthrough, or
+  indirect branch can leave unisono's own code, branch through writable
+  memory, jump into the middle of an allowed helper, or reach a trap or
+  kernel entry. `crates/reachable` audits x86-64 ELF libraries only and exits
+  with status 2 on other architectures (so `just realtime` and `just check`
+  target x86-64 Linux).
 
 These are statements about every path, not about the paths that a test ran.
 They hold for the code as compiled for the machine that runs the check.
@@ -119,11 +124,16 @@ graph itself.
 bytes that anyone who reaches its socket can send. The kernel holds it to a
 list of system calls (`unisono_runtime::syscalls`): receiving and sending on
 the socket that is open, waiting for it, reading the clock and sleeping,
-waking other threads, writing to a file that is open, returning memory, and
-ending. Any other call of that thread fails as not permitted and does
-nothing: it cannot open a file, make a socket, start a program or change
-what memory may be executed. The program asks for this at the start of the
-network thread of a sender and of a receiver, on Linux on x86-64 and 64-bit
-ARM; elsewhere the thread runs unrestricted and a line says so. A test
-holds a thread to the list and has it send, sleep and end, and fail to open
-a file and to make a socket.
+waking other threads, writing to a file that is open, non-executable memory
+management (`brk`, `munmap`, `madvise`, and `mmap`/`mprotect` without
+`PROT_EXEC`), signaling its own process via `tgkill` (so `abort()` terminates
+cleanly), and ending. A call under a foreign architecture terminates the
+process; any other call of that thread fails with `EPERM` (`PermissionDenied`)
+and does nothing: it cannot open a file, make a socket, start a program or
+make memory executable. The program asks for this at the start of the network
+thread of a sender and of a receiver on little-endian Linux on x86-64 and
+64-bit ARM, and fails startup if installing the filter fails there; on other
+platforms (`Unsupported`) the thread runs unrestricted and a warning is
+printed. Tests verify both the BPF verdicts and a live restricted thread
+sending, sleeping, mapping non-executable memory, and being denied `openat`,
+`socket`, and `mprotect(..., PROT_EXEC)`.

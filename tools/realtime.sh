@@ -36,8 +36,8 @@ link_entries() {
     } > "$out.map"
     local roots=()
     for entry in "$@"; do roots+=("-Wl,-u,$entry"); done
-    cc -shared -nostdlib -Wl,--gc-sections "-Wl,--version-script=$out.map" \
-        "${roots[@]}" -o "$out" "$lib"
+    cc -shared -nostdlib -Wl,--gc-sections -Wl,-z,relro,-z,now \
+        "-Wl,--version-script=$out.map" "${roots[@]}" -o "$out" "$lib"
 }
 
 cargo build --quiet --release --package reachable --target-dir "$cargo_target"
@@ -76,6 +76,15 @@ if [ -n "$panics" ]; then
     failed=1
 fi
 
+# Whole-library scan of the linked core for instructions that enter the kernel.
+kernel_entries="$(objdump -d --no-show-raw-insn "$linked" \
+    | grep -E ':[[:space:]]+(syscall|sysenter|int[[:space:]]+\$0x80|svc|swi|ecall)\b' || true)"
+if [ -n "$kernel_entries" ]; then
+    echo "the real-time core contains kernel-entry instructions:" >&2
+    echo "$kernel_entries" >&2
+    failed=1
+fi
+
 # shellcheck disable=SC2086
 if ! core_report="$("$reachable" "$linked" $entries)"; then
     echo "the real-time core reaches what it may not" >&2
@@ -83,7 +92,8 @@ if ! core_report="$("$reachable" "$linked" $entries)"; then
 fi
 
 # Self-test: confirm that a reachable panic path in realtime-check leaves
-# `unisono_realtime_code_panicked` undefined after dead-code elimination.
+# `unisono_realtime_code_panicked` undefined after dead-code elimination AND
+# that `reachable` itself rejects it.
 probe_target="$target/probe"
 probe_lib="$probe_target/release/libunisono_realtime_check.a"
 probe_so="$probe_target/probe.so"
@@ -93,6 +103,14 @@ link_entries "$probe_lib" "$probe_so" realtime_panic_probe
 probe_undef="$(nm -D --undefined-only "$probe_so")"
 if ! printf '%s\n' "$probe_undef" | awk 'NF >= 2 { print $2 }' | grep -qx 'unisono_realtime_code_panicked'; then
     echo "the panic self-test did not catch realtime_panic_probe" >&2
+    failed=1
+fi
+if core_probe_out="$("$reachable" "$probe_so" realtime_panic_probe 2>&1)"; then
+    echo "reachable did not reject realtime-check's panic probe" >&2
+    failed=1
+elif ! printf '%s\n' "$core_probe_out" | grep -E -q 'reaches .*(panic|unisono_realtime_code_panicked)'; then
+    echo "reachable rejected realtime-check's panic probe for an unexpected reason:" >&2
+    echo "$core_probe_out" >&2
     failed=1
 fi
 
@@ -109,7 +127,8 @@ if ! audio_report="$("$reachable" "$audio_target/audio.so" $audio_entries)"; the
     failed=1
 fi
 
-# Self-test: a path to a panic in the audio library must fail with a reachability diagnostic.
+# Self-test: a path to a panic in the audio library must fail specifically by
+# reporting a reached panic symbol (not merely an incidental fallthrough).
 RUSTFLAGS="$audit_rustflags" cargo build --quiet --release --features panic-probe \
     --manifest-path "$root/tools/realtime-audio/Cargo.toml" --target-dir "$audio_target/probe"
 link_entries "$audio_target/probe/release/libunisono_realtime_audio.a" "$audio_target/probe.so" \
@@ -117,7 +136,7 @@ link_entries "$audio_target/probe/release/libunisono_realtime_audio.a" "$audio_t
 if probe_out="$("$reachable" "$audio_target/probe.so" realtime_panic_probe 2>&1)"; then
     echo "the check of the audio threads did not catch realtime_panic_probe" >&2
     failed=1
-elif ! printf '%s\n' "$probe_out" | grep -q 'reaches '; then
+elif ! printf '%s\n' "$probe_out" | grep -E -q 'reaches .*panic'; then
     echo "the audio panic self-test failed for an unexpected reason:" >&2
     echo "$probe_out" >&2
     failed=1
