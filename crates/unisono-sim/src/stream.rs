@@ -39,6 +39,10 @@ pub type SimReceiver = Receiver<64, 64, 8>;
 /// How many frames before and after a position the resampler reads.
 const FILTER_REACH: u64 = 24;
 
+/// Maximum relative deviation from nominal rate accepted from a fitted device
+/// line (1%, matching `ReceiverPlayback`'s default `device_range`).
+const DEVICE_RANGE: u32 = 10_000_000;
+
 /// What the sender is like.
 #[derive(Clone, Copy, Debug)]
 pub struct SenderModel {
@@ -174,6 +178,9 @@ struct Listener {
     device: Course,
     /// The line fitted to the reports of the audio system.
     line: Device<64>,
+    /// Fractional nanosecond carry (Q16) from fitted cycle durations, matching
+    /// `ReceiverPlayback::step_device`.
+    carried: i64,
     noise: Generator,
     trace: Trace,
 }
@@ -276,6 +283,7 @@ impl Scene {
                 ),
                 device: Course::new(model.device, generator.fork(300 + number)),
                 line: Device::new(sender.rate),
+                carried: 0,
                 noise: generator.fork(500 + number),
                 trace: Trace::default(),
             })
@@ -476,13 +484,32 @@ impl Scene {
                 #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
                 let off = ((listener.noise.uniform() * 2.0 - 1.0) * error as f64).round() as i64;
                 let position = cycle * u64::from(frames);
-                listener.line.observe(position, exact + off);
-                let start = listener.line.when(position).unwrap_or(exact);
-                let end = listener
+                let observed = exact.saturating_add(off);
+                listener.line.observe(position, observed);
+                let nominal_q16 =
+                    (i128::from(frames) << 16) * 1_000_000_000 / i128::from(self.model.rate.max(1));
+                let (fitted_start, measured_q16) = listener
                     .line
-                    .when(position + u64::from(frames))
-                    .unwrap_or(start);
-                (start, end - start)
+                    .when_cycle(position, frames)
+                    .map_or((observed, nominal_q16), |(s, d)| (s, i128::from(d)));
+                let usable = listener.line.kept() > 1
+                    && measured_q16 > 0
+                    && (measured_q16 - nominal_q16).abs() * 1_000_000_000
+                        <= nominal_q16 * i128::from(DEVICE_RANGE);
+                let duration_q16 = if usable {
+                    measured_q16
+                } else {
+                    listener.carried = 0;
+                    nominal_q16
+                };
+                let exact_q16 = duration_q16 + i128::from(listener.carried);
+                #[allow(clippy::cast_possible_truncation)] // masked to 16 bits
+                {
+                    listener.carried = (exact_q16 & 0xffff) as i64;
+                }
+                let duration = i64::try_from(exact_q16 >> 16).unwrap_or(i64::MAX);
+                let start = if usable { fitted_start } else { observed };
+                (start, duration)
             }
         };
         let plan = listener.core.cycle(time, duration, frames);
@@ -591,6 +618,76 @@ impl Scene {
                 .get(listener.model.host)
                 .map_or(0, |host| host.path);
             listener.core = new_receiver(&listener.model, receiver as u64, path);
+            listener.line = Device::new(self.model.rate);
+            listener.carried = 0;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use unisono_core::player::Regulation;
+
+    use super::{CycleLength, HostModel, PathDelay, ReceiverModel, Scene, SenderModel};
+    use crate::TrueTime;
+    use crate::clock::OscillatorModel;
+    use crate::link::LinkModel;
+    use crate::random::Generator;
+
+    #[test]
+    fn restart_receiver_resets_fitted_device_line_and_carry() {
+        let osc = OscillatorModel {
+            offset: 0.0,
+            frequency: 0.0,
+            walk: 0.0,
+        };
+        let link = LinkModel {
+            minimum: 1e-3,
+            clear_excess: 0.0,
+            queued: 0.0,
+            queued_excess: 0.0,
+            pause_rate: 0.0,
+            pause_length: 0.0,
+            overtaken: 0.0,
+            overtaken_excess: 0.0,
+        };
+        let sender = SenderModel {
+            clock: osc,
+            device: osc,
+            rate: 48_000,
+            packet_frames: 240,
+            level: 30_000_000,
+            send_delay: 1e-4,
+            span: 2_000,
+            window: 2_400,
+        };
+        let hosts = [HostModel {
+            clock: osc,
+            link,
+            back: link,
+        }];
+        let receivers = [ReceiverModel {
+            host: 0,
+            device: osc,
+            cycle_frames: 256,
+            lead: 4e-3,
+            regulation: Regulation {
+                gain: 4 << 16,
+                limit: 1_000_000,
+                jump: 240,
+            },
+            silence: 1_000_000_000,
+            slope_limit: 200_000,
+            path: PathDelay::Told,
+            cycle_length: CycleLength::Fitted(50_000),
+            stands_still: None,
+        }];
+        let mut scene = Scene::new(sender, &hosts, &receivers, &Generator::new(9));
+        scene.run(TrueTime::from_seconds(0.5));
+        assert!(scene.listeners[0].line.kept() > 10);
+
+        scene.restart_receiver(0);
+        assert_eq!(scene.listeners[0].line.kept(), 0);
+        assert_eq!(scene.listeners[0].carried, 0);
     }
 }
