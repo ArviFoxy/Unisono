@@ -310,11 +310,12 @@ wrong: after a sender has started again with lower indices, the estimate would
 stay that of the run before until the new run had gone as far.
 
 **Fit.** Kept samples older than the memory $T$ are forgotten. The estimate is
-the line that lies on or under every kept sample and is highest at the middle
-of the time they cover. It passes through two kept samples, one on each side of
-the middle.
+the line that lies on or under every kept sample and is highest at the mean of
+their times. It passes through two kept samples, one on each side of that
+mean.
 
-Claims, for kept samples at times $t_j$ with values $z_j$, and $c$ the middle:
+Claims, for kept samples at times $t_j$ with values $z_j$, and $c$ the mean of
+the $t_j$:
 
 - *The line through two samples on either side of $c$ that lies under all
   samples is the highest at $c$ of all lines under the samples.*
@@ -323,14 +324,14 @@ Claims, for kept samples at times $t_j$ with values $z_j$, and $c$ the middle:
   so the lines that the samples allow as the true relation are the lines
   under the samples. The estimate is one of them, and its value at $c$ is the
   largest of theirs (`estimate_isGreatest`): it is the least estimate that is
-  never below a relation the samples allow. And when $c$ is the mean of the
+  never below a relation the samples allow. And because $c$ is the mean of the
   times of the samples, the samples lie above the estimate by no more, added
   up, than above any other line under them (`excess_le`); that sum is what
   the likelihood of a line depends on when the excesses of the samples are
   independent and exponential, whatever their rate, so the estimate is then
-  the most likely line. The code takes $c$ in the middle of the time that the
-  kept samples cover, which is the mean of their times when they are evenly
-  spread.
+  the most likely line. The code rounds the mean down to a whole nanosecond,
+  which can cost the number of samples times the difference of two slopes,
+  in nanoseconds (`excess_near`): thousandths of a nanosecond.
 - *Its error at $c$.* If every sample is on or above the true relation, the
   true relation stays within $b$ of a line, and one sample at or before $c$ and
   one at or after it are within $\epsilon$ of the true relation, then the
@@ -349,12 +350,18 @@ About the code that computes it (`unisono_core::relation`), over the integers
 and without rounding, all in `Unisono.Relation`: `side_spec` (the test of which
 side of a line a sample lies on), `is_under_spec` (whether a line lies under
 all kept samples), `put_spec`, `drop_oldest_spec` and `forget_before_spec`
-(keeping and forgetting samples), `bridge_spec` (the two samples the line is
-drawn through are kept samples around the middle), and `fit_spec`: the fit
-ends for every state, changes nothing but the line, and a line it newly stores
-passes through a kept sample and has no kept sample below it. The statements
-hold for times and values within an eighth of the 64-bit range, which is 36
-years in nanoseconds.
+(keeping and forgetting samples), `mean_time_spec` (the mean of the times of
+the kept samples, rounded down), `bridge_spec` (the two samples the line is
+drawn through are kept samples around that time), and `fit_spec`: the fit
+ends for every state, changes nothing but the line, and a line it newly
+stores passes through a kept sample and has no kept sample below it; it is
+the line through two kept samples around the mean of the times, or its slope
+is at the limit. Read in real numbers (`Unisono.Estimate`), the first of
+those is the line of the claims above: no line under the kept samples is
+higher at the rounded mean (`through_best`), and the kept samples lie above
+none by less, added up, but for the rounding (`through_excess`,
+`anchor_near_mean`). The statements hold for times and values within an
+eighth of the 64-bit range, which is 36 years in nanoseconds.
 
 For every state of the estimator, in range or not, and every packet, taking
 in a packet and ending a window return: `observe_total`, `end_window_total`.
@@ -376,8 +383,9 @@ a little less; a later timeline on the same clock and on another; and another
 sender with the same identifiers.
 
 Not stated in Lean: that the fit always finds a line when there are two kept
-samples, which needs the hull to be built correctly and is covered by tests;
-and what the kept samples are after a packet, in terms of the packets before.
+samples, which needs the hull to be built correctly and is covered by tests
+(a fit that finds none keeps the line it had); and what the kept samples are
+after a packet, in terms of the packets before.
 
 **Limits of the slope.** A slope beyond what $y_{\max}$ allows for two
 oscillators means an assumption has failed, as when the first sample of all

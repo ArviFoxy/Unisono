@@ -297,7 +297,7 @@ structure relation.Sample where
   value : Std.I64
 
 /-- [unisono_core::relation::Estimator]
-    Source: 'crates/unisono-core/src/relation.rs', lines 112:0-129:1
+    Source: 'crates/unisono-core/src/relation.rs', lines 115:0-132:1
     Visibility: public -/
 structure relation.Estimator (M : Std.Usize) where
   kept : Array relation.Sample M

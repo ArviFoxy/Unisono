@@ -6,6 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Arrivals
 public import Unisono.Device
+public import Unisono.Estimate
 public import Unisono.Fixed
 public import Unisono.Gains
 public import Unisono.Answers
@@ -102,6 +103,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Relation.fit_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Relation.fit_spec
+
+/-- info: 'Unisono.Relation.mean_time_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.mean_time_spec
+
+/-- info: 'Unisono.Relation.through_best' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.through_best
+
+/-- info: 'Unisono.Relation.through_excess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.through_excess
+
+/-- info: 'Unisono.Relation.anchor_near_mean' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.anchor_near_mean
 
 /-- info: 'Unisono.Relation.observe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -686,6 +703,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.SupportLine.excess_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.SupportLine.excess_le
+
+/-- info: 'Unisono.Model.SupportLine.excess_near' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.SupportLine.excess_near
 
 /-- info: 'Unisono.Model.Stream.group_misses_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

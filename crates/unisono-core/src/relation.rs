@@ -100,7 +100,10 @@ fn non_negative(value: i64) -> i64 {
 /// index in the stream. From each window the estimator keeps the one sample
 /// that lies lowest against its current line. Kept samples older than `span`
 /// are forgotten. After every window the estimate is the line under all kept
-/// samples that is highest at the middle of the time they cover.
+/// samples that is highest at the mean of their times. Of all lines under
+/// the samples it is the one that the samples lie above by the least, added
+/// up: the most likely line when the delays of the kept samples are
+/// independent and exponential.
 ///
 /// Two clocks differ in rate by little, so a steeper line means that
 /// something other than the clocks shaped the samples: a first sample that
@@ -170,18 +173,22 @@ impl<const M: usize> Estimator<M> {
         time <= self.latest && (self.latest as i128).wrapping_sub(time as i128) <= self.span as i128
     }
 
-    /// The middle of the time that the kept samples cover, where the
-    /// estimate is best, once a sample has been kept.
-    #[must_use]
-    pub fn middle(&self) -> Option<i64> {
-        let Some(first) = self.sample(0) else {
-            return None;
-        };
-        let Some(last) = self.sample(self.len.saturating_sub(1)) else {
-            return None;
-        };
-        let half = div_floor(last.time.saturating_sub(first.time) as i128, 2);
-        Some(first.time.saturating_add(saturate(half)))
+    /// The mean of the times of the kept samples, rounded down, where
+    /// `first` is the time of the earliest of them.
+    // The number of kept samples is far below 2^63.
+    #[allow(clippy::cast_possible_wrap)]
+    fn mean_time(&self, first: i64) -> i64 {
+        // The times less the earliest: each of at most 65 bits, and fewer
+        // than 2^62 of them, so the sum does not wrap.
+        let mut sum = 0i128;
+        let mut index = 0usize;
+        while index < self.len {
+            if let Some(sample) = self.sample(index) {
+                sum = sum.wrapping_add((sample.time as i128).wrapping_sub(first as i128));
+            }
+            index = index.saturating_add(1);
+        }
+        first.saturating_add(saturate(div_floor(sum, self.len as i64)))
     }
 
     /// The current estimate, once a sample has been kept.
@@ -361,8 +368,7 @@ impl<const M: usize> Estimator<M> {
 
     /// Fits the line to the kept samples.
     fn fit(&mut self) {
-        let (Some(first), Some(last)) = (self.sample(0), self.sample(self.len.saturating_sub(1)))
-        else {
+        let Some(first) = self.sample(0) else {
             self.line = None;
             return;
         };
@@ -380,9 +386,8 @@ impl<const M: usize> Estimator<M> {
             });
             return;
         }
-        let half = div_floor(last.time.saturating_sub(first.time) as i128, 2);
-        let middle = first.time.saturating_add(saturate(half));
-        let Some((from, to)) = self.bridge(middle) else {
+        let mean = self.mean_time(first.time);
+        let Some((from, to)) = self.bridge(mean) else {
             return;
         };
         if !self.is_under(from, to) {
@@ -627,8 +632,9 @@ mod tests {
         estimator.end_window();
         // One sample of each window, and of window 2 its lowest.
         assert_eq!(estimator.kept(), 3);
-        // The line under the three that is highest at the middle, 30, goes
-        // through the first two, with three quarters for each unit of time.
+        // The line under the three that is highest at the mean of their
+        // times, 33, goes through the first two, with three quarters for
+        // each unit of time.
         let line = estimator.line().expect("a line");
         assert_eq!(
             (line.eval(0), line.eval(40), line.eval(60)),
@@ -788,7 +794,8 @@ mod tests {
         feed(&mut estimator, &samples);
         assert_eq!(estimator.kept(), 4);
         // Kept: times 60, 70, 80, 90 with values 36, 49, 64, 81, a convex
-        // curve. The middle time is 75, between the samples at 70 and 80.
+        // curve. The mean of the times is 75, between the samples at 70 and
+        // 80.
         let line = estimator.line().expect("a line");
         assert_eq!((line.eval(70), line.eval(80)), (49, 64));
     }
@@ -872,10 +879,11 @@ mod tests {
     }
 
     /// The fitted line against every pair of samples: it must lie under all
-    /// kept samples, and no line through two samples on either side of the
-    /// middle time that also lies under all of them may be higher there.
+    /// kept samples and pass through two of them, one on either side of the
+    /// mean of the times. No line under the samples is then higher there,
+    /// and the samples lie above none by less, added up.
     #[test]
-    fn the_line_is_under_all_samples_and_highest_in_the_middle() {
+    fn the_line_is_under_all_samples_and_highest_at_the_mean_of_their_times() {
         // A small generator of numbers, the same on every run.
         let mut state = 0x9e37_79b9_7f4a_7c15u64;
         let mut draw = |bound: u64| {
@@ -896,8 +904,8 @@ mod tests {
             let mut estimator = Estimator::<16>::new(i64::MAX, STEEP);
             feed(&mut estimator, &samples);
             let line = estimator.line().expect("a line");
-            let (first, last) = (samples[0], samples[count - 1]);
-            let middle = first.time + (last.time - first.time) / 2;
+            let sum: i64 = samples.iter().map(|s| s.time).sum();
+            let mean = sum.div_euclid(i64::try_from(count).unwrap_or(1));
             let from = samples
                 .iter()
                 .find(|s| s.time == line.time)
@@ -906,8 +914,8 @@ mod tests {
             let to = sample(from.time + line.run, from.value + line.rise);
             assert!(samples.contains(&to), "the line ends at a sample");
             assert!(
-                from.time <= middle && middle <= to.time,
-                "the middle is between the line's two samples"
+                from.time <= mean && mean <= to.time,
+                "the mean is between the line's two samples"
             );
             for s in &samples {
                 assert!(side(from, to, *s) >= 0, "a sample lies below the line");

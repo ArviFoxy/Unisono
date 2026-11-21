@@ -664,13 +664,104 @@ def LineUnder (l : relation.Line) (kept : List relation.Sample) : Prop :=
     ∀ s ∈ kept,
       0 ≤ l.run.val * (s.value.val - a.value.val) - l.rise.val * (s.time.val - a.time.val)
 
+/-- The times of samples less `first`, added up. -/
+def timesFrom (first : ℤ) (kept : List relation.Sample) : ℤ :=
+  (kept.map fun s => s.time.val - first).sum
+
+theorem timesFrom_append (first : ℤ) (l : List relation.Sample) (x : relation.Sample) :
+    timesFrom first (l ++ [x]) = timesFrom first l + (x.time.val - first) := by
+  simp [timesFrom]
+
+/-- `mean_time` returns the mean of the times of the kept samples, rounded
+down: `first` and the mean of the times less `first`. -/
+theorem mean_time_spec {M : Std.Usize} (e : relation.Estimator M) (first : Std.I64)
+    (htiny : ∀ s ∈ keptList e, Tiny s) (hfirst : -2^60 ≤ first.val ∧ first.val ≤ 2^60)
+    (hlen : 0 < e.len.val ∧ e.len.val < 2^62) :
+    relation.Estimator.mean_time e first
+      ⦃ r => r.val = first.val + timesFrom first.val (keptList e) / e.len.val ⦄ := by
+  unfold relation.Estimator.mean_time relation.Estimator.mean_time_loop
+  apply WP.spec_bind
+    (Pₘ := fun p : Std.Usize × Std.I128 => p.1 = e.len
+      ∧ p.2.val = timesFrom first.val (keptList e)
+      ∧ -((e.len.val : ℤ) * 2^61) ≤ p.2.val ∧ p.2.val ≤ (e.len.val : ℤ) * 2^61)
+  · apply loop.spec_decr_nat
+      (measure := fun p : Std.I128 × Std.Usize => e.len.val - p.2.val)
+      (inv := fun p : Std.I128 × Std.Usize => p.2.val ≤ e.len.val
+        ∧ p.1.val = timesFrom first.val ((keptList e).take p.2.val)
+        ∧ -((p.2.val : ℤ) * 2^61) ≤ p.1.val ∧ p.1.val ≤ (p.2.val : ℤ) * 2^61)
+    · rintro ⟨sum, index⟩ ⟨hle, hsum, hlow, hhigh⟩
+      dsimp only at hle hsum hlow hhigh
+      unfold relation.Estimator.mean_time_loop.body
+      simp only
+      split
+      · have hlt : index.val < e.len.val := by scalar_tac
+        have hnext : (core.num.Usize.saturating_add index 1#usize).val = index.val + 1 :=
+          Usize.saturating_add_val _ _ (by scalar_tac)
+        have hnextZ : ((core.num.Usize.saturating_add index 1#usize).val : ℤ) = index.val + 1 := by
+          rw [hnext]; push_cast; rfl
+        step as ⟨o, ho⟩
+        split
+        · -- no sample at this place: the kept samples end before it
+          have hend : (keptList e).length ≤ index.val := List.getElem?_eq_none_iff.mp ho.symm
+          simp only [bind_ok, lift, WP.spec_ok, hnext]
+          refine ⟨by omega, ?_, by omega, by omega, by omega⟩
+          rw [List.take_of_length_le (by omega), hsum, List.take_of_length_le hend]
+        · rename_i _ sample
+          have hget : (keptList e)[index.val]? = some sample := ho.symm
+          obtain ⟨hin, hat⟩ := List.getElem?_eq_some_iff.mp hget
+          obtain ⟨t1, t2, -, -⟩ := htiny sample (List.mem_of_getElem? hget)
+          have hdiff : (core.num.I128.wrapping_sub (IScalar.cast .I128 sample.time)
+              (IScalar.cast .I128 first)).val = sample.time.val - first.val := by
+            rw [I128.wrapping_sub_val _ _
+              (by rw [I64.cast_I128_val, I64.cast_I128_val]; constructor <;> linarith),
+              I64.cast_I128_val, I64.cast_I128_val]
+          have hbound : (index.val : ℤ) + 1 ≤ 2^62 := by omega
+          have hadd : (core.num.I128.wrapping_add sum
+              (core.num.I128.wrapping_sub (IScalar.cast .I128 sample.time)
+                (IScalar.cast .I128 first))).val
+              = sum.val + (sample.time.val - first.val) := by
+            rw [I128.wrapping_add_val _ _ (by rw [hdiff]; constructor <;> linarith), hdiff]
+          simp only [bind_ok, lift, WP.spec_ok, hnext, hadd]
+          refine ⟨by omega, ?_, by omega, by omega, by omega⟩
+          rw [List.take_succ_eq_append_getElem hin, timesFrom_append, hsum, hat]
+      · have hend : index.val = e.len.val := by scalar_tac
+        rw [WP.spec_ok]
+        dsimp only
+        refine ⟨rfl, ?_, by rw [← hend]; exact hlow, by rw [← hend]; exact hhigh⟩
+        rw [hsum, hend, List.take_of_length_le]
+        simp only [keptList, List.length_take]
+        exact min_le_left _ _
+    · have h0 : (0#usize).val = 0 := rfl
+      have h1 : (0#i128).val = 0 := rfl
+      dsimp only
+      rw [h0, h1]
+      exact ⟨Nat.zero_le _, by simp [timesFrom], by norm_num, by norm_num⟩
+  · rintro ⟨i, sum⟩ ⟨hi, hsum, hlow, hhigh⟩
+    dsimp only at hi hsum hlow hhigh
+    simp only [uncurry]
+    subst hi
+    step as ⟨i1, hi1⟩
+    have hi1v : i1.val = e.len.val := by rw [hi1, Usize.hcast_I64_val _ (by omega)]
+    step as ⟨i2, hi2, hzero⟩
+    have hpos : (0 : ℤ) < e.len.val := by exact_mod_cast hlen.1
+    have hi2v : i2.val = sum.val / e.len.val := by rw [hi2 (by rw [hi1v]; exact hpos), hi1v]
+    have hq1 : sum.val / (e.len.val : ℤ) ≤ 2^61 := Int.ediv_le_of_le_mul hpos (by linarith)
+    have hq0 : -2^61 ≤ sum.val / (e.len.val : ℤ) := Int.le_ediv_of_mul_le hpos (by linarith)
+    step with Unisono.Fixed.saturate_spec as ⟨i3, hi3⟩
+    have hi3v : i3.val = sum.val / e.len.val := by
+      rw [hi3, hi2v]
+      simp only [Unisono.Fixed.clamp64]
+      omega
+    rw [I64.saturating_add_val, hi3v, hsum] at *
+    rw [max_eq_right, min_eq_right] <;> omega
+
 /-- A line that `limited` returns is sound for the kept samples. -/
 @[step]
 theorem limited_spec {M : Std.Usize} (e : relation.Estimator M) (start : relation.Sample)
     (rise : Std.I64) (htiny : ∀ s ∈ keptList e, Tiny s) (hstart : start ∈ keptList e)
     (hrise : -2^60 ≤ rise.val ∧ rise.val ≤ 2^60) :
     relation.Estimator.limited e start rise
-      ⦃ r => ∀ l, r = some l → LineUnder l (keptList e) ⦄ := by
+      ⦃ r => ∀ l, r = some l → LineUnder l (keptList e) ∧ l.rise = rise ⦄ := by
   have hsmall : ∀ s ∈ keptList e, Small s := fun s hs => (htiny s hs).small
   unfold relation.Estimator.limited
   step as ⟨lowest, hlowest⟩
@@ -695,7 +786,7 @@ theorem limited_spec {M : Std.Usize} (e : relation.Estimator M) (start : relatio
     simp only [WP.spec_ok]
     intro l hl
     cases hl
-    refine ⟨by simp only; omega, lowest, hlmem, rfl, rfl, ?_⟩
+    refine ⟨⟨by simp only; omega, lowest, hlmem, rfl, rfl, ?_⟩, rfl⟩
     intro s hs
     have := (hb.mp hbt) s hs
     simp only [sideZ, hiv, hi1v] at this
@@ -703,91 +794,117 @@ theorem limited_spec {M : Std.Usize} (e : relation.Estimator M) (start : relatio
     linarith
   · simp
 
+/-- A stored line passes through two of the samples, one not after the time
+`c` and one not before it, and no sample lies below it. Of all lines under
+the samples it is then the highest at `c`; see `Unisono.Estimate`. -/
+def LineThrough (l : relation.Line) (kept : List relation.Sample) (c : ℤ) : Prop :=
+  ∃ a ∈ kept, ∃ b ∈ kept, a.time.val ≤ c ∧ c ≤ b.time.val ∧ a.time.val < b.time.val
+    ∧ l.time = a.time ∧ l.value = a.value
+    ∧ l.rise.val = b.value.val - a.value.val ∧ l.run.val = b.time.val - a.time.val
+    ∧ ∀ s ∈ kept, 0 ≤ sideZ a b s
+
+/-- The time at which the fit makes the line highest: the mean of the times
+of the kept samples, rounded down. -/
+def anchor {M : Std.Usize} (e : relation.Estimator M) : ℤ :=
+  match (keptList e)[0]? with
+  | some first => first.time.val + timesFrom first.time.val (keptList e) / e.len.val
+  | none => 0
+
 /-- `fit` changes only the line, and a line it newly stores for two or more
 kept samples is sound for them: it passes through a kept sample and no kept
-sample lies below it. -/
+sample lies below it. It is the line through two kept samples around the
+mean of their times, or its slope is at the limit. -/
 theorem fit_spec {M : Std.Usize} (e : relation.Estimator M)
-    (htiny : ∀ s ∈ keptList e, Tiny s) (hlimit : 0 ≤ e.limit.val ∧ e.limit.val ≤ 2^60) :
+    (htiny : ∀ s ∈ keptList e, Tiny s) (hlimit : 0 ≤ e.limit.val ∧ e.limit.val ≤ 2^60)
+    (hlen : e.len.val < 2^62) :
     relation.Estimator.fit e ⦃ e' =>
       e'.kept = e.kept ∧ e'.len = e.len ∧ e'.span = e.span ∧ e'.limit = e.limit
       ∧ e'.latest = e.latest ∧ e'.window = e.window ∧ e'.lowest = e.lowest
       ∧ (e.len.val ≠ 1 → e'.line = e.line ∨ e'.line = none
-          ∨ ∃ l, e'.line = some l ∧ LineUnder l (keptList e)) ⦄ := by
+          ∨ ∃ l, e'.line = some l ∧ LineUnder l (keptList e)
+              ∧ (LineThrough l (keptList e) (anchor e)
+                  ∨ l.rise.val = e.limit.val ∨ l.rise.val = -e.limit.val)) ⦄ := by
   have hsmall : ∀ s ∈ keptList e, Small s := fun s hs => (htiny s hs).small
   unfold relation.Estimator.fit
   step as ⟨o, ho⟩
-  step as ⟨i, hi⟩
-  step as ⟨o1, ho1⟩
   split
   · simp
   · rename_i _ first
-    have hfirst : first ∈ keptList e := List.mem_of_getElem? ho.symm
+    have hget : (keptList e)[0]? = some first := ho.symm
+    have hfirst : first ∈ keptList e := List.mem_of_getElem? hget
+    have hanchor : anchor e
+        = first.time.val + timesFrom first.time.val (keptList e) / e.len.val := by
+      simp only [anchor, hget]
     split
-    · simp
-    · rename_i _ last
+    · have h1 : e.len.val = 1 := by scalar_tac
+      split <;> simp [h1]
+    · have hpos : 0 < e.len.val := by
+        have h1 : 0 < (keptList e).length := List.length_pos_of_mem hfirst
+        have h2 : (keptList e).length ≤ e.len.val := by
+          simp only [keptList, List.length_take]
+          exact min_le_left _ _
+        omega
+      obtain ⟨f1, f2, -, -⟩ := htiny first hfirst
+      step with mean_time_spec e first.time htiny ⟨f1, f2⟩ ⟨hpos, hlen⟩ as ⟨mean, hmean⟩
+      step as ⟨o2, ho2⟩
       split
-      · have h1 : e.len.val = 1 := by scalar_tac
-        split <;> simp [h1]
-      · step as ⟨i1, hi1⟩
-        step as ⟨i2, hi2⟩
-        step as ⟨half⟩
-        step as ⟨i3, hi3⟩
-        step as ⟨middle, hmiddle⟩
-        step as ⟨o2, ho2⟩
+      · simp
+      · rename_i _ p
+        obtain ⟨a, b⟩ := p
+        simp only [uncurry]
+        obtain ⟨ha, hb, ham, hmb, hab⟩ := ho2 a b rfl
+        have hsa : Small a := hsmall a ha
+        have hsb : Small b := hsmall b hb
+        step as ⟨u, hu⟩
         split
-        · simp
-        · rename_i _ p
-          obtain ⟨a, b⟩ := p
-          simp only [uncurry]
-          obtain ⟨ha, hb, ham, hmb, hab⟩ := ho2 a b rfl
-          have hsa : Small a := hsmall a ha
-          have hsb : Small b := hsmall b hb
-          step as ⟨u, hu⟩
+        · rename_i hut
+          step as ⟨rise, hrise⟩
+          step as ⟨run, hrun⟩
+          step with slope_within_total as ⟨b1⟩
+          have hrisev : rise.val = b.value.val - a.value.val := by
+            rw [hrise]; exact sub_small _ _ ⟨hsb.2.2.1, hsb.2.2.2⟩ ⟨hsa.2.2.1, hsa.2.2.2⟩
+          have hrunv : run.val = b.time.val - a.time.val := by
+            rw [hrun]; exact sub_small _ _ ⟨hsb.1, hsb.2.1⟩ ⟨hsa.1, hsa.2.1⟩
           split
-          · rename_i hut
-            step as ⟨rise, hrise⟩
-            step as ⟨run, hrun⟩
-            step with slope_within_total as ⟨b1⟩
-            have hrisev : rise.val = b.value.val - a.value.val := by
-              rw [hrise]; exact sub_small _ _ ⟨hsb.2.2.1, hsb.2.2.2⟩ ⟨hsa.2.2.1, hsa.2.2.2⟩
-            have hrunv : run.val = b.time.val - a.time.val := by
-              rw [hrun]; exact sub_small _ _ ⟨hsb.1, hsb.2.1⟩ ⟨hsa.1, hsa.2.1⟩
-            split
-            · simp only [WP.spec_ok, true_and]
-              intro _
-              right; right
-              refine ⟨_, rfl, by simp only; omega, a, ha, rfl, rfl, ?_⟩
-              intro s hs
+          · simp only [WP.spec_ok, true_and]
+            intro _
+            right; right
+            refine ⟨_, rfl, ⟨by simp only; omega, a, ha, rfl, rfl, ?_⟩, Or.inl ?_⟩
+            · intro s hs
               have := (hu.mp hut) s hs
               simp only [sideZ] at this
               simp only [hrisev, hrunv]
               linarith
-            · have hneg : (core.num.I64.saturating_sub 0#i64 e.limit).val = -e.limit.val := by
-                rw [I64.saturating_sub_val, max_eq_right, min_eq_right] <;> simp <;> omega
-              have hr1 : -2^60 ≤ (core.num.I64.saturating_sub 0#i64 e.limit).val
-                  ∧ (core.num.I64.saturating_sub 0#i64 e.limit).val ≤ 2^60 := by
-                rw [hneg]; omega
-              have hr2 : -2^60 ≤ e.limit.val ∧ e.limit.val ≤ 2^60 := ⟨by omega, hlimit.2⟩
+            · exact ⟨a, ha, b, hb, by rw [hanchor, ← hmean]; exact ham,
+                by rw [hanchor, ← hmean]; exact hmb, hab, rfl, rfl, hrisev, hrunv, hu.mp hut⟩
+          · have hneg : (core.num.I64.saturating_sub 0#i64 e.limit).val = -e.limit.val := by
+              rw [I64.saturating_sub_val, max_eq_right, min_eq_right] <;> simp <;> omega
+            have hr1 : -2^60 ≤ (core.num.I64.saturating_sub 0#i64 e.limit).val
+                ∧ (core.num.I64.saturating_sub 0#i64 e.limit).val ≤ 2^60 := by
+              rw [hneg]; omega
+            have hr2 : -2^60 ≤ e.limit.val ∧ e.limit.val ≤ 2^60 := ⟨by omega, hlimit.2⟩
+            split
+            · simp only [bind_ok]
+              step as ⟨o3, ho3⟩
               split
-              · simp only [bind_ok]
-                step as ⟨o3, ho3⟩
-                split
-                · simp
-                · rename_i _ l
-                  simp only [WP.spec_ok, true_and]
-                  intro _
-                  right; right
-                  exact ⟨l, rfl, ho3 l rfl⟩
-              · simp only [bind_ok]
-                step as ⟨o3, ho3⟩
-                split
-                · simp
-                · rename_i _ l
-                  simp only [WP.spec_ok, true_and]
-                  intro _
-                  right; right
-                  exact ⟨l, rfl, ho3 l rfl⟩
-          · simp
+              · simp
+              · rename_i _ l
+                simp only [WP.spec_ok, true_and]
+                intro _
+                right; right
+                obtain ⟨hunder, hlrise⟩ := ho3 l rfl
+                exact ⟨l, rfl, hunder, Or.inr (Or.inr (by rw [hlrise, hneg]))⟩
+            · simp only [bind_ok]
+              step as ⟨o3, ho3⟩
+              split
+              · simp
+              · rename_i _ l
+                simp only [WP.spec_ok, true_and]
+                intro _
+                right; right
+                obtain ⟨hunder, hlrise⟩ := ho3 l rfl
+                exact ⟨l, rfl, hunder, Or.inr (Or.inl (by rw [hlrise]))⟩
+        · simp
 
 /-! ## Nothing fails, whatever the state
 
@@ -881,44 +998,64 @@ theorem limited_total {M : Std.Usize} (e : relation.Estimator M) (start : relati
 theorem saturate_total (x : Std.I128) : fixed.saturate x ⦃ _ => True ⦄ :=
   WP.spec_mono (Unisono.Fixed.saturate_spec x) (fun _ _ => trivial)
 
+theorem mean_time_total {M : Std.Usize} (e : relation.Estimator M) (first : Std.I64) :
+    relation.Estimator.mean_time e first ⦃ _ => True ⦄ := by
+  unfold relation.Estimator.mean_time relation.Estimator.mean_time_loop
+  apply WP.spec_bind (Pₘ := fun _ => True)
+  · apply loop.spec_decr_nat
+      (measure := fun p : Std.I128 × Std.Usize => e.len.val - p.2.val)
+      (inv := fun _ => True)
+    · rintro ⟨sum, index⟩ -
+      unfold relation.Estimator.mean_time_loop.body
+      simp only
+      split
+      · have hlt : index.val < e.len.val := by scalar_tac
+        have hnext : (core.num.Usize.saturating_add index 1#usize).val = index.val + 1 :=
+          Usize.saturating_add_val _ _ (by scalar_tac)
+        step as ⟨o, ho⟩
+        split
+        · simp only [bind_ok, lift, WP.spec_ok]
+          rw [hnext]; omega
+        · simp only [bind_ok, lift, WP.spec_ok]
+          rw [hnext]; omega
+      · simp
+    · trivial
+  · rintro ⟨i, sum⟩ -
+    simp only [uncurry]
+    step as ⟨i1, hi1⟩
+    step as ⟨i2⟩
+    step with saturate_total as ⟨i3⟩
+
 theorem fit_total {M : Std.Usize} (e : relation.Estimator M) :
     relation.Estimator.fit e ⦃ _ => True ⦄ := by
   unfold relation.Estimator.fit
   step as ⟨o, ho⟩
-  step as ⟨i, hi⟩
-  step as ⟨o1, ho1⟩
   split
   · simp
   · split
-    · simp
-    · split
-      · split <;> simp
-      · step as ⟨i1, hi1⟩
-        step as ⟨i2, hi2⟩
-        step as ⟨half⟩
-        step with saturate_total as ⟨i3⟩
-        step as ⟨middle, hmiddle⟩
-        step as ⟨o2, ho2⟩
+    · split <;> simp
+    · step with mean_time_total as ⟨mean⟩
+      step as ⟨o2, ho2⟩
+      split
+      · simp
+      · rename_i _ p
+        obtain ⟨a, b⟩ := p
+        simp only [uncurry]
+        step with is_under_total as ⟨u⟩
         split
-        · simp
-        · rename_i _ p
-          obtain ⟨a, b⟩ := p
-          simp only [uncurry]
-          step with is_under_total as ⟨u⟩
+        · step as ⟨rise, hrise⟩
+          step as ⟨run, hrun⟩
+          step with slope_within_total as ⟨b1⟩
           split
-          · step as ⟨rise, hrise⟩
-            step as ⟨run, hrun⟩
-            step with slope_within_total as ⟨b1⟩
-            split
-            · simp
-            · split
-              · simp only [bind_ok]
-                step with limited_total as ⟨o3⟩
-                split <;> simp
-              · simp only [bind_ok]
-                step with limited_total as ⟨o3⟩
-                split <;> simp
           · simp
+          · split
+            · simp only [bind_ok]
+              step with limited_total as ⟨o3⟩
+              split <;> simp
+            · simp only [bind_ok]
+              step with limited_total as ⟨o3⟩
+              split <;> simp
+        · simp
 
 theorem append_total {M : Std.Usize} (e : relation.Estimator M) (x : relation.Sample) :
     relation.Estimator.append e x ⦃ _ => True ⦄ := by

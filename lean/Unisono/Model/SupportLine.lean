@@ -256,4 +256,35 @@ theorem excess_le (p q : ι) (hp : p ∈ s) (hq : q ∈ s)
   rw [Finset.sum_sub_distrib, Finset.sum_sub_distrib, sum_eval s t _ hs, sum_eval s t l hs]
   nlinarith
 
+/-- **The most likely line, for a time near the mean.** When the estimate is
+highest at a time `c`, the samples lie above it by no more, added up, than
+above any other line under them, but for the number of samples times the
+difference of the two slopes times the distance of `c` from the mean of the
+times. The code takes for `c` the mean rounded down to a whole nanosecond. -/
+theorem excess_near (p q : ι) (hp : p ∈ s) (hq : q ∈ s) (c : ℝ)
+    (hpc : t p ≤ c) (hcq : c ≤ t q) (hpq : t p < t q) (l : Line) (hl : Under s t z l) :
+    ∑ j ∈ s, (z j - (through t z p q).eval (t j))
+      ≤ ∑ j ∈ s, (z j - l.eval (t j))
+        + s.card * (|l.slope - (through t z p q).slope| * |(∑ j ∈ s, t j) / s.card - c|) := by
+  have hs : s.Nonempty := ⟨p, hp⟩
+  have hhigh := highest s t z p q hp hq c hpc hcq hpq l hl
+  have hcard : (0 : ℝ) < s.card := by exact_mod_cast Finset.card_pos.mpr hs
+  rw [Finset.sum_sub_distrib, Finset.sum_sub_distrib, sum_eval s t _ hs, sum_eval s t l hs]
+  have hshift : l.eval ((∑ j ∈ s, t j) / s.card)
+        - (through t z p q).eval ((∑ j ∈ s, t j) / s.card)
+      = (l.eval c - (through t z p q).eval c)
+        + (l.slope - (through t z p q).slope) * ((∑ j ∈ s, t j) / s.card - c) := by
+    simp only [Line.eval]
+    ring
+  have habs : (l.slope - (through t z p q).slope) * ((∑ j ∈ s, t j) / s.card - c)
+      ≤ |l.slope - (through t z p q).slope| * |(∑ j ∈ s, t j) / s.card - c| := by
+    rw [← abs_mul]
+    exact le_abs_self _
+  have hle : l.eval ((∑ j ∈ s, t j) / s.card)
+        - (through t z p q).eval ((∑ j ∈ s, t j) / s.card)
+      ≤ |l.slope - (through t z p q).slope| * |(∑ j ∈ s, t j) / s.card - c| := by
+    linarith
+  have := mul_le_mul_of_nonneg_left hle hcard.le
+  linarith
+
 end Unisono.Model.SupportLine

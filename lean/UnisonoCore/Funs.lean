@@ -4602,7 +4602,7 @@ def relation.Sample.Insts.CoreCloneClone : core.clone.Clone relation.Sample
 }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::new]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 137:4-148:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 140:4-151:5
     Visibility: public -/
 def relation.Estimator.new
   (M : Std.Usize) (span : Std.I64) (limit : Std.I64) :
@@ -4719,7 +4719,7 @@ def receiver.Receiver.covers
   else ok false
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::line]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 189:4-191:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 196:4-198:5
     Visibility: public -/
 def relation.Estimator.impl.line
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -4773,7 +4773,7 @@ def receiver.Receiver.adopts
   else ok true
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::sample]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 200:4-208:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 207:4-215:5 -/
 def relation.Estimator.sample
   {M : Std.Usize} (self : relation.Estimator M) (index : Std.Usize) :
   Result (Option relation.Sample)
@@ -4808,7 +4808,7 @@ def relation.side
   ok (core.num.I128.saturating_sub left right)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 505:8-514:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 510:8-519:5 -/
 @[rust_loop_body]
 def relation.Estimator.is_under_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -4832,7 +4832,7 @@ def relation.Estimator.is_under_loop.body
   else ok (done true)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 505:8-514:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 510:8-519:5 -/
 @[rust_loop]
 def relation.Estimator.is_under_loop
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -4845,7 +4845,7 @@ def relation.Estimator.is_under_loop
     index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::is_under]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 503:4-514:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 508:4-519:5 -/
 @[reducible]
 def relation.Estimator.is_under
   {M : Std.Usize} (self : relation.Estimator M) («from» : relation.Sample)
@@ -4855,7 +4855,7 @@ def relation.Estimator.is_under
   relation.Estimator.is_under_loop self «from» «to» 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::hull_sample]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 211:4-216:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 218:4-223:5 -/
 def relation.Estimator.hull_sample
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
   (position : Std.Usize) :
@@ -4870,7 +4870,7 @@ def relation.Estimator.hull_sample
   | some index => relation.Estimator.sample self index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 470:12-479:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 475:12-484:13 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0_loop0.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -4922,7 +4922,7 @@ def relation.Estimator.bridge_loop0_loop0.body
   else ok (done size)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 1:
-    Source: 'crates/unisono-core/src/relation.rs', lines 470:12-479:13 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 475:12-484:13 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0_loop0
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -4937,7 +4937,7 @@ def relation.Estimator.bridge_loop0_loop0
     size
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 464:8-485:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 469:8-490:9 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop0.body
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
@@ -4982,7 +4982,7 @@ def relation.Estimator.bridge_loop0.body
       self.window, self.lowest, self.line, hull, size))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 464:8-485:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 469:8-490:9 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop0
   {M : Std.Usize} (self : relation.Estimator M) (hull : Array Std.Usize M)
@@ -4997,7 +4997,7 @@ def relation.Estimator.bridge_loop0
     (hull, size, next)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop body 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 488:8-500:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 493:8-505:5 -/
 @[rust_loop_body]
 def relation.Estimator.bridge_loop1.body
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -5063,7 +5063,7 @@ def relation.Estimator.bridge_loop1.body
   else ok (done none)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]: loop 2:
-    Source: 'crates/unisono-core/src/relation.rs', lines 488:8-500:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 493:8-505:5 -/
 @[rust_loop]
 def relation.Estimator.bridge_loop1
   {M : Std.Usize} (a : Array relation.Sample M) (i : Std.Usize) (i1 : Std.I64)
@@ -5079,7 +5079,7 @@ def relation.Estimator.bridge_loop1
     edge
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::bridge]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 459:4-500:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 464:4-505:5 -/
 def relation.Estimator.bridge
   {M : Std.Usize} (self : relation.Estimator M) (middle : Std.I64) :
   Result (Option (relation.Sample × relation.Sample))
@@ -5095,7 +5095,7 @@ def relation.Estimator.bridge
 @[global_simps, irreducible] def relation.SECOND : Std.I64 := 1000000000#i64
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 441:8-452:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 446:8-457:9 -/
 @[rust_loop_body]
 def relation.Estimator.lowest_against_loop.body
   {M : Std.Usize} (self : relation.Estimator M) (rise : Std.I64)
@@ -5121,7 +5121,7 @@ def relation.Estimator.lowest_against_loop.body
   else ok (done lowest)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 441:8-452:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 446:8-457:9 -/
 @[rust_loop]
 def relation.Estimator.lowest_against_loop
   {M : Std.Usize} (self : relation.Estimator M) (rise : Std.I64)
@@ -5134,7 +5134,7 @@ def relation.Estimator.lowest_against_loop
     (lowest, index)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::lowest_against]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 438:4-454:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 443:4-459:5 -/
 @[reducible]
 def relation.Estimator.lowest_against
   {M : Std.Usize} (self : relation.Estimator M) (start : relation.Sample)
@@ -5144,7 +5144,7 @@ def relation.Estimator.lowest_against
   relation.Estimator.lowest_against_loop self rise start 0#usize
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::limited]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 418:4-434:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 423:4-439:5 -/
 def relation.Estimator.limited
   {M : Std.Usize} (self : relation.Estimator M) (start : relation.Sample)
   (rise : Std.I64) :
@@ -5165,6 +5165,55 @@ def relation.Estimator.limited
       })
   else ok none
 
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::mean_time]: loop body 0:
+    Source: 'crates/unisono-core/src/relation.rs', lines 185:8-190:9 -/
+@[rust_loop_body]
+def relation.Estimator.mean_time_loop.body
+  {M : Std.Usize} (self : relation.Estimator M) (first : Std.I64)
+  (sum : Std.I128) (index : Std.Usize) :
+  Result (ControlFlow (Std.I128 × Std.Usize) (Std.Usize × Std.I128))
+  := do
+  if index < self.len
+  then
+    let o ← relation.Estimator.sample self index
+    let sum1 ←
+      match o with
+      | none => ok sum
+      | some sample =>
+        do
+        let i ← lift (IScalar.cast .I128 sample.time)
+        let i1 ← lift (IScalar.cast .I128 first)
+        let i2 ← lift (core.num.I128.wrapping_sub i i1)
+        ok (core.num.I128.wrapping_add sum i2)
+    let index1 ← lift (core.num.Usize.saturating_add index 1#usize)
+    ok (cont (sum1, index1))
+  else ok (done (self.len, sum))
+
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::mean_time]: loop 0:
+    Source: 'crates/unisono-core/src/relation.rs', lines 185:8-190:9 -/
+@[rust_loop]
+def relation.Estimator.mean_time_loop
+  {M : Std.Usize} (self : relation.Estimator M) (first : Std.I64)
+  (sum : Std.I128) (index : Std.Usize) :
+  Result (Std.Usize × Std.I128)
+  := do
+  loop
+    (fun (sum1, index1) => relation.Estimator.mean_time_loop.body self first
+      sum1 index1)
+    (sum, index)
+
+/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::mean_time]:
+    Source: 'crates/unisono-core/src/relation.rs', lines 180:4-192:5 -/
+def relation.Estimator.mean_time
+  {M : Std.Usize} (self : relation.Estimator M) (first : Std.I64) :
+  Result Std.I64
+  := do
+  let (i, sum) ← relation.Estimator.mean_time_loop self first 0#i128 0#usize
+  let i1 ← lift (UScalar.hcast .I64 i)
+  let i2 ← fixed.div_floor sum i1
+  let i3 ← fixed.saturate i2
+  ok (core.num.I64.saturating_add first i3)
+
 /-- [unisono_core::relation::slope_within]:
     Source: 'crates/unisono-core/src/relation.rs', lines 64:0-74:1 -/
 def relation.slope_within
@@ -5182,92 +5231,83 @@ def relation.slope_within
   ok (i1 <= i4)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::fit]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 363:4-411:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 370:4-416:5 -/
 def relation.Estimator.fit
   {M : Std.Usize} (self : relation.Estimator M) :
   Result (relation.Estimator M)
   := do
   let o ← relation.Estimator.sample self 0#usize
-  let i ← lift (core.num.Usize.saturating_sub self.len 1#usize)
-  let o1 ← relation.Estimator.sample self i
   match o with
   | none => ok { self with line := none }
   | some first =>
-    match o1 with
-    | none => ok { self with line := none }
-    | some last =>
-      if self.len = 1#usize
-      then
-        match self.line with
-        | none =>
-          ok
-            {
-              self
-                with
-                line :=
-                  (some
-                    {
-                      time := first.time,
-                      value := first.value,
-                      rise := 0#i64,
-                      run := 1#i64
-                    })
-            }
-        | some line =>
-          ok
-            {
-              self
-                with
-                line :=
-                  (some { line with time := first.time, value := first.value })
-            }
-      else
-        let i1 ← lift (core.num.I64.saturating_sub last.time first.time)
-        let i2 ← lift (IScalar.cast .I128 i1)
-        let half ← fixed.div_floor i2 2#i64
-        let i3 ← fixed.saturate half
-        let middle ← lift (core.num.I64.saturating_add first.time i3)
-        let o2 ← relation.Estimator.bridge self middle
-        match o2 with
-        | none => ok self
-        | some p =>
-          let («from», «to») := p
-          let b ← relation.Estimator.is_under self «from» «to»
-          if b
+    if self.len = 1#usize
+    then
+      match self.line with
+      | none =>
+        ok
+          {
+            self
+              with
+              line :=
+                (some
+                  {
+                    time := first.time,
+                    value := first.value,
+                    rise := 0#i64,
+                    run := 1#i64
+                  })
+          }
+      | some line =>
+        ok
+          {
+            self
+              with
+              line :=
+                (some { line with time := first.time, value := first.value })
+          }
+    else
+      let mean ← relation.Estimator.mean_time self first.time
+      let o1 ← relation.Estimator.bridge self mean
+      match o1 with
+      | none => ok self
+      | some p =>
+        let («from», «to») := p
+        let b ← relation.Estimator.is_under self «from» «to»
+        if b
+        then
+          let rise ←
+            lift (core.num.I64.saturating_sub «to».value «from».value)
+          let run ←
+            lift (core.num.I64.saturating_sub «to».time «from».time)
+          let b1 ← relation.slope_within rise run self.limit
+          if b1
           then
-            let rise ←
-              lift (core.num.I64.saturating_sub «to».value «from».value)
-            let run ←
-              lift (core.num.I64.saturating_sub «to».time «from».time)
-            let b1 ← relation.slope_within rise run self.limit
-            if b1
-            then
-              ok
-                {
-                  self
-                    with
-                    line :=
-                      (some
-                        {
-                          time := «from».time,
-                          value := «from».value,
-                          rise,
-                          run
-                        })
-                }
-            else
-              let rise1 ←
-                if rise < 0#i64
-                then ok (core.num.I64.saturating_sub 0#i64 self.limit)
-                else ok self.limit
-              let o3 ← relation.Estimator.limited self first rise1
-              match o3 with
-              | none => ok self
-              | some _ => ok { self with line := o3 }
-          else ok self
+            ok
+              {
+                self
+                  with
+                  line :=
+                    (some
+                      {
+                        time := «from».time,
+                        value := «from».value,
+                        rise,
+                        run
+                      })
+              }
+          else
+            let rise1 ←
+              if rise < 0#i64
+              then ok (core.num.I64.saturating_sub 0#i64 self.limit)
+              else ok self.limit
+            let o2 ← relation.Estimator.limited self first rise1
+            match o2 with
+            | none => ok self
+            | some _ => ok { self with line := o2 }
+        else ok self
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::put]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 220:4-228:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 227:4-235:5 -/
 def relation.Estimator.put
   {M : Std.Usize} (self : relation.Estimator M) (index : Std.Usize)
   (sample : relation.Sample) :
@@ -5288,7 +5328,7 @@ def relation.Estimator.put
     ok (true, { self with kept := a })
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 352:8-358:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 359:8-365:9 -/
 @[rust_loop_body]
 def relation.Estimator.drop_oldest_loop.body
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
@@ -5316,7 +5356,7 @@ def relation.Estimator.drop_oldest_loop.body
       self.lowest, self.line, «to»))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 352:8-358:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 359:8-365:9 -/
 @[rust_loop]
 def relation.Estimator.drop_oldest_loop
   {M : Std.Usize} (self : relation.Estimator M) («to» : Std.Usize)
@@ -5331,7 +5371,7 @@ def relation.Estimator.drop_oldest_loop
     (self, «to», «from»)
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::drop_oldest]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 346:4-360:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 353:4-367:5 -/
 def relation.Estimator.drop_oldest
   {M : Std.Usize} (self : relation.Estimator M) (count : Std.Usize) :
   Result (relation.Estimator M)
@@ -5354,7 +5394,7 @@ def relation.Estimator.drop_oldest
       }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop body 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 336:8-341:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 343:8-348:9 -/
 @[rust_loop_body]
 def relation.Estimator.forget_before_loop.body
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
@@ -5383,7 +5423,7 @@ def relation.Estimator.forget_before_loop.body
       self.window, self.lowest, self.line, old))
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]: loop 0:
-    Source: 'crates/unisono-core/src/relation.rs', lines 336:8-341:9 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 343:8-348:9 -/
 @[rust_loop]
 def relation.Estimator.forget_before_loop
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64)
@@ -5397,7 +5437,7 @@ def relation.Estimator.forget_before_loop
     old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::forget_before]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 334:4-343:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 341:4-350:5 -/
 def relation.Estimator.forget_before
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64) :
   Result (relation.Estimator M)
@@ -5417,7 +5457,7 @@ def relation.Estimator.forget_before
     } old
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::append]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 324:4-331:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 331:4-338:5 -/
 def relation.Estimator.append
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -5434,7 +5474,7 @@ def relation.Estimator.append
   else ok self2
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::clear]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 317:4-320:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 324:4-327:5 -/
 def relation.Estimator.clear
   {M : Std.Usize} (self : relation.Estimator M) :
   Result (relation.Estimator M)
@@ -5442,7 +5482,7 @@ def relation.Estimator.clear
   ok { self with len := 0#usize, line := none }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::keep]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 297:4-314:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 304:4-321:5 -/
 def relation.Estimator.keep
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -5469,7 +5509,7 @@ def relation.Estimator.keep
     else relation.Estimator.append self1 sample
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::end_window]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 281:4-287:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 288:4-294:5
     Visibility: public -/
 def relation.Estimator.end_window
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -5486,7 +5526,7 @@ def relation.Estimator.end_window
     relation.Estimator.fit self2
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::reset_window]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 158:4-162:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 161:4-165:5
     Visibility: public -/
 def relation.Estimator.reset_window
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -5496,7 +5536,7 @@ def relation.Estimator.reset_window
   ok { self1 with latest := core.num.I64.MIN, window := 0#u64 }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::remember]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 152:4-154:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 155:4-157:5
     Visibility: public -/
 def relation.Estimator.remember
   {M : Std.Usize} (self : relation.Estimator M) (span : Std.I64) :
@@ -5573,7 +5613,7 @@ def receiver.Receiver.stamped_arrival
   else arrivals.Arrivals.find self.arrived header.stamped_index
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::consider]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 264:4-277:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 271:4-284:5 -/
 def relation.Estimator.consider
   {M : Std.Usize} (self : relation.Estimator M) (sample : relation.Sample) :
   Result (relation.Estimator M)
@@ -5601,7 +5641,7 @@ def relation.Estimator.consider
   else ok { self with lowest := o1, line := o }
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::overtaken]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 168:4-171:5 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 171:4-174:5 -/
 def relation.Estimator.overtaken
   {M : Std.Usize} (self : relation.Estimator M) (time : Std.I64) :
   Result Bool
@@ -5616,7 +5656,7 @@ def relation.Estimator.overtaken
   else ok false
 
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::observe]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 242:4-260:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 249:4-267:5
     Visibility: public -/
 def relation.Estimator.observe
   {M : Std.Usize} (self : relation.Estimator M) (window : Std.U64)
@@ -6536,7 +6576,7 @@ def relation.Line.Insts.CoreCmpEq : core.cmp.Eq relation.Line := {
 }
 
 /-- [unisono_core::relation::{impl core::clone::Clone for unisono_core::relation::Estimator<M>}::clone]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 110:9-110:14
+    Source: 'crates/unisono-core/src/relation.rs', lines 113:9-113:14
     Visibility: public -/
 def relation.Estimator.Insts.CoreCloneClone.clone
   {M : Std.Usize} (self : relation.Estimator M) :
@@ -6545,7 +6585,7 @@ def relation.Estimator.Insts.CoreCloneClone.clone
   ok self
 
 /-- Trait implementation: [unisono_core::relation::{impl core::clone::Clone for unisono_core::relation::Estimator<M>}]
-    Source: 'crates/unisono-core/src/relation.rs', lines 110:9-110:14 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 113:9-113:14 -/
 @[reducible]
 def relation.Estimator.Insts.CoreCloneClone (M : Std.Usize) : core.clone.Clone
   (relation.Estimator M) := {
@@ -6553,36 +6593,15 @@ def relation.Estimator.Insts.CoreCloneClone (M : Std.Usize) : core.clone.Clone
 }
 
 /-- Trait implementation: [unisono_core::relation::{impl core::marker::Copy for unisono_core::relation::Estimator<M>}]
-    Source: 'crates/unisono-core/src/relation.rs', lines 110:16-110:20 -/
+    Source: 'crates/unisono-core/src/relation.rs', lines 113:16-113:20 -/
 @[reducible]
 def relation.Estimator.Insts.CoreMarkerCopy (M : Std.Usize) : core.marker.Copy
   (relation.Estimator M) := {
   cloneInst := relation.Estimator.Insts.CoreCloneClone M
 }
 
-/-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::middle]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 176:4-185:5
-    Visibility: public -/
-def relation.Estimator.middle
-  {M : Std.Usize} (self : relation.Estimator M) : Result (Option Std.I64) := do
-  let o ← relation.Estimator.sample self 0#usize
-  match o with
-  | none => ok none
-  | some first =>
-    let i ← lift (core.num.Usize.saturating_sub self.len 1#usize)
-    let o1 ← relation.Estimator.sample self i
-    match o1 with
-    | none => ok none
-    | some last =>
-      let i1 ← lift (core.num.I64.saturating_sub last.time first.time)
-      let i2 ← lift (IScalar.cast .I128 i1)
-      let half ← fixed.div_floor i2 2#i64
-      let i3 ← fixed.saturate half
-      let i4 ← lift (core.num.I64.saturating_add first.time i3)
-      ok (some i4)
-
 /-- [unisono_core::relation::{unisono_core::relation::Estimator<M>}::kept]:
-    Source: 'crates/unisono-core/src/relation.rs', lines 195:4-197:5
+    Source: 'crates/unisono-core/src/relation.rs', lines 202:4-204:5
     Visibility: public -/
 def relation.Estimator.impl.kept
   {M : Std.Usize} (self : relation.Estimator M) : Result Std.Usize := do
