@@ -7,23 +7,23 @@
 //!
 //! Usage: `reachable LIBRARY ENTRY...`
 //!
-//! Follows every call and jump from the entry points through the
-//! disassembly that `objdump` gives, including calls through the table of
-//! addresses, and fails unless every function reached is unisono's own, one
-//! of the functions that copy, fill and compare memory, or one of the
-//! compiler's helpers for arithmetic on 128-bit numbers; and unless none of
-//! them enters the kernel or calls through a pointer that the table does not
-//! resolve. A path to a panic, to the allocator, to a lock or to any library
-//! reaches a function that is none of these, so the check fails on each.
+//! Follows every direct call, unconditional jump, conditional jump, linear
+//! fallthrough, and relocation-backed indirect call or jump from the entry
+//! points through the demangled disassembly that `objdump` produces. Fails
+//! closed unless every reached function belongs to unisono, one of the
+//! allowed memory functions, or one of the compiler's 128-bit arithmetic
+//! helpers, and unless no reached unisono function enters the kernel, executes
+//! a trap instruction, or branches through an unresolved pointer or
+//! unsupported relocation.
 //!
-//! The standard library's start-up code is in such a library as well, since
-//! it cannot be dropped, which is why the check follows calls from the entry
-//! points rather than listing what the library holds.
+//! Only x86-64 ELF libraries are audited; unsupported architectures fail with
+//! an explicit error rather than reporting zero problems.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::ops::Bound;
 use std::process::{Command, ExitCode};
 
-/// Functions outside unisono that the code may reach.
+/// Functions outside unisono that the real-time code may reach.
 const ALLOWED: &[&str] = &[
     "memcpy",
     "memmove",
@@ -42,9 +42,34 @@ const ALLOWED: &[&str] = &[
     "__multi3",
 ];
 
-/// Whether `name` is a function of unisono.
+/// Demangled crate and entry-point prefixes belonging to unisono's real-time path.
+const OURS_PREFIXES: &[&str] = &[
+    "realtime_",
+    "unisono_core::",
+    "unisono_dsp::",
+    "unisono_runtime::",
+    "unisono_realtime_audio::",
+    "unisono_realtime_check::",
+];
+
+/// Relocation types permitted for GOT/function-pointer dispatch.
+const ALLOWED_RELOCATIONS: &[&str] = &[
+    "R_X86_64_GLOB_DAT",
+    "R_X86_64_JUMP_SLOT",
+    "R_X86_64_RELATIVE",
+    "R_X86_64_64",
+];
+
+/// Whether `name` is a demangled function belonging to unisono.
+///
+/// Rejects standard-library generics instantiated over unisono types such as
+/// `core::ptr::drop_in_place<unisono_...>` or
+/// `<alloc::raw_vec::RawVec<unisono_...>>::grow_one`.
 fn ours(name: &str) -> bool {
-    name.contains("unisono") || name.starts_with("realtime_")
+    let stripped = name.strip_prefix('<').unwrap_or(name);
+    OURS_PREFIXES
+        .iter()
+        .any(|prefix| stripped.starts_with(prefix))
 }
 
 /// Whether a function outside unisono may be reached.
@@ -66,173 +91,475 @@ fn objdump(arguments: &[&str], library: &str) -> Result<String, String> {
     String::from_utf8(output.stdout).map_err(|_| "objdump wrote what is not text".into())
 }
 
+/// Confirms `objdump -f` reports an x86-64 ELF library.
+fn check_architecture(headers: &str) -> Result<(), String> {
+    for line in headers.lines() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("architecture:") {
+            if trimmed.contains("i386:x86-64") {
+                return Ok(());
+            }
+            return Err(format!(
+                "unsupported architecture ({trimmed}); reachable audits x86-64 ELF libraries only"
+            ));
+        }
+    }
+    Err("could not determine architecture from objdump -f".into())
+}
+
 /// A hexadecimal number.
 fn hex(text: &str) -> Option<u64> {
     u64::from_str_radix(text.trim_start_matches("0x"), 16).ok()
 }
 
-/// The functions of a disassembly: for each, its lines.
+/// A disassembled function and its lines.
+struct Function {
+    name: String,
+    lines: Vec<String>,
+}
+
+/// The functions of a disassembly, indexed by both start address and name.
 struct Disassembly {
-    functions: HashMap<String, Vec<String>>,
-    /// The functions by the address they start at.
-    starts: BTreeMap<u64, String>,
+    by_addr: BTreeMap<u64, Function>,
+    by_name: HashMap<String, Vec<u64>>,
 }
 
 impl Disassembly {
     fn read(text: &str) -> Disassembly {
-        let mut functions: HashMap<String, Vec<String>> = HashMap::new();
-        let mut starts = BTreeMap::new();
-        let mut current: Option<String> = None;
+        let mut by_addr: BTreeMap<u64, Function> = BTreeMap::new();
+        let mut by_name: HashMap<String, Vec<u64>> = HashMap::new();
+        let mut current: Option<u64> = None;
         for line in text.lines() {
-            // "0000000000001234 <name>:"
+            // "0000000000001234 <name>:" (including nested angle brackets).
             if let Some((address, rest)) = line.split_once(" <")
                 && let Some(name) = rest.strip_suffix(">:")
-                && let Some(start) = hex(address)
+                && let Some(start) = hex(address.trim())
             {
-                starts.insert(start, name.to_string());
-                functions.insert(name.to_string(), Vec::new());
-                current = Some(name.to_string());
-            } else if let Some(name) = &current
+                by_addr.insert(
+                    start,
+                    Function {
+                        name: name.to_string(),
+                        lines: Vec::new(),
+                    },
+                );
+                by_name.entry(name.to_string()).or_default().push(start);
+                current = Some(start);
+            } else if let Some(start) = current
                 && !line.trim().is_empty()
-                && let Some(lines) = functions.get_mut(name)
+                && let Some(function) = by_addr.get_mut(&start)
             {
-                lines.push(line.to_string());
+                function.lines.push(line.to_string());
             }
         }
-        Disassembly { functions, starts }
+        Disassembly { by_addr, by_name }
     }
 
-    /// The function that holds `address`.
-    fn containing(&self, address: u64) -> Option<&String> {
-        self.starts
+    /// The function that holds `address`: its start address and name.
+    fn containing(&self, address: u64) -> Option<(u64, &str)> {
+        self.by_addr
             .range(..=address)
             .next_back()
-            .map(|(_, name)| name)
+            .map(|(start, function)| (*start, function.name.as_str()))
+    }
+
+    /// The function immediately following `start` in address order.
+    fn next_after(&self, start: u64) -> Option<u64> {
+        self.by_addr
+            .range((Bound::Excluded(start), Bound::Unbounded))
+            .next()
+            .map(|(next, _)| *next)
     }
 }
 
-/// The table of addresses: what each of its entries points to, as `objdump
-/// -R` names it.
-fn table(text: &str) -> HashMap<u64, String> {
+/// One dynamic relocation entry from `objdump -R -C`.
+struct Relocation {
+    kind: String,
+    target: String,
+}
+
+/// The table of addresses: relocation type and target for each offset.
+fn table(text: &str) -> HashMap<u64, Relocation> {
     let mut table = HashMap::new();
     for line in text.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if let [offset, _, target, ..] = parts.as_slice()
-            && let Some(offset) = hex(offset)
-        {
-            table.insert(offset, (*target).to_string());
+        let trimmed = line.trim();
+        let Some((offset_str, after_offset)) = split_token(trimmed) else {
+            continue;
+        };
+        let Some(offset) = hex(offset_str) else {
+            continue;
+        };
+        let Some((kind, target)) = split_token(after_offset) else {
+            continue;
+        };
+        let target = target.trim();
+        if !target.is_empty() {
+            table.insert(
+                offset,
+                Relocation {
+                    kind: kind.to_string(),
+                    target: target.to_string(),
+                },
+            );
         }
     }
     table
 }
 
-/// The function that a direct call or jump in `line` goes to: the name in
-/// `<name>` or `<name+0x10>` after the instruction.
-fn direct(line: &str) -> Option<&str> {
-    let instruction = line.split_once(':')?.1.trim_start();
-    if !(instruction.starts_with("call") || instruction.starts_with("jmp")) {
+/// Splits the first whitespace-delimited token and the trimmed remainder.
+fn split_token(text: &str) -> Option<(&str, &str)> {
+    let trimmed = text.trim_start();
+    if trimmed.is_empty() {
         return None;
     }
-    // A call through a pointer names its table entry in a comment, after
-    // `#`; it is not a direct call.
-    if instruction.split_whitespace().nth(1)?.starts_with('*') {
-        return None;
+    match trimmed.find(char::is_whitespace) {
+        Some(end) => Some((&trimmed[..end], trimmed[end..].trim_start())),
+        None => Some((trimmed, "")),
     }
-    let (_, rest) = instruction.split_once('<')?;
-    let name = rest.split_once('>')?.0;
-    Some(name.split_once('+').map_or(name, |(name, _)| name))
 }
 
-/// For a call or jump through a pointer in `line`: the entry of the table
-/// it reads, if the instruction names one, or `None` when it names none.
-fn indirect(line: &str) -> Option<(bool, Option<u64>)> {
-    let instruction = line.split_once(':')?.1.trim_start();
-    let call = instruction.starts_with("call");
-    if !(call || instruction.starts_with("jmp")) {
-        return None;
-    }
-    let operand = instruction.split_whitespace().nth(1)?;
-    if !operand.starts_with('*') {
-        return None;
-    }
-    let slot = instruction
-        .split_once('#')
-        .and_then(|(_, comment)| comment.split_whitespace().next())
-        .and_then(hex);
-    Some((call, slot))
-}
-
-/// Whether `line` enters the kernel.
-fn enters_kernel(line: &str) -> bool {
-    let Some((_, instruction)) = line.split_once(':') else {
-        return false;
-    };
+/// Whether `token` is an x86-64 instruction prefix printed before a mnemonic.
+fn is_prefix(token: &str) -> bool {
     matches!(
-        instruction.split_whitespace().next(),
-        Some("syscall" | "sysenter" | "svc")
+        token,
+        "bnd"
+            | "notrack"
+            | "rep"
+            | "repz"
+            | "repe"
+            | "repne"
+            | "repnz"
+            | "lock"
+            | "data16"
+            | "addr32"
+            | "cs"
+            | "ds"
+            | "es"
+            | "fs"
+            | "gs"
+            | "ss"
+            | "xacquire"
+            | "xrelease"
+            | "rex"
+    ) || token.starts_with("rex.")
+}
+
+/// Parses an instruction line into `(mnemonic, operands)` after stripping prefixes.
+fn parse_instruction(line: &str) -> Option<(&str, &str)> {
+    let (address, body) = line.split_once(':')?;
+    hex(address.trim())?;
+    let mut rest = body.trim_start();
+    loop {
+        let (token, after) = split_token(rest)?;
+        if is_prefix(token) && !after.is_empty() {
+            rest = after;
+        } else {
+            return Some((token, after));
+        }
+    }
+}
+
+/// Whether `mnemonic` enters the kernel, traps, halts, or makes a far branch.
+fn is_forbidden(mnemonic: &str) -> bool {
+    matches!(
+        mnemonic,
+        "syscall"
+            | "sysenter"
+            | "int"
+            | "int3"
+            | "int1"
+            | "into"
+            | "icebp"
+            | "svc"
+            | "swi"
+            | "hvc"
+            | "smc"
+            | "ecall"
+            | "ud0"
+            | "ud1"
+            | "ud2"
+            | "brk"
+            | "hlt"
+            | "lcall"
+            | "lcallq"
+            | "ljmp"
+            | "ljmpq"
     )
+}
+
+/// Whether `mnemonic` is a direct or indirect call, jump, or conditional branch.
+fn is_branch_or_call(mnemonic: &str) -> bool {
+    matches!(
+        mnemonic,
+        "call"
+            | "callq"
+            | "jmp"
+            | "jmpq"
+            | "jo"
+            | "jno"
+            | "jb"
+            | "jnae"
+            | "jc"
+            | "jnb"
+            | "jae"
+            | "jnc"
+            | "jz"
+            | "je"
+            | "jnz"
+            | "jne"
+            | "jbe"
+            | "jna"
+            | "jnbe"
+            | "ja"
+            | "js"
+            | "jns"
+            | "jp"
+            | "jpe"
+            | "jnp"
+            | "jpo"
+            | "jl"
+            | "jnge"
+            | "jnl"
+            | "jge"
+            | "jle"
+            | "jng"
+            | "jnle"
+            | "jg"
+            | "jcxz"
+            | "jecxz"
+            | "jrcxz"
+            | "loop"
+            | "loope"
+            | "loopz"
+            | "loopne"
+            | "loopnz"
+    )
+}
+
+/// Whether `mnemonic` is padding that does not terminate control flow.
+fn is_nop(mnemonic: &str) -> bool {
+    matches!(mnemonic, "nop" | "nopw" | "nopl" | "nopq")
+}
+
+/// Whether `mnemonic` prevents execution from falling through to the next function.
+fn is_terminator(mnemonic: &str) -> bool {
+    matches!(mnemonic, "ret" | "retq" | "jmp" | "jmpq")
+}
+
+/// Parses a direct branch/call operand `ADDR <SYMBOL[+0xOFFSET][@plt]>`.
+fn parse_direct_target(operands: &str) -> Option<(u64, &str)> {
+    let (addr_str, rest) = split_token(operands)?;
+    let addr = hex(addr_str)?;
+    let inner = rest.trim().strip_prefix('<')?.strip_suffix('>')?;
+    let without_offset = match inner.rsplit_once("+0x") {
+        Some((base, offset)) if hex(offset).is_some() => base,
+        _ => inner,
+    };
+    let bare = without_offset
+        .strip_suffix("@plt")
+        .unwrap_or(without_offset);
+    if bare.is_empty() {
+        return None;
+    }
+    Some((addr, bare))
+}
+
+/// Parses a RIP-relative indirect branch/call operand `*DISP(%rip) # SLOT ...`.
+fn parse_indirect_slot(operands: &str) -> Option<u64> {
+    let (operand, _) = split_token(operands)?;
+    if !operand.starts_with('*') || !operand.contains("(%rip)") {
+        return None;
+    }
+    let (_, comment) = operands.split_once('#')?;
+    let (slot_str, _) = split_token(comment)?;
+    hex(slot_str)
+}
+
+/// A pending node in the reachability graph.
+enum Target {
+    Address(u64),
+    Name(String),
 }
 
 /// What the entry points reach that they may not, and how many functions of
 /// unisono they reach.
 fn check(
     disassembly: &Disassembly,
-    table: &HashMap<u64, String>,
+    table: &HashMap<u64, Relocation>,
     entries: &[String],
 ) -> (BTreeSet<String>, usize) {
     let mut problems = BTreeSet::new();
-    let mut seen = BTreeSet::new();
-    let mut todo: Vec<String> = entries.to_vec();
-    while let Some(name) = todo.pop() {
-        if !seen.insert(name.clone()) {
+    let mut seen_addrs = BTreeSet::new();
+    let mut seen_names = BTreeSet::new();
+    let mut todo: Vec<Target> = entries.iter().cloned().map(Target::Name).collect();
+
+    while let Some(target) = todo.pop() {
+        let start = match target {
+            Target::Address(addr) => addr,
+            Target::Name(name) => {
+                if !ours(&name) {
+                    if !allowed(&name) {
+                        problems.insert(format!("reaches {name}"));
+                    }
+                    continue;
+                }
+                if !seen_names.insert(name.clone()) {
+                    continue;
+                }
+                match disassembly.by_name.get(&name).map(Vec::as_slice) {
+                    None | Some([]) => {
+                        problems.insert(format!("{name} is not in the library"));
+                        continue;
+                    }
+                    Some([only]) => *only,
+                    Some(_) => {
+                        problems.insert(format!("{name} has duplicate definitions in the library"));
+                        continue;
+                    }
+                }
+            }
+        };
+
+        let Some(function) = disassembly.by_addr.get(&start) else {
+            problems.insert(format!("address 0x{start:x} is not a function start"));
             continue;
-        }
-        if !ours(&name) {
-            if !allowed(&name) {
+        };
+        let name = &function.name;
+        if !ours(name) {
+            if !allowed(name) {
                 problems.insert(format!("reaches {name}"));
             }
             continue;
         }
-        let Some(lines) = disassembly.functions.get(&name) else {
-            problems.insert(format!("{name} is not in the library"));
+        if !seen_addrs.insert(start) {
+            continue;
+        }
+
+        audit_function(
+            start,
+            function,
+            disassembly,
+            table,
+            &mut todo,
+            &mut problems,
+        );
+    }
+
+    (problems, seen_addrs.len())
+}
+
+/// Audits every instruction in one unisono function and queues its callees.
+fn audit_function(
+    start: u64,
+    function: &Function,
+    disassembly: &Disassembly,
+    table: &HashMap<u64, Relocation>,
+    todo: &mut Vec<Target>,
+    problems: &mut BTreeSet<String>,
+) {
+    let name = &function.name;
+    let mut last_real_mnemonic: Option<&str> = None;
+
+    for line in &function.lines {
+        let Some((mnemonic, operands)) = parse_instruction(line) else {
             continue;
         };
-        for line in lines {
-            if enters_kernel(line) {
-                problems.insert(format!("{name} enters the kernel"));
+        if !is_nop(mnemonic) {
+            last_real_mnemonic = Some(mnemonic);
+        }
+        if is_forbidden(mnemonic) {
+            problems.insert(format!(
+                "{name} executes forbidden instruction: {}",
+                line.trim()
+            ));
+            continue;
+        }
+        if !is_branch_or_call(mnemonic) {
+            continue;
+        }
+        if operands.starts_with('*') {
+            audit_indirect(name, line, operands, disassembly, table, todo, problems);
+            continue;
+        }
+        let Some((target_addr, target_name)) = parse_direct_target(operands) else {
+            problems.insert(format!(
+                "{name} has unresolved direct branch: {}",
+                line.trim()
+            ));
+            continue;
+        };
+        if let Some((dest_start, dest_name)) = disassembly.containing(target_addr)
+            && dest_name == target_name
+        {
+            if dest_start != start {
+                todo.push(Target::Address(dest_start));
             }
-            if let Some(target) = direct(line) {
-                if target != name {
-                    todo.push(target.to_string());
-                }
-                continue;
-            }
-            let Some((call, slot)) = indirect(line) else {
-                continue;
-            };
-            match slot.and_then(|slot| table.get(&slot)) {
-                Some(target) => {
-                    // "*ABS*+0x3eec0": a function of the library itself.
-                    let resolved = match target.strip_prefix("*ABS*+") {
-                        Some(address) => hex(address)
-                            .and_then(|address| disassembly.containing(address))
-                            .cloned(),
-                        None => Some(target.split('@').next().unwrap_or(target).to_string()),
-                    };
-                    if let Some(resolved) = resolved {
-                        todo.push(resolved);
-                    }
-                }
-                // A jump through a table of the function's own branches.
-                None if !call && slot.is_none() => {}
-                None => {
-                    problems.insert(format!("{name} calls through a pointer: {}", line.trim()));
-                }
-            }
+        } else if target_name != name {
+            todo.push(Target::Name(target_name.to_string()));
         }
     }
-    let reached = seen.iter().filter(|name| ours(name)).count();
-    (problems, reached)
+
+    if let Some(last) = last_real_mnemonic
+        && !is_terminator(last)
+    {
+        if let Some(next) = disassembly.next_after(start) {
+            todo.push(Target::Address(next));
+        } else {
+            problems.insert(format!("{name} falls through past the end of the library"));
+        }
+    }
+}
+
+/// Resolves a relocation-backed indirect branch/call or records a failure.
+fn audit_indirect(
+    name: &str,
+    line: &str,
+    operands: &str,
+    disassembly: &Disassembly,
+    table: &HashMap<u64, Relocation>,
+    todo: &mut Vec<Target>,
+    problems: &mut BTreeSet<String>,
+) {
+    let Some(slot) = parse_indirect_slot(operands) else {
+        problems.insert(format!(
+            "{name} branches through unresolved pointer: {}",
+            line.trim()
+        ));
+        return;
+    };
+    let Some(reloc) = table.get(&slot) else {
+        problems.insert(format!(
+            "{name} branches through unmapped GOT slot 0x{slot:x}: {}",
+            line.trim()
+        ));
+        return;
+    };
+    if !ALLOWED_RELOCATIONS.contains(&reloc.kind.as_str()) {
+        problems.insert(format!(
+            "{name} uses unsupported relocation {}: {}",
+            reloc.kind,
+            line.trim()
+        ));
+        return;
+    }
+    if let Some(address) = reloc.target.strip_prefix("*ABS*+") {
+        if let Some((dest_start, _)) = hex(address).and_then(|addr| disassembly.containing(addr)) {
+            todo.push(Target::Address(dest_start));
+        } else {
+            problems.insert(format!(
+                "{name} branches to unresolved local address {}: {}",
+                reloc.target,
+                line.trim()
+            ));
+        }
+    } else {
+        let target = reloc
+            .target
+            .split('@')
+            .next()
+            .unwrap_or(&reloc.target)
+            .to_string();
+        todo.push(Target::Name(target));
+    }
 }
 
 fn main() -> ExitCode {
@@ -241,8 +568,15 @@ fn main() -> ExitCode {
         eprintln!("usage: reachable LIBRARY ENTRY...");
         return ExitCode::from(2);
     };
-    let read = objdump(&["-d", "--no-show-raw-insn"], library)
-        .and_then(|code| objdump(&["-R"], library).map(|relocations| (code, relocations)));
+    if entries.is_empty() {
+        eprintln!("usage: reachable LIBRARY ENTRY...");
+        return ExitCode::from(2);
+    }
+
+    let read = objdump(&["-f"], library)
+        .and_then(|headers| check_architecture(&headers))
+        .and_then(|()| objdump(&["-d", "-C", "--no-show-raw-insn"], library))
+        .and_then(|code| objdump(&["-R", "-C"], library).map(|relocations| (code, relocations)));
     let (code, relocations) = match read {
         Ok(both) => both,
         Err(error) => {
@@ -250,6 +584,7 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+
     let (problems, reached) = check(&Disassembly::read(&code), &table(&relocations), entries);
     for problem in &problems {
         eprintln!("{problem}");
@@ -267,53 +602,154 @@ fn main() -> ExitCode {
 
 #[cfg(test)]
 mod tests {
-    use super::{Disassembly, check, direct, indirect, table};
+    use super::{
+        Disassembly, check, check_architecture, ours, parse_direct_target, parse_indirect_slot,
+        parse_instruction, table,
+    };
     use std::collections::HashMap;
 
     #[test]
-    fn calls_are_read_from_lines_of_objdump() {
-        assert_eq!(
-            direct("    8d95:\tcall   3d530 <_RNvunisono_dsp7conceal4fill>"),
-            Some("_RNvunisono_dsp7conceal4fill")
-        );
-        assert_eq!(
-            direct("    8d95:\tjmp    8da0 <realtime_cycle+0x20>"),
-            Some("realtime_cycle")
-        );
-        assert_eq!(
-            indirect("    8177:\tcall   *0x43e33(%rip)        # 4bfb0 <_DYNAMIC+0x258>"),
-            Some((true, Some(0x4bfb0)))
-        );
-        assert_eq!(indirect("    9000:\tjmp    *%rax"), Some((false, None)));
-        assert_eq!(indirect("    9000:\tmov    %rax,%rbx"), None);
+    fn ours_rejects_stdlib_generics_over_unisono_types() {
+        assert!(ours("realtime_playback_cycle"));
+        assert!(ours("unisono_core::timing::due"));
+        assert!(ours("<unisono_core::device::Device<64>>::when"));
+        assert!(ours(
+            "<unisono_runtime::pump::ReceiverPlayback<64> as unisono_runtime::audio::Playback>::cycle"
+        ));
+        assert!(!ours(
+            "core::ptr::drop_in_place<unisono_runtime::send::Sender>"
+        ));
+        assert!(!ours(
+            "<alloc::raw_vec::RawVec<unisono_core::packet::Audio>>::grow_one"
+        ));
+        assert!(!ours("std::panicking::begin_panic<unisono_core::Error>"));
     }
 
     #[test]
-    fn a_path_to_a_function_outside_unisono_is_found() {
+    fn parses_prefixed_and_demangled_instructions() {
+        assert_eq!(
+            parse_instruction(
+                "    8d95:\tbnd jmp 3d530 <<unisono_dsp::conceal::Concealment>::fill>"
+            ),
+            Some(("jmp", "3d530 <<unisono_dsp::conceal::Concealment>::fill>"))
+        );
+        assert_eq!(
+            parse_direct_target("3d530 <<unisono_dsp::conceal::Concealment>::fill>"),
+            Some((0x3d530, "<unisono_dsp::conceal::Concealment>::fill"))
+        );
+        assert_eq!(
+            parse_direct_target("8da0 <realtime_cycle+0x20>"),
+            Some((0x8da0, "realtime_cycle"))
+        );
+        assert_eq!(
+            parse_direct_target("1040 <memcpy@plt>"),
+            Some((0x1040, "memcpy"))
+        );
+        assert_eq!(
+            parse_indirect_slot("*0x43e33(%rip)        # 4bfb0 <_DYNAMIC+0x258>"),
+            Some(0x4bfb0)
+        );
+        assert_eq!(parse_indirect_slot("*%rax"), None);
+        assert_eq!(parse_indirect_slot("*0x18(%rsi)"), None);
+    }
+
+    #[test]
+    fn rejects_unsupported_architecture() {
+        assert!(check_architecture("architecture: i386:x86-64, flags 0x150:\n").is_ok());
+        assert!(check_architecture("architecture: aarch64, flags 0x150:\n").is_err());
+        assert!(check_architecture("no architecture line\n").is_err());
+    }
+
+    #[test]
+    fn catches_conditional_tail_jump_indirect_jump_traps_and_prefixes() {
         let code = "\
 0000000000001000 <realtime_entry>:
-    1000:\tcall   2000 <_RNvunisono_core4step>
-    1005:\tcall   *0x10(%rip)        # 5000 <memset>
-    100b:\tret
-0000000000002000 <_RNvunisono_core4step>:
-    2000:\tjmp    3000 <_RNvcore9panicking5panic>
-0000000000003000 <_RNvcore9panicking5panic>:
-    3000:\tud2
+    1000:\tbnd jne 2000 <core::panicking::panic>
+    1006:\tnotrack jmp *%rax
+    1009:\tint    $0x80
+    100b:\tud2
+    100d:\tret
+0000000000002000 <core::panicking::panic>:
+    2000:\tud2
 ";
         let disassembly = Disassembly::read(code);
-        let table = table("0000000000005000 R_X86_64_GLOB_DAT  memset\n");
-        let (problems, reached) = check(&disassembly, &table, &["realtime_entry".into()]);
-        assert_eq!(reached, 2);
-        assert_eq!(
-            problems.into_iter().collect::<Vec<_>>(),
-            ["reaches _RNvcore9panicking5panic"]
-        );
-        let empty: HashMap<u64, String> = HashMap::new();
-        let (problems, _) = check(&disassembly, &empty, &["realtime_entry".into()]);
+        let (problems, _) = check(&disassembly, &HashMap::new(), &["realtime_entry".into()]);
         assert!(
             problems
                 .iter()
-                .any(|problem| problem.contains("calls through a pointer"))
+                .any(|p| p == "reaches core::panicking::panic")
         );
+        assert!(problems.iter().any(|p| p.contains("unresolved pointer")));
+        assert!(problems.iter().any(|p| p.contains("int    $0x80")));
+        assert!(problems.iter().any(|p| p.contains("ud2")));
+    }
+
+    #[test]
+    fn stops_recursion_at_allowed_intrinsics_with_ud2() {
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tcall   *0x10(%rip)        # 5000 <_DYNAMIC+0x10>
+    1006:\tret
+0000000000002000 <__divti3>:
+    2000:\tud2
+    2002:\tcall   3000 <compiler_builtins::int::u128_div_rem>
+    2007:\tret
+0000000000003000 <compiler_builtins::int::u128_div_rem>:
+    3000:\tret
+";
+        let disassembly = Disassembly::read(code);
+        let relocs = table("0000000000005000 R_X86_64_RELATIVE *ABS*+0x0000000000002000\n");
+        let (problems, reached) = check(&disassembly, &relocs, &["realtime_entry".into()]);
+        assert_eq!(reached, 1);
+        assert!(problems.is_empty(), "unexpected problems: {problems:?}");
+    }
+
+    #[test]
+    fn rejects_irelative_unresolved_abs_and_linear_fallthrough() {
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tcall   *0x10(%rip)        # 5000 <resolver>
+    1006:\tcall   *0x20(%rip)        # 5008 <bad_abs>
+    100c:\tcall   9999
+0000000000001012 <std::rt::bad_fallthrough>:
+    1012:\tret
+";
+        let disassembly = Disassembly::read(code);
+        let relocs = table(
+            "\
+0000000000005000 R_X86_64_IRELATIVE *ABS*+0x0000000000001012
+0000000000005008 R_X86_64_RELATIVE  *ABS*+0x0000000000000001
+",
+        );
+        let (problems, _) = check(&disassembly, &relocs, &["realtime_entry".into()]);
+        assert!(problems.iter().any(|p| p.contains("R_X86_64_IRELATIVE")));
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("unresolved local address"))
+        );
+        assert!(
+            problems
+                .iter()
+                .any(|p| p.contains("unresolved direct branch"))
+        );
+        assert!(
+            problems
+                .iter()
+                .any(|p| p == "reaches std::rt::bad_fallthrough")
+        );
+    }
+
+    #[test]
+    fn rejects_duplicate_reached_symbol() {
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tret
+0000000000002000 <realtime_entry>:
+    2000:\tret
+";
+        let disassembly = Disassembly::read(code);
+        let (problems, _) = check(&disassembly, &HashMap::new(), &["realtime_entry".into()]);
+        assert!(problems.iter().any(|p| p.contains("duplicate definitions")));
     }
 }

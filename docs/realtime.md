@@ -25,9 +25,10 @@ time or for the start and length of a cycle, and read and write packets. The che
   reference that cannot be resolved, and the check sees it by name. On every
   run the check also builds a function that does panic and fails unless that
   reference appears: the check is seen to catch what it is for;
-- **the sources of the core have no trait object and no pointer to a
-  function,** so every call is to a function the compiler knows, and the code
-  that was inspected is all the code these functions can run.
+- **every reached function is audited fail-closed by `crates/reachable`,**
+  with jump tables disabled (`-max-jump-table-size=0`), so no direct call,
+  unconditional or conditional jump, linear fallthrough, or indirect branch
+  can leave unisono's own code or reach a trap or kernel entry.
 
 These are statements about every path, not about the paths that a test ran.
 They hold for the code as compiled for the machine that runs the check.
@@ -38,12 +39,13 @@ The core is one part of what an audio thread runs. The rest uses the
 standard library: the receiver's playback takes in what the network thread
 handed over, plans with the core, resamples, conceals and fades; the
 sender's capture hands frames to the network thread. `tools/realtime-audio`
-builds the two cycles, as the program sizes them, into a library of their
-own, and `crates/reachable` follows every call from them through the
-machine code, through the table of addresses as well. The check fails
-unless every function they reach is unisono's own, one of the functions
-that copy and fill memory, or one of the compiler's helpers for 128-bit
-arithmetic, and none of them enters the kernel or calls through a pointer.
+builds the two cycles with runtime-sized slices into a library of their
+own, and `crates/reachable` follows every direct call, jump, fallthrough,
+and relocation-backed indirect call from them through the demangled machine
+code. The check fails unless every function they reach belongs to unisono,
+one of the functions that copy and fill memory, or one of the compiler's
+helpers for 128-bit arithmetic, and none of them enters the kernel, traps,
+or branches through an unresolved pointer.
 A path to a panic, to the allocator or to a lock reaches a function of
 the standard library and fails it; so does freeing memory. It is seen to
 fail: a function with a path to a panic is built beside them, and the
