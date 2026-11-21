@@ -378,11 +378,14 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
 
     let mut metrics = Metrics::new();
     let counters = Counters::new(&mut metrics)?;
-    if let Some(address) = config.metrics {
-        metrics
-            .serve(address)
-            .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
-    }
+    let _metrics_server = match config.metrics {
+        Some(address) => Some(
+            metrics
+                .serve(address)
+                .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?,
+        ),
+        None => None,
+    };
 
     let stop = Arc::new(AtomicBool::new(false));
     let shape = (config.rate, config.channels, config.cycle, ring_frames);
