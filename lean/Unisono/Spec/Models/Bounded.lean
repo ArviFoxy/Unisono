@@ -5,6 +5,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Spec.World
+public import Mathlib.Tactic.Linarith
 
 /-!
 # A deterministic model of the world: worlds within bounds
@@ -22,6 +23,12 @@ on missed samples needs: how many consecutive messages the network may drop,
 how late a capture device may hand over a block, how early a playback
 device may request one, and how large a block may be. A random world can be
 required to be within bounds almost surely (`AlmostSurelyWithin`).
+
+Two facts about clocks within bounds: an NTP-style estimate of the
+difference of two clocks errs by at most half the largest difference of the
+two delays, plus the clocks' rate error times the mean delay
+(`offset_error`), and the difference of two clocks drifts by at most twice
+their rate error per second (`offset_drift`).
 -/
 
 @[expose] public noncomputable section
@@ -142,5 +149,48 @@ within bounds. -/
 def AlmostSurelyWithin {Ω : Type} [MeasurableSpace Ω] (P : MeasureTheory.Measure Ω)
     (world : Ω → World H R) (B : Bounds H) : Prop :=
   ∀ᵐ ω ∂P, (world ω).WithinBounds B
+
+/-- A clock that runs within `ε` of true time's rate advances over an
+interval by at least `1 - ε` and at most `1 + ε` times its length. -/
+theorem Clock.advance_mem {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) {s t : Time} (hst : s ≤ t) :
+    (1 - ε) * (t - s) ≤ c.read t - c.read s ∧ c.read t - c.read s ≤ (1 + ε) * (t - s) := by
+  have := abs_le.mp (hc s t hst)
+  constructor <;> nlinarith [this.1, this.2]
+
+/-- **The error of an NTP-style clock estimate.** A host asks at true time
+`s₁` and reading `t₁ = C(s₁)`; the sender, whose clock is `S`, answers at
+`s₂` with its reading `t₂ = S(s₂)`; the answer arrives at `s₄` and reading
+`t₄ = C(s₄)`. When both clocks run within `ε` of true time's rate and the
+question and the answer take between `dmin₁` and `dmax₁`, and between
+`dmin₂` and `dmax₂` seconds, the estimate `t₂ - (t₁ + t₄) / 2` of the
+sender's clock minus the host's errs from their true difference at `s₂` by
+at most half the largest difference of the two delays, plus `ε` times
+their mean. -/
+theorem offset_error {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) {s₁ s₂ s₄ : Time}
+    {dmin₁ dmax₁ dmin₂ dmax₂ : ℝ} (h₁ : dmin₁ ≤ s₂ - s₁) (h₁' : s₂ - s₁ ≤ dmax₁)
+    (h₂ : dmin₂ ≤ s₄ - s₂) (h₂' : s₄ - s₂ ≤ dmax₂) (hpos₁ : 0 < dmin₁) (hpos₂ : 0 < dmin₂) :
+    |(S.read s₂ - (C.read s₁ + C.read s₄) / 2) - (S.read s₂ - C.read s₂)|
+      ≤ (max (dmax₁ - dmin₂) (dmax₂ - dmin₁) + ε * (dmax₁ + dmax₂)) / 2 := by
+  have ha := Clock.advance_mem hC (show s₁ ≤ s₂ by linarith)
+  have hb := Clock.advance_mem hC (show s₂ ≤ s₄ by linarith)
+  have hm1 := le_max_left (dmax₁ - dmin₂) (dmax₂ - dmin₁)
+  have hm2 := le_max_right (dmax₁ - dmin₂) (dmax₂ - dmin₁)
+  have hε : 0 ≤ ε := by
+    have := hC s₁ s₂ (by linarith)
+    have hpos : 0 < s₂ - s₁ := by linarith
+    nlinarith [abs_nonneg (C.read s₂ - C.read s₁ - (s₂ - s₁))]
+  rw [abs_le]
+  constructor <;> nlinarith [ha.1, ha.2, hb.1, hb.2]
+
+/-- **The drift of the difference of two clocks.** When both clocks run
+within `ε` of true time's rate, their difference changes over an interval
+by at most `2 ε` times its length. -/
+theorem offset_drift {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) (hS : S.RateWithin ε)
+    {s t : Time} (hst : s ≤ t) :
+    |(S.read t - C.read t) - (S.read s - C.read s)| ≤ 2 * ε * (t - s) := by
+  have ha := Clock.advance_mem hC hst
+  have hb := Clock.advance_mem hS hst
+  rw [abs_le]
+  constructor <;> nlinarith [ha.1, ha.2, hb.1, hb.2]
 
 end Unisono.Spec
