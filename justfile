@@ -71,15 +71,15 @@ cost:
     cargo run --quiet --release --package cycle-cost
 
 # The tests against a running PipeWire, in the container of
-# containers/pipewire. Needs docker; continuous integration runs it too.
+# containers/audio. Needs docker; continuous integration runs it too.
 pipewire:
-    tools/container.sh pipewire tools/pipewire-test.sh
+    tools/container.sh audio tools/pipewire-test.sh
 
 # The tests of the ALSA device, against the device that PipeWire gives ALSA
-# programs, in the container of containers/alsa. Needs docker; continuous
+# programs, in the container of containers/audio. Needs docker; continuous
 # integration runs it too.
 alsa:
-    tools/container.sh alsa tools/alsa-test.sh
+    tools/container.sh audio tools/alsa-test.sh
 
 # Hold the dependencies against deny.toml: known vulnerabilities, licences
 # and sources. Needs cargo-deny; continuous integration runs it too.
