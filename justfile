@@ -30,11 +30,15 @@ test: interleavings
 interleavings:
     RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test --package unisono-runtime --lib --release ring::
 
-# Compile every crate for every target platform. The crate for PipeWire
-# builds against the system's PipeWire and is left out; the program does not
-# need it.
+# Compile every crate for every target platform. The crates for PipeWire and
+# ALSA build against the system's libraries and are left out; the program
+# does not need them. On musl the C runtime is linked statically by default,
+# and a shared library cannot be built that way, so the C interface, which
+# is also built as a shared library, is checked there with the C runtime
+# linked dynamically.
 targets:
-    for target in {{ targets }}; do cargo check --workspace --exclude unisono-pipewire --exclude unisono-alsa --target "$target" || exit 1; done
+    for target in {{ targets }}; do cargo check --workspace --exclude unisono-pipewire --exclude unisono-alsa --exclude unisono-c --target "$target" || exit 1; done
+    for target in {{ targets }}; do case "$target" in *-musl) RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=-crt-static" cargo check --package unisono-c --target "$target" || exit 1 ;; *) cargo check --package unisono-c --target "$target" || exit 1 ;; esac; done
 
 # Fetch Aeneas and build the translator from Rust to Lean (slow the first time).
 proof-tools:
