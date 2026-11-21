@@ -376,9 +376,14 @@ impl Concealment {
         if self.entered > 0.0 {
             if self.fitted_in_cycle {
                 self.start_continuations();
-            } else if self.fit() {
+            } else {
+                // Consume the cycle's fit budget unconditionally so even a
+                // silent or non-finite history cannot run `fit()` more than
+                // once per audio cycle.
                 self.fitted_in_cycle = self.in_cycles;
-                self.fits = self.fits.saturating_add(1);
+                if self.fit() {
+                    self.fits = self.fits.saturating_add(1);
+                }
             }
         }
     }
@@ -686,26 +691,43 @@ mod tests {
     }
 
     #[test]
-    fn silent_first_gap_does_not_spend_fit_budget_and_second_gap_refreshes_peak() {
+    fn silent_first_gap_uses_cycle_fit_budget_and_second_gap_refreshes_peak() {
         let parameters = Parameters::for_rate(48_000);
         let mut concealment = Concealment::new(1, parameters);
-        // Silent history: first gap in cycle does not run Burg or consume fit budget.
+        // Pass silent frames so `in_gap` becomes false and `entered > 0.0`,
+        // ensuring the first gap actually enters `begin_gap()` and calls `fit()`.
+        let mut silence = vec![0.0f32; parameters.fitted];
+        concealment.pass(&mut silence);
+
+        // Silent history: the first gap calls `fit()` (which returns false)
+        // and still consumes the cycle's fit budget so a later gap in the same
+        // cycle does not run `fit()` a second time.
         concealment.cycle_begins();
         let mut gap = [0.0f32; 16];
         concealment.fill(&mut gap);
         assert_eq!(concealment.fits(), 0);
 
-        // Loud audio arrives in the same cycle, then a real gap must still fit.
         let mut loud: Vec<f32> = (0..parameters.fitted)
             .map(|n| (f32::from(u16::try_from(n).unwrap_or(0)) * 0.05).sin() * 0.8)
             .collect();
         concealment.pass(&mut loud);
+        let mut gap_same_cycle = [0.0f32; 16];
+        concealment.fill(&mut gap_same_cycle);
+        assert_eq!(concealment.fits(), 0);
+
+        // On the next cycle a gap fits the loud audio, and a later gap after
+        // quiet audio in the same cycle clamps to the quiet peak via
+        // `start_continuations`.
+        concealment.cycle_begins();
+        let mut loud2: Vec<f32> = (0..parameters.fitted)
+            .map(|n| (f32::from(u16::try_from(n).unwrap_or(0)) * 0.05).sin() * 0.8)
+            .collect();
+        concealment.pass(&mut loud2);
         let mut gap2 = [0.0f32; 16];
         concealment.fill(&mut gap2);
         assert_eq!(concealment.fits(), 1);
         assert!(gap2.iter().any(|s| s.abs() > 0.2));
 
-        // Quiet audio passes in the same cycle, then another gap must clamp to quiet peak.
         let mut quiet = vec![0.01f32; parameters.fitted];
         concealment.pass(&mut quiet);
         let mut gap3 = [0.0f32; 16];

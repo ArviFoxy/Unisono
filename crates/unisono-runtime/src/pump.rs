@@ -135,13 +135,16 @@ enum State {
     /// Actively playing stream frames; `window` holds stream frames and
     /// `(next, step)` is where a fade-out would continue if playback stops.
     Playing { next: Position, step: Step },
-    /// Draining a fade-out tail after playback paused; `window` holds
-    /// concealment frames (not stream frames) and must be cleared before
-    /// stream playback resumes.
+    /// Draining a fade-out tail after playback paused; `window` holds any
+    /// remaining real stream frames strictly before `real_end` followed by
+    /// synthetic concealment frames at `>= real_end`. Resuming without a jump
+    /// truncates `window` back to `real_end` so real frames are kept while
+    /// synthetic frames are discarded.
     Fading {
         next: Position,
         step: Step,
         silent: usize,
+        real_end: u64,
     },
 }
 
@@ -239,10 +242,14 @@ impl Pump {
             if plan.jumped {
                 self.jump();
                 done.jumped = true;
-            } else if matches!(self.state, State::Fading { .. }) {
-                // `window` holds synthetic fade-out frames from `fade_tail`,
-                // not real stream frames; clear it before fetching again.
-                self.length = 0;
+            } else if let State::Fading { real_end, .. } = self.state {
+                // Keep real stream frames still in `window` (`< real_end`)
+                // while discarding synthetic fade-out frames appended after
+                // them so `fetch` reads newly arrived stream frames.
+                let real_len = usize::try_from(real_end.saturating_sub(self.first))
+                    .unwrap_or(self.length)
+                    .min(self.length);
+                self.length = real_len;
                 self.state = State::Idle;
             }
         }
@@ -342,6 +349,7 @@ impl Pump {
                 next,
                 step,
                 silent: 0,
+                real_end: self.first.saturating_add(self.length as u64),
             };
         }
         if self.concealment.fade_out().frames() == 0 || matches!(self.state, State::Idle) {
@@ -361,6 +369,7 @@ impl Pump {
                 next: at,
                 step,
                 silent,
+                real_end,
             } = self.state
             else {
                 if let Some(rem) = output.get_mut(written * self.channels..whole) {
@@ -373,7 +382,7 @@ impl Pump {
             let Some(block) = output.get_mut(from..from + chunk_frames * self.channels) else {
                 break;
             };
-            let produced = self.fade_tail_block(at, step, silent, block);
+            let produced = self.fade_tail_block(at, step, silent, real_end, block);
             written += produced;
             if produced < chunk_frames {
                 self.state = State::Idle;
@@ -393,6 +402,7 @@ impl Pump {
         at: Position,
         step: Step,
         mut silent: usize,
+        real_end: u64,
         output: &mut [f32],
     ) -> usize {
         let frames = output.len().checked_div(self.channels).unwrap_or(0);
@@ -433,7 +443,12 @@ impl Pump {
         } else {
             self.state = at
                 .advance(step, produced as u64)
-                .map_or(State::Idle, |next| State::Fading { next, step, silent });
+                .map_or(State::Idle, |next| State::Fading {
+                    next,
+                    step,
+                    silent,
+                    real_end,
+                });
         }
         produced
     }
@@ -1186,8 +1201,9 @@ mod tests {
         assert!(matches!(pump.state, State::Fading { .. }));
         assert!(pump.length > 0);
 
-        // Resume WITHOUT `jumped = true`: must discard synthetic fade-out
-        // window frames and fetch real stream frames (`held > 0`).
+        // Resume WITHOUT `jumped = true`: must keep real stream frames in the
+        // window (no `behind` frames lost) while discarding synthetic fade-out
+        // frames and fetching all 64 newly due real frames (`held == 64`).
         let resume = Plan {
             start: Position::new(64, 0),
             step: unity,
@@ -1195,9 +1211,18 @@ mod tests {
             jumped: false,
         };
         let played = pump.play(&mut receiver, &store, &resume, &mut out);
+        assert_eq!(
+            played.behind, 0,
+            "resuming after fade-out must not discard real frames still in window: {played:?}"
+        );
+        assert_eq!(
+            played.held, 64,
+            "expected all 64 newly due real frames from store, got {played:?}"
+        );
+        let peak = out.iter().copied().fold(0.0f32, f32::max);
         assert!(
-            played.held > 0,
-            "expected real frames from store, got {played:?}"
+            peak > 0.1,
+            "expected resumed fade-in output above 0.1 (was 0.037 when real frames were lost), peak={peak}, played={played:?}"
         );
         assert!(matches!(pump.state, State::Playing { .. }));
     }

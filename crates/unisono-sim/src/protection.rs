@@ -55,6 +55,10 @@ pub struct Run {
 
 impl Run {
     /// A run of `path` of `seconds` seconds.
+    ///
+    /// Degenerate or non-finite parameters (`seconds` non-finite, `outage_rate`
+    /// non-finite or `<= 0.0`, or `outage_length` non-finite or `< 0.0`) are
+    /// treated defensively as producing no outages rather than looping.
     #[must_use]
     pub fn new(path: Path, seconds: f64, generator: Generator) -> Run {
         let horizon = if seconds.is_finite() {
@@ -167,14 +171,17 @@ pub enum Scheme {
         delay: f64,
     },
     /// A code for bursts: with every packet travels as much again as
-    /// `burst / wait` of a packet, and a run of up to `burst` lost packets
-    /// is worked out from the `wait` packets that follow its start, each
-    /// lost packet when the packet `wait` places after it arrives. No code
-    /// repairs bursts of that length within that wait with less added.
+    /// `burst / wait` of a packet. Requires `0 < burst <= wait`; a run of up
+    /// to `burst` lost packets is repaired when it is preceded by a guard
+    /// space of `wait` received packets and every packet needed up through
+    /// `wait` places after the burst arrives, completing each lost packet
+    /// when the packet `wait` places after it arrives. No code repairs bursts
+    /// of that length within that wait with less added.
     Burst {
         /// The longest run of lost packets that is repaired.
         burst: usize,
-        /// How many packets after a lost one its repair is complete.
+        /// How many packets after a lost one its repair is complete (and the
+        /// required guard space before a burst).
         wait: usize,
     },
     /// The receiver asks for a packet that it finds missing when a later
@@ -204,6 +211,10 @@ pub struct Outcome {
 }
 
 /// Runs `scheme` over `run` for `packets` packets sent `period` apart.
+///
+/// Degenerate scheme parameters (`Block { data: 0, .. }`, `Burst` with
+/// `burst == 0`, `wait == 0`, or `burst > wait`, or `Request` with negative
+/// or non-finite `patience`) apply no repair rather than panicking or looping.
 // Counts of packets are far below 2^52.
 #[allow(clippy::cast_precision_loss)]
 #[must_use]
@@ -378,6 +389,11 @@ pub struct Verdict {
 /// `needs`, at the level in whole milliseconds up to `highest` seconds that
 /// makes it least: `latency` for each second of level, `gap` for each gap,
 /// and `missed` for each second of frames missed.
+///
+/// Degenerate inputs are handled defensively: empty `needs` or non-finite /
+/// non-positive `period` return an all-zero [`Verdict`]; `NaN` or negative
+/// `highest` returns infinite cost; infinite `highest` evaluates up to the
+/// whole millisecond ceiling of the largest finite need.
 // Counts of packets are far below 2^52.
 #[allow(clippy::cast_precision_loss)]
 #[must_use]
@@ -407,17 +423,18 @@ pub fn evaluate(
     if highest.is_nan() || highest < 0.0 {
         return best;
     }
-    let cap = if highest.is_finite() {
-        highest
+    let steps = if highest.is_finite() {
+        (highest * 1_000.0 + 1e-9).floor()
     } else {
-        needs
+        let largest = needs
             .iter()
             .copied()
             .filter(|need| need.is_finite())
-            .fold(0.0_f64, f64::max)
+            .fold(0.0_f64, f64::max);
+        (largest * 1_000.0).ceil()
     };
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let max_step = ((cap * 1_000.0 + 1e-9).floor()).min(f64::from(u32::MAX)) as u32;
+    let max_step = steps.clamp(0.0, f64::from(u32::MAX)) as u32;
     // The packets that are late at the level, by their place in the stream:
     // fewer and fewer as the level rises.
     let mut late: Vec<(usize, f64)> = needs.iter().copied().enumerate().collect();
@@ -529,16 +546,27 @@ mod tests {
             at_zero.gaps
         );
 
-        // `0.3` in IEEE 754 is slightly below `300.0 * 0.001`, yet step 300
-        // (level = 0.300s) must still be evaluated so a packet needing 0.2995s
-        // is saved.
-        let needs = [0.2995; 20];
-        let verdict = evaluate(&needs, 0.005, 0.3, 1.0, 10_000.0, 10_000.0);
+        // In binary64, `9.0 * 0.001 > 0.009` and `0.057 * 1000.0 < 57.0`, so
+        // both boundary steps must still be evaluated and save packets just
+        // below the boundary.
+        let at_9ms = evaluate(&[0.0085; 20], 0.005, 0.009, 1.0, 10_000.0, 10_000.0);
         assert!(
-            (verdict.level - 0.3).abs() < 1e-9,
-            "expected 0.3s level to be evaluated, got {verdict:?}"
+            (at_9ms.level - 0.009).abs() < 1e-9 && at_9ms.missed == 0.0,
+            "expected 9 ms level to be evaluated, got {at_9ms:?}"
         );
-        assert_eq!(verdict.missed, 0.0);
+        let at_57ms = evaluate(&[0.0565; 20], 0.005, 0.057, 1.0, 10_000.0, 10_000.0);
+        assert!(
+            (at_57ms.level - 0.057).abs() < 1e-9 && at_57ms.missed == 0.0,
+            "expected 57 ms level to be evaluated, got {at_57ms:?}"
+        );
+
+        // With `highest = +inf`, the ceiling millisecond covering the largest
+        // finite need (8.5 ms -> 9 ms) must be evaluated.
+        let unbounded = evaluate(&[0.0085; 20], 0.005, f64::INFINITY, 1.0, 10_000.0, 10_000.0);
+        assert!(
+            (unbounded.level - 0.009).abs() < 1e-9 && unbounded.missed == 0.0,
+            "expected unbounded evaluation to cover 8.5 ms at 9 ms, got {unbounded:?}"
+        );
     }
 
     #[test]

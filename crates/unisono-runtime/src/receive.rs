@@ -79,14 +79,15 @@ impl Confirmed {
 }
 
 /// Candidate sender metadata cached while waiting for the audio thread to
-/// confirm a newly observed timeline.
+/// confirm a newly observed timeline, including its own [`Asking`] tracker so
+/// contiguous packets arriving before adoption do not trigger spurious
+/// retransmission requests while genuinely missing frames are still tracked.
 #[derive(Clone, Copy)]
 struct PendingSender {
     timeline: u64,
     from: SocketAddr,
     length: usize,
-    first: Audio,
-    arrival: i64,
+    asking: Asking,
 }
 
 /// What the network thread hands to the audio thread.
@@ -314,7 +315,7 @@ impl ReceiverNetwork {
             self.sender = Some(pending.from);
             self.sender_timeline = Some(timeline);
             self.length = pending.length;
-            self.asking.arrived(&pending.first, pending.arrival);
+            self.asking = pending.asking;
             self.pending = None;
         }
     }
@@ -433,20 +434,25 @@ impl ReceiverNetwork {
                 self.asking.arrived(header, arrival);
             }
         } else {
-            // Unconfirmed timeline: remember the earliest packet seen for this
-            // candidate timeline without disturbing the active sender or
-            // retransmission tracker.
-            let replace = self
-                .pending
-                .is_none_or(|pending| pending.timeline != header.timeline);
-            if replace {
-                self.pending = Some(PendingSender {
-                    timeline: header.timeline,
-                    from,
-                    length,
-                    first: *header,
-                    arrival,
-                });
+            // Unconfirmed timeline: track arriving packets in `pending.asking`
+            // without disturbing the active sender or retransmission tracker.
+            match &mut self.pending {
+                Some(pending) if pending.timeline == header.timeline => {
+                    if canonical_addr(pending.from) == canonical_addr(from) {
+                        pending.length = length;
+                        pending.asking.arrived(header, arrival);
+                    }
+                }
+                _ => {
+                    let mut asking = Asking::new();
+                    asking.arrived(header, arrival);
+                    self.pending = Some(PendingSender {
+                        timeline: header.timeline,
+                        from,
+                        length,
+                        asking,
+                    });
+                }
             }
         }
     }
@@ -933,5 +939,62 @@ mod tests {
         // instead of stalling until t = 10_000_050_000_000!
         audio.cycle(&mut out, 512, 1_010_000_000);
         assert!(net_end.reports.take().is_some());
+    }
+
+    #[test]
+    fn lossless_contiguous_packets_draw_no_request_at_adoption() {
+        let loopback: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let rx_sock = Socket::bind(loopback).expect("rx");
+        let rx_addr = rx_sock.address().expect("rx addr");
+        let tx = UdpSocket::bind(loopback).expect("tx");
+        tx.set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("timeout");
+
+        let sizes = Sizes {
+            buffers: 32,
+            datagram: 2_048,
+            messages: 32,
+        };
+        let (net_end, audio_end) = link(sizes);
+        let mut net = ReceiverNetwork::new(rx_sock, net_end, 3, sizes);
+        let playback: ReceiverPlayback<64, 64, 8, 64> = ReceiverPlayback::new(&playback_settings());
+        let mut audio = ReceiverAudio::new(
+            playback,
+            audio_end,
+            Intake {
+                items: 16,
+                reports: None,
+            },
+        );
+
+        // Packets 0 and 240 arrive before the audio thread runs its first cycle.
+        tx.send_to(&audio_packet(3, 7, 0, 48_000, 240), rx_addr)
+            .expect("send 0");
+        tx.send_to(&audio_packet(3, 7, 240, 48_000, 240), rx_addr)
+            .expect("send 240");
+        std::thread::sleep(Duration::from_millis(10));
+        net.turn(0).expect("turn 1");
+        let mut out = [0.0f32; 512];
+        audio.cycle(&mut out, 0, 10_000_000);
+        // Packet 480 follows contiguously after adoption: nothing is missing.
+        tx.send_to(&audio_packet(3, 7, 480, 48_000, 240), rx_addr)
+            .expect("send 480");
+        std::thread::sleep(Duration::from_millis(10));
+        net.turn(0).expect("turn 2");
+        assert_eq!(net.counts().requests, 0);
+
+        // Now switch to timeline 8 with a real gap (0 and 480 arrive before
+        // adoption, 240 is missing): confirming timeline 8 must request 240..480.
+        tx.send_to(&audio_packet(3, 8, 0, 48_000, 240), rx_addr)
+            .expect("send t8 0");
+        tx.send_to(&audio_packet(3, 8, 480, 48_000, 240), rx_addr)
+            .expect("send t8 480");
+        std::thread::sleep(Duration::from_millis(10));
+        net.turn(0).expect("turn 3");
+        // No request sent for unconfirmed timeline 8 yet.
+        assert_eq!(net.counts().requests, 0);
+        audio.cycle(&mut out, 256, 15_333_333);
+        net.turn(0).expect("turn 4");
+        assert_eq!(net.counts().requests, 1);
     }
 }

@@ -91,6 +91,10 @@ pub fn unspecified_for(peers: &[SocketAddr]) -> SocketAddr {
 
 /// Whether a UDP `send_to` error is transient or peer-specific and should be
 /// counted as an unsent datagram instead of terminating the network thread.
+///
+/// Configuration errors such as `EACCES`/`EPERM` (for example sending to a
+/// broadcast address without `SO_BROADCAST`) and `EADDRNOTAVAIL` are treated
+/// as fatal so they surface instead of silently incrementing `unsent`.
 #[must_use]
 pub fn is_transient_send_error(error: &io::Error) -> bool {
     if matches!(
@@ -102,8 +106,6 @@ pub fn is_transient_send_error(error: &io::Error) -> bool {
             | io::ErrorKind::NetworkDown
             | io::ErrorKind::ConnectionRefused
             | io::ErrorKind::ConnectionReset
-            | io::ErrorKind::AddrNotAvailable
-            | io::ErrorKind::PermissionDenied
     ) {
         return true;
     }
@@ -1552,6 +1554,32 @@ mod tests {
         assert!(unspecified_for(&[v4]).is_ipv4());
         assert!(unspecified_for(&[v4, v6]).is_ipv6());
         assert!(unspecified_for(&[mapped]).is_ipv6());
+    }
+
+    #[test]
+    fn transient_send_error_excludes_configuration_failures() {
+        use std::io;
+
+        use super::is_transient_send_error;
+        assert!(is_transient_send_error(&io::Error::from(
+            io::ErrorKind::WouldBlock
+        )));
+        assert!(is_transient_send_error(&io::Error::from(
+            io::ErrorKind::NetworkUnreachable
+        )));
+        assert!(is_transient_send_error(&io::Error::from(
+            io::ErrorKind::ConnectionRefused
+        )));
+        #[cfg(unix)]
+        assert!(is_transient_send_error(&io::Error::from_raw_os_error(
+            libc::ENOBUFS
+        )));
+        assert!(!is_transient_send_error(&io::Error::from(
+            io::ErrorKind::PermissionDenied
+        )));
+        assert!(!is_transient_send_error(&io::Error::from(
+            io::ErrorKind::AddrNotAvailable
+        )));
     }
 
     #[cfg(target_os = "linux")]

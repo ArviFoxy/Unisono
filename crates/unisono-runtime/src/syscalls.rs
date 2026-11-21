@@ -7,13 +7,12 @@
 //! A network thread reads bytes that anyone who reaches the socket can send.
 //! It parses them with the core's parsers, which are proved to return for
 //! every input, and what it does with them is little: it receives and sends
-//! on a socket that is open already, reads the clock, waits, and writes a
-//! line when something is wrong. The kernel can hold a thread to such a
-//! list. [`restrict`] asks it to: from then on a system call of the calling
-//! thread that is not on the list fails as not permitted (or ends the process
-//! on `brk`, because glibc treats an `EPERM` from `brk` as a break address
-//! and livelocks on `SIGSEGV`). Opening a file, making a socket, starting a
-//! program and changing what memory may be executed are not on the list.
+//! on a socket that is open already, reads the clock, waits, writes a line
+//! when something is wrong, manages non-executable memory (`brk`, `munmap`,
+//! `madvise`, and `mmap`/`mprotect` without `PROT_EXEC`) so allocator teardown
+//! on thread exit cannot fail or livelock, and signals its own process via
+//! `tgkill` so `abort()` terminates cleanly. Opening a file, making a socket,
+//! starting a program and making memory executable are not on the list.
 //!
 //! The list belongs to the thread that asks and to the threads it starts
 //! later, not to the threads that run already. It cannot be taken back.
@@ -57,10 +56,14 @@ pub fn restrict() -> io::Result<()> {
 mod linux {
     use std::io;
 
-    /// The calls of a network thread: receiving and sending on its socket,
-    /// waiting for it, reading the clock and sleeping, waking and waiting for
-    /// other threads, writing to a file that is open, returning memory, and
-    /// what a thread does when it ends.
+    /// The calls of a network thread that are allowed unconditionally:
+    /// receiving and sending on its socket, waiting for it, reading the clock
+    /// and sleeping, waking and waiting for other threads, writing to a file
+    /// that is open, heap/memory management without making pages executable,
+    /// and what a thread does when it ends.
+    ///
+    /// `mmap`, `mprotect` (only without `PROT_EXEC`) and `tgkill` (only for
+    /// this process's own PID) are checked with argument filters in [`filter`].
     const ALLOWED: &[libc::c_long] = &[
         libc::SYS_recvmsg,
         libc::SYS_recvfrom,
@@ -77,6 +80,7 @@ mod linux {
         libc::SYS_sched_yield,
         libc::SYS_futex,
         libc::SYS_write,
+        libc::SYS_brk,
         libc::SYS_munmap,
         libc::SYS_madvise,
         libc::SYS_rt_sigprocmask,
@@ -97,7 +101,10 @@ mod linux {
 
     /// Restricts the calling thread with the BPF program built from `ALLOWED`.
     pub(super) fn restrict() -> io::Result<()> {
-        install(&filter(ALLOWED))
+        // SAFETY: `getpid` is always safe and returns the current process ID.
+        let pid = u32::try_from(unsafe { libc::getpid() })
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "process id is negative"))?;
+        install(&filter(ALLOWED, pid))
     }
 
     /// One instruction of the kernel's filter machine.
@@ -112,32 +119,58 @@ mod linux {
         }
     }
 
-    /// The filter that lets the calls in `allowed` through, kills the process
-    /// on `SYS_brk` or a foreign architecture, and makes every other call fail
-    /// with `EPERM`.
-    fn filter(allowed: &[libc::c_long]) -> Vec<libc::sock_filter> {
-        // Offsets of `nr` and `arch` in `struct seccomp_data`.
+    /// The filter that kills the process on a foreign architecture, allows
+    /// `mmap`/`mprotect` without `PROT_EXEC`, allows `tgkill` for `pid` only,
+    /// allows the calls in `allowed`, and fails every other call with `EPERM`.
+    fn filter(allowed: &[libc::c_long], pid: u32) -> Vec<libc::sock_filter> {
+        // Offsets in little-endian `struct seccomp_data`:
+        //   0: nr (u32), 4: arch (u32), 8: ip (u64),
+        //  16: args[0] (u64 -> lo=16, hi=20),
+        //  32: args[2] (u64 -> lo=32, hi=36).
         const NUMBER: u32 = 0;
         const MACHINE: u32 = 4;
+        const ARG0_LO: u32 = 16;
+        const ARG0_HI: u32 = 20;
+        const ARG2_LO: u32 = 32;
         debug_assert!(allowed.len() < usize::from(u8::MAX));
         let load = libc::BPF_LD | libc::BPF_W | libc::BPF_ABS;
         let equal = libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K;
+        let bitset = libc::BPF_JMP | libc::BPF_JSET | libc::BPF_K;
         let answer = libc::BPF_RET | libc::BPF_K;
         // The denial carries the error that the call fails with.
         #[allow(clippy::cast_sign_loss)]
         let denied = libc::SECCOMP_RET_ERRNO | (libc::EPERM as u32 & libc::SECCOMP_RET_DATA);
-        // `brk(2)` returns an unsigned address, never `-errno`: returning
-        // `EPERM` makes glibc write unmapped memory and livelock in a
-        // `SIGSEGV` loop, so `SYS_brk` terminates the process immediately.
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-        let brk_nr = libc::SYS_brk as u32;
+        let mmap_nr = libc::SYS_mmap as u32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let mprotect_nr = libc::SYS_mprotect as u32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let tgkill_nr = libc::SYS_tgkill as u32;
+        #[allow(clippy::cast_sign_loss)]
+        let prot_exec = libc::PROT_EXEC as u32;
+
         let mut program = vec![
+            // 0..=2: verify architecture, killing on foreign ABI.
             instruction(load, 0, 0, MACHINE),
             instruction(equal, 1, 0, PROCESSOR),
             instruction(answer, 0, 0, libc::SECCOMP_RET_KILL_PROCESS),
+            // 3: load syscall number.
             instruction(load, 0, 0, NUMBER),
-            instruction(equal, 0, 1, brk_nr),
-            instruction(answer, 0, 0, libc::SECCOMP_RET_KILL_PROCESS),
+            // 4..=9: allow `mmap` and `mprotect` only when `PROT_EXEC` is clear.
+            instruction(equal, 1, 0, mmap_nr),
+            instruction(equal, 0, 4, mprotect_nr),
+            instruction(load, 0, 0, ARG2_LO),
+            instruction(bitset, 1, 0, prot_exec),
+            instruction(answer, 0, 0, libc::SECCOMP_RET_ALLOW),
+            instruction(answer, 0, 0, denied),
+            // 10..=16: allow `tgkill` only targeting this process's own PID.
+            instruction(equal, 0, 6, tgkill_nr),
+            instruction(load, 0, 0, ARG0_HI),
+            instruction(equal, 0, 3, 0),
+            instruction(load, 0, 0, ARG0_LO),
+            instruction(equal, 0, 1, pid),
+            instruction(answer, 0, 0, libc::SECCOMP_RET_ALLOW),
+            instruction(answer, 0, 0, denied),
         ];
         for (place, &call) in allowed.iter().enumerate() {
             // Past the comparisons that remain and the denial. The list has far
@@ -207,25 +240,40 @@ mod linux {
         use super::{ALLOWED, PROCESSOR, filter, restrict};
         use crate::clock;
 
-        /// Interprets the generated BPF filter on `(arch, nr)` to verify every
-        /// jump offset and verdict without killing the test process.
-        fn evaluate(program: &[libc::sock_filter], arch: u32, nr: u32) -> u32 {
+        /// Interprets the generated BPF filter on `(arch, nr, args)` to verify
+        /// every jump offset and verdict without killing the test process.
+        fn evaluate(program: &[libc::sock_filter], arch: u32, nr: u32, args: [u64; 6]) -> u32 {
             let load = u16::try_from(libc::BPF_LD | libc::BPF_W | libc::BPF_ABS).expect("opcode");
             let equal = u16::try_from(libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K).expect("opcode");
+            let bitset =
+                u16::try_from(libc::BPF_JMP | libc::BPF_JSET | libc::BPF_K).expect("opcode");
             let answer = u16::try_from(libc::BPF_RET | libc::BPF_K).expect("opcode");
             let mut pc = 0usize;
             let mut acc = 0u32;
             loop {
                 let insn = program[pc];
                 if insn.code == load {
-                    acc = match insn.k {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let word = match insn.k {
                         0 => nr,
                         4 => arch,
+                        16 => args[0] as u32,
+                        20 => (args[0] >> 32) as u32,
+                        32 => args[2] as u32,
+                        36 => (args[2] >> 32) as u32,
                         other => panic!("unexpected load offset {other}"),
                     };
+                    acc = word;
                     pc += 1;
                 } else if insn.code == equal {
                     let skip = if acc == insn.k { insn.jt } else { insn.jf };
+                    pc += 1 + usize::from(skip);
+                } else if insn.code == bitset {
+                    let skip = if (acc & insn.k) != 0 {
+                        insn.jt
+                    } else {
+                        insn.jf
+                    };
                     pc += 1 + usize::from(skip);
                 } else if insn.code == answer {
                     return insn.k;
@@ -236,37 +284,85 @@ mod linux {
         }
 
         #[test]
-        fn filter_allows_list_kills_brk_and_wrong_arch_and_denies_other() {
-            let program = filter(ALLOWED);
+        fn filter_checks_arch_exec_prot_tgkill_and_allowed_syscalls() {
+            let pid = 4242u32;
+            let program = filter(ALLOWED, pid);
             #[allow(clippy::cast_sign_loss)]
             let eperm = libc::SECCOMP_RET_ERRNO | (libc::EPERM as u32 & libc::SECCOMP_RET_DATA);
+            let zero = [0u64; 6];
             // Wrong architecture kills immediately.
             assert_eq!(
-                evaluate(&program, PROCESSOR ^ 1, 0),
+                evaluate(&program, PROCESSOR ^ 1, 0, zero),
                 libc::SECCOMP_RET_KILL_PROCESS
             );
-            // `SYS_brk` kills immediately instead of returning EPERM.
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let brk_nr = libc::SYS_brk as u32;
-            assert_eq!(
-                evaluate(&program, PROCESSOR, brk_nr),
-                libc::SECCOMP_RET_KILL_PROCESS
-            );
-            // Every listed syscall is allowed.
+            // Every listed syscall (including `SYS_brk`) is allowed.
             for &call in ALLOWED {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 let nr = call as u32;
                 assert_eq!(
-                    evaluate(&program, PROCESSOR, nr),
+                    evaluate(&program, PROCESSOR, nr, zero),
                     libc::SECCOMP_RET_ALLOW,
                     "syscall {nr}"
                 );
             }
-            // Disallowed syscalls like `openat` and `socket` fail with EPERM.
+            // `mmap` and `mprotect` are allowed without `PROT_EXEC` and denied with it.
+            #[allow(clippy::cast_sign_loss)]
+            let rw = u64::from((libc::PROT_READ | libc::PROT_WRITE) as u32);
+            #[allow(clippy::cast_sign_loss)]
+            let rx = u64::from((libc::PROT_READ | libc::PROT_EXEC) as u32);
+            for call in [libc::SYS_mmap, libc::SYS_mprotect] {
+                #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                let nr = call as u32;
+                assert_eq!(
+                    evaluate(&program, PROCESSOR, nr, [0, 4096, rw, 0, 0, 0]),
+                    libc::SECCOMP_RET_ALLOW,
+                    "non-exec syscall {nr}"
+                );
+                assert_eq!(
+                    evaluate(&program, PROCESSOR, nr, [0, 4096, rx, 0, 0, 0]),
+                    eperm,
+                    "exec syscall {nr}"
+                );
+            }
+            // `tgkill` is allowed only for our own PID (with zero high bits).
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let tgkill_nr = libc::SYS_tgkill as u32;
+            assert_eq!(
+                evaluate(
+                    &program,
+                    PROCESSOR,
+                    tgkill_nr,
+                    [u64::from(pid), u64::from(pid), 6, 0, 0, 0]
+                ),
+                libc::SECCOMP_RET_ALLOW
+            );
+            assert_eq!(
+                evaluate(
+                    &program,
+                    PROCESSOR,
+                    tgkill_nr,
+                    [u64::from(pid + 1), u64::from(pid), 6, 0, 0, 0]
+                ),
+                eperm
+            );
+            assert_eq!(
+                evaluate(
+                    &program,
+                    PROCESSOR,
+                    tgkill_nr,
+                    [(1u64 << 32) | u64::from(pid), u64::from(pid), 6, 0, 0, 0]
+                ),
+                eperm
+            );
+            // Disallowed syscalls like `openat`, `socket`, and `close` fail with EPERM.
             for call in [libc::SYS_openat, libc::SYS_socket, libc::SYS_close] {
                 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
                 let nr = call as u32;
-                assert_eq!(evaluate(&program, PROCESSOR, nr), eperm, "syscall {nr}");
+                assert_eq!(
+                    evaluate(&program, PROCESSOR, nr, zero),
+                    eperm,
+                    "syscall {nr}"
+                );
             }
         }
 
@@ -285,6 +381,28 @@ mod linux {
                 let before = clock::raw();
                 std::thread::sleep(Duration::from_millis(2));
                 assert!(clock::raw() > before);
+                // Non-executable anonymous mmap succeeds, while making it executable fails with EPERM.
+                // SAFETY: anonymous mapping of one page, unmapped right after.
+                let page = unsafe {
+                    libc::mmap(
+                        std::ptr::null_mut(),
+                        4096,
+                        libc::PROT_READ | libc::PROT_WRITE,
+                        libc::MAP_PRIVATE | libc::MAP_ANONYMOUS,
+                        -1,
+                        0,
+                    )
+                };
+                assert_ne!(page, libc::MAP_FAILED);
+                // SAFETY: `page` is a valid 4096-byte mapping.
+                let rc = unsafe { libc::mprotect(page, 4096, libc::PROT_READ | libc::PROT_EXEC) };
+                assert_eq!(rc, -1);
+                assert_eq!(
+                    std::io::Error::last_os_error().raw_os_error(),
+                    Some(libc::EPERM)
+                );
+                // SAFETY: `page` is a valid 4096-byte mapping.
+                assert_eq!(unsafe { libc::munmap(page, 4096) }, 0);
                 // What it does not do fails, and the thread runs on.
                 let opened = std::fs::File::open("/dev/null");
                 let error = opened.expect_err("opening a file is not on the list");

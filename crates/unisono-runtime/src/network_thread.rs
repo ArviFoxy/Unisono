@@ -12,13 +12,14 @@
 //!   treating `ErrorKind::Unsupported` as non-fatal on platforms without
 //!   seccomp filtering and propagating real failures synchronously from
 //!   [`NetworkThread::spawn`].
-//! - On shutdown it moves the network state (and its UDP socket) back to the
-//!   caller through the thread's return value so `close(fd)` and deallocation
-//!   always happen outside the seccomp filter.
+//! - On shutdown (including if `turn` panics) it moves the network state (and
+//!   its UDP socket) back to the caller through the thread's return value so
+//!   `close(fd)` always happens outside the seccomp filter.
 //! - Its `Drop` implementation signals stop and joins the thread, preventing
 //!   leaked sockets or detached background threads on early returns.
 
 use std::io;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::{self, JoinHandle};
@@ -54,12 +55,19 @@ struct Shared {
     ready: Condvar,
 }
 
+/// Outcome returned by the child network thread to its owner.
+struct ThreadOutcome<T> {
+    network: T,
+    error: Option<io::Error>,
+    panicked: bool,
+}
+
 /// A running network thread with RAII shutdown.
 pub struct NetworkThread<T: NetworkLoop> {
     // Kept alive until after `handle.join()` completes so the restricted
     // thread never drops the final `Arc` reference or frees `Shared`.
     shared: Arc<Shared>,
-    handle: Option<JoinHandle<(T, Option<io::Error>)>>,
+    handle: Option<JoinHandle<ThreadOutcome<T>>>,
     restricted: bool,
 }
 
@@ -97,7 +105,11 @@ impl<T: NetworkLoop> NetworkThread<T> {
                         *guard = Some(Err(error));
                         child_shared.ready.notify_one();
                         drop(guard);
-                        return (network, None);
+                        return ThreadOutcome {
+                            network,
+                            error: None,
+                            panicked: false,
+                        };
                     }
                 };
                 {
@@ -111,15 +123,23 @@ impl<T: NetworkLoop> NetworkThread<T> {
                     child_shared.ready.notify_one();
                 }
                 let mut fatal = None;
-                while !child_shared.stop.load(Ordering::Acquire) {
-                    if let Err(error) = network.turn(turn_ms) {
-                        fatal = Some(error);
-                        break;
+                let panicked = catch_unwind(AssertUnwindSafe(|| {
+                    while !child_shared.stop.load(Ordering::Acquire) {
+                        if let Err(error) = network.turn(turn_ms) {
+                            fatal = Some(error);
+                            break;
+                        }
                     }
-                }
+                }))
+                .is_err();
                 // Move `network` (and its `Socket`) out of the restricted
-                // thread so `close(fd)` runs on the joining thread instead.
-                (network, fatal)
+                // thread even after a panic so `close(fd)` runs on the joining
+                // thread instead of failing with `EPERM`.
+                ThreadOutcome {
+                    network,
+                    error: fatal,
+                    panicked,
+                }
             })?;
 
         let outcome = {
@@ -181,10 +201,17 @@ impl<T: NetworkLoop> NetworkThread<T> {
         let Some(handle) = self.handle.take() else {
             return Err(io::Error::other("network thread was already stopped"));
         };
-        let (network, error) = handle
+        let outcome = handle
             .join()
             .map_err(|_| io::Error::other("network thread panicked"))?;
-        Ok(Stopped { network, error })
+        if outcome.panicked {
+            drop(outcome.network);
+            return Err(io::Error::other("network thread panicked"));
+        }
+        Ok(Stopped {
+            network: outcome.network,
+            error: outcome.error,
+        })
     }
 }
 
@@ -312,5 +339,30 @@ mod tests {
             stopped.error.map(|e| e.kind()),
             Some(io::ErrorKind::BrokenPipe)
         );
+    }
+
+    #[test]
+    fn panic_in_turn_still_closes_socket_outside_seccomp() {
+        struct PanicLoop {
+            _socket: Socket,
+        }
+        impl NetworkLoop for PanicLoop {
+            fn turn(&mut self, _milliseconds: i32) -> io::Result<()> {
+                panic!("boom");
+            }
+        }
+        let addr: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let socket = Socket::bind(addr).expect("bind");
+        let bound = socket.address().expect("local addr");
+        let thread =
+            NetworkThread::spawn("test-panic", PanicLoop { _socket: socket }, 5).expect("spawn");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !thread.is_finished() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert!(thread.is_finished());
+        assert!(thread.stop().is_err());
+        let rebound = UdpSocket::bind(bound).expect("socket closed outside seccomp after panic");
+        drop(rebound);
     }
 }

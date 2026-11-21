@@ -52,8 +52,10 @@ use crate::socket::{Socket, canonical_addr, is_transient_send_error};
 /// 48,000 frames a second.
 pub const LONGEST_GAP: u64 = 1_048_576;
 
-/// Maximum UDP payload size in bytes (`65_535 - 20 IPv4 - 8 UDP`).
-const MAX_UDP_PAYLOAD: usize = 65_507;
+/// Maximum datagram size accepted for audio packets and allocated for receiver
+/// datagram buffers, in bytes. Sharing one cap between sender validation and
+/// receiver buffers ensures valid sender packets are never truncated on receipt.
+pub const MAX_DATAGRAM: usize = 9_000;
 
 /// Maximum incoming datagrams processed during one network turn so a burst
 /// cannot starve audio packet emission.
@@ -230,9 +232,9 @@ impl Settings {
         let packet_bytes = packet::HEADER
             .checked_add(payload)
             .ok_or(InvalidSettings::new("packet size overflow"))?;
-        if packet_bytes > MAX_UDP_PAYLOAD {
+        if packet_bytes > MAX_DATAGRAM {
             return Err(InvalidSettings::new(
-                "packet size exceeds maximum UDP payload",
+                "packet size exceeds maximum datagram size (9000 bytes)",
             ));
         }
         if self.kept.checked_mul(packet_bytes).is_none() {
@@ -256,6 +258,9 @@ pub struct SenderCounts {
     pub restarts: u64,
     /// Reports answered.
     pub answers: u64,
+    /// Incoming datagrams ignored because their source address was not in the
+    /// configured receiver list.
+    pub ignored: u64,
     /// Datagrams that could not be sent.
     pub unsent: u64,
     /// Moves of the level that were begun.
@@ -725,6 +730,7 @@ impl SenderNetwork {
             };
             let peer = canonical_addr(received.from);
             if !self.allowed_receivers.contains(&peer) {
+                self.counts.ignored += 1;
                 continue;
             }
             let Some(bytes) = self.incoming.get(..received.length) else {
@@ -871,8 +877,12 @@ mod tests {
         assert!(bad.validate().is_err());
 
         let mut bad = valid.clone();
-        bad.packet = 20_000;
+        bad.packet = 1_500; // 88 + 1500 * 2 * 3 = 9088 > MAX_DATAGRAM (9000)
         assert!(bad.validate().is_err());
+
+        let mut at_cap = valid;
+        at_cap.packet = 1_485; // 88 + 1485 * 2 * 3 = 8998 <= MAX_DATAGRAM (9000)
+        assert!(at_cap.validate().is_ok());
     }
 
     #[test]
@@ -929,6 +939,7 @@ mod tests {
         stranger.send_to(&buf[..len], sender_addr).expect("send");
         sender.turn(0).expect("turn");
         assert_eq!(sender.counts().answers, 0);
+        assert_eq!(sender.counts().ignored, 1);
 
         // 2. Report from the known receiver on a wrong stream -> ignored.
         let wrong_stream = Report {
