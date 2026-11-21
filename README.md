@@ -28,9 +28,14 @@ Built and tested on Linux, without audio hardware:
   in time are concealed.
 - Counters and gauges in the Prometheus text format (`--metrics`), among them
   counts that hold each assumption of the model against what happens.
+- An interface for C (`crates/unisono-c`, `include/unisono.h`): a driver
+  hands a sender the frames of its capture device, or has a receiver fill
+  the frames of its playback device, from the device's own cycle.
 
-Not built yet: a backend for ALSA, an interface for C, platforms other than
-Linux, and any measurement on audio hardware.
+The tests run on x86-64 and on 64-bit ARM. Not built yet: a backend for
+ALSA, platforms other than Linux (everything compiles for macOS; its kernel
+stamps no departures, and the timing there is not tested), and any
+measurement on audio hardware.
 
 `docs/model.md` states the problem and what is assumed, `docs/theorems.md`
 lists what is proved, and `docs/protocol.md` gives the packets.
@@ -45,6 +50,7 @@ lists what is proved, and `docs/protocol.md` gives the packets.
 | `crates/unisono-runtime` | The threads of a sender and of a receiver around the core: sockets, clocks, the rings between threads, the choice of the level |
 | `crates/unisono-pipewire` | Capture and playback through PipeWire |
 | `crates/unisono` | The program |
+| `crates/unisono-c` | A library and a header for programs written in C |
 | `crates/unisono-sim` | A deterministic simulation of clocks and links, for tests without hardware |
 | `crates/translation-check` | Prints inputs and results of the core's functions, to compare the Lean translation with |
 | `crates/reachable`, `crates/cycle-cost` | The inspection of the machine code of the real-time threads, and the count of what a cycle costs |

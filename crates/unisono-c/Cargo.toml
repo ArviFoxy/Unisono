@@ -1,0 +1,19 @@
+[package]
+name = "unisono-c"
+description = "unisono for programs written in C: a sender that is handed the frames of a capture device, and a receiver that fills the frames of a playback device."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "unisono_c"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+unisono-core.workspace = true
+unisono-dsp.workspace = true
+unisono-runtime.workspace = true
+
+[lints]
+workspace = true
