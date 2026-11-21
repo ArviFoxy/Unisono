@@ -210,7 +210,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         signal.fill(position, rate, frame);
     });
     let (capture_end, sender_end) = send::link(64, cycle, usize::from(channels));
-    let mut network = SenderNetwork::new(
+    let network = SenderNetwork::new(
         socket,
         sender_end,
         Settings {
@@ -232,7 +232,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     );
 
     let mut metrics = Metrics::new();
-    let mut counters = Counters::new(&mut metrics)?;
+    let counters = Counters::new(&mut metrics)?;
     if let Some(address) = options.addresses("metrics")?.first() {
         metrics
             .serve(*address)
@@ -242,6 +242,8 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let stop = Arc::new(AtomicBool::new(false));
     let shape = (rate, channels, cycle);
     let capturing = start_capture(system, input, capture_end, Arc::clone(&stop), shape)?;
+    let ending = Arc::new(AtomicBool::new(false));
+    let networking = start_network(network, counters, Arc::clone(&ending))?;
     // Everything the threads use is made, and they are running.
     if let Err(error) = memory::lock() {
         eprintln!("unisono: memory is not locked: {error}");
@@ -249,13 +251,13 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
 
     println!("capture start {start} rate {rate} drift {drift} cycle {cycle}");
     let end = start.saturating_add(seconds.saturating_mul(1_000_000_000));
-    while seconds == 0 || clock::raw() < end {
-        network
-            .turn(2)
-            .map_err(|error| Wrong(format!("sending: {error}")))?;
-        counters.update(&network);
-        std::thread::sleep(Duration::from_micros(200));
+    while (seconds == 0 || clock::raw() < end) && !networking.is_finished() {
+        std::thread::sleep(Duration::from_millis(5));
     }
+    ending.store(true, Ordering::Relaxed);
+    let network = networking
+        .join()
+        .map_err(|_| Wrong("the network thread failed".into()))??;
     stop.store(true, Ordering::Relaxed);
     let dropped = capturing.finish();
     let counts = network.counts();
@@ -271,6 +273,31 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         network.sender().current_level()
     );
     Ok(())
+}
+
+/// Starts the network thread: it sends what the capture thread hands it,
+/// answers reports and keeps the counters, until `ending` is set, and gives
+/// the sender's network end back.
+fn start_network(
+    mut network: SenderNetwork,
+    mut counters: Counters,
+    ending: Arc<AtomicBool>,
+) -> Result<std::thread::JoinHandle<Result<SenderNetwork, Wrong>>, Wrong> {
+    std::thread::Builder::new()
+        .name("unisono-network".into())
+        .stack_size(crate::STACK)
+        .spawn(move || {
+            crate::restrict_network_thread();
+            while !ending.load(Ordering::Relaxed) {
+                network
+                    .turn(2)
+                    .map_err(|error| Wrong(format!("sending: {error}")))?;
+                counters.update(&network);
+                std::thread::sleep(Duration::from_micros(200));
+            }
+            Ok(network)
+        })
+        .map_err(|error| Wrong(format!("starting the network thread: {error}")))
 }
 
 /// The sender's counters among the metrics.

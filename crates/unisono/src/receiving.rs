@@ -165,6 +165,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         .name("unisono-network".into())
         .stack_size(crate::STACK)
         .spawn(move || {
+            crate::restrict_network_thread();
             while !stopping.load(Ordering::Relaxed) {
                 if let Err(error) = network.turn(2) {
                     eprintln!("receiving: {error}");

@@ -106,5 +106,15 @@ too small for full precision as silence, so such numbers do not arise there;
 the processor is not set to treat them as zero. Interrupts and the
 scheduler are the system's.
 
-**The network thread.** It enters the kernel by its nature. The kernel can
-be made to enforce a list of the system calls it may make. *Not built.*
+**The network thread.** It enters the kernel by its nature, and it reads
+bytes that anyone who reaches its socket can send. The kernel holds it to a
+list of system calls (`unisono_runtime::syscalls`): receiving and sending on
+the socket that is open, waiting for it, reading the clock and sleeping,
+waking other threads, writing to a file that is open, returning memory, and
+ending. Any other call of that thread fails as not permitted and does
+nothing: it cannot open a file, make a socket, start a program or change
+what memory may be executed. The program asks for this at the start of the
+network thread of a sender and of a receiver, on Linux on x86-64 and 64-bit
+ARM; elsewhere the thread runs unrestricted and a line says so. A test
+holds a thread to the list and has it send, sleep and end, and fail to open
+a file and to make a socket.

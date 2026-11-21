@@ -91,6 +91,15 @@ impl Signal {
 /// memory within what the system lets it lock.
 pub(crate) const STACK: usize = 512 * 1024;
 
+/// Holds the calling thread, a network thread, to the system calls that
+/// such a thread makes. Where the system does not take the list, the thread
+/// runs on as it is, and a line says so.
+pub(crate) fn restrict_network_thread() {
+    if let Err(error) = unisono_runtime::syscalls::restrict() {
+        eprintln!("unisono: the network thread's system calls are not restricted: {error}");
+    }
+}
+
 /// The audio system that a program plays to or captures from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum System {

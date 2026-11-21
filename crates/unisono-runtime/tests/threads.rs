@@ -271,9 +271,12 @@ fn the_receiver_measures_a_path_of_two_milliseconds_and_plays_on_time() {
     assert!(counts.reports > 10 && counts.answers > 10, "{counts:?}");
     // The proxy holds every datagram 2 ms and passes it on as soon as its
     // timer allows after that, which on an idle host is within a fraction of
-    // a millisecond. The estimate takes the fastest datagrams of its memory.
+    // a millisecond. The estimate takes the fastest datagrams of its memory,
+    // and works their times out with the clock's line, so it can lie below
+    // the 2 ms by what that line is off at those times: on a busy host, a
+    // few microseconds.
     let delay = outcome.delay;
-    assert!((2_000_000..2_200_000).contains(&delay), "delay {delay}");
+    assert!((1_950_000..2_200_000).contains(&delay), "delay {delay}");
     // Once the regulator has moved the 2 ms by which it first played late, a
     // frame plays early or late by what the estimate of the delay differs
     // from the fastest datagram's, which is what the proxy's timer adds to
