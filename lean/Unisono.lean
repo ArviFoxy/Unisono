@@ -10,6 +10,7 @@ public import Unisono.Model.Level
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
 public import Unisono.Model.RegulationRandom
+public import Unisono.Model.Stream
 public import Unisono.Model.SupportLine
 public import Unisono.Needs
 public import Unisono.Packet

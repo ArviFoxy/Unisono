@@ -206,4 +206,54 @@ theorem under_add (l m : Line) (hm : m.time = l.time) (hl : Under s t z l) :
   simp only [Line.eval, hm] at *
   linarith
 
+/-! ## In what sense the estimate is the best
+
+Two statements, for a line through two samples on either side of `c` that
+lies under all samples.
+
+A line that the samples allow is one that lies on or below every sample,
+since a sample is never below the truth. The estimate is such a line, and at
+`c` it is the highest of them: so its value there is the least number that
+no line the samples allow exceeds. An estimate that is never below the truth
+cannot be lower.
+
+When `c` is the mean of the times of the samples, the estimate also has the
+smallest sum of the distances by which the samples lie above a line, among
+the lines under the samples. That sum is what the likelihood of a line
+depends on when the excesses of the samples are independent and exponential,
+whatever their rate; so the estimate is then the most likely line. -/
+
+/-- The value of the estimate at `c` is the largest value at `c` of a line
+under the samples. -/
+theorem estimate_isGreatest (p q : ι) (hp : p ∈ s) (hq : q ∈ s) (c : ℝ)
+    (hpc : t p ≤ c) (hcq : c ≤ t q) (hpq : t p < t q)
+    (hunder : Under s t z (through t z p q)) :
+    IsGreatest {v | ∃ l, Under s t z l ∧ l.eval c = v} ((through t z p q).eval c) := by
+  refine ⟨⟨_, hunder, rfl⟩, ?_⟩
+  rintro v ⟨l, hl, rfl⟩
+  exact highest s t z p q hp hq c hpc hcq hpq l hl
+
+/-- The values of a line at the times of the samples add up to the number of
+samples times its value at the mean of the times. -/
+theorem sum_eval (l : Line) (hs : s.Nonempty) :
+    ∑ j ∈ s, l.eval (t j) = s.card * l.eval ((∑ j ∈ s, t j) / s.card) := by
+  have hcard : (s.card : ℝ) ≠ 0 := by
+    exact_mod_cast (Finset.card_pos.mpr hs).ne'
+  simp only [Line.eval, Finset.sum_add_distrib, Finset.sum_const, nsmul_eq_mul,
+    ← Finset.mul_sum, Finset.sum_sub_distrib]
+  field_simp
+
+/-- **The most likely line.** When the estimate is highest at the mean of the
+times of the samples, the samples lie above it by no more, added up, than
+above any other line under the samples. -/
+theorem excess_le (p q : ι) (hp : p ∈ s) (hq : q ∈ s)
+    (hpc : t p ≤ (∑ j ∈ s, t j) / s.card) (hcq : (∑ j ∈ s, t j) / s.card ≤ t q)
+    (hpq : t p < t q) (l : Line) (hl : Under s t z l) :
+    ∑ j ∈ s, (z j - (through t z p q).eval (t j)) ≤ ∑ j ∈ s, (z j - l.eval (t j)) := by
+  have hs : s.Nonempty := ⟨p, hp⟩
+  have hhigh := highest s t z p q hp hq _ hpc hcq hpq l hl
+  have hcard : (0 : ℝ) < s.card := by exact_mod_cast Finset.card_pos.mpr hs
+  rw [Finset.sum_sub_distrib, Finset.sum_sub_distrib, sum_eval s t _ hs, sum_eval s t l hs]
+  nlinarith
+
 end Unisono.Model.SupportLine

@@ -158,6 +158,13 @@ $m_r(n) = \ell(n) + e_r(n) - D_r(n) - \Lambda_r$. A frame with negative margin
 is **missed**: it is due before it is there, and the receiver conceals it. A
 **gap** is a run of missed frames longer than concealment covers.
 
+What the frame **needs** at receiver $r$ is the level at which it is just
+there in time: $D_r(n) + \Lambda_r - e_r(n)$. A receiver misses the frame
+exactly when the level is below that, and the group of receivers misses it,
+meaning that at least one receiver does, exactly when the level is below the
+largest need over the receivers.
+*Lean:* `Unisono.Model.Stream.margin_neg_iff`, `group_misses_iff`.
+
 ## 4. Disturbances
 
 **Assumption (delivery delay).** $D_r = B_r + \varepsilon_r + \Pi_r$:
@@ -194,6 +201,13 @@ $$w_{\mathrm{lat}}\,\bar\ell
 subject to $|u_r| \le u_{\max}$. Here $\bar\ell$ is the level, $L_0$ a target
 latency, $e_r$ the timing error of receiver $r$ against the common schedule,
 and $u_r$ the amount by which receiver $r$ plays fast (section 6.4).
+
+The timing errors are counted against the schedule, which no receiver has to
+ask another about. Their squares add up to the squared distances of the
+errors from their mean over the receivers, which is what is heard as
+receivers being out of step with each other, plus the squared mean once for
+each receiver, which is all of them being early or late together.
+*Lean:* `Unisono.Model.Stream.sum_sq_errors`.
 
 Gaps are counted on the group. The group misses a frame when at least one
 receiver has nothing to play for it, and a gap of the group is a run of such
@@ -291,6 +305,18 @@ Claims, for kept samples at times $t_j$ with values $z_j$, and $c$ the middle:
 - *The line through two samples on either side of $c$ that lies under all
   samples is the highest at $c$ of all lines under the samples.*
   *Lean:* `Unisono.Model.SupportLine.highest`.
+- *In what sense it is the best.* A sample is never below the true relation,
+  so the lines that the samples allow as the true relation are the lines
+  under the samples. The estimate is one of them, and its value at $c$ is the
+  largest of theirs (`estimate_isGreatest`): it is the least estimate that is
+  never below a relation the samples allow. And when $c$ is the mean of the
+  times of the samples, the samples lie above the estimate by no more, added
+  up, than above any other line under them (`excess_le`); that sum is what
+  the likelihood of a line depends on when the excesses of the samples are
+  independent and exponential, whatever their rate, so the estimate is then
+  the most likely line. The code takes $c$ in the middle of the time that the
+  kept samples cover, which is the mean of their times when they are evenly
+  spread.
 - *Its error at $c$.* If every sample is on or above the true relation, the
   true relation stays within $b$ of a line, and one sample at or before $c$ and
   one at or after it are within $\epsilon$ of the true relation, then the
@@ -524,7 +550,12 @@ $g$ between 0 and 1 belongs to the weight $a^4$ (`gain_unique`).
   values of the revisions, plus the mean of $(w - w^\ast)^2/(1-g)$ over the
   cycles (`mean_cost_sum`). The first two parts are the same for every way of
   playing; the law makes the third zero (`mean_cost_law_le`). What any other
-  way of playing loses against the law is exactly that third part.
+  way of playing loses against the law is exactly that third part. Under the
+  law the mean value of the state stays bounded when the mean values of the
+  revisions are (`mean_value_law_le`), so over many cycles its mean cost of a
+  cycle is the mean value of a revision; another way of playing can cost
+  less over a number of cycles only by ending in a state whose mean value is
+  larger by the difference.
 - *The true schedule.* The receiver follows its estimate, and $E$ is the
   distance to the estimate. When the estimate of a quantity is its mean given
   what the receiver has seen, the mean squared distance of the receiver's

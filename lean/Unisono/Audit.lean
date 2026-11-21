@@ -13,6 +13,7 @@ public import Unisono.Model.Level
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
 public import Unisono.Model.RegulationRandom
+public import Unisono.Model.Stream
 public import Unisono.Model.SupportLine
 public import Unisono.Needs
 public import Unisono.Packet
@@ -619,3 +620,23 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.Level.integral_predictive' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.Level.integral_predictive
+
+/-- info: 'Unisono.Model.SupportLine.estimate_isGreatest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.SupportLine.estimate_isGreatest
+
+/-- info: 'Unisono.Model.SupportLine.excess_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.SupportLine.excess_le
+
+/-- info: 'Unisono.Model.Stream.group_misses_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Stream.group_misses_iff
+
+/-- info: 'Unisono.Model.Stream.sum_sq_errors' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Stream.sum_sq_errors
+
+/-- info: 'Unisono.Model.RegulationRandom.mean_value_law_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.mean_value_law_le

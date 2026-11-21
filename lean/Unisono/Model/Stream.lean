@@ -1,0 +1,91 @@
+/-
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+-/
+module
+public import Mathlib.Algebra.BigOperators.Field
+public import Mathlib.Algebra.Order.BigOperators.Ring.Finset
+public import Mathlib.Basic.Real.Basic
+public import Mathlib.Order.Fin.Basic
+public import Mathlib.Tactic.FieldSimp
+public import Mathlib.Tactic.Linarith
+public import Mathlib.Tactic.Ring
+
+/-!
+# A frame at the receivers of a stream
+
+The quantities of one frame, for receivers `r` of a finite set: the level
+`ℓ` that the sender holds for the frame, and for each receiver its timing
+error `e r`, positive when the frame leaves late, the delay `D r` with which
+the frame is delivered, and the lead `lead r` by which the receiver has to
+have it before it is due.
+
+Three statements that the rest of the model rests on.
+
+* A receiver misses the frame exactly when the level is below what the frame
+  needs there (`margin_neg_iff`).
+* The group of receivers misses the frame exactly when the level is below
+  the largest need over the receivers (`group_misses_iff`). So the gaps and
+  the missed frames of the group depend on the level and on that largest
+  need, and on nothing else.
+* The squared timing errors of the receivers add up to their squared
+  distances from their mean, which is what is heard as receivers being out
+  of step with each other, plus the squared mean for each receiver, which is
+  latency (`sum_sq_errors`).
+-/
+
+@[expose] public noncomputable section
+
+namespace Unisono.Model.Stream
+
+variable {ι : Type*}
+
+/-- By how much a frame is there before the receiver has to have it. -/
+def margin (ℓ : ℝ) (e D lead : ι → ℝ) (r : ι) : ℝ := ℓ + e r - D r - lead r
+
+/-- What a frame needs at a receiver: the level at which it is just there in
+time. -/
+def need (e D lead : ι → ℝ) (r : ι) : ℝ := D r + lead r - e r
+
+/-- A receiver misses a frame exactly when the level is below what the frame
+needs there. -/
+theorem margin_neg_iff (ℓ : ℝ) (e D lead : ι → ℝ) (r : ι) :
+    margin ℓ e D lead r < 0 ↔ ℓ < need e D lead r := by
+  simp only [margin, need]
+  constructor <;> intro h <;> linarith
+
+variable [Fintype ι]
+
+/-- What a frame needs of the group: the largest need over the receivers. -/
+def groupNeed [Nonempty ι] (e D lead : ι → ℝ) : ℝ :=
+  Finset.univ.sup' Finset.univ_nonempty (need e D lead)
+
+/-- **The group misses a frame exactly when the level is below the largest
+need.** At least one receiver has nothing to play for the frame if and only
+if the level is below what the frame needs of the group. -/
+theorem group_misses_iff [Nonempty ι] (ℓ : ℝ) (e D lead : ι → ℝ) :
+    (∃ r, margin ℓ e D lead r < 0) ↔ ℓ < groupNeed e D lead := by
+  simp only [margin_neg_iff, groupNeed, Finset.lt_sup'_iff, Finset.mem_univ, true_and]
+
+/-- The mean of the timing errors of the receivers. -/
+def meanError (e : ι → ℝ) : ℝ := (∑ r, e r) / Fintype.card ι
+
+/-- **Out of step, and late together.** The squared timing errors add up to
+the squared distances of the errors from their mean, plus the squared mean
+once for each receiver. -/
+theorem sum_sq_errors [Nonempty ι] (e : ι → ℝ) :
+    ∑ r, e r ^ 2 = ∑ r, (e r - meanError e) ^ 2 + Fintype.card ι * meanError e ^ 2 := by
+  have hcard : (Fintype.card ι : ℝ) ≠ 0 := by
+    exact_mod_cast Fintype.card_ne_zero
+  have hexpand : ∀ r, (e r - meanError e) ^ 2
+      = e r ^ 2 - 2 * meanError e * e r + meanError e ^ 2 := fun r => by ring
+  simp only [hexpand, Finset.sum_add_distrib, Finset.sum_sub_distrib, ← Finset.mul_sum,
+    Finset.sum_const, Finset.card_univ, nsmul_eq_mul]
+  have hsum : ∑ r, e r = Fintype.card ι * meanError e := by
+    simp only [meanError]
+    field_simp
+  rw [hsum]
+  ring
+
+end Unisono.Model.Stream

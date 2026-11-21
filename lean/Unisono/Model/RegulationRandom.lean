@@ -358,6 +358,29 @@ theorem mean_value_law {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1)
   rw [hzero, hcost] at hstep
   linarith
 
+/-- Under the law the mean value of the state stays at most the larger of its
+mean at the start and `s / g`, when the mean value of every revision is at
+most `s`. With `mean_cost_law`, the mean cost of `n` cycles under the law is
+therefore within that bound of the mean values of the `n` revisions, which no
+way of playing avoids: over many cycles the mean cost of a cycle is the mean
+value of a revision. -/
+theorem mean_value_law_le {g s : ℝ} (hg0 : 0 < g) (hg1 : g < 1)
+    (hE : Known ℱ μ 0 fun ω => (x₀ ω).1) (hv : Known ℱ μ 0 fun ω => (x₀ ω).2)
+    (hξ1 : ∀ k, Unforeseen ℱ μ k fun ω => (ξ k ω).1)
+    (hξ2 : ∀ k, Unforeseen ℱ μ k fun ω => (ξ k ω).2)
+    (hs : ∀ k, ∫ ω, value g (ξ k ω) ∂μ ≤ s) (k : ℕ) :
+    ∫ ω, value g (closed g x₀ ξ k ω) ∂μ ≤ max (∫ ω, value g (x₀ ω) ∂μ) (s / g) := by
+  induction k with
+  | zero => exact le_max_left _ _
+  | succ k ih =>
+    rw [mean_value_law hg0 hg1 hE hv hξ1 hξ2 k]
+    have hbound : s ≤ g * max (∫ ω, value g (x₀ ω) ∂μ) (s / g) := by
+      have := le_max_right (∫ ω, value g (x₀ ω) ∂μ) (s / g)
+      rw [div_le_iff₀ hg0] at this
+      linarith
+    have hkeep := mul_le_mul_of_nonneg_left ih (by linarith : (0 : ℝ) ≤ 1 - g)
+    linarith [hs k]
+
 /-! ## The schedule that the receiver follows
 
 The receiver does not know the schedule. It follows its estimate of it, and
