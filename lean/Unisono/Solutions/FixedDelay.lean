@@ -134,20 +134,25 @@ target by at most `slew` frames. -/
 def advance (previous goal : ℝ) : ℝ :=
   previous + 1 + clamp p.slew (goal - previous - 1)
 
+/-- The position chosen for output sample `k`, given the output sample and
+position chosen last: one step on towards the target when the last was for
+the output sample before, the target otherwise. -/
+def choose (m : Memory H R) (first : ℕ) (stamp : ℝ) (previous : Option (ℕ × ℝ)) (k : ℕ) :
+    Option ℝ :=
+  match target p m first stamp k, previous with
+  | some goal, some (j, x) => if j + 1 = k then some (advance p x goal) else some goal
+  | some goal, none => some goal
+  | none, _ => none
+
 /-- The positions that speaker `r` chooses for the output samples `outputs`
 of a block, in order, with the position it chose last: each continues from
 the position chosen for the output sample before, and starts at the target
 when there is none. -/
 def positions (m : Memory H R) (r : Fin R) (outputs : List ℕ) (stamp : ℝ) :
     List (ℕ × Option ℝ) :=
-  let first := outputs.headD 0
   (outputs.foldl
     (fun (acc : List (ℕ × Option ℝ) × Option (ℕ × ℝ)) k =>
-      let x := match target p m first stamp k, acc.2 with
-        | some goal, some (j, previous) =>
-            if j + 1 = k then some (advance p previous goal) else some goal
-        | some goal, none => some goal
-        | none, _ => none
+      let x := choose p m (outputs.headD 0) stamp acc.2 k
       (acc.1 ++ [(k, x)], x.map fun x => (k, x)))
     ([], m.last r)).1
 

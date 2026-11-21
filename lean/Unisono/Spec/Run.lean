@@ -755,4 +755,137 @@ theorem Solution.sent_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {n : �
 
 end Sent
 
+section Requests
+
+namespace State
+
+/-- Handling an event leaves the speakers' next requests as they are. -/
+theorem handle_askedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (h : H)
+    (t : Time) (obs : Observation H R Msg) :
+    (st.handle σ w lookahead h t obs).askedNext = st.askedNext := by
+  simp only [handle, sendAll_askedNext]
+
+/-- A step of the run either leaves a speaker's next request as it is, or
+handles that request and moves on to the next. -/
+theorem step_askedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (r : Fin R) :
+    (st.step σ w lookahead).askedNext r = st.askedNext r ∨
+      ((st.step σ w lookahead).askedNext r = st.askedNext r + 1 ∧
+        earliest (st.key w) st.due = some (.asked r (st.askedNext r))) := by
+  unfold step
+  split
+  · left
+    simp only [handle_askedNext]
+  · rename_i r' b hb
+    have hmem := (earliest_spec _ _ _ hb).1
+    have hbn : b = st.askedNext r' := by
+      rcases st.mem_due hmem with h | ⟨r'', h⟩ | ⟨p, _, h⟩ | ⟨p, _, h⟩
+      · simp at h
+      · simp only [Due.asked.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        rfl
+      · simp at h
+      · simp at h
+    subst hbn
+    by_cases hr : r = r'
+    · subst hr
+      right
+      simp [hb]
+    · left
+      simp [Function.update_of_ne hr]
+  · split
+    · left
+      simp only [handle_askedNext]
+    · left
+      rfl
+  · split
+    · left
+      simp only [handle_askedNext]
+    · left
+      rfl
+  · left
+    rfl
+
+end State
+
+/-- A speaker's next request never goes back. -/
+theorem Solution.askedNext_mono (σ : Solution H R Msg) (lookahead : ℕ+) (r : Fin R) :
+    Monotone fun n => (σ.states w lookahead n).askedNext r := by
+  apply monotone_nat_of_le_succ
+  intro n
+  rcases State.step_askedNext w σ lookahead (σ.states w lookahead n) r with h | ⟨h, -⟩
+  · exact h.symm.le
+  · show (σ.states w lookahead n).askedNext r ≤ ((σ.states w lookahead n).step σ w lookahead).askedNext r
+    omega
+
+/-- **The step at which a request is handled.** When the run has handled
+request `b` of speaker `r` by step `m`, it did so at a step `n` before `m`,
+at which the earliest pending event was that request. -/
+theorem Solution.exists_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {m : ℕ} {r : Fin R}
+    {b : ℕ} (h : b < (σ.states w lookahead m).askedNext r) :
+    ∃ n < m, (σ.states w lookahead n).askedNext r = b ∧
+      earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due = some (.asked r b) := by
+  induction m with
+  | zero => exact absurd h (by simp [Solution.states, State.start])
+  | succ m ih =>
+    by_cases hm : b < (σ.states w lookahead m).askedNext r
+    · obtain ⟨n, hn, h1, h2⟩ := ih hm
+      exact ⟨n, Nat.lt_succ_of_lt hn, h1, h2⟩
+    · rcases State.step_askedNext w σ lookahead (σ.states w lookahead m) r with heq | ⟨heq, hearly⟩
+      · exact absurd (heq ▸ h) hm
+      · have hb : (σ.states w lookahead m).askedNext r = b := by
+          have : (σ.states w lookahead (m + 1)).askedNext r
+              = (σ.states w lookahead m).askedNext r + 1 := heq
+          omega
+        exact ⟨m, Nat.lt_succ_self m, hb, hb ▸ hearly⟩
+
+/-- **A speaker plays what its host decided at the request.** When step `n`
+handles request `b` of speaker `r`, every output sample of the block plays
+what the speaker's host decided then, if the host holds the frames it
+needs. -/
+theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
+    {b : ℕ} (hb : (σ.states w lookahead n).askedNext r = b)
+    (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r b))
+    {k : ℕ} (hk : k ∈ (w.speaker r).block b) :
+    σ.plays w lookahead r k = playable lookahead ((σ.states w lookahead n).held (w.host r))
+      ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k) := by
+  have hkb : (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
+    unfold PlaybackDevice.block at hk
+    rw [List.mem_range'_1] at hk
+    have := (w.speaker r).first_strictMono (Nat.lt_succ_self b)
+    omega
+  have hnext : (σ.states w lookahead (n + 1)).askedNext r = b + 1 := by
+    rcases State.step_askedNext w σ lookahead (σ.states w lookahead n) r with h | ⟨h, -⟩
+    · exfalso
+      have hstep : (σ.states w lookahead (n + 1)) = (σ.states w lookahead n).step σ w lookahead := rfl
+      unfold State.step at hstep
+      rw [hearly] at hstep
+      have : (σ.states w lookahead (n + 1)).askedNext r = b + 1 := by
+        rw [hstep]; simp
+      have h' : (σ.states w lookahead (n + 1)).askedNext r = (σ.states w lookahead n).askedNext r := h
+      omega
+    · have h' : (σ.states w lookahead (n + 1)).askedNext r
+          = (σ.states w lookahead n).askedNext r + 1 := h
+      omega
+  have hex : ∃ n', k < (w.speaker r).first ((σ.states w lookahead n').askedNext r) :=
+    ⟨n + 1, by rw [hnext]; exact hkb.2⟩
+  have hfind : Nat.find hex = n + 1 := by
+    rw [Nat.find_eq_iff]
+    refine ⟨by rw [hnext]; exact hkb.2, fun n' hn' => ?_⟩
+    have hmono := Solution.askedNext_mono w σ lookahead r (Nat.lt_succ_iff.mp hn')
+    simp only at hmono
+    rw [hb] at hmono
+    have := (w.speaker r).first_strictMono.monotone hmono
+    omega
+  unfold Solution.plays
+  rw [dite_eq_left hex, hfind]
+  show ((σ.states w lookahead n).step σ w lookahead).plays r k = _
+  unfold State.step
+  rw [hearly]
+  simp only [State.handle, Observation.frames, Finset.union_empty, hk, and_self, ite_true]
+
+end Requests
+
 end Unisono.Spec

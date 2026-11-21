@@ -1052,3 +1052,43 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.target_time_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.target_time_error
+
+/-- info: 'Unisono.Solutions.FixedDelay.positions_fold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.positions_fold
+
+/-- info: 'Unisono.Solutions.FixedDelay.lookup_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.lookup_chosen
+
+/-- info: 'Unisono.Solutions.FixedDelay.positions_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.positions_block
+
+/-- info: 'Unisono.Solutions.FixedDelay.lastChosen_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.lastChosen_block
+
+/-- info: 'Unisono.Solutions.FixedDelay.chosen_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.chosen_succ
+
+/-- info: 'Unisono.Solutions.FixedDelay.chosen_isSome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.chosen_isSome
+
+/-- info: 'Unisono.Solutions.FixedDelay.advance_converges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.advance_converges
+
+/-- info: 'Unisono.Spec.Solution.askedNext_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_mono
+
+/-- info: 'Unisono.Spec.Solution.exists_asked_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.exists_asked_step
+
+/-- info: 'Unisono.Spec.Solution.plays_of_asked_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_of_asked_step

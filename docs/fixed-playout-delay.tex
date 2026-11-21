@@ -221,8 +221,11 @@ each bounding one source of error:
   time is exactly $o_r(k) - L$.
 \item \emph{The pace} (proved): $T_k$ advances by one frame per output
   sample within the devices' rate error $\nu$. When $w > \nu$, a position
-  that starts within $B$ of $T_k$, as the baseline's does by starting at
-  its target, stays within $B$ of it (\lean{advance\_tracks}).
+  within $B$ of $T_k$ stays within $B$ of it (\lean{advance\_tracks}), and
+  a position at any distance gets closer by at least $w - \nu$ frames per
+  output sample until it is within $B$ (\lean{advance\_converges}). Within a
+  block, the positions the baseline chooses follow this recursion
+  (\lean{positions\_block}, \lean{chosen\_succ}).
 \item \emph{The data:} the frames that $x_k$ needs, within the resampler's
   lookahead $a$, have arrived when the device requests the block once $L$
   exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff

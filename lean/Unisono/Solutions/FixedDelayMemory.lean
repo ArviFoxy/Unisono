@@ -23,6 +23,12 @@ its view (`memoryOf`), in any world.
 * The sender remembers, for each host, the reading of a question of that
   host that it answered, and no question of that host that arrived is later
   (`answered_question`, `answered_latest`).
+* For a block of consecutive output samples, the position a speaker chooses
+  for each follows a recursion (`chosen`, `positions_block`): one step towards
+  the target from the position chosen for the output sample before
+  (`chosen_succ`, `chosen_zero_continues`), or the target when there is none
+  (`chosen_zero_starts`); after the block, the speaker remembers the position
+  chosen for its last output sample (`lastChosen_block`).
 -/
 
 @[expose] public noncomputable section
@@ -424,5 +430,132 @@ theorem answered_latest (l : List (Event H R Payload)) {e : Event H R Payload} (
           simp only [decide_eq_true_eq, not_lt] at hans
           exact ⟨a₀, h₀, hans⟩
         · simp at hans
+
+end Unisono.Solutions.FixedDelay
+
+namespace Unisono.Solutions.FixedDelay
+
+variable {H : Type} {R : ℕ} (p : Params H)
+
+/-- The position chosen for output sample `g + j` of a block whose output
+samples start at `g`, when the output sample and position chosen last before
+the block are `start`. -/
+noncomputable def chosen (m : Memory H R) (first : ℕ) (stamp : ℝ) (start : Option (ℕ × ℝ)) (g : ℕ) :
+    ℕ → Option ℝ
+  | 0 => choose p m first stamp start g
+  | j + 1 => choose p m first stamp ((chosen m first stamp start g j).map fun x => (g + j, x))
+      (g + j + 1)
+
+/-- The fold that chooses positions, over the output samples
+`g, g + 1, …, g + i - 1`, gives each the position `chosen`, and ends with the
+last of them. -/
+theorem positions_fold (m : Memory H R) (first : ℕ) (stamp : ℝ) (start : Option (ℕ × ℝ))
+    (g i : ℕ) :
+    (List.range' g i).foldl
+      (fun (acc : List (ℕ × Option ℝ) × Option (ℕ × ℝ)) k =>
+        let x := choose p m first stamp acc.2 k
+        (acc.1 ++ [(k, x)], x.map fun x => (k, x))) ([], start)
+      = ((List.range i).map fun j => (g + j, chosen p m first stamp start g j),
+        if i = 0 then start
+        else (chosen p m first stamp start g (i - 1)).map fun x => (g + (i - 1), x)) := by
+  induction i with
+  | zero => simp
+  | succ i ih =>
+    rw [List.range'_concat, List.foldl_append, ih, List.range_succ, List.map_append]
+    simp only [List.foldl_cons, List.foldl_nil, List.map_cons, List.map_nil, Nat.add_sub_cancel,
+      Nat.add_one_ne_zero, ite_false]
+    rcases i with _ | i
+    · simp [chosen]
+    · simp only [Nat.add_one_ne_zero, ite_false, Nat.add_sub_cancel, chosen, one_mul, Nat.add_assoc]
+
+/-- In the list of positions chosen for the output samples from `g`, output
+sample `g + j` has the position chosen for it. -/
+theorem lookup_chosen (v : ℕ → Option ℝ) (g i j : ℕ) (hj : j < i) :
+    ((List.range i).map fun j => (g + j, v j)).lookup (g + j) = some (v j) := by
+  induction i generalizing g j v with
+  | zero => omega
+  | succ i ih =>
+    rw [List.range_succ_eq_map, List.map_cons, List.map_map]
+    rcases j with _ | j
+    · simp [List.lookup]
+    · have hfun : ((fun j => (g + j, v j)) ∘ Nat.succ) = fun j => (g + 1 + j, v (j + 1)) := by
+        funext k
+        exact Prod.ext (by simp only [Function.comp, Nat.succ_eq_add_one]; ring) rfl
+      rw [hfun]
+      have h := ih (fun j => v (j + 1)) (g + 1) j (by omega)
+      have hkey : (g + (j + 1) == g) = false := by
+        rw [beq_eq_false_iff_ne]
+        omega
+      simp only [List.lookup, Nat.add_zero, hkey]
+      rw [show g + (j + 1) = g + 1 + j by ring]
+      exact h
+
+/-- For a block of output samples `g, g + 1, …, g + len - 1`, a speaker
+chooses for output sample `g + j` the position `chosen` from the position it
+chose last. -/
+theorem positions_block (m : Memory H R) (r : Fin R) (stamp : ℝ) (g len : ℕ) :
+    positions p m r (List.range' g len) stamp
+      = (List.range len).map fun j => (g + j, chosen p m g stamp (m.last r) g j) := by
+  rcases len with _ | len
+  · simp [positions]
+  · unfold positions
+    have hhead : (List.range' g (len + 1)).headD 0 = g := by
+      simp [List.range'_succ]
+    rw [hhead, positions_fold]
+
+/-- After a block of `len > 0` output samples from `g`, the output sample
+and position chosen last are the last output sample of the block and the
+position chosen for it. -/
+theorem lastChosen_block (m : Memory H R) (r : Fin R) (stamp : ℝ) (g len : ℕ) (hlen : 0 < len) :
+    lastChosen (positions p m r (List.range' g len) stamp)
+      = (chosen p m g stamp (m.last r) g (len - 1)).map fun x => (g + (len - 1), x) := by
+  rw [positions_block]
+  obtain ⟨l, rfl⟩ : ∃ l, len = l + 1 := ⟨len - 1, by omega⟩
+  rw [List.range_succ, List.map_append]
+  simp only [List.map_cons, List.map_nil, List.getLast?_append, List.getLast?_singleton,
+    Option.some_or, Nat.add_sub_cancel, lastChosen]
+  cases chosen p m g stamp (m.last r) g l <;> rfl
+
+/-- When the target of output sample `g + j + 1` is `goal` and the position
+chosen for `g + j` is `x`, the position chosen for `g + j + 1` is one step
+from `x` towards `goal`. -/
+theorem chosen_succ (m : Memory H R) (first : ℕ) (stamp : ℝ) (start : Option (ℕ × ℝ)) (g j : ℕ)
+    {x goal : ℝ} (hx : chosen p m first stamp start g j = some x)
+    (hgoal : target p m first stamp (g + j + 1) = some goal) :
+    chosen p m first stamp start g (j + 1) = some (advance p x goal) := by
+  simp only [chosen, hx, Option.map_some, choose, hgoal, ite_true]
+
+/-- When the target of output sample `g` is `goal` and the speaker chose `x`
+for the output sample before, it chooses one step from `x` towards `goal`
+for `g`. -/
+theorem chosen_zero_continues (m : Memory H R) (first : ℕ) (stamp : ℝ) (g : ℕ) {x goal : ℝ}
+    (hgoal : target p m first stamp (g + 1) = some goal) :
+    chosen p m first stamp (some (g, x)) (g + 1) 0 = some (advance p x goal) := by
+  simp only [chosen, choose, hgoal, ite_true]
+
+/-- When the target of output sample `g` is `goal` and the speaker chose no
+position before, it chooses `goal`. -/
+theorem chosen_zero_starts (m : Memory H R) (first : ℕ) (stamp : ℝ) (g : ℕ) {goal : ℝ}
+    (hgoal : target p m first stamp g = some goal) :
+    chosen p m first stamp none g 0 = some goal := by
+  simp only [chosen, choose, hgoal]
+
+/-- When every output sample of a block has a target, the speaker chooses a
+position for each of them. -/
+theorem chosen_isSome (m : Memory H R) (first : ℕ) (stamp : ℝ) (start : Option (ℕ × ℝ)) (g : ℕ)
+    (j : ℕ) (hgoal : ∀ i ≤ j, (target p m first stamp (g + i)).isSome) :
+    (chosen p m first stamp start g j).isSome := by
+  induction j with
+  | zero =>
+    obtain ⟨goal, hg⟩ := Option.isSome_iff_exists.mp (hgoal 0 le_rfl)
+    simp only [Nat.add_zero] at hg
+    simp only [chosen, choose, hg]
+    split <;> (try split) <;> simp_all
+  | succ j ih =>
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp (ih fun i hi => hgoal i (by omega))
+    obtain ⟨goal, hg⟩ := Option.isSome_iff_exists.mp (hgoal (j + 1) le_rfl)
+    rw [show g + (j + 1) = g + j + 1 by ring] at hg
+    rw [chosen_succ p m first stamp start g j hx hg]
+    rfl
 
 end Unisono.Solutions.FixedDelay

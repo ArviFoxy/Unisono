@@ -589,4 +589,79 @@ theorem target_time_error (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
   rw [abs_le]
   constructor <;> linarith [hout.1, hout.2]
 
+/-- One step of the pace: the distance to the trajectory ends within `B`, or
+shrinks by at least `w - ν`. -/
+theorem advance_step {w ν B D e δ : ℝ} (hw : ν < w) (he : |e| ≤ B) (hδ : |δ| ≤ ν) :
+    |D - δ + clamp w (e + δ - D)| ≤ max B (|D| - (w - ν)) := by
+  have he' := abs_le.mp he
+  have hδ' := abs_le.mp hδ
+  have hD := le_abs_self D
+  have hD' := neg_abs_le D
+  have m1 := le_max_left B (|D| - (w - ν))
+  have m2 := le_max_right B (|D| - (w - ν))
+  unfold clamp
+  rcases le_or_gt (e + δ - D) w with h1 | h1
+  · rw [min_eq_right h1]
+    rcases le_or_gt (-w) (e + δ - D) with h2 | h2
+    · rw [max_eq_right h2, abs_le]
+      constructor <;> linarith
+    · rw [max_eq_left h2.le, abs_le]
+      constructor <;> linarith
+  · rw [min_eq_left h1.le, max_eq_right (by linarith), abs_le]
+    constructor <;> linarith
+
+/-- **The pace reaches the target's band from anywhere.** Let a position `x`
+advance by one frame per output sample, corrected towards the target `xs`
+by at most `w` frames, and let the target stay within `B` frames of a
+trajectory `T` that advances by one frame per output sample within
+`ν < w`. Whatever its distance from the trajectory at the start, the
+position is within `B` of it from some output sample on. -/
+theorem advance_converges {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K : ℕ)
+    (hstep : ∀ k, K ≤ k → x (k + 1) = x k + 1 + clamp w (xs (k + 1) - x k - 1))
+    (hband : ∀ k, K ≤ k → |xs k - T k| ≤ B)
+    (hT : ∀ k, K ≤ k → |T (k + 1) - T k - 1| ≤ ν) :
+    ∃ K', K ≤ K' ∧ ∀ k, K' ≤ k → |x k - T k| ≤ B := by
+  have hgap : 0 < w - ν := by linarith
+  -- After `j` steps the distance is at most `B` or its start less `j (w - ν)`.
+  have hdecay : ∀ j : ℕ, |x (K + j) - T (K + j)| ≤ max B (|x K - T K| - j * (w - ν)) := by
+    intro j
+    induction j with
+    | zero => simp
+    | succ j ih =>
+      have hk : K ≤ K + j := Nat.le_add_right K j
+      have hs := hstep (K + j) hk
+      have hb := hband (K + j + 1) (by omega)
+      have ht := hT (K + j) hk
+      have key := advance_step (D := x (K + j) - T (K + j)) (e := xs (K + j + 1) - T (K + j + 1))
+        (δ := T (K + j + 1) - T (K + j) - 1) hw hb ht
+      have hx : x (K + (j + 1)) - T (K + (j + 1))
+          = (x (K + j) - T (K + j)) - (T (K + j + 1) - T (K + j) - 1)
+            + clamp w ((xs (K + j + 1) - T (K + j + 1)) + (T (K + j + 1) - T (K + j) - 1)
+              - (x (K + j) - T (K + j))) := by
+        rw [show K + (j + 1) = K + j + 1 by ring, hs]
+        ring_nf
+      rw [hx]
+      refine key.trans ?_
+      push_cast
+      apply max_le (le_max_left _ _)
+      rcases le_total B (|x K - T K| - j * (w - ν)) with hc | hc
+      · rw [max_eq_right hc] at ih
+        apply le_max_of_le_right
+        linarith
+      · rw [max_eq_left hc] at ih
+        apply le_max_of_le_left
+        linarith
+  -- Enough steps bring the distance within `B`.
+  obtain ⟨j, hj⟩ := exists_nat_ge (|x K - T K| / (w - ν))
+  have hin : |x (K + j) - T (K + j)| ≤ B := by
+    have h := hdecay j
+    have hmul : |x K - T K| ≤ j * (w - ν) := by
+      have := (div_le_iff₀ hgap).mp hj
+      linarith
+    have hB : 0 ≤ B := le_trans (abs_nonneg _) (hband K le_rfl)
+    exact h.trans (max_le le_rfl (by linarith))
+  refine ⟨K + j, Nat.le_add_right K j, ?_⟩
+  exact advance_tracks hw x xs T (K + j) (fun k hk => hstep k (by omega))
+    (fun k hk => hband k (by omega)) (fun k hk => hT k (by omega)) hin
+
 end Unisono.Solutions.FixedDelay
