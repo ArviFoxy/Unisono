@@ -100,9 +100,13 @@ more work; it says nothing about the machine.
 **What the processor and the operating system add.** Memory that is not in
 place when it is touched, floating-point numbers so small that arithmetic on
 them is slow, and interrupts are outside what any of the above sees. The
-program locks the memory it has once its threads run and everything they use
-is made (`unisono_runtime::memory`); its threads have small stacks, so that
-the whole of it fits within the usual limit on locked memory. The only
+program locks the memory it has once both its network and audio threads run
+and everything they use is made (`unisono_runtime::memory`); its own threads
+use 512 KiB stacks to keep locked-memory use modest. Systems that enforce a
+low default `RLIMIT_MEMLOCK` (for example 8 MiB) will still refuse `mlockall`
+unless raised to roughly 16 MiB for ALSA or 32–64 MiB for PipeWire (due to
+shared libraries and PipeWire's IPC/shared-memory pools); failure to lock
+memory is warned on stderr and does not abort the process. The only
 recurrence on the audio path, the concealment's prediction, takes a value
 too small for full precision as silence, so such numbers do not arise there;
 the processor is not set to treat them as zero. Interrupts and the
