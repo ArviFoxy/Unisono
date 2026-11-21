@@ -549,6 +549,8 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     device: Device<W>,
     /// How far its rate may be from the nominal one, in parts per billion.
     device_range: u32,
+    /// Whether the delay of the path was told, so that it is not measured.
+    told: bool,
     /// Sub-nanosecond duration remainder carried between cycles, in units of
     /// 2^-16 nanosecond.
     carried: i64,
@@ -581,6 +583,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             needs: Needs::new(),
             device: Device::new(settings.rate),
             device_range: settings.device_range,
+            told: false,
             carried: 0,
             rate: settings.rate,
             channels: settings.channels,
@@ -595,10 +598,12 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         &self.receiver
     }
 
-    /// Sets the receiver's estimate of the smallest delay of a packet from
-    /// the sender, in nanoseconds.
+    /// Tells the receiver the smallest delay of a packet from the sender, in
+    /// nanoseconds. A receiver that is told it keeps it: the sender's
+    /// answers to its reports are no longer taken in.
     pub fn path(&mut self, path: i64) {
         self.receiver.path(path);
+        self.told = true;
     }
 
     /// Makes the next report to send back to the sender, or `None` when no
@@ -620,10 +625,12 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         self.receiver.reported(sequence, departure);
     }
 
-    /// Takes in the sender's echo of a report to update the path-delay
-    /// estimate.
+    /// Takes in the sender's answer to a report, from which the delay of
+    /// the path is measured, unless that delay was told.
     pub fn echo(&mut self, echo: &Echo) {
-        self.receiver.echo(echo);
+        if !self.told {
+            self.receiver.echo(echo);
+        }
     }
 
     /// The number of frames after a position that the device's output at

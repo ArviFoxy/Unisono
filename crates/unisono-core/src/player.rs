@@ -77,7 +77,9 @@ pub struct Regulation {
     /// in units of 2^-16.
     pub gain: u32,
     /// By how much the pace may differ from one frame of the stream for each
-    /// frame of the device, in parts per billion.
+    /// frame of the device, in parts per billion. A limit above three in a
+    /// thousand counts as three in a thousand: the resampler takes steps
+    /// within four in a thousand of one frame.
     pub limit: u32,
     /// The distance to the schedule, in frames, beyond which the position
     /// jumps or waits instead of the pace changing.

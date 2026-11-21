@@ -73,8 +73,9 @@ Captures a signal with a software device and sends it to each receiver.
   --missed-cost S     the cost of each millisecond of frames missed (60)
   --move-cost S       the cost of moving the level (60)
   --level-slope US    how fast the level moves, in microseconds per second;
-                      within what the receivers may change their pace by,
-                      with room for their clocks to drift (500)
+                      at most 1000, by which the receivers change their
+                      pace at most, and less to leave room for the drift of
+                      their clocks (500)
   --signal ramp|tone|silence
                       what the device captures (tone): a ramp that says
                       which frame a sample is, a tone of 440 Hz, or silence
@@ -353,6 +354,13 @@ fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choi
     let missed: f64 = options.get("missed-cost", 60.0)?;
     let moving: f64 = options.get("move-cost", 60.0)?;
     let slope: i32 = options.get("level-slope", 500)?;
+    // A receiver of this program changes its pace by a thousandth at most,
+    // and a level that moves faster than that is not followed.
+    if !(1..=1_000).contains(&slope) {
+        return Err(Wrong(
+            "`--level-slope` is from 1 to 1000 microseconds per second".into(),
+        ));
+    }
     if window == 0 {
         return Err(Wrong("`--window` is not zero".into()));
     }

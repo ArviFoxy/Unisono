@@ -76,8 +76,8 @@ Receives a stream and plays it on a software device.
   --drift PPB         how much faster the device runs, in parts per billion (0)
   --lead MS           how long before a cycle plays it is asked for (4)
   --path NS           the delay of the path from the sender, if it is known;
-                      the receiver then sends no reports, which it otherwise
-                      sends to measure the delay
+                      the receiver then does not measure it from the answers
+                      to its reports
   --report-period-at-start MS
                       time between reports to the sender in the first five
                       seconds (50)
@@ -128,20 +128,17 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     };
     let (network_end, audio_end) = receive::link(sizes);
     let mut network = ReceiverNetwork::new(socket, network_end, stream, sizes);
-    // A receiver that is told the delay of its path does not measure it.
-    let reports = if options.all("path").is_empty() {
-        Some(Reporting {
-            at_start: options
-                .get("report-period-at-start", 50i64)?
-                .saturating_mul(1_000_000),
-            after: options
-                .get("report-period", 200i64)?
-                .saturating_mul(1_000_000),
-            ..Reporting::USUAL
-        })
-    } else {
-        None
-    };
+    // Reports carry what the frames needed, for the sender's choice of the
+    // level, whether or not the delay of the path is measured from them.
+    let reports = Some(Reporting {
+        at_start: options
+            .get("report-period-at-start", 50i64)?
+            .saturating_mul(1_000_000),
+        after: options
+            .get("report-period", 200i64)?
+            .saturating_mul(1_000_000),
+        ..Reporting::USUAL
+    });
     let audio: Audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
     let start = clock::raw();
     let device = Device {

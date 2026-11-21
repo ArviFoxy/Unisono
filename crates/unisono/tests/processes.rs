@@ -110,7 +110,9 @@ fn receiver(
 /// capture device counts as frame 0, on its own clock.
 fn sender(to: &[SocketAddr], clock: Clock, drift: i64, seconds: u32) -> (Child, i64) {
     let mut command = program();
+    // The level is held, so that the latency of every frame is known.
     command.args(["send", "--signal", "ramp", "--level", "30"]);
+    command.args(["--level-choice", "off"]);
     for address in to {
         command.args(["--to", &address.to_string()]);
     }
