@@ -32,20 +32,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      # The crate for PipeWire builds against PipeWire's headers, with clang.
-      - name: Install PipeWire's headers
-        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libclang-dev
+      # The crates for PipeWire and ALSA build against their headers, the
+      # first with clang.
+      - name: Install the headers of PipeWire and ALSA
+        run: sudo apt-get update && sudo apt-get install --yes libpipewire-0.3-dev libclang-dev libasound2-dev
       - run: just sizes format-check lint test targets realtime cost
 
-  # The tests on 64-bit ARM. The crate for PipeWire is left out: it is
-  # tested in its container.
+  # The tests on 64-bit ARM. The crates for PipeWire and ALSA are left out:
+  # they are tested in their containers.
   arm:
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo test --workspace --exclude unisono-pipewire
+      - run: cargo test --workspace --exclude unisono-pipewire --exclude unisono-alsa
 
   # macOS, whose kernel stamps no departures: everything builds, and the
   # tests that need no such stamps run. The tests of the runtime and of the
@@ -56,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      - run: cargo build --workspace --exclude unisono-pipewire
+      - run: cargo build --workspace --exclude unisono-pipewire --exclude unisono-alsa
       - run: >-
           cargo test --package unisono-core --package unisono-dsp
           --package unisono-metrics --package unisono-sim
@@ -69,6 +70,16 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
       - run: just pipewire
+
+  # The tests of the ALSA device, against the device that PipeWire gives
+  # ALSA programs, in a container.
+  alsa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
+      - run: just alsa
 
   proofs:
     runs-on: ubuntu-latest

@@ -109,6 +109,9 @@ pub(crate) enum System {
     /// PipeWire, with the node to connect to, if one is named.
     #[cfg(feature = "pipewire")]
     PipeWire(Option<String>),
+    /// ALSA, with the name of the device.
+    #[cfg(feature = "alsa")]
+    Alsa(String),
 }
 
 impl System {
@@ -123,6 +126,13 @@ impl System {
             "pipewire" => {
                 let _ = device;
                 Err(Wrong("this program is built without PipeWire".into()))
+            }
+            #[cfg(feature = "alsa")]
+            "alsa" => Ok(System::Alsa(device.unwrap_or_else(|| "default".into()))),
+            #[cfg(not(feature = "alsa"))]
+            "alsa" => {
+                let _ = device;
+                Err(Wrong("this program is built without ALSA".into()))
             }
             other => Err(Wrong(format!("there is no audio system `{other}`"))),
         }

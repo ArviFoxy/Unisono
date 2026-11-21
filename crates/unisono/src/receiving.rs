@@ -67,11 +67,12 @@ Receives a stream and plays it on a software device.
   --identity N        a number that tells this receiver from the others (1)
   --rate HZ           frames per second (48000)
   --channels N        samples in a frame (2)
-  --audio software|pipewire
+  --audio software|pipewire|alsa
                       the device to play on: one of software, which plays to
-                      nothing at its own rate, or PipeWire, when the program
-                      is built with it (software)
-  --device NAME       with PipeWire, the node to play to (the default)
+                      nothing at its own rate, or PipeWire or ALSA, when the
+                      program is built with them (software)
+  --device NAME       with PipeWire, the node to play to; with ALSA, the
+                      device (the default)
   --cycle FRAMES      frames in a cycle of the device (256)
   --drift PPB         how much faster the device runs, in parts per billion (0)
   --lead MS           how long before a cycle plays it is asked for (4)
@@ -200,9 +201,9 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     Ok(())
 }
 
-/// What a device of the stream is like, which PipeWire is told.
+/// What a device of the stream is like, which an audio system is told.
 #[derive(Clone, Copy)]
-#[cfg_attr(not(feature = "pipewire"), allow(dead_code))]
+#[cfg_attr(not(any(feature = "pipewire", feature = "alsa")), allow(dead_code))]
 struct Shape {
     rate: u32,
     channels: u8,
@@ -211,10 +212,9 @@ struct Shape {
 
 /// Plays on the device of `system` until the raw clock reads `end`, or for
 /// ever.
-// Without PipeWire there is one device, which needs neither the shape nor a
-// way to fail.
+// The software device alone needs neither the shape nor a way to fail.
 #[cfg_attr(
-    not(feature = "pipewire"),
+    not(any(feature = "pipewire", feature = "alsa")),
     allow(
         unused_variables,
         clippy::needless_pass_by_value,
@@ -249,6 +249,25 @@ fn play(
             };
             let running = unisono_pipewire::play(counted, settings)
                 .map_err(|error| Wrong(format!("playing with PipeWire: {error}")))?;
+            while going() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            running.stop();
+        }
+        #[cfg(feature = "alsa")]
+        System::Alsa(device) => {
+            let settings = unisono_alsa::Settings {
+                device,
+                rate: shape.rate,
+                channels: u32::from(shape.channels),
+                cycle: u32::try_from(shape.cycle).unwrap_or(256),
+                cycles: 4,
+            };
+            let running = unisono_alsa::play(counted, &settings)
+                .map_err(|error| Wrong(format!("playing with ALSA: {error}")))?;
+            if !running.realtime() {
+                eprintln!("unisono: the device's thread is not scheduled ahead of others");
+            }
             while going() {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }

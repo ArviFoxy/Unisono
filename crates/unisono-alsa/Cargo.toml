@@ -1,0 +1,17 @@
+[package]
+name = "unisono-alsa"
+description = "ALSA as an audio system for unisono: a device that plays and one that captures through the runtime's audio interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+alsa = "0.10"
+libc = "0.2"
+unisono-runtime.workspace = true
+
+[dev-dependencies]
+unisono-pipewire = { path = "../unisono-pipewire", version = "0.1.0" }
+
+[lints]
+workspace = true

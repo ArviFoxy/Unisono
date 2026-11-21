@@ -12,6 +12,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "alsa"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c88dbbce13b232b26250e1e2e6ac18b6a891a646b8148285036ebce260ac5c3"
+dependencies = [
+ "alsa-sys",
+ "bitflags",
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
+name = "alsa-sys"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "db8fee663d06c4e303404ef5f40488a53e062f89ba8bfed81f42325aafad1527"
+dependencies = [
+ "libc",
+ "pkg-config",
+]
+
+[[package]]
 name = "annotate-snippets"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -658,9 +680,20 @@ checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 name = "unisono"
 version = "0.1.0"
 dependencies = [
+ "unisono-alsa",
  "unisono-core",
  "unisono-dsp",
  "unisono-metrics",
+ "unisono-pipewire",
+ "unisono-runtime",
+]
+
+[[package]]
+name = "unisono-alsa"
+version = "0.1.0"
+dependencies = [
+ "alsa",
+ "libc",
  "unisono-pipewire",
  "unisono-runtime",
 ]

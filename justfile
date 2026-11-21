@@ -34,7 +34,7 @@ interleavings:
 # builds against the system's PipeWire and is left out; the program does not
 # need it.
 targets:
-    for target in {{ targets }}; do cargo check --workspace --exclude unisono-pipewire --target "$target" || exit 1; done
+    for target in {{ targets }}; do cargo check --workspace --exclude unisono-pipewire --exclude unisono-alsa --target "$target" || exit 1; done
 
 # Fetch Aeneas and build the translator from Rust to Lean (slow the first time).
 proof-tools:
@@ -74,6 +74,12 @@ cost:
 # containers/pipewire. Needs docker; continuous integration runs it too.
 pipewire:
     tools/container.sh pipewire tools/pipewire-test.sh
+
+# The tests of the ALSA device, against the device that PipeWire gives ALSA
+# programs, in the container of containers/alsa. Needs docker; continuous
+# integration runs it too.
+alsa:
+    tools/container.sh alsa tools/alsa-test.sh
 
 # Hold the dependencies against deny.toml: known vulnerabilities, licences
 # and sources. Needs cargo-deny; continuous integration runs it too.

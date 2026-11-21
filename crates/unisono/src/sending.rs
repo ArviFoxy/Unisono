@@ -82,11 +82,12 @@ Captures a signal with a software device and sends it to each receiver.
   --signal ramp|tone|silence
                       what the device captures (tone): a ramp that says
                       which frame a sample is, a tone of 440 Hz, or silence
-  --audio software|pipewire
+  --audio software|pipewire|alsa
                       the device to capture with: one of software, which
-                      captures the signal, or PipeWire, when the program is
-                      built with it (software)
-  --device NAME       with PipeWire, the node to capture from (the default)
+                      captures the signal, or PipeWire or ALSA, when the
+                      program is built with them (software)
+  --device NAME       with PipeWire, the node to capture from; with ALSA,
+                      the device (the default)
   --cycle FRAMES      frames in a cycle of the device (256)
   --drift PPB         how much faster the device runs, in parts per billion (0)
   --span MS           how long receivers remember samples of the clock (2000)
@@ -105,6 +106,9 @@ enum Capturing {
     /// A PipeWire stream.
     #[cfg(feature = "pipewire")]
     PipeWire(unisono_pipewire::Running),
+    /// An ALSA device.
+    #[cfg(feature = "alsa")]
+    Alsa(unisono_alsa::Running),
 }
 
 impl Capturing {
@@ -117,14 +121,22 @@ impl Capturing {
                 running.stop();
                 0
             }
+            #[cfg(feature = "alsa")]
+            Capturing::Alsa(running) => {
+                running.stop();
+                0
+            }
         }
     }
 }
 
 /// Starts capturing with the device of `system`: frames per second, samples
 /// in a frame and frames in a cycle as `shape` says.
-// Without PipeWire there is one device, and `system` says nothing more.
-#[cfg_attr(not(feature = "pipewire"), allow(clippy::needless_pass_by_value))]
+// With the software device alone, `system` says nothing more.
+#[cfg_attr(
+    not(any(feature = "pipewire", feature = "alsa")),
+    allow(clippy::needless_pass_by_value)
+)]
 fn start_capture<S: FnMut(u64, i64, &mut [f32]) + Send + 'static>(
     system: System,
     mut input: Input<S>,
@@ -166,6 +178,21 @@ fn start_capture<S: FnMut(u64, i64, &mut [f32]) + Send + 'static>(
                 .map_err(|error| Wrong(format!("capturing with PipeWire: {error}")))?;
             let _ = (input, stop);
             Ok(Capturing::PipeWire(running))
+        }
+        #[cfg(feature = "alsa")]
+        System::Alsa(device) => {
+            let (rate, channels, cycle) = shape;
+            let settings = unisono_alsa::Settings {
+                device,
+                rate,
+                channels: u32::from(channels),
+                cycle: u32::try_from(cycle).unwrap_or(256),
+                cycles: 4,
+            };
+            let running = unisono_alsa::capture(capture_end, &settings)
+                .map_err(|error| Wrong(format!("capturing with ALSA: {error}")))?;
+            let _ = (input, stop);
+            Ok(Capturing::Alsa(running))
         }
     }
 }

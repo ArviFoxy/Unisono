@@ -9,11 +9,14 @@ publish = false
 [features]
 # PipeWire as an audio system, beside the software devices.
 pipewire = ["dep:unisono-pipewire"]
+# ALSA as an audio system.
+alsa = ["dep:unisono-alsa"]
 
 [dependencies]
 unisono-core.workspace = true
 unisono-dsp.workspace = true
 unisono-metrics.workspace = true
+unisono-alsa = { path = "../unisono-alsa", version = "0.1.0", optional = true }
 unisono-pipewire = { path = "../unisono-pipewire", version = "0.1.0", optional = true }
 unisono-runtime.workspace = true
 
