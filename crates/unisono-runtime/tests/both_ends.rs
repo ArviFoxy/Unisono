@@ -15,6 +15,10 @@
 //! time at which the playback device plays it, how far from the level the
 //! latency is.
 
+//!
+//! The level is held in one test; in the other the sender chooses it from
+//! the needs that the receiver reports, and moves it there.
+
 mod common;
 
 use std::net::SocketAddr;
@@ -25,13 +29,14 @@ use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
 use unisono_dsp::Parameters;
 use unisono_runtime::clock;
-use unisono_runtime::pump::ReceiverPlayback;
+use unisono_runtime::level::{Choice, Weights};
+use unisono_runtime::pump::{ReceiverPlayback, Totals};
 use unisono_runtime::receive::{self, Intake, ReceiverAudio, ReceiverNetwork, Reporting, Sizes};
-use unisono_runtime::send::{self, SenderNetwork, Settings};
+use unisono_runtime::send::{self, SenderCounts, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input, Output};
 
-/// The latency that the receiver holds: 30 ms.
+/// The latency that the receiver holds at the start: 30 ms.
 const LEVEL: i64 = 30_000_000;
 const RATE: u32 = 48_000;
 
@@ -43,8 +48,22 @@ fn ramp(position: u64) -> f32 {
     value
 }
 
-#[test]
-fn frames_play_a_level_after_they_were_captured() {
+/// What a run of a sender and a receiver did.
+struct Run {
+    sent: SenderCounts,
+    /// What the receiver played.
+    played: Totals,
+    /// The level at the end, in nanoseconds.
+    level: i64,
+    /// How far from that level the latency was, in seconds, of each frame
+    /// played in the last three seconds.
+    errors: Vec<f64>,
+}
+
+/// Runs a sender whose level is chosen as `choice` says, and a receiver
+/// whose pace may differ from the stream's by `limit` parts per billion,
+/// for `seconds` seconds, and checks that nothing was lost on the way.
+fn run(choice: Option<Choice>, limit: u32, seconds: i64) -> Run {
     let loopback: SocketAddr = "127.0.0.1:0".parse().expect("an address");
     let receiving = Socket::bind(loopback).expect("a socket");
     let address = receiving.address().expect("its address");
@@ -80,6 +99,7 @@ fn frames_play_a_level_after_they_were_captured() {
             },
             packet: 240,
             level: LEVEL,
+            choice,
             timeline: send::first_timeline(),
             receivers: vec![address],
         },
@@ -93,8 +113,9 @@ fn frames_play_a_level_after_they_were_captured() {
     };
     let (network_end, audio_end) = receive::link(sizes);
     let mut network = ReceiverNetwork::new(receiving, network_end, 1, sizes);
-    let playback: ReceiverPlayback<64, 64, 8, 64> =
-        ReceiverPlayback::new(&settings(RATE, Parameters::for_rate(RATE)));
+    let mut listening = settings(RATE, Parameters::for_rate(RATE));
+    listening.regulation.limit = limit;
+    let playback: ReceiverPlayback<64, 64, 8, 64> = ReceiverPlayback::new(&listening);
     let mut audio = ReceiverAudio::new(
         playback,
         audio_end,
@@ -112,7 +133,6 @@ fn frames_play_a_level_after_they_were_captured() {
         lead: 4_000_000,
         hidden: 0,
     };
-    let seconds = 8;
     let frames = usize::try_from(seconds).unwrap_or(0) * 48_000 + 1_000;
     let mut output = Output::new(device, frames);
 
@@ -143,18 +163,77 @@ fn frames_play_a_level_after_they_were_captured() {
         received.packets + 2 >= sent.packets,
         "{received:?} against {sent:?}"
     );
+    let level = sender.sender().current_level();
+    Run {
+        sent,
+        played: audio.playback().totals(),
+        level,
+        errors: errors(input.device(), &output, end - 3_000_000_000, level),
+    }
+}
 
-    let mut errors = errors(input.device(), &output, end - 3_000_000_000);
-    assert!(errors.len() > 140_000, "{} frames", errors.len());
+/// The 2nd and the 98th percentile of `errors`.
+fn spread(errors: &mut [f64]) -> (f64, f64) {
     errors.sort_by(f64::total_cmp);
-    let (low, high) = (errors[errors.len() / 50], errors[errors.len() * 49 / 50]);
+    (errors[errors.len() / 50], errors[errors.len() * 49 / 50])
+}
+
+#[test]
+fn frames_play_a_level_after_they_were_captured() {
+    let mut run = run(None, 1_000_000, 8);
+    assert_eq!(run.level, LEVEL);
+    assert!(run.errors.len() > 140_000, "{} frames", run.errors.len());
+    let (low, high) = spread(&mut run.errors);
     assert!(low > -20e-6 && high < 20e-6, "from {low} to {high}");
 }
 
-/// How far from the level the latency is of each frame that `output` played
+#[test]
+fn the_level_falls_to_what_the_receiver_needs_and_frames_follow_it() {
+    // Stretches of 50 ms; the evidence is at least a second of them. The
+    // level moves by 10 ms a second, which the receiver's pace can follow.
+    let choice = Choice {
+        weights: Weights {
+            latency: 1_000.0,
+            target: 0,
+            off_target: 0.0,
+            gap: 600.0,
+            missed: 60_000.0,
+            moving: 5.0,
+        },
+        history: 2_400,
+        least: 20,
+        slope: 10_000_000,
+    };
+    let mut run = run(Some(choice), 20_000_000, 8);
+    // The first frame of a packet waits 5 ms for the packet to fill, up to a
+    // cycle of the capture device and its lead, 6.3 ms, and up to a cycle of
+    // the playback device and its lead, 9.3 ms: a level of about 20 ms is
+    // what the frames need, and a move from 30 ms saves most of the rest.
+    assert!(run.sent.moves >= 1, "{:?}", run.sent);
+    assert!(
+        run.level > 16_000_000 && run.level < 26_000_000,
+        "level {}, {:?}",
+        run.level,
+        run.sent
+    );
+    // While the level fell every frame was there in time.
+    assert_eq!(
+        (run.played.concealed, run.played.behind),
+        (0, 0),
+        "{:?}",
+        run.played
+    );
+    // The level settles within the first half of the run, and the frames
+    // of the second half play at it.
+    assert!(run.errors.len() > 140_000, "{} frames", run.errors.len());
+    let (low, high) = spread(&mut run.errors);
+    assert!(low > -50e-6 && high < 50e-6, "from {low} to {high}");
+}
+
+/// How far from `level` the latency is of each frame that `output` played
 /// from `from` on: the time it left the playback device, less the time the
 /// device `capture` took it, less the level, in seconds.
-fn errors(capture: &Device, output: &Output, from: i64) -> Vec<f64> {
+fn errors(capture: &Device, output: &Output, from: i64, level: i64) -> Vec<f64> {
     let mut errors = Vec::new();
     for (count, frame) in (0u64..).zip(output.recorded().as_chunks::<CHANNELS>().0) {
         let left = output.device().played(count);
@@ -173,7 +252,7 @@ fn errors(capture: &Device, output: &Output, from: i64) -> Vec<f64> {
         #[allow(clippy::cast_precision_loss)]
         let taken = before as f64 + (after - before) as f64 * position.fract();
         #[allow(clippy::cast_precision_loss)]
-        errors.push((left as f64 - taken - LEVEL as f64) * 1e-9);
+        errors.push((left as f64 - taken - level as f64) * 1e-9);
     }
     errors
 }

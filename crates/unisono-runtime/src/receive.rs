@@ -37,7 +37,8 @@ use std::io;
 use std::net::SocketAddr;
 
 use unisono_core::packet::{
-    self, Echo, KIND_AUDIO, KIND_ECHO, Report, parse_audio, parse_echo, write_report,
+    self, Echo, KIND_AUDIO, KIND_ECHO, Recent, Report, parse_audio, parse_echo, write_needs,
+    write_report,
 };
 
 use crate::audio::Playback;
@@ -67,6 +68,16 @@ pub enum Incoming {
     },
 }
 
+/// A report and the needs it carries, made on the audio thread for the
+/// network thread to send.
+#[derive(Clone, Copy, Debug)]
+pub struct Outgoing {
+    /// The report.
+    pub report: Report,
+    /// The largest needs of the last stretches of the timeline it reports on.
+    pub needs: Recent,
+}
+
 /// The sizes of what passes between the two threads.
 #[derive(Clone, Copy, Debug)]
 pub struct Sizes {
@@ -82,7 +93,7 @@ pub struct Sizes {
 /// The end of the network thread.
 pub struct NetworkEnd {
     incoming: Producer<Incoming>,
-    reports: Consumer<Report>,
+    reports: Consumer<Outgoing>,
     spare: Consumer<Box<[u8]>>,
     /// A spare buffer taken and not handed over.
     kept: Option<Box<[u8]>>,
@@ -91,7 +102,7 @@ pub struct NetworkEnd {
 /// The end of the audio thread.
 pub struct AudioEnd {
     incoming: Consumer<Incoming>,
-    reports: Producer<Report>,
+    reports: Producer<Outgoing>,
     spare: Producer<Box<[u8]>>,
 }
 
@@ -199,7 +210,8 @@ impl ReceiverNetwork {
             end,
             stream,
             overflow: vec![0u8; sizes.datagram].into_boxed_slice(),
-            outgoing: vec![0u8; sizes.datagram.max(packet::REPORT)].into_boxed_slice(),
+            outgoing: vec![0u8; sizes.datagram.max(packet::REPORT + packet::NEEDS)]
+                .into_boxed_slice(),
             sender: None,
             length: 0,
             counts: NetworkCounts::default(),
@@ -237,8 +249,8 @@ impl ReceiverNetwork {
                 self.counts.dropped += 1;
             }
         }
-        while let Some(report) = self.end.reports.take() {
-            self.send(&report)?;
+        while let Some(outgoing) = self.end.reports.take() {
+            self.send(&outgoing)?;
         }
         Ok(())
     }
@@ -301,16 +313,23 @@ impl ReceiverNetwork {
         Ok(true)
     }
 
-    /// Sends a report to the sender of the stream, padded to the length of
-    /// its audio packets. A report made before any audio packet arrived has
-    /// nowhere to go and is dropped.
-    fn send(&mut self, report: &Report) -> io::Result<()> {
+    /// Sends a report and its needs to the sender of the stream, padded to
+    /// the length of its audio packets, which leaves room for the needs. A
+    /// report made before any audio packet arrived has nowhere to go and is
+    /// dropped.
+    fn send(&mut self, outgoing: &Outgoing) -> io::Result<()> {
+        let report = &outgoing.report;
         let Some(to) = self.sender else {
             return Ok(());
         };
         let Some(length) = write_report(report, &mut self.outgoing, self.length) else {
             return Ok(());
         };
+        // An audio packet is longer than a report and its needs, so they
+        // fit into its padding.
+        if let Some(padded) = self.outgoing.get_mut(..length) {
+            write_needs(&outgoing.needs, padded);
+        }
         let bytes = self.outgoing.get(..length).unwrap_or(&[]);
         match self.socket.send_to(bytes, to, report.sequence) {
             Ok(_) => {
@@ -445,6 +464,10 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
         let Some(report) = self.playback.report() else {
             return;
         };
+        let outgoing = Outgoing {
+            report,
+            needs: self.playback.recent(),
+        };
         let first = self.reported.map_or(time, |(first, _)| first);
         let period = if time.saturating_sub(first) < reporting.start {
             reporting.at_start
@@ -452,7 +475,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverAud
             reporting.after
         };
         self.reported = Some((first, time.saturating_add(period)));
-        if self.end.reports.put(report).is_err() {
+        if self.end.reports.put(outgoing).is_err() {
             self.unsent += 1;
         }
     }

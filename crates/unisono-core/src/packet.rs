@@ -478,6 +478,109 @@ pub fn write_report(report: &Report, bytes: &mut [u8], length: usize) -> Option<
     if written { Some(length) } else { None }
 }
 
+/// The most stretches whose needs one report carries.
+pub const RECENT: usize = 11;
+
+/// The size of the needs of [`RECENT`] stretches in a report, in bytes: the
+/// newest stretch, how many are given, and the need of each.
+pub const NEEDS: usize = 9 + 4 * RECENT;
+
+/// What a need that is not known is written as.
+pub const UNKNOWN_NEED: i32 = i32::MIN;
+
+/// The largest need of each of the last stretches of a timeline, as a report
+/// carries them after its first [`REPORT`] bytes.
+///
+/// A stretch is the frames of a timeline whose index, divided by the window
+/// of the sender's clock estimate that the audio packets give, is the same.
+/// The need of a frame is the latency at which it would just have been in
+/// time to be played.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
+pub struct Recent {
+    /// The newest stretch given.
+    pub newest: u64,
+    /// How many stretches are given, back from the newest; at most
+    /// [`RECENT`].
+    pub count: u8,
+    /// The largest need of stretch `newest - i` at place `i`, in
+    /// microseconds, or [`UNKNOWN_NEED`] if no frame of it arrived.
+    pub needs: [i32; RECENT],
+}
+
+impl Recent {
+    /// No stretch.
+    pub const NONE: Recent = Recent {
+        newest: 0,
+        count: 0,
+        needs: [UNKNOWN_NEED; RECENT],
+    };
+}
+
+/// Writes `recent` after the first [`REPORT`] bytes of the report in
+/// `bytes`, and says whether there was room for it.
+// The casts turn a signed number into the unsigned one with the same bits.
+#[allow(clippy::cast_sign_loss)]
+pub fn write_needs(recent: &Recent, bytes: &mut [u8]) -> bool {
+    let count = if (recent.count as usize) < RECENT {
+        recent.count as usize
+    } else {
+        RECENT
+    };
+    let mut written = write(bytes, REPORT, 8, recent.newest);
+    // `count` is at most `RECENT`, which fits a byte.
+    written &= write(bytes, REPORT.wrapping_add(8), 1, count as u64);
+    let mut i = 0usize;
+    while i < count {
+        let need = match recent.needs.get(i) {
+            Some(need) => *need,
+            None => UNKNOWN_NEED,
+        };
+        // `i` is below `RECENT`: no wrapping.
+        let at = REPORT.wrapping_add(9).wrapping_add(i.wrapping_mul(4));
+        written &= write(bytes, at, 4, need as u32 as u64);
+        i = i.saturating_add(1);
+    }
+    written
+}
+
+/// Reads the needs that the report in `bytes` carries after its first
+/// [`REPORT`] bytes. A report that carries none, or fewer than it says,
+/// gives as many as are there: padding of zeros gives none.
+// The casts take a number that was read from exactly as many bytes as the
+// field has, or turn an unsigned number into the signed one with the same
+// bits.
+#[allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
+#[must_use]
+pub fn parse_needs(bytes: &[u8]) -> Recent {
+    let (Some(newest), Some(said)) = (
+        read(bytes, REPORT, 8),
+        read(bytes, REPORT.wrapping_add(8), 1),
+    ) else {
+        return Recent::NONE;
+    };
+    let mut recent = Recent::NONE;
+    recent.newest = newest;
+    let said = if (said as usize) < RECENT {
+        said as usize
+    } else {
+        RECENT
+    };
+    let mut i = 0usize;
+    while i < said {
+        let at = REPORT.wrapping_add(9).wrapping_add(i.wrapping_mul(4));
+        let Some(need) = read(bytes, at, 4) else {
+            break;
+        };
+        if let Some(slot) = recent.needs.get_mut(i) {
+            *slot = need as u32 as i32;
+        }
+        i = i.saturating_add(1);
+        recent.count = i as u8;
+    }
+    recent
+}
+
 /// Reads the sender's answer to a report in `bytes`.
 ///
 /// # Errors
@@ -538,8 +641,9 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        Audio, ECHO, Echo, Format, HEADER, KIND_AUDIO, KIND_ECHO, KIND_REPORT, REPORT, Rejected,
-        Report, kind, parse_audio, parse_echo, parse_report, write_audio, write_echo, write_report,
+        Audio, ECHO, Echo, Format, HEADER, KIND_AUDIO, KIND_ECHO, KIND_REPORT, NEEDS, RECENT,
+        REPORT, Recent, Rejected, Report, UNKNOWN_NEED, kind, parse_audio, parse_echo, parse_needs,
+        parse_report, write_audio, write_echo, write_needs, write_report,
     };
 
     fn header() -> Audio {
@@ -654,6 +758,36 @@ mod tests {
     fn a_header_is_not_written_where_there_is_no_room() {
         let mut short = [0u8; HEADER - 1];
         assert_eq!(write_audio(&header(), &mut short), None);
+    }
+
+    #[test]
+    fn the_needs_of_a_report_are_read_back_from_its_padding() {
+        let report = Report {
+            stream: 1,
+            timeline: 2,
+            receiver: 3,
+            sequence: 4,
+        };
+        let mut bytes = vec![0u8; REPORT + NEEDS];
+        assert_eq!(write_report(&report, &mut bytes, 0), Some(REPORT));
+        // Padding of zeros carries no needs.
+        assert_eq!(parse_needs(&bytes).count, 0);
+        let mut recent = Recent::NONE;
+        recent.newest = 1 << 40;
+        recent.count = 3;
+        recent.needs[..3].copy_from_slice(&[-7, i32::MAX, UNKNOWN_NEED]);
+        assert!(write_needs(&recent, &mut bytes));
+        assert_eq!(parse_needs(&bytes), recent);
+        assert_eq!(parse_report(&bytes), Ok(report));
+        // A report cut short gives the needs that are in it.
+        let cut = parse_needs(&bytes[..REPORT + 9 + 4]);
+        assert_eq!((cut.count, cut.needs[0]), (1, -7));
+        assert!(!write_needs(&recent, &mut bytes[..REPORT + 9 + 8]));
+        // A count beyond the most is read as the most.
+        recent.count = 200;
+        assert!(write_needs(&recent, &mut bytes));
+        assert_eq!(usize::from(parse_needs(&bytes).count), RECENT);
+        const { assert!(REPORT + NEEDS <= HEADER) };
     }
 
     #[test]

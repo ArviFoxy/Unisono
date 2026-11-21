@@ -91,6 +91,28 @@ structure device.Device (W : Std.Usize) where
   rate : Std.U32
   aside : Option device.Reading
 
+/-- [unisono_core::needs::Place]
+    Source: 'crates/unisono-core/src/needs.rs', lines 28:0-35:1 -/
+structure needs.Place where
+  held : Bool
+  stretch : Std.U64
+  need : Std.I64
+
+/-- [unisono_core::needs::Needs]
+    Source: 'crates/unisono-core/src/needs.rs', lines 40:0-45:1
+    Visibility: public -/
+structure needs.Needs (S : Std.Usize) where
+  places : Array needs.Place S
+  newest : Std.U64
+
+/-- [unisono_core::packet::Recent]
+    Source: 'crates/unisono-core/src/packet.rs', lines 500:0-509:1
+    Visibility: public -/
+structure packet.Recent where
+  newest : Std.U64
+  count : Std.U8
+  needs : Array Std.I32 11#usize
+
 /-- [unisono_core::packet::Format]
     Source: 'crates/unisono-core/src/packet.rs', lines 57:0-62:1
     Visibility: public -/

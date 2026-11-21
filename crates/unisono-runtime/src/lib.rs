@@ -26,12 +26,15 @@
 //! - [`receive`]: the two threads of a receiver, one for the network and one
 //!   for audio, and what passes between them;
 //! - [`send`]: the two threads of a sender, one for capture and one for the
-//!   network.
+//!   network;
+//! - [`level`]: the choice of the level from the needs that receivers
+//!   report, which the sender's network thread makes.
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
 pub mod audio;
 pub mod clock;
+pub mod level;
 pub mod memory;
 pub mod proxy;
 pub mod pump;

@@ -11,7 +11,9 @@
 //! sender, the line through the capture device's reports, and the socket. It
 //! cuts the frames into packets, stamps each with the capture time of its
 //! first frame, sends it to every receiver, takes in when packets left, and
-//! answers reports.
+//! answers reports. From the needs that the reports carry it chooses the
+//! level, if it is set up to (see [`crate::level`]), and moves the level
+//! there at a set slope.
 //!
 //! The frames cross in buffers that are made once and go round, as in
 //! [`crate::receive`]. When the network thread does not hand buffers back,
@@ -32,12 +34,13 @@ use std::net::SocketAddr;
 
 use unisono_core::device::Device;
 use unisono_core::packet::{
-    self, Audio, Format, KIND_REPORT, parse_report, write_audio, write_echo,
+    self, Audio, Format, KIND_REPORT, parse_needs, parse_report, write_audio, write_echo,
 };
 use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::format::{to_signed16, to_signed24};
 
 use crate::audio::Capture;
+use crate::level::{Choice, Chooser};
 use crate::ring::{Consumer, Producer, ring};
 use crate::socket::Socket;
 
@@ -162,8 +165,11 @@ pub struct Settings {
     pub stream: SenderSettings,
     /// The number of frames in a packet.
     pub packet: u16,
-    /// The latency that every receiver holds, in nanoseconds.
+    /// The latency that every receiver holds at the start, in nanoseconds.
     pub level: i64,
+    /// How the level is chosen from the needs that receivers report;
+    /// `None` holds it where it starts.
+    pub choice: Option<Choice>,
     /// The number of the first timeline (see [`first_timeline`]).
     pub timeline: u64,
     /// Where the packets go.
@@ -183,6 +189,8 @@ pub struct SenderCounts {
     pub answers: u64,
     /// Datagrams that could not be sent.
     pub unsent: u64,
+    /// Moves of the level that were begun.
+    pub moves: u64,
 }
 
 /// The network thread of a sender.
@@ -202,6 +210,12 @@ pub struct SenderNetwork {
     bytes: Box<[u8]>,
     /// Where datagrams are received.
     incoming: Box<[u8]>,
+    /// What chooses the level, if it is chosen.
+    chooser: Option<Chooser>,
+    /// The level that the level moves to, while it moves.
+    target: Option<i64>,
+    /// The index of the next frame when the level was last chosen.
+    chosen: u64,
     counts: SenderCounts,
 }
 
@@ -229,6 +243,11 @@ impl SenderNetwork {
             waiting: Vec::with_capacity(samples * 4),
             bytes: vec![0u8; packet::HEADER + samples * stream.format.bytes()].into_boxed_slice(),
             incoming: vec![0u8; 2_048].into_boxed_slice(),
+            chooser: settings
+                .choice
+                .map(|choice| Chooser::new(choice, stream.window, stream.rate)),
+            target: None,
+            chosen: 0,
             settings,
             counts: SenderCounts::default(),
         }
@@ -298,6 +317,7 @@ impl SenderNetwork {
         self.waiting.clear();
         self.origin = Some(position);
         self.sender.restart(first_timeline());
+        self.chosen = 0;
         self.counts.restarts += 1;
     }
 
@@ -333,6 +353,7 @@ impl SenderNetwork {
             let Some(capture) = self.device.when(position) else {
                 return Ok(());
             };
+            self.steer();
             let drift = self.drift(position);
             let header = self.sender.packet(self.settings.packet, capture, drift);
             let length = self.write(&header, samples);
@@ -354,6 +375,41 @@ impl SenderNetwork {
             }
         }
         Ok(())
+    }
+
+    /// Ends a move of the level that has arrived, and chooses the level once
+    /// for each second of stream: a move begins when the chooser finds one
+    /// worth its cost.
+    fn steer(&mut self) {
+        let Some(chooser) = self.chooser.as_mut() else {
+            return;
+        };
+        let rate = self.settings.stream.rate;
+        let level = self.sender.current_level();
+        if let Some(target) = self.target {
+            // How far the level moves in one packet.
+            let reach = i64::from(chooser.slope()).abs() * i64::from(self.settings.packet)
+                / i64::from(rate.max(1));
+            if (level - target).abs() <= reach {
+                self.sender.level(target, 0);
+                self.target = None;
+            }
+        }
+        let next = self.sender.next();
+        if next.saturating_sub(self.chosen) < u64::from(rate) {
+            return;
+        }
+        self.chosen = next;
+        if let Some(target) = chooser.choose(level) {
+            let slope = if target > level {
+                chooser.slope()
+            } else {
+                -chooser.slope()
+            };
+            self.sender.level(level, slope);
+            self.target = Some(target);
+            self.counts.moves += 1;
+        }
     }
 
     /// Writes the packet with `header` and the first `samples` waiting
@@ -398,6 +454,11 @@ impl SenderNetwork {
             let Ok(report) = parse_report(bytes) else {
                 continue;
             };
+            if report.timeline == self.sender.timeline()
+                && let Some(chooser) = self.chooser.as_mut()
+            {
+                chooser.observe(report.timeline, &parse_needs(bytes));
+            }
             let Some(echo) = self.sender.answer(&report, received.arrival.time) else {
                 continue;
             };

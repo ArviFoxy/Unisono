@@ -60,7 +60,8 @@ or that missed packets, holds them at once.
 
 A receiver sends reports to the sender. A report is padded with zeros to the
 length of an audio packet of the stream, so that it meets the delays that an
-audio packet meets; a receiver reads only the first 32 bytes.
+audio packet meets. The first 32 bytes say who reports; the needs of the
+latest stretches follow them in the padding.
 
 | Offset | Bytes | Field | Meaning |
 |---|---|---|---|
@@ -71,9 +72,20 @@ audio packet meets; a receiver reads only the first 32 bytes.
 | 8 | 8 | timeline | the timeline that the receiver follows |
 | 16 | 8 | receiver | a number that tells this receiver from the others |
 | 24 | 8 | sequence | the number of this report among the receiver's reports |
+| 32 | 8 | newest | the newest stretch whose need is given |
+| 40 | 1 | count | how many stretches are given, back from the newest; at most 11 |
+| 41 | 4 each | needs | the need of stretch `newest - i` at place `i`, in microseconds (signed); the smallest number, -2^31, if no frame of it arrived |
 
-What a receiver tells the sender about its margin, for the level, is not in
-the report yet.
+A stretch is the frames of the timeline whose index, divided by the window
+of the packets, is the same: stretches are counted in the index, so they are
+the same at every receiver. The need of a frame is the latency at which it
+would just have been in time to be played: the level of the frame, less the
+time by which it arrived ahead of the receiver's playhead. A stretch's need is
+the largest need of a frame of it. Each stretch appears in several reports,
+so a lost report loses nothing; the sender keeps, for each stretch, the
+largest need over the reports and the receivers, and chooses the level from
+that (see the model, section 6.5). Padding of zeros gives no needs, and a
+sender reads only as many as are there.
 
 ## What a receiver does with an audio packet
 

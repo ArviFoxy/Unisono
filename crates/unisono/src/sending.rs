@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
+use unisono_metrics::FloatGauge;
+use unisono_runtime::level::{Choice, Weights};
 use unisono_runtime::send::{self, CaptureEnd, SenderCounts, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input};
@@ -33,6 +35,11 @@ pub(crate) const OPTIONS: &[&str] = &[
     "bits",
     "packet",
     "level",
+    "level-choice",
+    "gap-cost",
+    "missed-cost",
+    "move-cost",
+    "level-slope",
     "signal",
     "cycle",
     "drift",
@@ -56,7 +63,18 @@ Captures a signal with a software device and sends it to each receiver.
   --channels N        samples in a frame (2)
   --bits 16|24        bits of a sample on the wire (24)
   --packet FRAMES     frames in a packet (240)
-  --level MS          the latency that receivers hold, in ms (30)
+  --level MS          the latency that receivers hold at the start, in ms (30)
+  --level-choice on|off
+                      whether the level is chosen from the needs that
+                      receivers report (on); the costs below are counted as
+                      the seconds that a millisecond more of level, held for
+                      them, costs as much as
+  --gap-cost S        the cost of a gap of the group of receivers (600)
+  --missed-cost S     the cost of each millisecond of frames missed (60)
+  --move-cost S       the cost of moving the level (60)
+  --level-slope US    how fast the level moves, in microseconds per second;
+                      within what the receivers may change their pace by,
+                      with room for their clocks to drift (500)
   --signal ramp|tone|silence
                       what the device captures (tone): a ramp that says
                       which frame a sample is, a tone of 440 Hz, or silence
@@ -168,6 +186,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let cycle: usize = options.get("cycle", 256)?;
     let drift: i32 = options.get("drift", 0)?;
     let seconds: i64 = options.get("seconds", 0)?;
+    let choice = level_choice(options, rate, options.get("window", 2_400)?)?;
     let system = System::from_options(options)?;
     if rate == 0 || channels == 0 || packet == 0 || cycle == 0 {
         return Err(Wrong(
@@ -205,6 +224,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
             },
             packet,
             level: level.saturating_mul(1_000_000),
+            choice,
             timeline: send::first_timeline(),
             receivers,
         },
@@ -232,15 +252,22 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         network
             .turn(2)
             .map_err(|error| Wrong(format!("sending: {error}")))?;
-        counters.update(network.counts());
+        counters.update(network.counts(), network.sender().current_level());
         std::thread::sleep(Duration::from_micros(200));
     }
     stop.store(true, Ordering::Relaxed);
     let dropped = capturing.finish();
     let counts = network.counts();
     println!(
-        "sent packets {} answers {} filled {} restarts {} unsent {} dropped-cycles {dropped}",
-        counts.packets, counts.answers, counts.filled, counts.restarts, counts.unsent
+        "sent packets {} answers {} filled {} restarts {} unsent {} dropped-cycles {dropped} \
+         level-moves {} level {}",
+        counts.packets,
+        counts.answers,
+        counts.filled,
+        counts.restarts,
+        counts.unsent,
+        counts.moves,
+        network.sender().current_level()
     );
     Ok(())
 }
@@ -251,6 +278,8 @@ struct Counters {
     answers: Tally,
     filled: Tally,
     restarts: Tally,
+    moves: Tally,
+    level: FloatGauge,
 }
 
 impl Counters {
@@ -281,13 +310,68 @@ impl Counters {
                     "Timelines started after the first.",
                 )
                 .map_err(named)?,
+            moves: metrics
+                .tally(
+                    "unisono_sender_level_moves_total",
+                    "Moves of the level that were begun.",
+                )
+                .map_err(named)?,
+            level: metrics
+                .gauge(
+                    "unisono_sender_level_seconds",
+                    "The latency that every receiver holds for the next frame.",
+                )
+                .map_err(named)?,
         })
     }
 
-    fn update(&mut self, counts: SenderCounts) {
+    fn update(&mut self, counts: SenderCounts, level: i64) {
+        self.moves.update(counts.moves);
+        // A level is far below 2^53 nanoseconds, where an `f64` is exact.
+        #[allow(clippy::cast_precision_loss)]
+        self.level.set(level as f64 * 1e-9);
         self.packets.update(counts.packets);
         self.answers.update(counts.answers);
         self.filled.update(counts.filled);
         self.restarts.update(counts.restarts);
     }
+}
+
+/// How the level is chosen, as the options say: `None` if it is held.
+///
+/// The costs are counted in units in which a millisecond of level costs one
+/// each second, so that a cost given as `S` seconds is what that millisecond
+/// costs when it is held for `S` seconds. The evidence is the needs of the
+/// last two minutes, and at least five seconds of them.
+fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choice>, Wrong> {
+    match options.get("level-choice", String::from("on"))?.as_str() {
+        "on" => {}
+        "off" => return Ok(None),
+        _ => return Err(Wrong("`--level-choice` is on or off".into())),
+    }
+    let gap: f64 = options.get("gap-cost", 600.0)?;
+    let missed: f64 = options.get("missed-cost", 60.0)?;
+    let moving: f64 = options.get("move-cost", 60.0)?;
+    let slope: i32 = options.get("level-slope", 500)?;
+    if window == 0 {
+        return Err(Wrong("`--window` is not zero".into()));
+    }
+    let stretches = |seconds: u64| {
+        usize::try_from(seconds * u64::from(rate) / u64::from(window)).unwrap_or(usize::MAX)
+    };
+    Ok(Some(Choice {
+        weights: Weights {
+            latency: 1_000.0,
+            target: 0,
+            off_target: 0.0,
+            gap,
+            // Missing a fraction of the frames each second misses a
+            // thousand times that many milliseconds.
+            missed: missed * 1_000.0,
+            moving,
+        },
+        history: stretches(120),
+        least: stretches(5),
+        slope: slope.saturating_mul(1_000),
+    }))
 }

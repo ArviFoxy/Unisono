@@ -23,7 +23,8 @@
 //! behind the [`Playback`] interface of an audio device.
 
 use unisono_core::device::Device;
-use unisono_core::packet::{Audio, Echo, Report};
+use unisono_core::needs::Needs;
+use unisono_core::packet::{Audio, Echo, RECENT, Recent, Report};
 use unisono_core::player::{Plan, Regulation};
 use unisono_core::receiver::{self, Heard, Receiver};
 use unisono_dsp::{Concealment, Filter, Parameters, Position, Resampler, Step, Window};
@@ -541,6 +542,9 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     receiver: Receiver<N, M, K>,
     store: Store,
     pump: Pump,
+    /// The largest need of each of the last stretches of the followed
+    /// timeline.
+    needs: Needs<RECENT>,
     /// The line through the last `W` reports of the device.
     device: Device<W>,
     /// How far its rate may be from the nominal one, in parts per billion.
@@ -574,6 +578,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
                 settings.concealment,
                 settings.block,
             ),
+            needs: Needs::new(),
             device: Device::new(settings.rate),
             device_range: settings.device_range,
             carried: 0,
@@ -600,6 +605,13 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     /// timeline is followed yet.
     pub fn report(&mut self) -> Option<Report> {
         self.receiver.report()
+    }
+
+    /// The largest needs of the last stretches of the followed timeline, for
+    /// a report to carry.
+    #[must_use]
+    pub fn recent(&self) -> Recent {
+        self.needs.recent()
     }
 
     /// Records the reading of the host's clock when report `sequence` left
@@ -637,6 +649,10 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             return None;
         }
         let heard = self.receiver.packet(header, arrival);
+        if heard.adopted || heard.restarted {
+            self.needs.clear();
+        }
+        self.observe_need(header, &heard);
         if !heard.ignored {
             let receiver = &self.receiver;
             self.store
@@ -645,6 +661,30 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
                 });
         }
         Some(heard)
+    }
+
+    /// Takes in the need of the first frame of a packet that the receiver
+    /// took in: the latency at which it would just have been in time. A
+    /// frame is in time if it is there when the playhead reaches it, so its
+    /// need is the level less the time that the playhead takes to get to it.
+    /// Only while frames are played does the playhead keep to the level.
+    fn observe_need(&mut self, header: &Audio, heard: &Heard) {
+        let marked = heard.marked;
+        if heard.ignored || marked.stored == 0 && marked.late == 0 || self.last.played == 0 {
+            return;
+        }
+        let Some(stretch) = header.index.checked_div(u64::from(header.window)) else {
+            return;
+        };
+        let ahead = i128::from(header.index) - i128::from(self.receiver.playhead());
+        let Some(time) = (ahead * 1_000_000_000).checked_div(i128::from(header.rate)) else {
+            return;
+        };
+        let need = i128::from(header.level) - time;
+        self.needs.observe(
+            stretch,
+            i64::try_from(need).unwrap_or(if need < 0 { i64::MIN } else { i64::MAX }),
+        );
     }
 
     /// What the last cycle did.

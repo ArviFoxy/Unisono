@@ -568,7 +568,31 @@ the index. The sender takes the largest over the receivers for each stretch
 and has the need of the group. A rate far out in the tail rests on few
 events, so $\Gamma$ and $\Phi$ are estimated as posterior means under a prior
 for the tail, and a group with little evidence gets high rates at low levels.
-*None of this is built, and reports do not carry the need yet.*
+
+A receiver measures the need of the first frame of each packet when it takes
+the packet in: the level of that frame, less the time by which the frame is
+ahead of the receiver's playhead. This counts every part of the delay at
+once, the sender's capture cycle and packetizing as well as the path and the
+receiver's own device, and it does not depend on the level in force. Reports
+carry the needs of the last eleven stretches, so a lost report loses nothing.
+
+The sender estimates $\Gamma$ and $\Phi$ from $y_k$, the need of the group in
+stretch $k$, over the stretches of the last minutes; a stretch lasts $D$
+seconds. The frames of a stretch need less the later they were captured,
+since they waited less for the pause that delayed them, so a stretch with
+$y_k > \ell$ is late from its first frame and misses about
+$\min(y_k - \ell, D)$ seconds of frames, and a gap starts at stretch $k$
+when $y_k > \ell \ge y_{k-1}$. Below a threshold $u$, the need that only ten
+stretches exceed, both are counted. Above $u$, the excess $z = y_k - u$ of a
+stretch is taken as exponential with a rate that has a gamma prior of shape
+$a_0 = 1$ and rate $b_0 = 2$ ms: a median excess of about three
+milliseconds, between the jitter of a wired link and the pauses of a
+wireless one, counted as much as one excess. After $n$ excesses that add up
+to $Z$, an excess is larger than $x$ with probability $(b/(b+x))^a$, where
+$a = a_0 + n$ and $b = b_0 + Z$, and the probability that a stretch exceeds
+$u$ has a uniform prior. On needs drawn with pauses of 10 to 80 ms every 5,
+30 or 300 seconds, the level chosen from two minutes of them cost within 6%
+of the best level held over the next half hour.
 
 The level moves to another minimum only when the cost saved, over the time the
 evidence covers, exceeds the cost of the move. It moves along a path that the

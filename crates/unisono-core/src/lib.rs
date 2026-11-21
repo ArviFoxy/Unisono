@@ -52,6 +52,7 @@ pub mod answers;
 pub mod arrivals;
 pub mod device;
 pub mod fixed;
+pub mod needs;
 pub mod packet;
 pub mod player;
 pub mod presence;

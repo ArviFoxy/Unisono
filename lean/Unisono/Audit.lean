@@ -12,6 +12,7 @@ public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulator
 public import Unisono.Model.SupportLine
+public import Unisono.Needs
 public import Unisono.Packet
 public import Unisono.Player
 public import Unisono.Presence
@@ -540,3 +541,35 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Answers.new_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Answers.new_total
+
+/-- info: 'Unisono.Needs.new_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.new_total
+
+/-- info: 'Unisono.Needs.clear_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.clear_total
+
+/-- info: 'Unisono.Needs.observe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.observe_total
+
+/-- info: 'Unisono.Needs.newest_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.newest_total
+
+/-- info: 'Unisono.Needs.get_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.get_total
+
+/-- info: 'Unisono.Needs.recent_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Needs.recent_total
+
+/-- info: 'Unisono.Packet.write_needs_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_needs_total
+
+/-- info: 'Unisono.Packet.parse_needs_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.parse_needs_total

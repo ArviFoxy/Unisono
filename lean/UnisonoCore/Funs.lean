@@ -1306,6 +1306,443 @@ def fixed.mul_shift
   let i3 ← lift (core.num.I128.wrapping_shr i2 shift1)
   fixed.saturate i3
 
+/-- [unisono_core::needs::{impl core::clone::Clone for unisono_core::needs::Place}::clone]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:9-26:14
+    Visibility: public -/
+def needs.Place.Insts.CoreCloneClone.clone
+  (self : needs.Place) : Result needs.Place := do
+  ok self
+
+/-- Trait implementation: [unisono_core::needs::{impl core::clone::Clone for unisono_core::needs::Place}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:9-26:14 -/
+@[reducible]
+def needs.Place.Insts.CoreCloneClone : core.clone.Clone needs.Place := {
+  clone := needs.Place.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::needs::{impl core::marker::Copy for unisono_core::needs::Place}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:16-26:20 -/
+@[reducible]
+def needs.Place.Insts.CoreMarkerCopy : core.marker.Copy needs.Place := {
+  cloneInst := needs.Place.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::needs::{impl core::marker::StructuralPartialEq for unisono_core::needs::Place}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:22-26:31 -/
+@[reducible]
+def needs.Place.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq needs.Place := {
+}
+
+/-- [unisono_core::needs::{impl core::cmp::PartialEq<unisono_core::needs::Place> for unisono_core::needs::Place}::eq]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:22-26:31
+    Visibility: public -/
+def needs.Place.Insts.CoreCmpPartialEqPlace.eq
+  (self : needs.Place) (other : needs.Place) : Result Bool := do
+  if self.held = other.held
+  then
+    if self.stretch = other.stretch
+    then ok (self.need = other.need)
+    else ok false
+  else ok false
+
+/-- Trait implementation: [unisono_core::needs::{impl core::cmp::PartialEq<unisono_core::needs::Place> for unisono_core::needs::Place}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:22-26:31 -/
+@[reducible]
+def needs.Place.Insts.CoreCmpPartialEqPlace : core.cmp.PartialEq needs.Place
+  needs.Place := {
+  eq := needs.Place.Insts.CoreCmpPartialEqPlace.eq
+}
+
+/-- [unisono_core::needs::{impl core::cmp::Eq for unisono_core::needs::Place}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:33-26:35
+    Visibility: public -/
+def needs.Place.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : needs.Place) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::needs::{impl core::cmp::Eq for unisono_core::needs::Place}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 26:33-26:35 -/
+@[reducible]
+def needs.Place.Insts.CoreCmpEq : core.cmp.Eq needs.Place := {
+  partialEqInst := needs.Place.Insts.CoreCmpPartialEqPlace
+  assert_fields_are_eq := needs.Place.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [unisono_core::needs::{impl core::clone::Clone for unisono_core::needs::Needs<S>}::clone]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 38:9-38:14
+    Visibility: public -/
+def needs.Needs.Insts.CoreCloneClone.clone
+  {S : Std.Usize} (self : needs.Needs S) : Result (needs.Needs S) := do
+  ok self
+
+/-- Trait implementation: [unisono_core::needs::{impl core::clone::Clone for unisono_core::needs::Needs<S>}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 38:9-38:14 -/
+@[reducible]
+def needs.Needs.Insts.CoreCloneClone (S : Std.Usize) : core.clone.Clone
+  (needs.Needs S) := {
+  clone := needs.Needs.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::needs::{impl core::marker::Copy for unisono_core::needs::Needs<S>}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 38:16-38:20 -/
+@[reducible]
+def needs.Needs.Insts.CoreMarkerCopy (S : Std.Usize) : core.marker.Copy
+  (needs.Needs S) := {
+  cloneInst := needs.Needs.Insts.CoreCloneClone S
+}
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::new]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 56:4-65:5
+    Visibility: public -/
+def needs.Needs.new (S : Std.Usize) : Result (needs.Needs S) := do
+  let a := Array.repeat S { held := false, stretch := 0#u64, need := 0#i64 }
+  ok { places := a, newest := 0#u64 }
+
+/-- [unisono_core::needs::{impl core::default::Default for unisono_core::needs::Needs<S>}::default]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 48:4-50:5
+    Visibility: public -/
+def needs.Needs.Insts.CoreDefaultDefault.default
+  (S : Std.Usize) : Result (needs.Needs S) := do
+  needs.Needs.new S
+
+/-- Trait implementation: [unisono_core::needs::{impl core::default::Default for unisono_core::needs::Needs<S>}]
+    Source: 'crates/unisono-core/src/needs.rs', lines 47:0-51:1 -/
+@[reducible]
+def needs.Needs.Insts.CoreDefaultDefault (S : Std.Usize) : core.default.Default
+  (needs.Needs S) := {
+  default := needs.Needs.Insts.CoreDefaultDefault.default S
+}
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::clear]: loop body 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 70:8-75:9
+    Visibility: public -/
+@[rust_loop_body]
+def needs.Needs.clear_loop.body
+  {S : Std.Usize} (self : needs.Needs S) (place : Std.Usize) :
+  Result (ControlFlow ((needs.Needs S) × Std.Usize) (needs.Needs S))
+  := do
+  if place < S
+  then
+    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.places)
+    let (o, get_mut_back) ←
+      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+        needs.Place) s place
+    let a ←
+      match o with
+      | none => let s1 := get_mut_back none
+                ok (to_slice_mut_back s1)
+      | some slot =>
+        let s1 := get_mut_back (some { slot with held := false })
+        ok (to_slice_mut_back s1)
+    let place1 ← lift (core.num.Usize.saturating_add place 1#usize)
+    ok (cont ({ self with places := a }, place1))
+  else ok (done self)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::clear]: loop 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 70:8-75:9
+    Visibility: public -/
+@[rust_loop]
+def needs.Needs.clear_loop
+  {S : Std.Usize} (self : needs.Needs S) (place : Std.Usize) :
+  Result (needs.Needs S)
+  := do
+  loop
+    (fun (self1, place1) => needs.Needs.clear_loop.body self1 place1)
+    (self, place)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::clear]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 68:4-76:5
+    Visibility: public -/
+@[reducible]
+def needs.Needs.clear
+  {S : Std.Usize} (self : needs.Needs S) : Result (needs.Needs S) := do
+  needs.Needs.clear_loop self 0#usize
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::held_any]: loop body 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 81:8-90:5 -/
+@[rust_loop_body]
+def needs.Needs.held_any_loop.body
+  {S : Std.Usize} (self : needs.Needs S) (place : Std.Usize) :
+  Result (ControlFlow Std.Usize Bool)
+  := do
+  if place < S
+  then
+    let s ← lift (Array.to_slice self.places)
+    let o ←
+      core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice needs.Place)
+        s place
+    match o with
+    | none =>
+      let place1 ← lift (core.num.Usize.saturating_add place 1#usize)
+      ok (cont place1)
+    | some slot =>
+      if slot.held
+      then ok (done true)
+      else
+        let place1 ← lift (core.num.Usize.saturating_add place 1#usize)
+        ok (cont place1)
+  else ok (done false)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::held_any]: loop 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 81:8-90:5 -/
+@[rust_loop]
+def needs.Needs.held_any_loop
+  {S : Std.Usize} (self : needs.Needs S) (place : Std.Usize) :
+  Result Bool
+  := do
+  loop
+    (fun place1 => needs.Needs.held_any_loop.body self place1)
+    place
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::held_any]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 79:4-90:5 -/
+@[reducible]
+def needs.Needs.held_any
+  {S : Std.Usize} (self : needs.Needs S) : Result Bool := do
+  needs.Needs.held_any_loop self 0#usize
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::kept]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 94:4-96:5 -/
+def needs.Needs.kept
+  {S : Std.Usize} (self : needs.Needs S) (stretch : Std.U64) :
+  Result Bool
+  := do
+  let i ← lift (UScalar.cast .U64 S)
+  let i1 ← lift (core.num.U64.saturating_add stretch i)
+  ok (i1 > self.newest)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::put]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 113:4-133:5 -/
+def needs.Needs.put
+  {S : Std.Usize} (self : needs.Needs S) (stretch : Std.U64) (need : Std.I64) :
+  Result (needs.Needs S)
+  := do
+  let i ← lift (UScalar.cast .U64 S)
+  let o ← lift (U64.checked_rem stretch i)
+  match o with
+  | none => ok self
+  | some place =>
+    let (s, to_slice_mut_back) ← lift (Array.to_slice_mut self.places)
+    let i1 ← lift (UScalar.cast .Usize place)
+    let (o1, get_mut_back) ←
+      core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+        needs.Place) s i1
+    match o1 with
+    | none =>
+      let s1 := get_mut_back none
+      let a := to_slice_mut_back s1
+      ok { self with places := a }
+    | some slot =>
+      if slot.held
+      then
+        if slot.stretch = stretch
+        then
+          if need > slot.need
+          then
+            let s1 := get_mut_back (some { slot with need })
+            let a := to_slice_mut_back s1
+            ok { self with places := a }
+          else
+            let s1 := get_mut_back o1
+            let a := to_slice_mut_back s1
+            ok { self with places := a }
+        else
+          let s1 := get_mut_back (some { held := true, stretch, need })
+          let a := to_slice_mut_back s1
+          ok { self with places := a }
+      else
+        let s1 := get_mut_back (some { held := true, stretch, need })
+        let a := to_slice_mut_back s1
+        ok { self with places := a }
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::observe]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 99:4-110:5
+    Visibility: public -/
+def needs.Needs.observe
+  {S : Std.Usize} (self : needs.Needs S) (stretch : Std.U64) (need : Std.I64) :
+  Result (needs.Needs S)
+  := do
+  let i ← lift (UScalar.cast .U64 S)
+  let i1 ← lift (core.num.U64.saturating_add stretch i)
+  let i2 ← lift (UScalar.cast .U64 S)
+  let i3 ← lift (core.num.U64.saturating_add i1 i2)
+  let b ← needs.Needs.held_any self
+  if b
+  then
+    if i3 <= self.newest
+    then
+      let self1 ← needs.Needs.clear self
+      needs.Needs.put { self1 with newest := stretch } stretch need
+    else
+      let b1 ← needs.Needs.kept self stretch
+      if b1
+      then
+        let i4 ← if stretch > self.newest
+                   then ok stretch
+                   else ok self.newest
+        needs.Needs.put { self with newest := i4 } stretch need
+      else ok self
+  else
+    let self1 ← needs.Needs.clear self
+    needs.Needs.put { self1 with newest := stretch } stretch need
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::newest]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 137:4-143:5
+    Visibility: public -/
+def needs.Needs.impl.newest
+  {S : Std.Usize} (self : needs.Needs S) : Result (Option Std.U64) := do
+  let b ← needs.Needs.held_any self
+  if b
+  then ok (some self.newest)
+  else ok none
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::get]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 147:4-163:5
+    Visibility: public -/
+def needs.Needs.get
+  {S : Std.Usize} (self : needs.Needs S) (stretch : Std.U64) :
+  Result (Option Std.I64)
+  := do
+  let b ← needs.Needs.kept self stretch
+  if b
+  then
+    if stretch > self.newest
+    then ok none
+    else
+      let i ← lift (UScalar.cast .U64 S)
+      let o ← lift (U64.checked_rem stretch i)
+      match o with
+      | none => ok none
+      | some place =>
+        let s ← lift (Array.to_slice self.places)
+        let i1 ← lift (UScalar.cast .Usize place)
+        let o1 ←
+          core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice
+            needs.Place) s i1
+        match o1 with
+        | none => ok none
+        | some slot =>
+          if slot.held
+          then if slot.stretch = stretch
+               then ok (some slot.need)
+               else ok none
+          else ok none
+  else ok none
+
+/-- [unisono_core::packet::UNKNOWN_NEED]
+    Source: 'crates/unisono-core/src/packet.rs', lines 489:0-489:39
+    Visibility: public -/
+@[global_simps, irreducible]
+def packet.UNKNOWN_NEED : Std.I32 := core.num.I32.MIN
+
+/-- [unisono_core::packet::{unisono_core::packet::Recent}::NONE]
+    Source: 'crates/unisono-core/src/packet.rs', lines 513:4-517:6
+    Visibility: public -/
+@[global_simps, irreducible]
+def packet.Recent.NONE : packet.Recent :=
+  let a := Array.repeat 11#usize packet.UNKNOWN_NEED
+  { newest := 0#u64, count := 0#u8, needs := a }
+
+/-- [unisono_core::packet::RECENT]
+    Source: 'crates/unisono-core/src/packet.rs', lines 482:0-482:29
+    Visibility: public -/
+@[global_simps, irreducible] def packet.RECENT : Std.Usize := 11#usize
+
+/-- [unisono_core::needs::microseconds]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 196:0-218:1 -/
+def needs.microseconds (need : Std.I64) : Result Std.I32 := do
+  let o ← lift (I64.checked_div need 1000#i64)
+  match o with
+  | none => ok (core.num.I32.saturating_add packet.UNKNOWN_NEED 1#i32)
+  | some whole =>
+    let i ← lift (core.num.I64.wrapping_mul whole 1000#i64)
+    let rest ← lift (core.num.I64.wrapping_sub need i)
+    let up ←
+      if rest > 0#i64
+      then ok (core.num.I64.saturating_add whole 1#i64)
+      else ok whole
+    let i1 ← lift (IScalar.cast .I64 core.num.I32.MAX)
+    if up > i1
+    then ok core.num.I32.MAX
+    else
+      let i2 ← lift (IScalar.cast .I64 packet.UNKNOWN_NEED)
+      if up <= i2
+      then ok (core.num.I32.saturating_add packet.UNKNOWN_NEED 1#i32)
+      else ok (IScalar.cast .I32 up)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::recent]: loop body 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 175:8-189:9
+    Visibility: public -/
+@[rust_loop_body]
+def needs.Needs.recent_loop.body
+  {S : Std.Usize} (a : Array needs.Place S) (i : Std.U64) (i1 : Std.U8)
+  (a1 : Array Std.I32 11#usize) (back : Std.Usize) :
+  Result (ControlFlow (Std.U8 × (Array Std.I32 11#usize) × Std.Usize) (Std.U8
+    × (Array Std.I32 11#usize)))
+  := do
+  if back < packet.RECENT
+  then
+    if back < S
+    then
+      let i2 ← lift (UScalar.cast .U64 back)
+      if i2 <= i
+      then
+        let i3 ← lift (UScalar.cast .U64 back)
+        let stretch ← lift (core.num.U64.wrapping_sub i i3)
+        let (s, to_slice_mut_back) ← lift (Array.to_slice_mut a1)
+        let (o, get_mut_back) ←
+          core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+            Std.I32) s back
+        let a2 ←
+          match o with
+          | none => let s1 := get_mut_back none
+                    ok (to_slice_mut_back s1)
+          | some _ =>
+            do
+            let o1 ← needs.Needs.get { places := a, newest := i } stretch
+            match o1 with
+            | none =>
+              let s1 := get_mut_back (some packet.UNKNOWN_NEED)
+              ok (to_slice_mut_back s1)
+            | some need =>
+              let slot ← needs.microseconds need
+              let s1 := get_mut_back (some slot)
+              ok (to_slice_mut_back s1)
+        let back1 ← lift (core.num.Usize.saturating_add back 1#usize)
+        let i4 ← lift (UScalar.cast .U8 back1)
+        ok (cont (i4, a2, back1))
+      else ok (done (i1, a1))
+    else ok (done (i1, a1))
+  else ok (done (i1, a1))
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::recent]: loop 0:
+    Source: 'crates/unisono-core/src/needs.rs', lines 175:8-189:9
+    Visibility: public -/
+@[rust_loop]
+def needs.Needs.recent_loop
+  {S : Std.Usize} (a : Array needs.Place S) (i : Std.U64) (i1 : Std.U8)
+  (a1 : Array Std.I32 11#usize) (back : Std.Usize) :
+  Result (Std.U8 × (Array Std.I32 11#usize))
+  := do
+  loop
+    (fun (i2, a2, back1) => needs.Needs.recent_loop.body a i i2 a2 back1)
+    (i1, a1, back)
+
+/-- [unisono_core::needs::{unisono_core::needs::Needs<S>}::recent]:
+    Source: 'crates/unisono-core/src/needs.rs', lines 168:4-191:5
+    Visibility: public -/
+def needs.Needs.recent
+  {S : Std.Usize} (self : needs.Needs S) : Result packet.Recent := do
+  let b ← needs.Needs.held_any self
+  if b
+  then
+    let (i, a) ←
+      needs.Needs.recent_loop self.places self.newest packet.Recent.NONE.count
+        packet.Recent.NONE.needs 0#usize
+    ok { newest := self.newest, count := i, needs := a }
+  else ok packet.Recent.NONE
+
 /-- [unisono_core::packet::MAGIC]
     Source: 'crates/unisono-core/src/packet.rs', lines 19:0-19:35
     Visibility: public -/
@@ -2398,8 +2835,217 @@ def packet.write_report
     then ok (some length1, bytes8)
     else ok (none, bytes8)
 
+/-- [unisono_core::packet::NEEDS]
+    Source: 'crates/unisono-core/src/packet.rs', lines 486:0-486:40
+    Visibility: public -/
+@[global_simps, irreducible]
+def packet.NEEDS : Result Std.Usize := do
+  let i ← 4#usize * packet.RECENT
+  9#usize + i
+
+/-- [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Recent}::clone]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:9-498:14
+    Visibility: public -/
+def packet.Recent.Insts.CoreCloneClone.clone
+  (self : packet.Recent) : Result packet.Recent := do
+  ok self
+
+/-- Trait implementation: [unisono_core::packet::{impl core::clone::Clone for unisono_core::packet::Recent}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:9-498:14 -/
+@[reducible]
+def packet.Recent.Insts.CoreCloneClone : core.clone.Clone packet.Recent := {
+  clone := packet.Recent.Insts.CoreCloneClone.clone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::Copy for unisono_core::packet::Recent}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:16-498:20 -/
+@[reducible]
+def packet.Recent.Insts.CoreMarkerCopy : core.marker.Copy packet.Recent := {
+  cloneInst := packet.Recent.Insts.CoreCloneClone
+}
+
+/-- Trait implementation: [unisono_core::packet::{impl core::marker::StructuralPartialEq for unisono_core::packet::Recent}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31 -/
+@[reducible]
+def packet.Recent.Insts.CoreMarkerStructuralPartialEq :
+  core.marker.StructuralPartialEq packet.Recent := {
+}
+
+/-- [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Recent> for unisono_core::packet::Recent}::eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31
+    Visibility: public -/
+def packet.Recent.Insts.CoreCmpPartialEqRecent.eq
+  (self : packet.Recent) (other : packet.Recent) : Result Bool := do
+  if self.newest = other.newest
+  then
+    if self.count = other.count
+    then
+      core.array.equality.PartialEqArray.eq core.cmp.PartialEqI32 self.needs
+        other.needs
+    else ok false
+  else ok false
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::PartialEq<unisono_core::packet::Recent> for unisono_core::packet::Recent}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:22-498:31 -/
+@[reducible]
+def packet.Recent.Insts.CoreCmpPartialEqRecent : core.cmp.PartialEq
+  packet.Recent packet.Recent := {
+  eq := packet.Recent.Insts.CoreCmpPartialEqRecent.eq
+}
+
+/-- [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Recent}::assert_fields_are_eq]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:33-498:35
+    Visibility: public -/
+def packet.Recent.Insts.CoreCmpEq.assert_fields_are_eq
+  (self : packet.Recent) : Result Unit := do
+  ok ()
+
+/-- Trait implementation: [unisono_core::packet::{impl core::cmp::Eq for unisono_core::packet::Recent}]
+    Source: 'crates/unisono-core/src/packet.rs', lines 498:33-498:35 -/
+@[reducible]
+def packet.Recent.Insts.CoreCmpEq : core.cmp.Eq packet.Recent := {
+  partialEqInst := packet.Recent.Insts.CoreCmpPartialEqRecent
+  assert_fields_are_eq := packet.Recent.Insts.CoreCmpEq.assert_fields_are_eq
+}
+
+/-- [unisono_core::packet::write_needs]: loop body 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 534:4-543:5
+    Visibility: public -/
+@[rust_loop_body]
+def packet.write_needs_loop.body
+  (a : Array Std.I32 11#usize) (count : Std.Usize) (bytes : Slice Std.U8)
+  (written : Bool) (i : Std.Usize) :
+  Result (ControlFlow ((Slice Std.U8) × Bool × Std.Usize) (Bool × (Slice
+    Std.U8)))
+  := do
+  if i < count
+  then
+    let s ← lift (Array.to_slice a)
+    let o ←
+      core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice Std.I32) s i
+    let need ←
+      match o with
+      | none => ok packet.UNKNOWN_NEED
+      | some need1 => ok need1
+    let i1 ← lift (core.num.Usize.wrapping_add packet.REPORT 9#usize)
+    let i2 ← lift (core.num.Usize.wrapping_mul i 4#usize)
+    let «at» ← lift (core.num.Usize.wrapping_add i1 i2)
+    let i3 ← lift (IScalar.hcast .U32 need)
+    let i4 ← lift (UScalar.cast .U64 i3)
+    let (b, bytes1) ← packet.write bytes «at» 4#usize i4
+    let i5 ← lift (core.num.Usize.saturating_add i 1#usize)
+    ok (cont (bytes1, written && b, i5))
+  else ok (done (written, bytes))
+
+/-- [unisono_core::packet::write_needs]: loop 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 534:4-543:5
+    Visibility: public -/
+@[rust_loop]
+def packet.write_needs_loop
+  (a : Array Std.I32 11#usize) (bytes : Slice Std.U8) (count : Std.Usize)
+  (written : Bool) (i : Std.Usize) :
+  Result (Bool × (Slice Std.U8))
+  := do
+  loop
+    (fun (bytes1, written1, i1) => packet.write_needs_loop.body a count bytes1
+      written1 i1)
+    (bytes, written, i)
+
+/-- [unisono_core::packet::write_needs]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:0-545:1
+    Visibility: public -/
+def packet.write_needs
+  (recent : packet.Recent) (bytes : Slice Std.U8) :
+  Result (Bool × (Slice Std.U8))
+  := do
+  let i ← lift (UScalar.cast .Usize recent.count)
+  let count ←
+    if i < packet.RECENT
+    then ok (UScalar.cast .Usize recent.count)
+    else ok packet.RECENT
+  let (written, bytes1) ←
+    packet.write bytes packet.REPORT 8#usize recent.newest
+  let i1 ← lift (core.num.Usize.wrapping_add packet.REPORT 8#usize)
+  let i2 ← lift (UScalar.cast .U64 count)
+  let (b, bytes2) ← packet.write bytes1 i1 1#usize i2
+  packet.write_needs_loop recent.needs bytes2 count (written && b) 0#usize
+
+/-- [unisono_core::packet::parse_needs]: loop body 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 570:4-580:5
+    Visibility: public -/
+@[rust_loop_body]
+def packet.parse_needs_loop.body
+  (bytes : Slice Std.U8) (said : Std.Usize) (i : Std.U8)
+  (a : Array Std.I32 11#usize) (i1 : Std.Usize) :
+  Result (ControlFlow (Std.U8 × (Array Std.I32 11#usize) × Std.Usize) (Std.U8
+    × (Array Std.I32 11#usize)))
+  := do
+  if i1 < said
+  then
+    let i2 ← lift (core.num.Usize.wrapping_add packet.REPORT 9#usize)
+    let i3 ← lift (core.num.Usize.wrapping_mul i1 4#usize)
+    let «at» ← lift (core.num.Usize.wrapping_add i2 i3)
+    let o ← packet.read bytes «at» 4#usize
+    match o with
+    | none => ok (done (i, a))
+    | some need =>
+      let (s, to_slice_mut_back) ← lift (Array.to_slice_mut a)
+      let (o1, get_mut_back) ←
+        core.slice.Slice.get_mut (core.slice.index.SliceIndexUsizeSlice
+          Std.I32) s i1
+      let a1 ←
+        match o1 with
+        | none => let s1 := get_mut_back none
+                  ok (to_slice_mut_back s1)
+        | some _ =>
+          do
+          let i4 ← lift (UScalar.cast .U32 need)
+          let slot ← lift (UScalar.hcast .I32 i4)
+          let s1 := get_mut_back (some slot)
+          ok (to_slice_mut_back s1)
+      let i4 ← lift (core.num.Usize.saturating_add i1 1#usize)
+      let i5 ← lift (UScalar.cast .U8 i4)
+      ok (cont (i5, a1, i4))
+  else ok (done (i, a))
+
+/-- [unisono_core::packet::parse_needs]: loop 0:
+    Source: 'crates/unisono-core/src/packet.rs', lines 570:4-580:5
+    Visibility: public -/
+@[rust_loop]
+def packet.parse_needs_loop
+  (bytes : Slice Std.U8) (i : Std.U8) (a : Array Std.I32 11#usize)
+  (said : Std.Usize) (i1 : Std.Usize) :
+  Result (Std.U8 × (Array Std.I32 11#usize))
+  := do
+  loop
+    (fun (i2, a1, i3) => packet.parse_needs_loop.body bytes said i2 a1 i3)
+    (i, a, i1)
+
+/-- [unisono_core::packet::parse_needs]:
+    Source: 'crates/unisono-core/src/packet.rs', lines 555:0-582:1
+    Visibility: public -/
+def packet.parse_needs (bytes : Slice Std.U8) : Result packet.Recent := do
+  let o ← packet.read bytes packet.REPORT 8#usize
+  let i ← lift (core.num.Usize.wrapping_add packet.REPORT 8#usize)
+  let o1 ← packet.read bytes i 1#usize
+  match o with
+  | none => ok packet.Recent.NONE
+  | some newest =>
+    match o1 with
+    | none => ok packet.Recent.NONE
+    | some said =>
+      let i1 ← lift (UScalar.cast .Usize said)
+      let said1 ←
+        if i1 < packet.RECENT
+        then ok (UScalar.cast .Usize said)
+        else ok packet.RECENT
+      let (i2, a) ←
+        packet.parse_needs_loop bytes packet.Recent.NONE.count
+          packet.Recent.NONE.needs said1 0#usize
+      ok { newest, count := i2, needs := a }
+
 /-- [unisono_core::packet::parse_echo]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 490:0-515:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 593:0-618:1
     Visibility: public -/
 def packet.parse_echo
   (bytes : Slice Std.U8) :
@@ -2438,7 +3084,7 @@ def packet.parse_echo
   | core.result.Result.Err reason => ok (core.result.Result.Err reason)
 
 /-- [unisono_core::packet::write_echo]:
-    Source: 'crates/unisono-core/src/packet.rs', lines 521:0-533:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 624:0-636:1
     Visibility: public -/
 def packet.write_echo
   (echo : packet.Echo) (bytes : Slice Std.U8) :
