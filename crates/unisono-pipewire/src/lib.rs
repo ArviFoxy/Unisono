@@ -12,18 +12,12 @@
 //!
 //! # Times
 //!
-//! In each cycle PipeWire says, for the stream, a count of frames (its
-//! position) and the time of the cycle on the monotonic clock, with the
-//! delay to the device. The first frame that a playback stream is given now
-//! leaves the device that delay after the time of the cycle. The frames that
-//! a capture stream is given were captured during the cycle before, so the
-//! first of them entered the device the delay and the length of the buffer
-//! before it. With a sink that plays to nothing, the times that a capture of
-//! what the sink plays reports agree with those of the playback to well
-//! under a microsecond (`tests/graph.rs`); what a device of hardware adds is
-//! for the measurement on hardware to show. The time is converted to the
-//! raw clock that unisono times everything by, through a [`Tracker`] of the
-//! monotonic clock.
+//! In each cycle PipeWire reports the graph time on the monotonic clock, the
+//! path delay, any queued buffers and resampler buffering, and the graph tick
+//! counter. Stream frame positions advance by the stream frames actually
+//! delivered or captured, using tick deltas to detect xrun gaps even when the
+//! graph rate differs from the stream rate. Times are converted to the raw
+//! monotonic clock through a typed [`Tracker<Monotonic>`].
 //!
 //! Samples are 32-bit floats, interleaved, at the rate and with the number
 //! of channels that are asked for; PipeWire converts what its devices take
@@ -46,6 +40,13 @@ const LONGEST_AGE: i64 = 50_000_000;
 /// After how long the clocks are measured again, in nanoseconds: 10 ms.
 const REFRESH: i64 = 10_000_000;
 
+/// Maximum queued capture buffers drained in a single PipeWire `process`
+/// callback.
+const MAX_CAPTURE_BUFFERS: usize = 16;
+
+/// Stack size of the PipeWire mainloop thread, in bytes (512 KiB).
+const STACK_SIZE: usize = 512 * 1024;
+
 /// What a stream is set up with.
 #[derive(Clone, Debug)]
 pub struct Settings {
@@ -67,6 +68,41 @@ pub struct Settings {
     pub cycle: u32,
 }
 
+impl Settings {
+    fn validate(&self) -> Result<(), Error> {
+        if self.name.contains('\0') {
+            return Err(Error(
+                "PipeWire stream name contains an interior NUL byte".into(),
+            ));
+        }
+        if self
+            .target
+            .as_deref()
+            .is_some_and(|target| target.contains('\0'))
+        {
+            return Err(Error(
+                "PipeWire target name contains an interior NUL byte".into(),
+            ));
+        }
+        if self.rate == 0 || self.channels == 0 || self.cycle == 0 || self.largest_cycle == 0 {
+            return Err(Error(
+                "PipeWire rate, channels, cycle, and largest_cycle must all be positive".into(),
+            ));
+        }
+        let channels = usize::try_from(self.channels)
+            .map_err(|_| Error("PipeWire channel count out of range".into()))?;
+        if self
+            .largest_cycle
+            .checked_mul(channels)
+            .and_then(|s| s.checked_mul(4))
+            .is_none()
+        {
+            return Err(Error("PipeWire sample buffer size overflow".into()));
+        }
+        Ok(())
+    }
+}
+
 /// What went wrong when a stream was made.
 #[derive(Debug)]
 pub struct Error(String);
@@ -82,15 +118,34 @@ impl std::error::Error for Error {}
 /// A stream that runs, until it is stopped.
 pub struct Running {
     quit: pw::channel::Sender<()>,
-    thread: JoinHandle<()>,
+    thread: Option<JoinHandle<()>>,
 }
 
 impl Running {
+    /// Whether the PipeWire mainloop thread has exited (for example after a
+    /// fatal stream error).
+    #[must_use]
+    pub fn is_finished(&self) -> bool {
+        self.thread.as_ref().is_none_or(JoinHandle::is_finished)
+    }
+
     /// Stops the stream and waits for its thread to end.
-    pub fn stop(self) {
+    pub fn stop(mut self) {
+        self.shutdown();
+    }
+
+    fn shutdown(&mut self) {
         // A loop that ended already does not take the message.
         let _ = self.quit.send(());
-        let _ = self.thread.join();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+impl Drop for Running {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
@@ -155,6 +210,11 @@ struct State<P, C> {
     channels: usize,
     /// Frames per second.
     rate: u32,
+    /// Cumulative stream-frame position across cycles.
+    position: u64,
+    /// Previous callback's graph tick count and total stream frames delivered
+    /// since that tick, used to detect xrun gaps independent of graph rate.
+    last_ticks: Option<(u64, u64)>,
 }
 
 impl<P: Playback, C: Capture> State<P, C> {
@@ -167,78 +227,173 @@ impl<P: Playback, C: Capture> State<P, C> {
             .map_or(now.as_i64(), |converted| converted.time.as_i64())
     }
 
-    /// One cycle of the graph.
-    fn process(&mut self, stream: &pw::stream::Stream) {
-        let Ok(time) = stream.time() else {
-            return;
-        };
-        let Some(mut buffer) = stream.dequeue_buffer() else {
-            return;
-        };
-        // The frames that this cycle asks a playback stream for; a buffer
-        // can hold many cycles.
-        let requested = usize::try_from(buffer.requested()).unwrap_or(usize::MAX);
+    /// Converts `frames` at the stream sample rate into nanoseconds.
+    fn frames_ns(&self, frames: u64) -> i64 {
+        let wide = u128::from(frames) * 1_000_000_000 / u128::from(self.rate.max(1));
+        i64::try_from(wide).unwrap_or(i64::MAX)
+    }
+
+    /// Computes total delay in nanoseconds from `time.delay()`, queued stream
+    /// bytes, and resampler-buffered frames.
+    fn total_delay_ns(&self, time: &pw::stream::Time, stride: usize) -> i64 {
         let rate = time.rate();
-        // The delay in nanoseconds: ticks of `num / denom` seconds each.
-        let delay = if rate.denom == 0 {
+        let path_delay = if rate.denom == 0 {
             0
         } else {
             let nanoseconds = i128::from(time.delay()) * i128::from(rate.num) * 1_000_000_000
                 / i128::from(rate.denom);
             i64::try_from(nanoseconds).unwrap_or(0)
         };
-        let now = self.raw(time.now());
-        let position = time.ticks();
+        let queued_frames = time.queued() / (stride as u64).max(1);
+        let extra_frames = time.buffered().saturating_add(queued_frames);
+        path_delay.saturating_add(self.frames_ns(extra_frames))
+    }
+
+    /// Advances `self.position` across any xrun gap indicated by `time.ticks()`
+    /// jumping further than the previous cycle's delivered stream frames.
+    fn sync_position(&mut self, time: &pw::stream::Time) {
+        let rate = time.rate();
+        let ticks = time.ticks();
+        if let Some((prev_ticks, prev_frames)) = self.last_ticks
+            && rate.num > 0
+            && rate.denom > 0
+            && ticks > prev_ticks
+        {
+            let dticks = ticks - prev_ticks;
+            let elapsed_frames =
+                (u128::from(dticks) * u128::from(rate.num) * u128::from(self.rate)
+                    + u128::from(rate.denom) / 2)
+                    / u128::from(rate.denom);
+            let prev = u128::from(prev_frames);
+            // Allow +/-2 frames of rounding slack when graph rate != stream rate.
+            if elapsed_frames > prev.saturating_add(2) {
+                let gap = u64::try_from(elapsed_frames - prev).unwrap_or(u64::MAX);
+                self.position = self.position.saturating_add(gap);
+            }
+        }
+    }
+
+    /// One cycle of the graph.
+    fn process(&mut self, stream: &pw::stream::Stream) {
         let channels = self.channels;
+        let stride = channels * 4;
+        if stride == 0 {
+            return;
+        }
+        match self.side {
+            Side::Playback(_) => self.process_playback(stream, channels, stride),
+            Side::Capture(_) => self.process_capture(stream, channels, stride),
+        }
+    }
+
+    fn process_playback(&mut self, stream: &pw::stream::Stream, channels: usize, stride: usize) {
+        let Some(mut buffer) = stream.dequeue_buffer() else {
+            return;
+        };
+        let requested = usize::try_from(buffer.requested()).unwrap_or(usize::MAX);
+        let Ok(time) = stream.time() else {
+            clear_chunk(&mut buffer, stride);
+            return;
+        };
         let Some(data) = buffer.datas_mut().first_mut() else {
             return;
         };
-        let stride = channels * 4;
-        match &mut self.side {
-            Side::Playback(playback) => {
-                let Some(bytes) = data.data() else {
-                    return;
-                };
-                let mut frames =
-                    (bytes.len() / stride.max(1)).min(self.samples.len() / channels.max(1));
-                if requested > 0 {
-                    frames = frames.min(requested);
-                }
-                let samples = &mut self.samples[..frames * channels];
-                playback.cycle(samples, position, now.saturating_add(delay));
-                for (place, sample) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(samples.iter()) {
-                    *place = sample.to_le_bytes();
-                }
-                let chunk = data.chunk_mut();
-                *chunk.offset_mut() = 0;
-                *chunk.stride_mut() = i32::try_from(stride).unwrap_or(0);
-                *chunk.size_mut() = u32::try_from(frames * stride).unwrap_or(0);
+        let Some(bytes) = data.data() else {
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = i32::try_from(stride).unwrap_or(0);
+            *chunk.size_mut() = 0;
+            return;
+        };
+        let mut frames = (bytes.len() / stride).min(self.samples.len() / channels);
+        if requested > 0 {
+            frames = frames.min(requested);
+        }
+        if frames == 0 {
+            let chunk = data.chunk_mut();
+            *chunk.offset_mut() = 0;
+            *chunk.stride_mut() = i32::try_from(stride).unwrap_or(0);
+            *chunk.size_mut() = 0;
+            return;
+        }
+        self.sync_position(&time);
+        let now = self.raw(time.now());
+        let delay = self.total_delay_ns(&time, stride);
+        let position = self.position;
+        if let Side::Playback(playback) = &mut self.side
+            && let Some(samples) = self.samples.get_mut(..frames * channels)
+        {
+            playback.cycle(samples, position, now.saturating_add(delay));
+            for (place, sample) in bytes.as_chunks_mut::<4>().0.iter_mut().zip(samples.iter()) {
+                *place = sample.to_le_bytes();
             }
-            Side::Capture(capture) => {
-                let (offset, size) = (data.chunk().offset() as usize, data.chunk().size() as usize);
-                let Some(bytes) = data.data() else {
-                    return;
-                };
-                let Some(bytes) = bytes.get(offset..offset.saturating_add(size)) else {
-                    return;
-                };
-                let frames =
-                    (bytes.len() / stride.max(1)).min(self.samples.len() / channels.max(1));
-                let samples = &mut self.samples[..frames * channels];
+        }
+        let chunk = data.chunk_mut();
+        *chunk.offset_mut() = 0;
+        *chunk.stride_mut() = i32::try_from(stride).unwrap_or(0);
+        *chunk.size_mut() = u32::try_from(frames * stride).unwrap_or(0);
+        self.position = self.position.saturating_add(frames as u64);
+        self.last_ticks = Some((time.ticks(), frames as u64));
+    }
+
+    fn process_capture(&mut self, stream: &pw::stream::Stream, channels: usize, stride: usize) {
+        let mut callback_frames = 0u64;
+        let mut callback_ticks: Option<u64> = None;
+        for drained in 0..MAX_CAPTURE_BUFFERS {
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                break;
+            };
+            let Ok(time) = stream.time() else {
+                continue;
+            };
+            let Some(data) = buffer.datas_mut().first_mut() else {
+                continue;
+            };
+            let (offset, size) = (data.chunk().offset() as usize, data.chunk().size() as usize);
+            let Some(bytes) = data.data() else {
+                continue;
+            };
+            let Some(bytes) = bytes.get(offset..offset.saturating_add(size)) else {
+                continue;
+            };
+            let frames = (bytes.len() / stride).min(self.samples.len() / channels);
+            if frames == 0 {
+                continue;
+            }
+            if drained == 0 {
+                self.sync_position(&time);
+            }
+            let now = self.raw(time.now());
+            let delay = self.total_delay_ns(&time, stride);
+            let length = self.frames_ns(frames as u64);
+            let first = now.saturating_sub(delay).saturating_sub(length);
+            let position = self.position;
+            if let Side::Capture(capture) = &mut self.side
+                && let Some(samples) = self.samples.get_mut(..frames * channels)
+            {
                 for (sample, place) in samples.iter_mut().zip(bytes.as_chunks::<4>().0) {
                     *sample = f32::from_le_bytes(*place);
                 }
-                // The frames that a cycle hands over were captured during
-                // the cycle before: the first of them entered the device the
-                // length of the buffer before the time of this cycle, and the
-                // delay before that.
-                let length =
-                    i64::try_from((frames as u128) * 1_000_000_000 / u128::from(self.rate.max(1)))
-                        .unwrap_or(0);
-                let first = now.saturating_sub(delay).saturating_sub(length);
                 capture.cycle(samples, position, first);
             }
+            self.position = self.position.saturating_add(frames as u64);
+            callback_frames = callback_frames.saturating_add(frames as u64);
+            callback_ticks = Some(time.ticks());
         }
+        if let Some(ticks) = callback_ticks {
+            self.last_ticks = Some((ticks, callback_frames));
+        }
+    }
+}
+
+/// Resets chunk metadata on a dequeued playback buffer so returning early
+/// never replays stale samples from a previous cycle.
+fn clear_chunk(buffer: &mut pw::buffer::Buffer<'_>, stride: usize) {
+    if let Some(data) = buffer.datas_mut().first_mut() {
+        let chunk = data.chunk_mut();
+        *chunk.offset_mut() = 0;
+        *chunk.stride_mut() = i32::try_from(stride).unwrap_or(0);
+        *chunk.size_mut() = 0;
     }
 }
 
@@ -247,10 +402,11 @@ where
     P: Playback + Send + 'static,
     C: Capture + Send + 'static,
 {
+    settings.validate()?;
     let (made, outcome) = std::sync::mpsc::channel::<Result<pw::channel::Sender<()>, Error>>();
     let thread = std::thread::Builder::new()
         .name(format!("pipewire-{}", settings.name))
-        .stack_size(512 * 1024)
+        .stack_size(STACK_SIZE)
         .spawn(move || {
             pw::init();
             let result = serve(side, &settings, &made);
@@ -260,16 +416,23 @@ where
         })
         .map_err(|error| Error(format!("starting the thread of the stream: {error}")))?;
     match outcome.recv() {
-        Ok(Ok(quit)) => Ok(Running { quit, thread }),
+        Ok(Ok(quit)) => Ok(Running {
+            quit,
+            thread: Some(thread),
+        }),
         Ok(Err(error)) => {
             let _ = thread.join();
             Err(error)
         }
-        Err(_) => Err(Error("the thread of the stream ended".into())),
+        Err(_) => {
+            let _ = thread.join();
+            Err(Error("the thread of the stream ended".into()))
+        }
     }
 }
 
-/// Makes the stream and runs PipeWire's loop until it is told to quit.
+/// Makes the stream and runs PipeWire's loop until it is told to quit or the
+/// stream enters an error state.
 fn serve<P, C>(
     side: Side<P, C>,
     settings: &Settings,
@@ -311,9 +474,17 @@ where
         samples: vec![0.0f32; settings.largest_cycle * channels].into_boxed_slice(),
         channels,
         rate: settings.rate,
+        position: 0,
+        last_ticks: None,
     };
-    let _listener = stream
+    let loop_on_error = mainloop.clone();
+    let listener = stream
         .add_local_listener_with_user_data(state)
+        .state_changed(move |_stream, _state, _old, new| {
+            if matches!(new, pw::stream::StreamState::Error(_)) {
+                loop_on_error.quit();
+            }
+        })
         .process(|stream, state| state.process(stream))
         .register()
         .map_err(failed("listening to the stream"))?;
@@ -358,5 +529,79 @@ where
     });
     let _ = made.send(Ok(quit));
     mainloop.run();
+    // Disconnect the stream before dropping the listener so the RT callback
+    // cannot observe torn-down user data.
+    let _ = stream.disconnect();
+    drop(listener);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Settings;
+
+    fn base_settings() -> Settings {
+        Settings {
+            name: "unisono-test".into(),
+            rate: 48_000,
+            channels: 2,
+            target: None,
+            monitor: false,
+            largest_cycle: 8_192,
+            cycle: 256,
+        }
+    }
+
+    #[test]
+    fn settings_validation_rejects_zero_and_interior_nul() {
+        assert!(base_settings().validate().is_ok());
+        assert!(
+            Settings {
+                rate: 0,
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                channels: 0,
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                cycle: 0,
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                largest_cycle: 0,
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                name: "bad\0name".into(),
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                target: Some("bad\0target".into()),
+                ..base_settings()
+            }
+            .validate()
+            .is_err()
+        );
+    }
 }
