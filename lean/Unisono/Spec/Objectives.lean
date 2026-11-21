@@ -11,7 +11,7 @@ public import Unisono.Spec.Solution
 
 What we want of a playback, measured in true time, from what each speaker
 plays at each of its output samples: the sound of the source at a position,
-or something else.
+or a non-source output.
 
 * **Synchronization:** every speaker plays each frame of the source at the
   same true time.
@@ -20,8 +20,8 @@ or something else.
   latency that the application sets for it.
 * **Roughness:** the speed at which a speaker plays the source changes
   slowly. A speed of one is the original pitch and tempo. The roughness is
-  the integral of the square of the speed's derivative, the earlier work's
-  warp cost; it also charges a change of speed across a break in playback.
+  the integral of the square of the speed's derivative; it also charges a
+  change of speed across a break in playback.
 * **Missed samples:** every output sample plays the original sound in its
   place. Each output sample that does not, and each frame that a jump skips
   or plays a second time, counts once, whatever is played instead.
@@ -49,7 +49,7 @@ variable {H : Type} {R : ℕ}
 /-! ## A speaker's playback
 
 `plays k` is what a speaker plays at its output sample `k`: the sound of the
-source at a position in frames, or `none` for anything else. -/
+source at a position in frames, or `none` for a non-source output. -/
 
 /-- Playback is continuous from output sample `k` to the next: both play the
 source, and the position advances by more than zero and less than two
@@ -81,12 +81,13 @@ def playTime (out : ℕ → Time) (plays : ℕ → Option ℝ) (n : ℕ) : Optio
 * An output sample that does not play the source counts one.
 * An output sample that plays the source, after earlier ones did, counts the
   frames that its position skips or plays again, beyond those that the
-  output samples in between, which played something else, already counted.
+  output samples in between, which were non-source outputs, already
+  counted.
 
 Its position advances from that of the last output sample before it that
 played the source by `y - x`. In continuous playback it advances by one
-frame for each output sample, `gap + 1` frames after `gap` output samples
-that played something else. It skips `⌊y - x - 1⌋` frames when that is
+frame for each output sample, `gap + 1` frames after `gap` non-source
+outputs. It skips `⌊y - x - 1⌋` frames when that is
 positive, of which `gap` are counted already, and plays `⌊1 - (y - x)⌋`
 frames again when that is positive. -/
 def missedAt (plays : ℕ → Option ℝ) (k : ℕ) : ℕ := by
@@ -104,7 +105,7 @@ def missedAt (plays : ℕ → Option ℝ) (k : ℕ) : ℕ := by
 
 /-- The discontinuities counted at output sample `k`: one if playback breaks
 there, when output sample `k` plays the source and the next one does not
-continue it (it plays something else, or jumps forward or back); none
+continue it (it is a non-source output, or jumps forward or back); none
 otherwise. A gap counts once, at its start, however long it lasts. -/
 def discontinuityAt (plays : ℕ → Option ℝ) (k : ℕ) : ℕ := by
   classical
@@ -225,9 +226,10 @@ the horizon `T` grows, of the cost accrued per second. -/
 def longRun (accrued : Time → ℝ≥0∞) : ℝ≥0∞ :=
   Filter.limsup (fun T : Time => accrued T / ENNReal.ofReal T) Filter.atTop
 
-/-- The weights of the objectives. A solution is designed for given weights;
-the specification leaves them as parameters. Low-latency mode has a zero
-weight for tracking; lip-sync mode has a zero weight for latency. -/
+/-- The weights of the objectives. They are parameters: a solution is
+designed for a given set of weights, and any guarantee states the weights
+for which it holds. Low-latency mode has a zero weight for tracking;
+lip-sync mode has a zero weight for latency. -/
 structure Weights where
   sync : ℝ≥0
   latency : ℝ≥0

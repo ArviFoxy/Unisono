@@ -12,7 +12,7 @@ public import Unisono.Spec.World
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. `Unisono.Spec.World` only defines what one
 world is; a statement about the problem or about a solution holds under a
-model, and the same solution can do differently under different models. Each
+model, and the same solution can perform differently under different models. Each
 model is a file of its own in `Unisono/Spec/Models`.
 
 This model is deterministic: it bounds the clocks, the devices and the

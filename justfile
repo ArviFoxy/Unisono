@@ -6,18 +6,26 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: sizes format-check lint test targets realtime cost translation prove translation-check spec
+check: sizes format-check lint test targets realtime cost translation prove translation-check spec-check spec
 
 # No file of the repository is larger than a megabyte: the largest by far is
 # the translation of the core, a quarter of that.
 sizes:
     @git ls-files -z | xargs -0 du --bytes | awk '$1 > 1048576 { print "too large: " $2; large = 1 } END { exit large }'
 
-# Build the specification of the problem as a PDF, target/spec/specification.pdf.
-# The build fails on any LaTeX warning, such as a line that runs into the margin.
+# Build the specification of the problem as a PDF and copy it to
+# docs/specification.pdf, the copy kept in the repository. The PDF records the
+# SHA-256 of its source. The build fails on any LaTeX warning, such as a line
+# that runs into the margin.
 spec:
-    latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=target/spec docs/specification.tex
+    latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=target/spec -usepretex='\def\specsource{'"$(sha256sum docs/specification.tex | cut -d' ' -f1)"'}' docs/specification.tex
     @! grep -E "Warning|Overfull|Underfull" target/spec/specification.log
+    cp target/spec/specification.pdf docs/specification.pdf
+
+# The PDF of the specification in the repository is built from the current
+# source.
+spec-check:
+    @pdfinfo docs/specification.pdf | grep -q "$(sha256sum docs/specification.tex | cut -d' ' -f1)" || { echo "docs/specification.pdf is not built from the current docs/specification.tex: run just spec"; exit 1; }
 
 # Rewrite the Rust sources in the standard format.
 format:

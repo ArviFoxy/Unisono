@@ -3,14 +3,35 @@
 % file, You can obtain one at https://mozilla.org/MPL/2.0/.
 \documentclass[11pt,a4paper]{article}
 
-\usepackage[margin=2.5cm]{geometry}
+\usepackage[margin=2.2cm]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{booktabs}
 \usepackage{array}
+\usepackage{enumitem}
+\usepackage{needspace}
 \usepackage{microtype}
 \usepackage[hidelinks]{hyperref}
 
+% The same source gives the same PDF: no dates, no random identifier and no
+% description of the machine that built it. `just spec` passes the SHA-256
+% of this file as \specsource, and the PDF records it, so that
+% `just spec-check` can tell whether the committed PDF was built from the
+% current source.
+\ifdefined\pdfinfoomitdate
+  \pdfinfoomitdate=1
+  \pdftrailerid{}
+  \pdfsuppressptexinfo=-1
+\fi
+\providecommand{\specsource}{unknown}
+\hypersetup{
+  pdftitle={The problem that unisono solves},
+  pdfsubject={Built from docs/specification.tex with SHA-256 \specsource}
+}
+
+\setlist{itemsep=2pt,topsep=4pt,parsep=0pt}
 \emergencystretch=3em
+\clubpenalty=10000
+\widowpenalty=10000
 
 \newcommand{\lean}[1]{\texttt{#1}}
 \newcommand{\R}{\mathbb{R}}
@@ -23,12 +44,12 @@
 \newtheorem{theorem}[definition]{Theorem}
 \newtheorem{remark}[definition]{Remark}
 
-\title{The problem that unisono solves}
-\author{}
-\date{}
-
 \begin{document}
-\maketitle
+
+\begin{center}
+{\LARGE\bfseries The problem that unisono solves\par}
+\end{center}
+\medskip
 
 This document specifies the problem that unisono solves, independently of
 any solution. The Lean files in \lean{lean/Unisono/Spec} state the same
@@ -41,21 +62,22 @@ model of the world (Section~\ref{sec:models}). A solution is one whole
 system, judged by what it achieves for the objectives of
 Section~\ref{sec:objectives}.
 
-\paragraph{The objectives at a glance.} Each objective accrues a cost per
-frame of the source or per output sample of a speaker, and is measured as a
-long-run average per second of true time. Section~\ref{sec:objectives}
-defines each symbol where it is used: $R$ is the number of speakers,
-$T_r(n)$ the time at which speaker $r$ plays frame $n$, $\ell_r(n)$ its
-latency, $L^*(n)$ the target latency, $v_r(k)$ the playback speed at output
-sample $k$, $j$ the next step of continuous playback after $k$, and
-$\Delta t$ the time between the two steps. The last two columns give the
-weight of each objective in each mode.
+\paragraph{The objectives at a glance.} Each objective accrues a term for
+each frame of the source or for each output sample of a speaker, and is
+measured as the long-run average of these terms per second of true time.
+The second column gives the term, the third the unit of the long-run
+average, and the last two the weight of the objective in each mode.
+Section~\ref{sec:objectives} defines each symbol where it is used: $R$ is
+the number of speakers, $T_r(n)$ the time at which speaker $r$ plays frame
+$n$, $\ell_r(n)$ its latency, $L^*(n)$ the target latency, $v_r(k)$ the
+playback speed at output sample $k$, $j$ the next step of continuous
+playback after $k$, and $\Delta t$ the time between the two steps.
 
 \begin{center}
 \footnotesize
 \begin{tabular}{@{}l>{$}l<{$}ll>{$}c<{$}>{$}c<{$}@{}}
 \toprule
-Objective & \text{cost accrued} & unit & Lean & \text{low latency} & \text{lip sync} \\
+Objective & \text{term} & long-run unit & Lean & \text{low latency} & \text{lip sync} \\
 \midrule
 Synchronization & \frac{1}{R^2}\sum_{r<r'} (T_r(n)-T_{r'}(n))^2 & s$^2$ & \lean{syncCost} & w_S & w_S \\[2pt]
 Latency & \frac{1}{R}\sum_r \ell_r(n) & s & \lean{latencyCost} & w_\Lambda & 0 \\[2pt]
@@ -82,24 +104,31 @@ play every sample of the source
 \item without missed samples and without breaks: every output sample plays
   the original sound in its place, continuously.
 \end{itemize}
-Out of scope: correcting for the time that sound takes from a speaker to a
-listener (room correction); what a speaker plays instead of a missed sample
-(concealment), since every output sample that is not the original counts as
-missed whatever it plays; the quality of resampling, apart from its
-lookahead (Section~\ref{sec:solutions}); and devices of different nominal
-rates.
+This specification does not cover:
+\begin{itemize}
+\item room correction, which compensates for the time that sound takes from
+  a speaker to a listener;
+\item concealment, what a speaker plays instead of a missed sample: every
+  output sample that is not the original counts as missed, whatever it
+  plays;
+\item the quality of resampling, apart from its lookahead
+  (Section~\ref{sec:solutions});
+\item devices of different nominal rates.
+\end{itemize}
 
 \section{The world}\label{sec:world}
 
-The world is everything that no solution chooses (\lean{World}). A model of
-the world (Section~\ref{sec:models}) says which worlds can happen and with
-which probabilities.
+The world comprises everything outside a solution's control (\lean{World}).
+A model of the world (Section~\ref{sec:models}) says which worlds can
+happen and with which probabilities.
 
+\needspace{8\baselineskip}
 \begin{definition}[World]
+A world consists of:
 \begin{itemize}
-\item \emph{True time} $t \in \R$ is measured in seconds (\lean{Time}). No
+\item \emph{True time} $t \in \R$, measured in seconds (\lean{Time}). No
   device can read it.
-\item \emph{The capture device} of the sender (\lean{CaptureDevice})
+\item \emph{The capture device} of the sender (\lean{CaptureDevice}). It
   captures frame $n \in \N$ of the source at true time $c(n)$, strictly
   increasing in $n$ (\lean{capture}). A frame holds one sample of each
   channel. The device hands the frames to the sender's host in blocks:
@@ -107,28 +136,28 @@ which probabilities.
   handed over at true time $h(b) \ge c(f(b+1)-1)$ (\lean{handed}). For each
   block the device reports a timestamp $\hat c(b)$, a reading of its host's
   clock that estimates when the block's first frame was captured
-  (\lean{reported}); it may be wrong.
-\item \emph{Speaker} $r \in \{0,\dots,R-1\}$ is a playback device
+  (\lean{reported}); it need not be exact.
+\item \emph{Speaker} $r \in \{0,\dots,R-1\}$, a playback device
   (\lean{PlaybackDevice}). Its output sample $k \in \N$ leaves the device at
   true time $o_r(k)$, strictly increasing in $k$ (\lean{out}). The device
   requests block $b$, the output samples $g_r(b) \le k < g_r(b+1)$
   (\lean{first}), at true time $a_r(b) < o_r(g_r(b))$ (\lean{asked}), and
   reports a timestamp $\hat o_r(b)$ that estimates when the block's first
-  output sample leaves (\lean{reported}).
-\item \emph{Every host} $i$ has a clock $C_i$ (\lean{Clock}), a continuous,
+  output sample leaves (\lean{reported}); it need not be exact.
+\item \emph{A clock} $C_i$ for every host $i$ (\lean{Clock}), a continuous,
   strictly increasing function from true time to readings.
-\item \emph{The network} (\lean{Network}) carries messages between any two
-  hosts. When host $i$ sends its $q$-th message to host $j$ at true time
-  $s$, the network either delivers it at a true time
+\item \emph{The network} (\lean{Network}), which carries messages between
+  any two hosts. When host $i$ sends its $q$-th message to host $j$ at true
+  time $s$, the network either delivers it at a true time
   $\mathrm{deliver}_{ij}(s,q) > s$ or drops it (\lean{deliver}). Delivery
   and loss may depend on $s$ and $q$, but not on the payload.
-\item \emph{The application} sets a target latency $L^*(n)$ for each frame
-  $n$, used in lip-sync mode, and gives it to the sender's host together
-  with the frame (\lean{target}).
-\item All devices have the same nominal rate $\rho$, in frames per second
-  (\lean{rate}); each runs at the rate of its own oscillator. The hosts are
-  the sender's host and the speakers' hosts (\lean{hosts}).
+\item \emph{The target latency} $L^*(n)$ of each frame $n$, used in
+  lip-sync mode, which the application sets and gives to the sender's host
+  together with the frame (\lean{target}).
 \end{itemize}
+All devices have the same nominal rate $\rho$, in frames per second
+(\lean{rate}); each runs at the rate of its own oscillator. The hosts are
+the sender's host and the speakers' hosts (\lean{hosts}).
 \end{definition}
 
 \begin{definition}[Positions in the source]
@@ -163,21 +192,27 @@ observed so far, each with its clock reading. True time is not in the view,
 and neither is anything that happens at another host unless a message
 reports it.
 
+\needspace{14\baselineskip}
 \section{Solutions and their run}\label{sec:solutions}
 
 \begin{definition}[Solution]
-At each event, a host sends messages to any hosts, with a payload of the
-solution's choice and with the data of frames that it holds; sets timers at
-readings of its clock; and, when a speaker's device requests a block,
-chooses for each output sample of the block what it plays: the source at a
-position $x$, or anything else, written $\none$ (\lean{Action}). A
-\emph{solution} $\sigma$ determines what each host does at each event as a
+At each event, a host
+\begin{itemize}
+\item sends messages to any hosts, each with a payload of the solution's
+  choice and with the data of frames that the host holds;
+\item sets timers at readings of its clock;
+\item when a speaker's device requests a block, chooses what each output
+  sample of the block plays: the source at a position $x$, or a
+  \emph{non-source output}, written $\none$, such as silence or a
+  concealment (\lean{Action}).
+\end{itemize}
+A \emph{solution} $\sigma$ determines what each host does at each event as a
 function of its view (\lean{Solution}). A host \emph{holds} a frame once an
 event has brought its data: the capture device's handoff at the sender, or
 a message.
 \end{definition}
 
-Four limits apply to every solution.
+Four constraints apply to every solution.
 \begin{enumerate}
 \item \emph{Causality.} What a host does at an event depends only on its
   view.
@@ -208,32 +243,31 @@ over and request blocks, the network determines when a message arrives or
 that it is dropped, and a host's clock determines when it reaches the
 reading of a timer. The host adds the event to its view and does what the
 solution chooses for that view. Simultaneous events are processed in a
-fixed order: the capture device's first, then the speakers' devices' in the
-order of the speakers, then messages and timers in the order in which they
-were sent or set. What speaker $r$ plays at output sample $k$ is what was
-decided when its device requested the block holding $k$
-(\lean{Solution.plays}).
+fixed order: capture events first, then speaker requests in speaker index
+order, then message arrivals and timers in the order in which they were
+sent or set. What speaker $r$ plays at output sample $k$ is what was decided
+when its device requested the block holding $k$ (\lean{Solution.plays}).
 \end{definition}
 
 Every solution therefore has exactly one run in every world.
 
 \begin{theorem}\label{thm:run}
 The run processes events in chronological order
-(\lean{Solution.eventTime\_le\_succ}). If the run passes every time, that is,
-its events eventually occur later than any given true time, then the
-solution decides what every output sample of every speaker plays
+(\lean{Solution.eventTime\_le\_succ}). If the run advances past every true
+time, that is, for every true time $T$ the run has an event after $T$, then
+the solution decides what every output sample of every speaker plays
 (\lean{Solution.decided}).
 \end{theorem}
 
-A solution that schedules infinitely many events before some finite time
-$t$, for example timers ever closer together, never passes $t$, and every
-output sample after $t$ counts as missed.
+A Zeno solution, which schedules infinitely many events before some finite
+time $t$, for example timers ever closer together, never advances past $t$,
+and every output sample after $t$ counts as missed.
 
 \section{The objectives}\label{sec:objectives}
 
 All objectives are measured in true time from what each speaker plays. Let
 $p_r(k) \in \R \cup \{\none\}$ be what speaker $r$ plays at output sample
-$k$: a position in the source, or $\none$ for anything else.
+$k$: a position in the source, or $\none$ for a non-source output.
 
 \begin{definition}[Continuous playback]
 Playback of speaker $r$ is continuous from output sample $k$ to $k+1$ when
@@ -287,7 +321,7 @@ $1200\log_2 v$ cents. The speed is one minus the rate of change of the
 latency, $v = 1 - \dot\ell$ (\lean{speed\_eq}).
 \end{definition}
 
-\begin{definition}[Roughness]
+\begin{definition}[Roughness]\label{def:roughness}
 For a continuous step $k$ of speaker $r$, let $j > k$ be the next
 continuous step. The roughness between them is
 \[
@@ -305,12 +339,14 @@ hide a change of speed (\lean{roughnessCost\_across}).
 \begin{definition}[Missed samples]
 At output sample $k$ of a speaker (\lean{missedAt}):
 \begin{itemize}
-\item an output sample that plays $\none$ counts one;
-\item an output sample that plays position $y$, when the last earlier output
-  sample that played the source played position $x$, $g$ output samples
-  before it, counts the frames that $y$ skips beyond those $g$, namely
-  $\max(\lfloor y - x - 1 \rfloor - g, 0)$, plus the frames it plays again,
-  $\max(\lfloor 1 - (y - x) \rfloor, 0)$.
+\item a non-source output counts one;
+\item an output sample that plays position $y$ counts the frames that it
+  skips and the frames that it plays again. Let $x$ be the position played
+  by the last earlier output sample that played the source, with $g \ge 0$
+  non-source outputs between the two. The output sample counts
+  $\max(\lfloor y - x - 1 \rfloor - g, 0)$ skipped frames, beyond the $g$
+  already counted, and $\max(\lfloor 1 - (y - x) \rfloor, 0)$ frames played
+  again.
 \end{itemize}
 \end{definition}
 
@@ -323,36 +359,37 @@ What a speaker does & Missed samples & Lean \\
 plays continuously & $0$ & \lean{missedAt\_continues} \\
 jumps forward over $J$ frames & $J$ & \lean{missedAt\_skip} \\
 plays $J$ frames again & $J$ & \lean{missedAt\_repeat} \\
-plays $g$ samples of anything else, then continues where it would have been & $g$ & \lean{missedAt\_after\_gap} \\
-plays $g$ samples of anything else, then resumes where it stopped & $g$ & \lean{missedAt\_resume} \\
+plays $g$ non-source outputs, then continues where it would have been & $g$ & \lean{missedAt\_after\_gap} \\
+plays $g$ non-source outputs, then resumes where it stopped & $g$ & \lean{missedAt\_resume} \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-A speaker that resumes where it stopped plays everything after a little
-later; that costs synchronization and latency, not missed samples.
+A speaker that resumes where it stopped plays all subsequent audio later by
+the duration of the gap; that increases its synchronization and latency
+costs rather than its missed samples.
 
 \begin{definition}[Discontinuities]
 Playback of speaker $r$ breaks after output sample $k$ when $p_r(k)$ plays
 the source and the step from $k$ to $k+1$ is not continuous: the next output
-sample plays $\none$, jumps forward by two frames or more, or jumps back
-(\lean{discontinuityAt}). Each break counts one discontinuity. A gap counts
-one however long it lasts (\lean{discontinuities\_gap}), and a jump counts
-one (\lean{discontinuityAt\_jump}).
+sample is a non-source output, jumps forward by two frames or more, or jumps
+back (\lean{discontinuityAt}). Each break counts one discontinuity. A gap
+counts one however long it lasts (\lean{discontinuities\_gap}), and a jump
+counts one (\lean{discontinuityAt\_jump}).
 \end{definition}
 
 Missed samples measure how much sound is lost; discontinuities measure how
 often playback breaks, each break being an audible click.
 
 \begin{definition}[Long-run averages and cost]
-A cost of each frame accrues until true time $T$ as
+A term of each frame accrues until true time $T$ as
 \[
-  A(T) = \sum_{n:\,c(n) < T} \mathrm{cost}(n)\,\bigl(c(n+1) - c(n)\bigr),
+  A(T) = \sum_{n:\,c(n) < T} \mathrm{term}(n)\,\bigl(c(n+1) - c(n)\bigr),
 \]
-an integral over the time of capture (\lean{World.accruedFrames}). A cost
+an integral over the time of capture (\lean{World.accruedFrames}). A term
 of each output sample accrues as
 \[
-  A(T) = \frac{1}{R}\sum_r \sum_{k:\,o_r(k) < T} \mathrm{cost}_r(k)
+  A(T) = \frac{1}{R}\sum_r \sum_{k:\,o_r(k) < T} \mathrm{term}_r(k)
 \]
 (\lean{World.accruedOutputs}). The long-run average of $A$ is
 $\limsup_{T \to \infty} A(T)/T$ (\lean{longRun}). The cost of a playback,
@@ -371,10 +408,11 @@ solution in a world is the cost of what its speakers play in its run there
 expected cost (\lean{Solution.expectedCost}).
 \end{definition}
 
-The weights are parameters: a solution is designed for weights, and
-statements about solutions say for which. Low-latency mode has
-$w_\Theta = 0$; lip-sync mode has $w_\Lambda = 0$. How the objectives
-combine may be revisited once the limits and the solutions are known.
+The weights are parameters: a solution is designed for a given set of
+weights, and any guarantee states the weights for which it holds.
+Low-latency mode has $w_\Theta = 0$; lip-sync mode has $w_\Lambda = 0$. How
+the objectives combine may be revisited once the limits and the solutions
+are known.
 
 \begin{remark}[Muting a speaker]
 A speaker that does not play a frame adds nothing to that frame's
@@ -383,16 +421,20 @@ speaker $r$ lowers $\Lambda(n)$ by exactly $\ell_r(n)/R$
 (\lean{latencyCost\_unplayed}). When all other speakers play the frame at
 one time and speaker $r$ is off from them by $\Delta$, not playing it at
 speaker $r$ lowers $S(n)$ by $(R-1)\Delta^2/R^2$
-(\lean{syncCost\_one\_off}). Muting speaker $r$ for a while costs one missed
-sample per output sample, so it lowers the cost only if
+(\lean{syncCost\_one\_off}). Muting speaker $r$ for a while adds one missed
+sample per output sample. Per second, it therefore adds $w_M\rho/R$ and
+saves $\bigl(w_\Lambda \ell + w_\Theta(\ell - L^*)^2\bigr)/R +
+w_S(R-1)\Delta^2/R^2$, where $\rho$ is the sample rate, $\ell$ the
+speaker's latency and $\Delta$ its offset from the others. The factor $1/R$
+of the average over speakers is common to both, so muting lowers the cost
+only if
 \[
-  w_M\,\rho < w_\Lambda\,\ell + w_\Theta\,(\ell - L^*)^2 + w_S\,\frac{(R-1)\,\Delta^2}{R},
+  w_M\,\rho < w_\Lambda\,\ell + w_\Theta\,(\ell - L^*)^2 + w_S\,\frac{(R-1)\,\Delta^2}{R}.
 \]
-where $\rho$ is the sample rate, $\ell$ the speaker's latency and $\Delta$
-its offset from the others. At $\rho = 48\,000$ per second and
-$\ell = 50$\,ms, with no tracking or synchronization error, this needs
-$w_M$ below a millionth of $w_\Lambda$. Weights are chosen so that it does
-not hold.
+At $\rho = 48\,000$ per second and $\ell = 50$\,ms, with no tracking or
+synchronization error, this needs $w_M$ below a millionth of $w_\Lambda$.
+Weights should be chosen so that this inequality does not hold over the
+operating range.
 \end{remark}
 
 \begin{remark}[Dilution of one speaker]
@@ -405,35 +447,38 @@ pairs.
 
 \section{Rate distortion}
 
-The earlier work that this project started from charges the \emph{warp}
-$u$, the fraction by which a receiver's resampler plays faster or slower
-than its nominal rate, with $\int \dot u(t)^2\,dt$, the $\dot H^1$
-seminorm. It charges the derivative and not the warp itself: fast changes
-of pitch are heard, a slowly varying small offset is not. Its bound on the
-warp, half a percent, is the resampler's limit; here it is the speed bound
-$u_{\max}$ of Section~\ref{sec:solutions}.
-
-Here the speed is that of the source as heard, against its capture in true
-time; its steady value is one, and the clocks' drift appears only in what a
-solution does to keep it at one. The earlier warp is the resampler's rate
-against its own device, whose steady value is the drift. The two
-derivatives differ only by how fast the clocks' own rates change, so the
-roughness here is the earlier warp cost, measured on what is heard.
+Rate distortion is charged by the roughness of
+Definition~\ref{def:roughness}: in continuous playback, the integral
+$\int \dot v(t)^2\,dt$ of the squared derivative of the speed, the
+$\dot H^1$ seminorm. It charges how fast the speed changes, not how far it
+is from one: fast changes of pitch are heard, while a slowly varying small
+offset is not. The offset is limited instead by the speed bound $u_{\max}$
+of Section~\ref{sec:solutions}, the resampler's limit. The design document
+\lean{docs/model.md} (its section on the objective) uses the same cost and
+the same bound on the rate at which a receiver's resampler plays fast,
+against its own device, whose steady value is the clocks' drift. The speed
+here is that of the source as heard, against its capture in true time,
+whose steady value is one. The two derivatives differ only by how fast the
+clocks' own rates change.
 
 Without the speed bound, the best recovery from an excess latency
-$\Delta L$ under latency and roughness costs alone plays off pitch by an
-amount that grows as $\Delta L^{3/4}$, without limit. The bound caps it, as
-in the earlier work. Open for discussion: whether the weighting of a speed
-modulation by the square of its rate matches how listeners detect frequency
-modulation, or a weighting by modulation rate should replace it.
+$\Delta L$ under latency and roughness costs alone deviates in speed, and
+thus in pitch, by an amount that grows as $\Delta L^{3/4}$, without limit.
+The bound caps it.
+
+\begin{remark}[Perceptual weighting]
+The roughness weighs a modulation of the speed by the square of its rate.
+Whether this matches how listeners detect frequency modulation, or whether
+a weighting by modulation rate should replace it, is open.
+\end{remark}
 
 \section{Models of the world}\label{sec:models}
 
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. Statements hold under a model, and the
-same solution can do differently under different models. Each model is a
-file of its own in \lean{lean/Unisono/Spec/Models}, and each comes with an
-example showing that it is not empty.
+same solution can perform differently under different models. Each model
+is a file of its own in \lean{lean/Unisono/Spec/Models}, and each comes
+with an example showing that it is not empty.
 
 \subsection{Bounded worlds}
 
@@ -444,7 +489,7 @@ $\varepsilon_C, \varepsilon_D \in [0, 1)$, the timestamp error
 $\varepsilon_R \ge 0$, the handoff delay $\eta \ge 0$, the request leads
 $0 < \lambda_{\min} \le \lambda_{\max}$, the block size $m_B \ge 1$, the
 delays $0 < d_{\min}(i,j) \le d_{\max}(i,j)$ of each link, and the number
-$m_L$ of consecutive losses. A world is within the bounds when:
+$m_L \in \N$ of consecutive losses. A world is within the bounds when:
 \begin{itemize}
 \item clocks: $|C_i(t) - C_i(s) - (t - s)| \le \varepsilon_C\,(t - s)$ for
   $s \le t$;
@@ -468,35 +513,37 @@ A random world can be required to be within bounds almost surely
 
 \subsection{Delays, pauses and losses}
 
-The model \lean{Delays} gives the network a probability distribution; it is
-the model of the earlier work. Each link from host $i$ to host $j$
+The model \lean{Delays} gives the network a probability distribution. It
+decomposes the delay as the design document \lean{docs/model.md} does in
+its section on disturbances. Each link from host $i$ to host $j$
 (\lean{Link}) has a baseline $B(u) > 0$, a jitter $J(u) \ge 0$, a set of
-episodes, each a pause or an outage with a start and a length $H > 0$, and a
-set of individually dropped messages.
+episodes, each a pause or an outage with a start and a length $H > 0$, and
+a set of individually dropped messages.
 
 \begin{definition}[Delivery]
 A message sent at true time $s$ is released at
 \[
   U(s) = \inf\{u \ge s : \text{no pause is under way at } u\}
 \]
-(\lean{Link.release}). The $q$-th message on the link is dropped if it is
-one of the individually dropped messages or if an outage is under way at
-$U(s)$; otherwise it arrives at $U(s) + B(U(s)) + J(U(s))$
-(\lean{Link.deliver}).
+(\lean{Link.release}); if no such time exists, the message is dropped. The
+$q$-th message on the link is also dropped if it is one of the individually
+dropped messages or if an outage is under way at $U(s)$; otherwise it
+arrives at $U(s) + B(U(s)) + J(U(s))$ (\lean{Link.deliver}).
 \end{definition}
 
 A pause thus holds back every message sent during it and releases them all
 when it ends: the first message sent in a pause of length $H$ is late by
-$H$, and messages released together arrive together, the earlier work's
-zero-drain idealization. Two messages sent on the same link at the same
-instant take the same time.
+$H$. Messages released together arrive together: the model ignores the time
+a link takes to send out the messages it held. Two messages sent on the
+same link at the same instant arrive at the same time if both are
+delivered.
 
 \begin{definition}[The model's distribution]
 The parameters (\lean{DelayModel}) are the slope $\beta \ge 0$ of the
 baseline, the tail constants $C > 0$ and $x_0 > 0$ of the jitter, the rate
 $\lambda_\kappa \ge 0$ and the length distribution $F_\kappa$ on
-$(0, \infty)$ of each kind $\kappa$ of episode, and the loss probability
-$p \in [0, 1]$. A random network follows the model
+$(0, \infty)$, with a finite mean, of each kind $\kappa$ of episode, and
+the loss probability $p \in [0, 1)$. A random network follows the model
 (\lean{DelayModel.Holds}) when:
 \begin{itemize}
 \item the baseline changes slowly: $|B(u) - B(u')| \le \beta\,|u - u'|$;
@@ -506,6 +553,8 @@ $p \in [0, 1]$. A random network follows the model
 \item episodes of kind $\kappa$ start at rate $\lambda_\kappa$ with lengths
   distributed as $F_\kappa$: the expected number that start within any $t$
   seconds with length in a set $A$ is $\lambda_\kappa\, t\, F_\kappa(A)$;
+\item a pause, and likewise an outage, is under way at a given time with
+  probability less than one;
 \item each message is dropped individually with probability $p$;
 \item the state of all links over time, $X(u)$, made of each link's jitter
   and whether a pause or an outage is under way, is jointly
@@ -522,14 +571,17 @@ A random world follows the model when its network consists of such links
 (\lean{DelayModel.Random}).
 \end{definition}
 
-Mixing implies that long-run averages equal their expectations almost
-surely. This rules out worlds that, with some probability, drop every
-message or hold every message forever. Nothing else is assumed independent:
-links may be alike, episodes may come in clusters, and the jitter, the
-episodes and the losses may depend on each other. Mixing is assumed without
-a rate; a rate will be added when a statement about finite time windows
-needs one. The model is not empty (\lean{DelayModel.example\_holds}).
+Mixing makes long-run averages, taken at regularly spaced times, equal their
+expectations almost surely. With the conditions above, almost surely no
+link drops every message or holds a message forever. Nothing else is
+assumed independent: links may be correlated, episodes may come in
+clusters, and the jitter, the episodes and the losses may depend on each
+other. Mixing is assumed without a rate; a rate will be added when a
+statement about finite time windows needs one. The model is not empty
+(\lean{DelayModel.example\_holds}).
 
-Models of how the clocks wander come with the statements that need them.
+Stochastic models of how the clocks wander are not part of this
+specification yet; they will be introduced together with the theorems that
+rely on them.
 
 \end{document}

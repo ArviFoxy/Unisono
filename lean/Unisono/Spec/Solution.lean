@@ -27,11 +27,11 @@ does, given its view.
 processed in chronological order (`Solution.states`). The world determines
 when each device event occurs and when each message arrives; the solution
 determines what each host does. Every solution has exactly one run in every
-world. Simultaneous events are processed in a fixed order: the capture
-device's first, then the speakers' devices' in the order of the speakers,
-then messages and timers in the order in which they were sent or set.
+world. Simultaneous events are processed in a fixed order: capture events
+first, then speaker requests in speaker index order, then message arrivals
+and timers in the order in which they were sent or set.
 
-Two limits hold for every solution.
+Two constraints hold for every solution.
 
 * A host sends only frames of the source that it holds; frames it does not
   hold are removed from the message.
@@ -44,12 +44,12 @@ Two limits hold for every solution.
   those frames when the device requests the block; otherwise it is a missed
   sample (`playable`).
 
-The lookahead is a parameter of the run. Two more limits are parameters that
-statements assume: the network's capacity (`Solution.WithinBudget`) and the
+The lookahead is a parameter of the run. Two more constraints are parameters
+that statements assume: the network's capacity (`Solution.WithinBudget`) and the
 speed bound (`Solution.WithinSpeed`, with the objectives).
 
-A solution that schedules infinitely many events before some finite time
-never gets past that time: the run never reaches the devices' later
+A solution that schedules infinitely many events before some finite time (a
+Zeno solution) never advances past that time: the run never reaches the devices' later
 requests, and every later output sample is missed.
 -/
 
@@ -98,8 +98,8 @@ structure Action (H : Type) (Msg : Type) where
   /-- When a playback device requests a block: what each of its output
   samples plays. `some x` is the sound of the source at position `x`,
   counted in frames: frame `n` when `x = n`, and the sound between frames
-  `n` and `n + 1` when `x` lies between them. `none` is anything else
-  (silence, a concealment, anything). -/
+  `n` and `n + 1` when `x` lies between them. `none` is a non-source output:
+  silence, a concealment, or anything else. -/
   plays : ℕ → Option ℝ
 
 /-- A solution: what each host does at an event, given its view, the events

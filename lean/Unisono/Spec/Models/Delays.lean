@@ -13,7 +13,8 @@ public import Mathlib.MeasureTheory.Measure.Typeclasses.Probability
 /-!
 # A probabilistic model of the network: delays, pauses and losses
 
-The model of the earlier work. On each link from one host to another, a
+The model decomposes the delay as the design document `docs/model.md`
+does in its section on disturbances. On each link from one host to another, a
 message sent at true time `s` waits, if the link is paused at `s`, until the
 link releases it: at the first moment `u ≥ s` at which the link holds
 nothing back. The message is then lost if the link is in an outage at `u`,
@@ -27,20 +28,24 @@ it arrives at `u + baseline u + jitter u`.
   rare.
 * A **pause** holds back every message sent during it and releases them all
   when it ends, so the first message sent in a pause is late by the pause's
-  whole length. Messages released together arrive together, the earlier
-  work's zero-drain idealization. An **outage** is a pause that drops the
-  messages instead.
+  whole length. Messages released together arrive together: the model
+  ignores the time a link takes to send out the messages it held. An
+  **outage** is a pause that drops the messages instead.
 
 `Link` and `World.HasDelays` define what the delays consist of, without
 probability; `DelayModel.Holds` gives their distribution. The state of all
 links over time (each link's jitter, and whether it is paused or in an
 outage) is jointly stationary and mixing, and so is the sequence of
-individually dropped messages. Mixing makes long-run averages equal their
-expectations almost surely, which rules out worlds that, with some
-probability, drop every message or hold every message forever. Nothing else
-is assumed independent: links may be alike, pauses may come in clusters,
-and the jitter, the pauses and the losses may depend on each other. Two
-messages sent on the same link at the same instant take the same time.
+individually dropped messages. Mixing makes long-run averages, taken at
+regularly spaced times, equal their expectations almost surely. Together
+with the conditions that a pause or an outage is under way at a given time
+with probability less than one, that a message is dropped individually with
+probability less than one, and that episodes have finite mean length, this
+means that almost surely no link drops every message or holds a message
+forever. Nothing else is assumed independent: links may be correlated,
+pauses may come in clusters, and the jitter, the pauses and the losses may
+depend on each other. Two messages sent on the same link at the same instant
+arrive at the same time if both are delivered.
 -/
 
 @[expose] public noncomputable section
@@ -88,8 +93,8 @@ def Loses (d : Link) (u : Time) : Prop :=
   ∃ p ∈ d.pauses, p.loses = true ∧ p.On u
 
 /-- When the link releases a message sent at true time `s`: at the first
-moment from `s` on at which it holds nothing back; `none` if that moment
-never comes. -/
+moment from `s` on at which it holds nothing back; `none`, and the message
+is dropped, if that moment never comes. -/
 def release (d : Link) (s : Time) : Option Time := by
   classical
   exact if ∃ u, s ≤ u ∧ ¬ d.Holds u then some (sInf {u | s ≤ u ∧ ¬ d.Holds u}) else none
@@ -158,10 +163,13 @@ structure DelayModel where
   pauseLength : Bool → Measure ℝ
   pauseLength_probability : ∀ kind, IsProbabilityMeasure (pauseLength kind)
   pauseLength_pos : ∀ kind, pauseLength kind (Set.Iic 0) = 0
-  /-- The probability that the link drops a message individually. -/
+  /-- Episodes have a finite mean length. -/
+  pauseLength_mean : ∀ kind, ∫⁻ x, ENNReal.ofReal x ∂(pauseLength kind) < ⊤
+  /-- The probability that the link drops a message individually; less than
+  one, since a link that drops every message carries nothing. -/
   lossProbability : ℝ
   lossProbability_nonneg : 0 ≤ lossProbability
-  lossProbability_le_one : lossProbability ≤ 1
+  lossProbability_lt_one : lossProbability < 1
 
 variable {H : Type} {Ω : Type} [MeasurableSpace Ω]
 
@@ -219,6 +227,11 @@ structure DelayModel.Holds (m : DelayModel) (P : Measure Ω) (d : Ω → H → H
     P {ω | x < (d ω i j).jitter u} ≤ ENNReal.ofReal (m.tailFactor * Real.exp (-x / m.tailScale))
   /-- Episodes have positive lengths. -/
   pause_length_pos : ∀ ω i j p, p ∈ (d ω i j).pauses → 0 < p.length
+  /-- A pause is under way at a given time with probability less than one. -/
+  paused_lt_one : ∀ i j u, P {ω | (d ω i j).Holds u} < 1
+  /-- An outage is under way at a given time with probability less than
+  one. -/
+  outage_lt_one : ∀ i j u, P {ω | (d ω i j).Loses u} < 1
   /-- Episodes of each kind start at the rate `pauseRate`, with lengths
   distributed as `pauseLength`: on any link, the mean number of episodes of
   a kind that start within any `t` seconds and whose length is in a set `A`

@@ -8,6 +8,7 @@ public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
+public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 public import Mathlib.Tactic.FieldSimp
 public import Mathlib.Tactic.Linarith
@@ -42,8 +43,8 @@ fails here.
   speaker's latency divided by the number of speakers
   (`latencyCost_unplayed`).
 * The run processes events in chronological order
-  (`Solution.eventTime_le_succ`), and a run that passes every time decides
-  what every output sample plays (`Solution.decided`).
+  (`Solution.eventTime_le_succ`), and a run that advances past every true
+  time decides what every output sample plays (`Solution.decided`).
 * Neither model of the world is empty (`Bounds.example_within`,
   `DelayModel.example_holds`).
 -/
@@ -148,9 +149,8 @@ theorem missedAt_repeat (plays : ℕ → Option ℝ) {k : ℕ} {x : ℝ} (J : �
   rw [h1', h2]
   simp
 
-/-- After `g` output samples that played something else, which count `g`
-missed samples, a position that continues as if they had played the source
-counts no more. -/
+/-- After `g` non-source outputs, which count `g` missed samples, a position
+that continues as if they had played the source counts no more. -/
 theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
     (hy : plays (k + 1 + g) = some (x + 1 + g)) :
@@ -166,8 +166,8 @@ theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (h
   rw [h1, Int.toNat_eq_zero.mpr h2, show k + 1 + g - 1 - k = g by omega]
   simp
 
-/-- After `g` output samples that played something else, which count `g`
-missed samples, a position that resumes where it stopped counts no more. -/
+/-- After `g` non-source outputs, which count `g` missed samples, a position
+that resumes where it stopped counts no more. -/
 theorem missedAt_resume (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
     (hy : plays (k + 1 + g) = some (x + 1)) :
@@ -524,10 +524,10 @@ theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead
   have h2 := σ.eventTime_le_asked w lookahead n r
   linarith
 
-/-- **A run that passes every time decides every output sample.** When the
-run's events pass any true time, every request of every device is handled,
-so each output sample plays what the solution decided at its request
-(`Solution.plays`). -/
+/-- **A run that advances past every true time decides every output
+sample.** When, for every true time, the run has an event after it, every
+request of every device is handled, so each output sample plays what the
+solution decided at its request (`Solution.plays`). -/
 theorem Solution.decided (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     (hgo : ∀ T, ∃ n, T < σ.eventTime w lookahead n) (r : Fin R) (k : ℕ) :
     ∃ n, k < (w.speaker r).first ((σ.states w lookahead n).askedNext r) := by
@@ -544,8 +544,8 @@ open MeasureTheory Filter Topology
 
 /-! ## Discontinuities -/
 
-/-- An output sample that plays something else counts no discontinuity:
-a gap counts only at its start. -/
+/-- A non-source output counts no discontinuity: a gap counts only at its
+start. -/
 theorem discontinuityAt_none (plays : ℕ → Option ℝ) {k : ℕ} (h : plays k = none) :
     discontinuityAt plays k = 0 := by
   simp [discontinuityAt, h]
@@ -812,9 +812,12 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
       pauseLength := fun _ => Measure.dirac 1
       pauseLength_probability := fun _ => inferInstance
       pauseLength_pos := fun _ => by simp [Measure.dirac_apply']
+      pauseLength_mean := fun _ => by
+        rw [lintegral_dirac]
+        exact ENNReal.ofReal_lt_top
       lossProbability := 0
       lossProbability_nonneg := le_rfl
-      lossProbability_le_one := zero_le_one },
+      lossProbability_lt_one := zero_lt_one },
     Measure.dirac (), d, inferInstance, ?_⟩
   refine
     { baseline_pos := fun _ _ _ _ => one_pos
@@ -823,6 +826,8 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
       jitter_near_zero := fun _ _ _ δ hδ => by simp [d, link, hδ]
       jitter_tail := fun _ _ _ x hx => by simp [d, link, not_lt.mpr hx]
       pause_length_pos := fun _ _ _ p hp => by simp [d, link] at hp
+      paused_lt_one := fun _ _ _ => by simp [d, link, Link.Holds]
+      outage_lt_one := fun _ _ _ => by simp [d, link, Link.Loses]
       pauses := fun _ _ _ _ _ _ _ _ => by simp [d, link]
       lost := fun _ _ _ => by simp [d, link]
       state_measurable := fun _ _ _ => measurable_const' fun _ _ => rfl

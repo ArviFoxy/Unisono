@@ -10,8 +10,8 @@ public import Mathlib.Order.Filter.ENNReal
 /-!
 # The world
 
-The part of the problem that no solution chooses: time, the devices, the
-hosts' clocks, the network and the application's target latency. A solution
+Everything outside a solution's control: time, the devices, the hosts'
+clocks, the network and the application's target latency. A solution
 sees the world only through what its hosts observe (`Unisono.Spec.Solution`).
 `docs/specification.tex` states the same in mathematical notation.
 
@@ -66,8 +66,8 @@ structure CaptureDevice where
   /-- A block is handed over once its last frame is captured. -/
   handed_after : ∀ b, capture (first (b + 1) - 1) ≤ handed b
   /-- The timestamp that the device reports for block `b`, as a reading of
-  its host's clock: when the block's first frame was captured. It may be
-  wrong. -/
+  its host's clock: when the block's first frame was captured. It need not
+  be exact. -/
   reported : ℕ → ℝ
 
 /-- The playback device of a speaker. Output samples are numbered from zero,
@@ -88,8 +88,8 @@ structure PlaybackDevice where
   /-- A block is requested before its first output sample leaves. -/
   asked_before : ∀ b, asked b < out (first b)
   /-- The timestamp that the device reports for block `b`, as a reading of
-  its host's clock: when the block's first output sample will leave. It may
-  be wrong. -/
+  its host's clock: when the block's first output sample will leave. It
+  need not be exact. -/
   reported : ℕ → ℝ
 
 /-- The network between hosts of type `H`. Whether a message arrives, and
