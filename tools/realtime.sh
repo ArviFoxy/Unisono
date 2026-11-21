@@ -178,7 +178,7 @@ fi
 # receiver's playback, with the pump, the resampler and the concealment, and
 # the sender's capture. The standard library's start-up code is in any
 # library made with it, so here the check follows the calls from the entry
-# points (tools/reachable.py).
+# points (crates/reachable).
 audio_target="$root/target/realtime-audio"
 audio_entries="realtime_playback_cycle realtime_capture_cycle"
 link_audio() {
@@ -195,12 +195,14 @@ link_audio() {
     cc -shared -nostdlib -Wl,--gc-sections "-Wl,--version-script=$linked_audio.map" \
         "${roots[@]}" -o "$linked_audio" "$library"
 }
+cargo build --quiet --release --package reachable
+reachable="$root/target/release/reachable"
 cargo build --quiet --release \
     --manifest-path "$root/tools/realtime-audio/Cargo.toml" --target-dir "$audio_target"
 # shellcheck disable=SC2086
 link_audio "$audio_target/release/libunisono_realtime_audio.a" "$audio_target/audio.so" $audio_entries
 # shellcheck disable=SC2086
-if ! audio_report="$(python3 "$root/tools/reachable.py" "$audio_target/audio.so" $audio_entries)"; then
+if ! audio_report="$("$reachable" "$audio_target/audio.so" $audio_entries)"; then
     echo "the cycles of the audio threads reach what they may not" >&2
     failed=1
 fi
@@ -210,7 +212,7 @@ cargo build --quiet --release --features panic-probe \
     --manifest-path "$root/tools/realtime-audio/Cargo.toml" --target-dir "$audio_target/probe"
 link_audio "$audio_target/probe/release/libunisono_realtime_audio.a" "$audio_target/probe.so" \
     realtime_panic_probe
-if python3 "$root/tools/reachable.py" "$audio_target/probe.so" realtime_panic_probe > /dev/null 2>&1; then
+if "$reachable" "$audio_target/probe.so" realtime_panic_probe > /dev/null 2>&1; then
     echo "the check of the audio threads did not catch realtime_panic_probe" >&2
     failed=1
 fi

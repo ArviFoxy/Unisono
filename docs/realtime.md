@@ -39,7 +39,7 @@ standard library: the receiver's playback takes in what the network thread
 handed over, plans with the core, resamples, conceals and fades; the
 sender's capture hands frames to the network thread. `tools/realtime-audio`
 builds the two cycles, as the program sizes them, into a library of their
-own, and `tools/reachable.py` follows every call from them through the
+own, and `crates/reachable` follows every call from them through the
 machine code, through the table of addresses as well. The check fails
 unless every function they reach is unisono's own, one of the functions
 that copy and fill memory, or one of the compiler's helpers for 128-bit

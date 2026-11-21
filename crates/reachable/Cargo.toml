@@ -1,0 +1,10 @@
+[package]
+name = "reachable"
+description = "Checks what the machine code of entry points of a library can reach: only unisono's own code and a few functions that copy memory and do arithmetic."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[lints]
+workspace = true
