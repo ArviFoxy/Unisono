@@ -10,7 +10,9 @@
 # Builds the image of containers/NAME/Dockerfile, which docker keeps until it
 # changes, and runs COMMAND in a container of it, as the calling user, with
 # the repository at /src. What cargo fetches and builds there stays in
-# target/container, apart from what the host builds.
+# target/container, apart from what the host builds. Set
+# UNISONO_SKIP_CONTAINER_BUILD=1 to reuse an already present local image
+# without running docker build.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -18,13 +20,16 @@ name="$1"
 shift
 image="unisono-test-$name"
 
-# What the build says is shown only when it fails.
-log="$(mktemp)"
-trap 'rm -f "$log"' EXIT
-if ! docker build --progress=plain --tag "$image" \
-    --file "$root/containers/$name/Dockerfile" "$root" > "$log" 2>&1; then
-    cat "$log" >&2
-    exit 1
+if [ "${UNISONO_SKIP_CONTAINER_BUILD:-0}" != 1 ] \
+    || ! docker image inspect "$image" > /dev/null 2>&1; then
+    # What the build says is shown only when it fails.
+    log="$(mktemp)"
+    trap 'rm -f "$log"' EXIT
+    if ! docker build --progress=plain --tag "$image" \
+        --file "$root/containers/$name/Dockerfile" "$root" > "$log" 2>&1; then
+        cat "$log" >&2
+        exit 1
+    fi
 fi
 mkdir -p "$root/target/container/cargo"
 docker run --rm --name "$image-$$" \
