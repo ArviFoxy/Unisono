@@ -30,6 +30,7 @@ use unisono_core::receiver::{self, Heard, Receiver};
 use unisono_core::timing;
 use unisono_dsp::{Concealment, Filter, Parameters, Position, Resampler, Step, Window};
 
+use crate::InvalidSettings;
 use crate::audio::Playback;
 use crate::store::Store;
 
@@ -125,6 +126,25 @@ fn narrow(count: usize) -> u32 {
     u32::try_from(count).unwrap_or(u32::MAX)
 }
 
+/// Whether the pump's resampling window currently holds stream frames or
+/// synthetic fade-out frames.
+#[derive(Clone, Copy, Debug)]
+enum State {
+    /// No audio is trailing from a previous cycle; `window` is empty.
+    Idle,
+    /// Actively playing stream frames; `window` holds stream frames and
+    /// `(next, step)` is where a fade-out would continue if playback stops.
+    Playing { next: Position, step: Step },
+    /// Draining a fade-out tail after playback paused; `window` holds
+    /// concealment frames (not stream frames) and must be cleared before
+    /// stream playback resumes.
+    Fading {
+        next: Position,
+        step: Step,
+        silent: usize,
+    },
+}
+
 /// Turns the core's plan for a cycle into output frames.
 ///
 /// It allocates when it is made and not afterwards.
@@ -147,12 +167,8 @@ pub struct Pump {
     length: usize,
     /// One frame that is written and not played.
     scratch: Box<[f32]>,
-    /// Where the next output frame would come from if playback stopped abruptly
-    /// and needs to fade out smoothly through the resampler and concealment.
-    tail: Option<(Position, Step)>,
-    /// How many consecutive silent frames have been appended to `window` while
-    /// draining `tail`.
-    tail_silent: usize,
+    /// Playback / fade-out state owning the provenance of `window`.
+    state: State,
 }
 
 impl Pump {
@@ -176,8 +192,7 @@ impl Pump {
             first: 0,
             length: 0,
             scratch: vec![0.0; channels].into_boxed_slice(),
-            tail: None,
-            tail_silent: 0,
+            state: State::Idle,
         }
     }
 
@@ -220,9 +235,16 @@ impl Pump {
         self.concealment.cycle_begins();
         let start = plan.start;
         let step = plan.step;
-        if plan.jumped && wanted > 0 {
-            self.jump();
-            done.jumped = true;
+        if wanted > 0 {
+            if plan.jumped {
+                self.jump();
+                done.jumped = true;
+            } else if matches!(self.state, State::Fading { .. }) {
+                // `window` holds synthetic fade-out frames from `fade_tail`,
+                // not real stream frames; clear it before fetching again.
+                self.length = 0;
+                self.state = State::Idle;
+            }
         }
         let mut written = 0;
         while written < wanted {
@@ -236,8 +258,9 @@ impl Pump {
             };
             let produced = self.block(receiver, store, at, step, block, &mut done);
             if produced > 0 {
-                self.tail = at.advance(step, produced as u64).map(|next| (next, step));
-                self.tail_silent = 0;
+                self.state = at
+                    .advance(step, produced as u64)
+                    .map_or(State::Idle, |next| State::Playing { next, step });
             }
             written += produced;
             if produced < frames {
@@ -258,11 +281,48 @@ impl Pump {
     /// what comes next.
     fn jump(&mut self) {
         self.length = 0;
-        self.tail = None;
-        self.tail_silent = 0;
+        self.state = State::Idle;
         // A frame that is made and not played begins a gap for the
         // concealment, so that the frames after it fade in.
         self.concealment.fill(&mut self.scratch);
+    }
+
+    /// Computes the `(from, to, shifted)` window range for `frames` output
+    /// frames starting at `at` with step `step`, returning `None` if the
+    /// range would overflow or exceed `self.capacity`.
+    fn block_range(&self, at: Position, step: Step, frames: usize) -> Option<(u64, u64, u64)> {
+        if frames == 0 {
+            return None;
+        }
+        let before = self.resampler.filter().before() as u64;
+        let taps = self.resampler.filter().taps() as u64;
+        // Places are counted from `before` on, so the position `at` reads
+        // the places from `at.frame()` to `at.frame() + taps - 1`.
+        let last = at.advance(step, frames as u64 - 1)?;
+        let from = at.frame();
+        let to = last.frame().checked_add(taps - 1)?;
+        let shifted = at.frame().checked_add(before)?;
+        (to - from < self.capacity as u64).then_some((from, to, shifted))
+    }
+
+    /// Resamples `output` from the current `self.window` starting at
+    /// `Position::new(shifted, at.fraction())`.
+    fn resample_window(
+        &mut self,
+        shifted: u64,
+        at: Position,
+        step: Step,
+        output: &mut [f32],
+    ) -> usize {
+        let window = Window {
+            first: self.first,
+            samples: self
+                .window
+                .get(..self.length * self.channels)
+                .unwrap_or(&[]),
+        };
+        let start = Position::new(shifted, at.fraction());
+        self.resampler.process(window, start, step, output).frames
     }
 
     /// Fades out any audio still trailing from the previous active cycle
@@ -277,9 +337,15 @@ impl Pump {
         if frames == 0 {
             return;
         }
-        if self.concealment.fade_out().frames() == 0 || self.tail.is_none() {
-            self.tail = None;
-            self.tail_silent = 0;
+        if let State::Playing { next, step } = self.state {
+            self.state = State::Fading {
+                next,
+                step,
+                silent: 0,
+            };
+        }
+        if self.concealment.fade_out().frames() == 0 || matches!(self.state, State::Idle) {
+            self.state = State::Idle;
             self.length = 0;
             if !self.concealment.is_silent() {
                 self.concealment.fill(&mut self.scratch);
@@ -291,7 +357,12 @@ impl Pump {
         }
         let mut written = 0;
         while written < frames {
-            let Some((at, step)) = self.tail else {
+            let State::Fading {
+                next: at,
+                step,
+                silent,
+            } = self.state
+            else {
                 if let Some(rem) = output.get_mut(written * self.channels..whole) {
                     rem.fill(0.0);
                 }
@@ -302,11 +373,10 @@ impl Pump {
             let Some(block) = output.get_mut(from..from + chunk_frames * self.channels) else {
                 break;
             };
-            let produced = self.fade_tail_block(at, step, block);
+            let produced = self.fade_tail_block(at, step, silent, block);
             written += produced;
             if produced < chunk_frames {
-                self.tail = None;
-                self.tail_silent = 0;
+                self.state = State::Idle;
                 self.length = 0;
                 if let Some(rem) = output.get_mut(written * self.channels..whole) {
                     rem.fill(0.0);
@@ -318,26 +388,17 @@ impl Pump {
 
     /// Produces one block of fade-out tail frames at `(at, step)` using only
     /// frames already in `window` and concealment continuation frames.
-    fn fade_tail_block(&mut self, at: Position, step: Step, output: &mut [f32]) -> usize {
+    fn fade_tail_block(
+        &mut self,
+        at: Position,
+        step: Step,
+        mut silent: usize,
+        output: &mut [f32],
+    ) -> usize {
         let frames = output.len().checked_div(self.channels).unwrap_or(0);
-        if frames == 0 {
-            return 0;
-        }
-        let before = self.resampler.filter().before() as u64;
-        let taps = self.resampler.filter().taps() as u64;
-        let Some(last) = at.advance(step, frames as u64 - 1) else {
+        let Some((from, to, shifted)) = self.block_range(at, step, frames) else {
             return 0;
         };
-        let from = at.frame();
-        let (Some(to), Some(shifted)) = (
-            last.frame().checked_add(taps - 1),
-            at.frame().checked_add(before),
-        ) else {
-            return 0;
-        };
-        if to - from >= self.capacity as u64 {
-            return 0;
-        }
         self.keep_from(from);
         while self.length < self.capacity {
             let Some(next) = self.first.checked_add(self.length as u64) else {
@@ -361,25 +422,18 @@ impl Pump {
             let already_silent = self.concealment.is_silent();
             self.concealment.fill(slot);
             if already_silent {
-                self.tail_silent = self.tail_silent.saturating_add(count);
+                silent = silent.saturating_add(count);
             }
             self.length += count;
         }
-        let window = Window {
-            first: self.first,
-            samples: self
-                .window
-                .get(..self.length * self.channels)
-                .unwrap_or(&[]),
-        };
-        let start = Position::new(shifted, at.fraction());
-        let produced = self.resampler.process(window, start, step, output).frames;
-        if self.tail_silent >= self.resampler.filter().taps() {
-            self.tail = None;
-            self.tail_silent = 0;
+        let produced = self.resample_window(shifted, at, step, output);
+        if silent >= self.resampler.filter().taps() {
+            self.state = State::Idle;
             self.length = 0;
         } else {
-            self.tail = at.advance(step, produced as u64).map(|next| (next, step));
+            self.state = at
+                .advance(step, produced as u64)
+                .map_or(State::Idle, |next| State::Fading { next, step, silent });
         }
         produced
     }
@@ -397,37 +451,12 @@ impl Pump {
         done: &mut Played,
     ) -> usize {
         let frames = output.len().checked_div(self.channels).unwrap_or(0);
-        if frames == 0 {
-            return 0;
-        }
-        let before = self.resampler.filter().before() as u64;
-        let taps = self.resampler.filter().taps() as u64;
-        // Places are counted from `before` on, so the position `at` reads
-        // the places from `at.frame()` to `at.frame() + taps - 1`.
-        let Some(last) = at.advance(step, frames as u64 - 1) else {
+        let Some((from, to, shifted)) = self.block_range(at, step, frames) else {
             return 0;
         };
-        let from = at.frame();
-        let (Some(to), Some(shifted)) = (
-            last.frame().checked_add(taps - 1),
-            at.frame().checked_add(before),
-        ) else {
-            return 0;
-        };
-        if to - from >= self.capacity as u64 {
-            return 0;
-        }
         self.keep_from(from);
         self.fetch(receiver, store, to, done);
-        let window = Window {
-            first: self.first,
-            samples: self
-                .window
-                .get(..self.length * self.channels)
-                .unwrap_or(&[]),
-        };
-        let start = Position::new(shifted, at.fraction());
-        self.resampler.process(window, start, step, output).frames
+        self.resample_window(shifted, at, step, output)
     }
 
     /// Drops the kept frames before the place `from`, or all of them when
@@ -560,6 +589,40 @@ pub struct Settings {
     pub device_range: u32,
 }
 
+impl Settings {
+    /// Validates that rate, channels, silence timeout, clock slope limit,
+    /// regulator jump threshold, and block size satisfy runtime invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any parameter is out of range.
+    pub fn validate(&self) -> Result<(), InvalidSettings> {
+        if self.rate == 0 {
+            return Err(InvalidSettings::new("sample rate must be positive"));
+        }
+        if self.channels == 0 {
+            return Err(InvalidSettings::new("channel count must be positive"));
+        }
+        if self.silence < 0 {
+            return Err(InvalidSettings::new("silence timeout must be non-negative"));
+        }
+        if self.slope_limit < 0 || self.slope_limit >= 1_000_000_000 {
+            return Err(InvalidSettings::new(
+                "clock slope limit must be in 0..1_000_000_000 ns/s",
+            ));
+        }
+        if self.regulation.jump == 0 {
+            return Err(InvalidSettings::new(
+                "regulator jump threshold must be at least 1 frame",
+            ));
+        }
+        if self.block == 0 {
+            return Err(InvalidSettings::new("pump block size must be at least 1"));
+        }
+        Ok(())
+    }
+}
+
 /// A receiver, the samples it holds and its pump, as what a playback device
 /// plays.
 ///
@@ -581,6 +644,10 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     device_range: u32,
     /// Whether the delay of the path was told, so that it is not measured.
     told: bool,
+    /// Whether at least one playback cycle has played frames on the current
+    /// timeline (so `playhead` tracks the schedule rather than the initial
+    /// adoption index).
+    timeline_played: bool,
     revisions: Revisions,
     /// The position that the cycle before expected to be due at the start
     /// of this one.
@@ -620,6 +687,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             device: Device::new(settings.rate),
             device_range: settings.device_range,
             told: false,
+            timeline_played: false,
             revisions: Revisions::default(),
             expected: None,
             revised: None,
@@ -629,6 +697,18 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             last: Played::default(),
             totals: Totals::default(),
         }
+    }
+
+    /// Sample rate in frames per second.
+    #[must_use]
+    pub fn rate(&self) -> u32 {
+        self.rate
+    }
+
+    /// Number of audio channels.
+    #[must_use]
+    pub fn channels_u8(&self) -> u8 {
+        self.channels
     }
 
     /// The receiver of the core.
@@ -697,6 +777,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         let heard = self.receiver.packet(header, arrival);
         if heard.adopted || heard.restarted {
             self.needs.clear();
+            self.timeline_played = false;
         }
         self.observe_need(header, &heard);
         if !heard.ignored {
@@ -713,15 +794,29 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     /// took in: the latency at which it would just have been in time. A
     /// frame is in time if it is there when the playhead reaches it, so its
     /// need is the level less the time that the playhead takes to get to it.
-    /// Only while frames are played does the playhead keep to the level.
+    /// Only while frames are played on the current timeline does the playhead
+    /// keep to the level.
     fn observe_need(&mut self, header: &Audio, heard: &Heard) {
         let marked = heard.marked;
-        if heard.ignored || marked.stored == 0 && marked.late == 0 || self.last.played == 0 {
+        if heard.ignored
+            || heard.adopted
+            || heard.restarted
+            || (marked.stored == 0 && marked.late == 0)
+            || !self.timeline_played
+            || self.last.played == 0
+        {
             return;
         }
         let Some(stretch) = header.index.checked_div(u64::from(header.window)) else {
             return;
         };
+        // Ignore packets from stretches behind the kept `RECENT` window so a
+        // late duplicate cannot trigger `Needs::observe`'s far-jump clear.
+        if let Some(newest) = self.needs.newest()
+            && stretch.saturating_add(RECENT as u64) <= newest
+        {
+            return;
+        }
         let ahead = i128::from(header.index) - i128::from(self.receiver.playhead());
         let Some(time) = (ahead * 1_000_000_000).checked_div(i128::from(header.rate)) else {
             return;
@@ -817,6 +912,9 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
         self.last = self
             .pump
             .play(&mut self.receiver, &self.store, &plan, frames);
+        if self.last.played > 0 {
+            self.timeline_played = true;
+        }
         self.totals.add(&self.last);
     }
 }
@@ -951,5 +1049,220 @@ mod tests {
             playback.step_device(500, 1_000_000, 250),
             (1_000_000, 5_000_000)
         );
+    }
+
+    #[test]
+    fn settings_validation_rejects_invalid_receiver_parameters() {
+        let valid = Settings {
+            stream: 1,
+            rate: 48_000,
+            channels: 2,
+            identity: 1,
+            silence: 1_000_000_000,
+            slope_limit: 200_000,
+            regulation: Regulation {
+                gain: 4 << 16,
+                limit: 1_000_000,
+                jump: 240,
+            },
+            concealment: Parameters::for_rate(48_000),
+            block: 256,
+            device_range: 10_000_000,
+        };
+        assert!(valid.validate().is_ok());
+        assert!(Settings { rate: 0, ..valid }.validate().is_err());
+        assert!(
+            Settings {
+                channels: 0,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                silence: -1,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                slope_limit: 1_000_000_000,
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Settings {
+                regulation: Regulation {
+                    jump: 0,
+                    ..valid.regulation
+                },
+                ..valid
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(Settings { block: 0, ..valid }.validate().is_err());
+    }
+
+    #[test]
+    fn resuming_during_fade_tail_without_jump_clears_synthetic_window_frames() {
+        use unisono_core::packet::{Audio, Format};
+        use unisono_core::player::Plan;
+        use unisono_core::receiver::{self, Receiver};
+        use unisono_dsp::{Filter, format::to_signed24};
+
+        use super::{Pump, State};
+        use crate::store::Store;
+
+        let mut receiver = Receiver::<16, 16, 4>::new(receiver::Settings {
+            stream: 1,
+            identity: 1,
+            silence: 1_000_000_000,
+            limit: 200_000,
+            regulation: Regulation {
+                gain: 4 << 16,
+                limit: 1_000_000,
+                jump: 240,
+            },
+        });
+        let mut store = Store::for_stretch(16, 1);
+        let mut payload = vec![0u8; 512 * 3];
+        to_signed24(&[0.5f32; 512], &mut payload);
+        let header = Audio {
+            stream: 1,
+            timeline: 1,
+            index: 0,
+            capture: 0,
+            rate: 48_000,
+            frames: 512,
+            channels: 1,
+            format: Format::Signed24,
+            level: 30_000_000,
+            level_slope: 0,
+            span: 2_000,
+            window: 2_400,
+            flags: 0,
+            protection: 0,
+            stamped_index: 0,
+            stamped_departure: 0,
+            drift: 0,
+            clock: 1,
+        };
+        let _ = receiver.packet(&header, 1_000);
+        store.write_packet(0, Format::Signed24, &payload, |i| receiver.covers(i));
+
+        let mut pump = Pump::new(
+            Filter::for_rate(48_000),
+            1,
+            Parameters::for_rate(48_000),
+            128,
+        );
+        let mut out = vec![0.0f32; 64];
+        let unity = Step::new(0).expect("unity step");
+        // Active cycle playing frames 0..64.
+        let plan1 = Plan {
+            start: Position::new(0, 0),
+            step: unity,
+            frames: 64,
+            jumped: true,
+        };
+        pump.play(&mut receiver, &store, &plan1, &mut out);
+        assert!(matches!(pump.state, State::Playing { .. }));
+
+        // Brief pause cycle (frames = 0) enters Fading and writes synthetic
+        // fade-out frames into `pump.window`.
+        let pause = Plan {
+            start: Position::new(64, 0),
+            step: unity,
+            frames: 0,
+            jumped: false,
+        };
+        pump.play(&mut receiver, &store, &pause, &mut out);
+        assert!(matches!(pump.state, State::Fading { .. }));
+        assert!(pump.length > 0);
+
+        // Resume WITHOUT `jumped = true`: must discard synthetic fade-out
+        // window frames and fetch real stream frames (`held > 0`).
+        let resume = Plan {
+            start: Position::new(64, 0),
+            step: unity,
+            frames: 64,
+            jumped: false,
+        };
+        let played = pump.play(&mut receiver, &store, &resume, &mut out);
+        assert!(
+            played.held > 0,
+            "expected real frames from store, got {played:?}"
+        );
+        assert!(matches!(pump.state, State::Playing { .. }));
+    }
+
+    #[test]
+    fn observe_need_skips_adoption_and_ignores_stale_stretches_without_wiping_needs() {
+        use unisono_core::packet::{Audio, FLAG_STAMPED, Format};
+        use unisono_dsp::format::to_signed24;
+
+        use crate::audio::Playback;
+
+        let mut playback = test_playback(48_000);
+        playback.path(0);
+        let mut payload = vec![0u8; 240 * 2 * 3];
+        to_signed24(&[0.0f32; 480], &mut payload);
+        let make_header = |timeline: u64, index: u64| {
+            let capture = i64::try_from(index * 1_000_000_000 / 48_000).unwrap_or(0);
+            let prev_index = index.saturating_sub(240);
+            let prev_capture = i64::try_from(prev_index * 1_000_000_000 / 48_000).unwrap_or(0);
+            Audio {
+                stream: 1,
+                timeline,
+                index,
+                capture,
+                rate: 48_000,
+                frames: 240,
+                channels: 2,
+                format: Format::Signed24,
+                level: 30_000_000,
+                level_slope: 0,
+                span: 2_000,
+                window: 240,
+                flags: if index > 0 { FLAG_STAMPED } else { 0 },
+                protection: 0,
+                stamped_index: prev_index,
+                stamped_departure: prev_capture,
+                drift: 0,
+                clock: 1,
+            }
+        };
+
+        // Start timeline 1, play cycles so `last.played > 0`, and populate needs
+        // up through stretch 30.
+        for i in 0..32u64 {
+            let h = make_header(1, i * 240);
+            let arrival = h.capture + 1_000_000;
+            playback.packet(&h, &payload, arrival);
+            let mut out = [0.0f32; 480];
+            playback.cycle(&mut out, i * 240, h.capture + 30_000_000);
+        }
+        let newest_before = playback.needs.newest().expect("needs recorded");
+        assert!(newest_before >= 25, "newest {newest_before}");
+
+        // A very late packet from stretch 0 (far behind `newest - RECENT`)
+        // must NOT wipe `needs`.
+        let stale = make_header(1, 0);
+        playback.packet(&stale, &payload, stale.capture + 200_000_000);
+        assert_eq!(playback.needs.newest(), Some(newest_before));
+
+        // Adopting a brand-new timeline 2 (even while `last.played > 0` from
+        // timeline 1) must clear needs and NOT record a bogus need on adoption.
+        let p0 = make_header(2, 0);
+        let p1 = make_header(2, 240);
+        playback.packet(&p0, &payload, 2_000_000_000);
+        playback.packet(&p1, &payload, 2_005_000_000);
+        assert_eq!(playback.needs.newest(), None);
     }
 }
