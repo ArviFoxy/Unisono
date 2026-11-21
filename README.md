@@ -4,9 +4,7 @@ unisono streams uncompressed audio over IP to multiple receivers and synchronize
 
 **Status: early development. Nothing here can be used yet.**
 
-Unisono is written in Rust and formally verified. The properties of its core are proved in Lean 4: the
-core is translated to Lean by [Aeneas](https://github.com/AeneasVerif/aeneas),
-and the theorems are statements about that translation.
+Unisono is written in Rust and the core is formally verified with Lean. We use [Aeneas](https://github.com/AeneasVerif/aeneas) to automatically translate Rust code into Lean to be able to prove properties of the actual implementation.
 
 ## What works
 
