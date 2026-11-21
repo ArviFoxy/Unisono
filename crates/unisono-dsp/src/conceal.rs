@@ -212,6 +212,13 @@ pub struct Concealment {
     recovered: usize,
     /// Whether the last frame was missing.
     in_gap: bool,
+    /// Whether the model was fitted in the device's present cycle; always
+    /// false for a concealment that is not told when cycles begin.
+    fitted_in_cycle: bool,
+    /// Whether it is told when cycles begin.
+    in_cycles: bool,
+    /// How many times the model was fitted.
+    fits: u64,
 }
 
 impl Concealment {
@@ -240,7 +247,26 @@ impl Concealment {
             entered: 0.0,
             recovered: 0,
             in_gap: true,
+            fitted_in_cycle: false,
+            in_cycles: false,
+            fits: 0,
         }
+    }
+
+    /// Takes in that a cycle of the device begins. A concealment that is
+    /// told this fits its model at most once in a cycle: a gap that begins
+    /// later in the same cycle continues the frames before it with the model
+    /// fitted at the first, so that a cycle costs one fit at most, however
+    /// many gaps begin in it. One that is not told fits at every gap.
+    pub fn cycle_begins(&mut self) {
+        self.in_cycles = true;
+        self.fitted_in_cycle = false;
+    }
+
+    /// How many times the model was fitted.
+    #[must_use]
+    pub fn fits(&self) -> u64 {
+        self.fits
     }
 
     /// The sizes in use.
@@ -346,7 +372,30 @@ impl Concealment {
         self.recovered = 0;
         self.in_gap = true;
         if self.entered > 0.0 {
-            self.fit();
+            if self.fitted_in_cycle {
+                self.start_continuations();
+            } else {
+                self.fit();
+                self.fitted_in_cycle = self.in_cycles;
+                self.fits = self.fits.saturating_add(1);
+            }
+        }
+    }
+
+    /// Starts each channel's continuation from the last frames that left,
+    /// with the model as it is.
+    fn start_continuations(&mut self) {
+        let Parameters { fitted, order, .. } = self.parameters;
+        for channel in 0..self.channels {
+            let ring = self.history.chunks_exact(self.channels);
+            let (newer, older) = (ring.clone().take(self.oldest), ring.skip(self.oldest));
+            let start = channel * order;
+            if let Some(recent) = self.recent.get_mut(start..start + order) {
+                let last = older.chain(newer).skip(fitted - order);
+                for (value, frame) in recent.iter_mut().zip(last) {
+                    *value = frame.get(channel).copied().map_or(0.0, f64::from);
+                }
+            }
         }
     }
 
@@ -414,7 +463,11 @@ impl Concealment {
         for (weight, sample) in weights.iter().zip(recent.iter()) {
             next += weight * sample;
         }
-        if !next.is_finite() {
+        // A number too small to be stored at full precision makes every
+        // operation on it slow on many processors, and a continuation that
+        // dies away would make them for the rest of its fade. Far below the
+        // smallest step of any sample format, it is silence.
+        if !next.is_finite() || next.abs() < 1e-30 {
             next = 0.0;
         }
         if order > 0 {
@@ -489,7 +542,7 @@ fn burg(forward: &mut [f64], backward: &mut [f64], model: &mut [f64], shorter: &
 
 #[cfg(test)]
 mod tests {
-    use super::burg;
+    use super::{Concealment, Parameters, burg};
 
     /// The first reflection coefficient is minus twice the sum of the
     /// products `x[n] x[n-1]` over the sum of `x[n]^2 + x[n-1]^2`. For
@@ -535,5 +588,32 @@ mod tests {
         let (mut model, mut shorter) = ([0.0; 6], [0.0; 6]);
         burg(&mut [1.0, 2.0], &mut [1.0, 2.0], &mut model, &mut shorter);
         assert!(model.iter().all(|a| a.is_finite()));
+    }
+    #[test]
+    fn a_cycle_fits_the_model_once_however_many_gaps_begin_in_it() {
+        let parameters = Parameters::for_rate(48_000);
+        let mut concealment = Concealment::new(1, parameters);
+        let mut frames: Vec<f32> = (0..parameters.fitted * 2)
+            .map(|n| f32::from(u16::try_from(n).unwrap_or(0)) * 0.05)
+            .map(|x| x.sin() * 0.5)
+            .collect();
+        concealment.pass(&mut frames);
+        concealment.cycle_begins();
+        // Three gaps in one cycle, with frames between them.
+        for _ in 0..3 {
+            let mut gap = [0.0f32; 16];
+            concealment.fill(&mut gap);
+            assert!(gap.iter().any(|sample| *sample != 0.0));
+            let mut back: Vec<f32> = (0u16..32)
+                .map(|n| (f32::from(n) * 0.05).sin() * 0.5)
+                .collect();
+            concealment.pass(&mut back);
+        }
+        assert_eq!(concealment.fits(), 1);
+        // The next cycle fits again.
+        concealment.cycle_begins();
+        let mut gap = [0.0f32; 16];
+        concealment.fill(&mut gap);
+        assert_eq!(concealment.fits(), 2);
     }
 }

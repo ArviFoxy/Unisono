@@ -12,6 +12,7 @@
 //!   packets with against the clock that everything else is timed by;
 //! - [`socket`]: datagrams with the times at which the kernel saw them
 //!   arrive and leave;
+//! - [`memory`]: keeping the program's memory in place;
 //! - [`ring`]: a ring between two threads that neither end waits at;
 //! - [`proxy`]: a proxy for tests that delays, drops, pauses, reorders and
 //!   duplicates datagrams;
@@ -31,6 +32,7 @@
 
 pub mod audio;
 pub mod clock;
+pub mod memory;
 pub mod proxy;
 pub mod pump;
 pub mod receive;

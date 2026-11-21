@@ -86,6 +86,11 @@ impl Signal {
     }
 }
 
+/// The size of the stack of each thread that the program starts: 512 KiB,
+/// of which the threads use a small part. A small stack keeps the program's
+/// memory within what the system lets it lock.
+pub(crate) const STACK: usize = 512 * 1024;
+
 /// What runs a command.
 type Command = fn(&Options) -> Result<(), Wrong>;
 

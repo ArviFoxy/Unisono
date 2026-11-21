@@ -13,13 +13,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use unisono_core::player::Regulation;
 use unisono_dsp::Parameters;
-use unisono_runtime::clock;
 use unisono_runtime::pump::{ReceiverPlayback, Settings};
 use unisono_runtime::receive::{
     self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
 };
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Output};
+use unisono_runtime::{clock, memory};
 
 use crate::exported::{Metrics, Tally};
 use crate::options::{Options, Wrong};
@@ -150,6 +150,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let stopping = Arc::clone(&stop);
     let networking = std::thread::Builder::new()
         .name("unisono-network".into())
+        .stack_size(crate::STACK)
         .spawn(move || {
             while !stopping.load(Ordering::Relaxed) {
                 if let Err(error) = network.turn(2) {
@@ -160,6 +161,10 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
             network.counts()
         })
         .map_err(|error| Wrong(format!("starting the network thread: {error}")))?;
+    // Everything the threads use is made, and they are running.
+    if let Err(error) = memory::lock() {
+        eprintln!("unisono: memory is not locked: {error}");
+    }
 
     let end = start.saturating_add(seconds.saturating_mul(1_000_000_000));
     while seconds == 0 || clock::raw() < end {

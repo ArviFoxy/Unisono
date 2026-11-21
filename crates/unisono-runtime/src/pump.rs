@@ -186,6 +186,7 @@ impl Pump {
         let wanted = usize::try_from(plan.frames)
             .unwrap_or(usize::MAX)
             .min(cycle);
+        self.concealment.cycle_begins();
         let start = plan.start;
         let step = plan.step;
         if plan.jumped && wanted > 0 {

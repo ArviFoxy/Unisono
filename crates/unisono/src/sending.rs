@@ -12,10 +12,10 @@ use std::time::Duration;
 
 use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
-use unisono_runtime::clock;
 use unisono_runtime::send::{self, SenderCounts, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input};
+use unisono_runtime::{clock, memory};
 
 use crate::exported::{Metrics, Tally};
 use crate::options::{Options, Wrong};
@@ -141,6 +141,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let stopping = Arc::clone(&stop);
     let capture = std::thread::Builder::new()
         .name("unisono-capture".into())
+        .stack_size(crate::STACK)
         .spawn(move || {
             while !stopping.load(Ordering::Relaxed) {
                 input.run(clock::raw(), &mut capture_end);
@@ -149,6 +150,10 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
             capture_end.dropped()
         })
         .map_err(|error| Wrong(format!("starting the capture thread: {error}")))?;
+    // Everything the threads use is made, and they are running.
+    if let Err(error) = memory::lock() {
+        eprintln!("unisono: memory is not locked: {error}");
+    }
 
     println!("capture start {start} rate {rate} drift {drift} cycle {cycle}");
     let end = start.saturating_add(seconds.saturating_mul(1_000_000_000));

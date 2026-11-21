@@ -67,6 +67,7 @@ impl Metrics {
         let registry = Arc::new(self.registry);
         std::thread::Builder::new()
             .name("unisono-metrics".into())
+            .stack_size(crate::STACK)
             .spawn(move || {
                 for stream in listener.incoming() {
                     // A client that goes wrong is that client's business.
