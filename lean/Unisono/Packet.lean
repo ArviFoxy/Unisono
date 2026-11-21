@@ -916,11 +916,13 @@ theorem request_roundtrip (e : packet.Request) (bytes : Slice Std.U8)
 @[step]
 theorem write_report_loop_spec (bytes : Slice Std.U8) (length : Std.Usize)
     (written : Bool) (place : Std.Usize)
-    (hfit : length.val ≤ bytes.val.length) (hplace : packet.REPORT.val ≤ place.val) :
+    (hfit : length.val ≤ bytes.val.length) (hplace : packet.REPORT.val ≤ place.val)
+    (hple : place.val ≤ length.val) :
     packet.write_report_loop bytes length written place ⦃ out =>
       out.1.val.length = bytes.val.length
       ∧ out.2 = written
-      ∧ ∀ j < packet.REPORT.val, out.1.val.getD j 0#u8 = bytes.val.getD j 0#u8 ⦄ := by
+      ∧ (∀ j < packet.REPORT.val, out.1.val.getD j 0#u8 = bytes.val.getD j 0#u8)
+      ∧ ∀ j, place.val ≤ j → j < length.val → out.1.val.getD j 0#u8 = 0#u8 ⦄ := by
   unfold packet.write_report_loop
   apply loop.spec_decr_nat
     (measure := fun x : Slice Std.U8 × Bool × Std.Usize => length.val - x.2.2.val)
@@ -928,9 +930,11 @@ theorem write_report_loop_spec (bytes : Slice Std.U8) (length : Std.Usize)
       x.1.val.length = bytes.val.length
       ∧ x.2.1 = written
       ∧ packet.REPORT.val ≤ x.2.2.val
-      ∧ ∀ j < packet.REPORT.val, x.1.val.getD j 0#u8 = bytes.val.getD j 0#u8)
-  · rintro ⟨bs, w, p⟩ ⟨hlen, hw, hp, hpre⟩
-    dsimp only at hlen hw hp hpre
+      ∧ x.2.2.val ≤ length.val
+      ∧ (∀ j < packet.REPORT.val, x.1.val.getD j 0#u8 = bytes.val.getD j 0#u8)
+      ∧ ∀ j, place.val ≤ j → j < x.2.2.val → x.1.val.getD j 0#u8 = 0#u8)
+  · rintro ⟨bs, w, p⟩ ⟨hlen, hw, hp, hpl, hpre, hzero⟩
+    dsimp only at hlen hw hp hpl hpre hzero
     unfold packet.write_report_loop.body
     simp only
     split
@@ -938,21 +942,33 @@ theorem write_report_loop_spec (bytes : Slice Std.U8) (length : Std.Usize)
       have hnext : (core.num.Usize.saturating_add p 1#usize).val = p.val + 1 :=
         Usize.saturating_add_val _ _ (by scalar_tac)
       step with write_spec bs p 1#usize 0#u64 (by scalar_tac) (by decide)
-        as ⟨b, bs1, hb, hlen1, _, hout1⟩
+        as ⟨b, bs1, hb, hlen1, hhas1, hout1⟩
       step as ⟨p1, hp1⟩
-      refine ⟨by omega, by simp [hw, hb], by rw [hp1, hnext]; omega, fun j hj => ?_,
-        by rw [hp1, hnext]; omega⟩
-      rw [hout1 j (Or.inl (by omega))]
-      exact hpre j hj
-    · rw [WP.spec_ok]
-      exact ⟨hlen, hw, hpre⟩
-  · exact ⟨rfl, rfl, hplace, fun _ _ => rfl⟩
+      refine ⟨by omega, by simp [hw, hb], by rw [hp1, hnext]; omega, by rw [hp1, hnext]; omega,
+        fun j hj => ?_, fun j hj1 hj2 => ?_, by rw [hp1, hnext]; omega⟩
+      · rw [hout1 j (Or.inl (by omega))]
+        exact hpre j hj
+      · rw [hp1, hnext] at hj2
+        by_cases hjp : j = p.val
+        · subst hjp
+          have hb0 := hhas1.2 0 (by omega)
+          rw [Nat.add_zero] at hb0
+          apply UScalar.eq_of_val_eq
+          simpa using hb0
+        · rw [hout1 j (by omega)]
+          exact hzero j hj1 (by omega)
+    · have heq : p.val = length.val := by scalar_tac
+      rw [WP.spec_ok]
+      rw [heq] at hzero
+      exact ⟨hlen, hw, hpre, hzero⟩
+  · dsimp only
+    exact ⟨rfl, rfl, hplace, hple, fun _ _ => rfl, fun _ h1 h2 => by omega⟩
 
-/-- Exact 32-byte wire prefix produced by `write_report` (with optional padding). -/
+/-- Exact 32-byte wire prefix, exact length, and zero padding produced by `write_report`. -/
 theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length : Std.Usize)
     (hlen : max packet.REPORT.val length.val ≤ bytes.val.length) :
     packet.write_report rep bytes length ⦃ out =>
-      (∃ n, out.1 = some n)
+      (∃ n, out.1 = some n ∧ n.val = max packet.REPORT.val length.val)
       ∧ out.2.val.length = bytes.val.length
       ∧ HasLE out.2.val 0 4 packet.MAGIC.val
       ∧ HasLE out.2.val 4 1 packet.VERSION.val
@@ -960,7 +976,9 @@ theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length :
       ∧ HasLE out.2.val 6 2 rep.stream.val
       ∧ HasLE out.2.val 8 8 rep.timeline.val
       ∧ HasLE out.2.val 16 8 rep.receiver.val
-      ∧ HasLE out.2.val 24 8 rep.sequence.val ⦄ := by
+      ∧ HasLE out.2.val 24 8 rep.sequence.val
+      ∧ ∀ j, packet.REPORT.val ≤ j → j < max packet.REPORT.val length.val →
+          out.2.val.getD j 0#u8 = 0#u8 ⦄ := by
   have hrep : packet.REPORT.val = 32 := by simp [packet.REPORT]
   unfold packet.write_report
   have hlen1_eq :
@@ -970,6 +988,8 @@ theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length :
   rw [hlen1_eq]
   simp only [bind_ok]
   set length1 : Std.Usize := if length < packet.REPORT then packet.REPORT else length
+  have hl1_val : length1.val = max packet.REPORT.val length.val := by
+    dsimp only [length1]; split <;> scalar_tac
   have hl1_ge : 32 ≤ length1.val := by
     dsimp only [length1]; split <;> scalar_tac
   have hl1_le : length1.val ≤ bytes.val.length := by
@@ -1003,8 +1023,8 @@ theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length :
     as ⟨b6, bs7, hb6, hl7, hq7, ho7⟩
   step with write_report_loop_spec bs7 length1
       ((((((b0 && b1) && b2) && b3) && b4) && b5) && b6) packet.REPORT (by omega)
-      (le_refl _)
-    as ⟨bs8, w8, hl8, hw8, hpre8⟩
+      (le_refl _) (by omega)
+    as ⟨bs8, w8, hl8, hw8, hpre8, hzero8⟩
   have hw8_true : w8 = true := by simp [hw8, hb0, hb1, hb2, hb3, hb4, hb5, hb6]
   simp only [hw8_true, ↓reduceIte]
   rw [WP.spec_ok]
@@ -1017,7 +1037,7 @@ theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length :
   have hv_eq : iv.val = packet.VERSION.val := by rw [hiv]; exact cast_u8_u64_val _
   have hk_eq : ik.val = packet.KIND_REPORT.val := by rw [hik]; exact cast_u8_u64_val _
   have hs_eq : is.val = rep.stream.val := by rw [his]; exact cast_u16_u64_val _
-  refine ⟨⟨length1, rfl⟩, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨⟨length1, rfl, hl1_val⟩, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · exact hpre_hasLE 0 4 _ (by omega)
       ((((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
         |>.preserve hl3 ho3 (Or.inl (by decide)))
@@ -1048,6 +1068,8 @@ theorem write_report_spec (rep : packet.Report) (bytes : Slice Std.U8) (length :
         |>.preserve hl7 ho7 (Or.inl (by decide)))
   · exact hpre_hasLE 16 8 _ (by omega) (hr6.preserve hl7 ho7 (Or.inl (by decide)))
   · exact hpre_hasLE 24 8 _ (by omega) hq7
+  · intro j hj1 hj2
+    exact hzero8 j hj1 (by rw [hl1_val]; exact hj2)
 
 /-- Writing a `Report` (with any padding length that fits `bytes`) and parsing
 it back recovers the exact `Report`. -/
@@ -1060,7 +1082,7 @@ theorem report_roundtrip (rep : packet.Report) (bytes : Slice Std.U8) (length : 
       | none => ok (.Err .TooShort))
     ⦃ r => r = .Ok rep ⦄ := by
   step with write_report_spec rep bytes length hlen
-    as ⟨out, n, hsome, _, hm8, hv8, hk8, hs8, ht8, hr8, hq8⟩
+    as ⟨out, n, hsome, _, _, hm8, hv8, hk8, hs8, ht8, hr8, hq8, _⟩
   rw [hsome]
   have hs_lt : rep.stream.val < 2 ^ (8 * 2) := by scalar_tac
   have htl_lt : rep.timeline.val < 2 ^ (8 * 8) := by scalar_tac
@@ -1093,11 +1115,11 @@ theorem report_roundtrip (rep : packet.Report) (bytes : Slice Std.U8) (length : 
 
 /-! ## Audio header wire layout and round-trip -/
 
-/-- Exact 88-byte wire layout produced by `write_audio`. -/
+/-- Exact 88-byte wire layout and total packet length produced by `write_audio`. -/
 theorem write_audio_spec (h : packet.Audio) (bytes : Slice Std.U8)
     (hlen : packet.HEADER.val ≤ bytes.val.length) :
     packet.write_audio h bytes ⦃ out =>
-      (∃ n, out.1 = some n)
+      (∃ n, out.1 = some n ∧ n.val = packet.HEADER.val + payloadLen h)
       ∧ out.2.val.length = bytes.val.length
       ∧ HasLE out.2.val 0 4 packet.MAGIC.val
       ∧ HasLE out.2.val 4 1 packet.VERSION.val
@@ -1214,8 +1236,13 @@ theorem write_audio_spec (h : packet.Audio) (bytes : Slice Std.U8)
   have hl21' : bs21.val.length = bytes.val.length := hl21.trans hl20'
   simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7, hb8, hb9, hb10, hb11, hb12, hb13,
     hb14, hb15, hb16, hb17, hb18, hb19, hb20, Bool.and_self, ↓reduceIte]
-  step with payload_spec h as ⟨pl_w, _⟩
-  step as ⟨tot_w, _⟩
+  step with payload_spec h as ⟨pl_w, hpl_w⟩
+  step as ⟨tot_w, htot_w⟩
+  have htot_val : tot_w.val = packet.HEADER.val + payloadLen h := by
+    have hsize := usize_size_ge
+    have hple := payloadLen_le h
+    rw [htot_w, core.num.Usize.wrapping_add_val_eq, UScalar.size_UScalarTyUsize, hpl_w]
+    exact Nat.mod_eq_of_lt (by omega)
   have p20 : ∀ a c v, a + c ≤ 84 → HasLE bs20.val a c v → HasLE bs21.val a c v :=
     fun _ _ _ hle hh => hh.preserve hl21 ho20 (Or.inl hle)
   have p19 : ∀ a c v, a + c ≤ 80 → HasLE bs19.val a c v → HasLE bs21.val a c v :=
@@ -1272,7 +1299,7 @@ theorem write_audio_spec (h : packet.Audio) (bytes : Slice Std.U8)
   have hv19_eq : v19.val = (IScalar.hcast .U32 h.drift).val := by
     rw [hv19, hv19a]; exact cast_u32_u64_val _
   have hv20_eq : v20.val = h.clock.val := by rw [hv20]; exact cast_u32_u64_val _
-  refine ⟨⟨tot_w, rfl⟩, hl21', p1 _ _ _ (by decide) hf0, ?_, ?_, ?_,
+  refine ⟨⟨tot_w, rfl, htot_val⟩, hl21', p1 _ _ _ (by decide) hf0, ?_, ?_, ?_,
     p5 _ _ _ (by decide) hf4, p6 _ _ _ (by decide) hf5, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     p18 _ _ _ (by decide) hf17, ?_, ?_, ?_⟩
   · rw [← hv1_eq]; exact p2 _ _ _ (by decide) hf1
@@ -1306,7 +1333,7 @@ theorem audio_roundtrip (h : packet.Audio) (bytes : Slice Std.U8)
     ⦃ r => r = .Ok h ⦄ := by
   have hhdr : packet.HEADER.val = 88 := by simp [packet.HEADER]
   step with write_audio_spec h bytes (by omega)
-    as ⟨out, n, hsome, hlen21, hg0, hg1, hg2, hg3, hg4, hg5, hg6, hg7, hg8, hg9, hg10, hg11,
+    as ⟨out, n, hsome, _, hlen21, hg0, hg1, hg2, hg3, hg4, hg5, hg6, hg7, hg8, hg9, hg10, hg11,
       hg12, hg13, hg14, hg15, hg16, hg17, hg18, hg19, hg20⟩
   rw [hsome]
   have hv3_lt : h.stream.val < 2 ^ (8 * 2) := by scalar_tac
@@ -1668,5 +1695,72 @@ theorem parse_request_kind (bytes : Slice Std.U8) :
       have hf : found = packet.KIND_REQUEST := by simpa using hne
       have hgoal : kindOf bytes = .Ok packet.KIND_REQUEST := by rw [← hrk, hf]
       step*
+
+@[step]
+theorem write_needs_loop_total (a : Array Std.I32 11#usize) (bytes : Slice Std.U8)
+    (count : Std.Usize) (written : Bool) (i : Std.Usize) :
+    packet.write_needs_loop a bytes count written i ⦃ _ => True ⦄ := by
+  unfold packet.write_needs_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : Slice Std.U8 × Bool × Std.Usize => count.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨bytes1, written1, i1⟩ _
+    unfold packet.write_needs_loop.body
+    simp only
+    split
+    · have hlt : i1.val < count.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i1 1#usize).val = i1.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      simp only [lift, core.slice.Slice.get, core.slice.index.Usize.get, bind_ok,
+        Array.to_slice]
+      split
+      all_goals
+        step as ⟨out⟩
+        rw [hnext]
+        omega
+    · simp
+  · trivial
+
+@[step]
+theorem parse_needs_loop_total (bytes : Slice Std.U8) (newest : Std.U64) (count : Std.U8)
+    (slots : Array Std.I32 11#usize) (said : Std.Usize) (i : Std.Usize) :
+    packet.parse_needs_loop bytes newest count slots said i ⦃ _ => True ⦄ := by
+  unfold packet.parse_needs_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : Std.U8 × Array Std.I32 11#usize × Std.Usize => said.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨count1, slots1, i1⟩ _
+    unfold packet.parse_needs_loop.body
+    simp only
+    split
+    · have hlt : i1.val < said.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i1 1#usize).val = i1.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      simp only [lift, bind_ok, Array.to_slice_mut, core.slice.Slice.get_mut,
+        core.slice.index.Usize.get_mut, Std.uncurry]
+      split
+      · step as ⟨o⟩
+        split
+        · simp
+        · split
+          all_goals
+            simp only [bind_ok, WP.spec_ok]
+            rw [hnext]
+            omega
+      · simp
+    · simp
+  · trivial
+
+/-- Reading the needs from a report returns, for every bytes. -/
+theorem parse_needs_total (bytes : Slice Std.U8) :
+    packet.parse_needs bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_needs
+  repeat' (first | split | step*)
+
+/-- Writing the needs into a report returns, for every needs and bytes. -/
+theorem write_needs_total (recent : packet.Recent) (bytes : Slice Std.U8) :
+    packet.write_needs recent bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_needs
+  repeat' (first | split | step*)
 
 end Unisono.Packet

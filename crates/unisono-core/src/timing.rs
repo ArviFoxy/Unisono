@@ -263,14 +263,15 @@ pub fn sender_time(line: &Line, path: i64, time: i64) -> i64 {
 
 /// The position in the stream that is due when the sender's clock reads
 /// `time`, to 2^-32 frame. `None` when that is before frame 0 of the
-/// timeline or beyond its last index, and when the schedule's drift or the
-/// slope of its level is minus one or below, which is no rate.
+/// timeline or beyond its last index, when the schedule's rate is zero, or
+/// when its drift or the slope of its level is minus one or below, which is
+/// no rate.
 #[must_use]
 pub fn due(schedule: &Schedule, time: i64) -> Option<Position> {
     // Frames per nanosecond are `rate * pace / (BILLION * stretch)`.
     let pace = (BILLION as i128).wrapping_add(schedule.drift as i128);
     let stretch = (BILLION as i128).wrapping_add(schedule.level_slope as i128);
-    if pace <= 0 || stretch <= 0 {
+    if schedule.rate == 0 || pace <= 0 || stretch <= 0 {
         return None;
     }
     let elapsed = saturate(
@@ -464,6 +465,9 @@ mod tests {
         let later = due(&schedule, 2_020_000_000).expect("in the timeline");
         assert_eq!(later.frame, 4_800 + 47_952);
         schedule.level_slope = -1_000_000_000;
+        assert_eq!(due(&schedule, 2_020_000_000), None);
+        schedule.level_slope = 0;
+        schedule.rate = 0;
         assert_eq!(due(&schedule, 2_020_000_000), None);
     }
 

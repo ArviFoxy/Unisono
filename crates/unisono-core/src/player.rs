@@ -43,7 +43,7 @@
 //! silence.
 
 use crate::fixed::{div_floor, div_floor_wide, root, saturate};
-use crate::timing::{Position, Step, advance, distance};
+use crate::timing::{Position, Step, distance};
 
 /// The number of nanoseconds in a second, and of parts in a billion.
 const BILLION: i64 = 1_000_000_000;
@@ -235,7 +235,7 @@ impl Player {
             );
         let before = (BILLION as i128).wrapping_add(self.slope as i128);
         let now = (BILLION as i128).wrapping_add(slope as i128);
-        let carried = if before > 0 && now > 0 {
+        let carried = if self.slope != slope && before > 0 && now > 0 {
             // 82 bits and 32: no wrapping.
             div_floor_wide(read.wrapping_mul(before), now)
         } else {
@@ -313,21 +313,32 @@ impl Player {
         // step that was wanted: beyond the limit the two differ, and the
         // distance to the schedule changes by the first.
         self.pace = step.offset();
-        self.position = advance(start, frames, step.offset());
+        self.position = match start.advance(step, frames as u64) {
+            Some(next) => next,
+            None => Position {
+                frame: u64::MAX,
+                fraction: u64::MAX,
+            },
+        };
         (start, step)
     }
 
-    /// Whether the position is to jump to the schedule, from which it is
-    /// `behind` by that many units of 2^-32 frame: when none is held, and
-    /// when the distance either way is beyond the setting.
-    fn jumps(&self, behind: i64) -> bool {
+    /// Whether the position is to jump to `now`: when none is held, and when
+    /// the distance either way is beyond the setting.
+    fn jumps(&self, now: Position) -> bool {
         if !self.running {
             return true;
         }
-        // 32 bits and 32 more: no wrapping.
-        let jump = (self.regulation.jump as i128).wrapping_shl(32);
-        let wide = behind as i128;
-        wide > jump || wide < 0i128.wrapping_sub(jump)
+        let current = self.position.units();
+        let target = now.units();
+        let gap = if target >= current {
+            target.wrapping_sub(current)
+        } else {
+            current.wrapping_sub(target)
+        };
+        // `jump` is in whole frames; `units()` is in 2^-64 frame.
+        let limit = (self.regulation.jump as u128).wrapping_shl(64);
+        gap > limit
     }
 
     /// Plans one cycle of the device, of `frames` output frames that take
@@ -354,8 +365,7 @@ impl Player {
                 jumped: false,
             };
         }
-        let behind = distance(self.position, now);
-        let jumped = self.jumps(behind);
+        let jumped = self.jumps(now);
         // After a jump the position is on the schedule, and the pace of the
         // cycle before counts as the schedule's.
         let (behind, ahead) = if jumped {
@@ -363,7 +373,10 @@ impl Player {
             self.position = now;
             (0, 0)
         } else {
-            (behind, self.ahead(frames, scheduled, slope))
+            (
+                distance(self.position, now),
+                self.ahead(frames, scheduled, slope),
+            )
         };
         self.slope = slope;
         let (start, step) = self.play(frames, scheduled, behind, ahead, duration);
@@ -739,5 +752,19 @@ mod tests {
         // From rest the regulator goes past by less than a twentieth.
         assert!(lowest > -(fallen / 20), "{lowest}");
         assert!(behind.last().copied().unwrap_or(i64::MAX).abs() < 1 << 20);
+    }
+
+    #[test]
+    fn large_jump_threshold_still_triggers_beyond_2_to_31_frames() {
+        let mut player = Player::new(Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 1 << 31,
+        });
+        player.cycle(at(0), at(FRAMES as u64), FRAMES, DURATION, 0);
+        let far = (1u64 << 31) + 1_000;
+        let plan = player.cycle(at(far), at(far + FRAMES as u64), FRAMES, DURATION, 0);
+        assert!(plan.jumped);
+        assert_eq!(plan.start, at(far));
     }
 }

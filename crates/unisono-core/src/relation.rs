@@ -47,9 +47,10 @@ impl Line {
     /// limited to the range of `i64`.
     #[must_use]
     pub fn eval(&self, time: i64) -> i64 {
-        let elapsed = time.saturating_sub(self.time);
-        // Two 64-bit numbers: the product cannot wrap.
-        let product = (self.rise as i128).wrapping_mul(elapsed as i128);
+        // Difference of two `i64` values has magnitude at most 2^64 - 1, and
+        // `rise` has magnitude at most 2^63, so the product cannot wrap.
+        let elapsed = (time as i128).wrapping_sub(self.time as i128);
+        let product = (self.rise as i128).wrapping_mul(elapsed);
         let change = div_floor(product, self.run);
         saturate((self.value as i128).saturating_add(change))
     }
@@ -188,7 +189,7 @@ impl<const M: usize> Estimator<M> {
             }
             index = index.saturating_add(1);
         }
-        first.saturating_add(saturate(div_floor(sum, self.len as i64)))
+        saturate((first as i128).wrapping_add(div_floor(sum, self.len as i64)))
     }
 
     /// The current estimate, once a sample has been kept.
@@ -312,7 +313,7 @@ impl<const M: usize> Estimator<M> {
         if let Some(last) = last
             && sample.time <= last.time
         {
-            if last.time.saturating_sub(sample.time) <= self.span {
+            if (last.time as i128).wrapping_sub(sample.time as i128) <= self.span as i128 {
                 return;
             }
             self.clear();
@@ -921,5 +922,23 @@ mod tests {
                 assert!(side(from, to, *s) >= 0, "a sample lies below the line");
             }
         }
+    }
+
+    #[test]
+    fn extreme_timestamps_do_not_saturate_mean_time_or_keep() {
+        let mut estimator = Estimator::<4>::new(i64::MAX, STEEP);
+        estimator.append(sample(i64::MIN, 0));
+        estimator.append(sample(i64::MAX - 1, 0));
+        estimator.append(sample(i64::MAX, 0));
+        assert_eq!(estimator.kept(), 3);
+        let mean = estimator.mean_time(i64::MIN);
+        assert_eq!(mean, 3_074_457_345_618_258_601);
+
+        // Sample older than `last.time` by more than `i64::MAX` resets kept samples.
+        let mut reset = Estimator::<4>::new(i64::MAX, STEEP);
+        reset.observe(0, sample(100, 10));
+        reset.observe(1, sample(i64::MIN, 20));
+        reset.end_window();
+        assert_eq!(reset.kept(), 1);
     }
 }

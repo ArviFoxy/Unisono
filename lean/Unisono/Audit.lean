@@ -772,3 +772,47 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.RegulationRandom.unforeseen_pace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.RegulationRandom.unforeseen_pace
+
+/-- info: 'Unisono.Fixed.rem_euclid_wide_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.rem_euclid_wide_spec
+
+/-- info: 'Unisono.Due.dueUnits_eq_floor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Due.dueUnits_eq_floor
+
+/-- info: 'Unisono.Relation.slope_within_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.slope_within_spec
+
+/-- info: 'Unisono.Relation.eval_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.eval_spec
+
+/-- info: 'Unisono.Relation.append_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.append_spec
+
+/-- info: 'Unisono.Relation.keep_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.keep_spec
+
+/-- info: 'Unisono.Relation.end_window_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.end_window_spec
+
+/-- info: 'Unisono.Device.fit_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.fit_spec
+
+/-- info: 'Unisono.Rounds.shift_rounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Rounds.shift_rounds
+
+/-- info: 'Unisono.Answers.clear_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Answers.clear_spec
+
+/-- info: 'Unisono.Model.Level.measure_largest_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.measure_largest_le
