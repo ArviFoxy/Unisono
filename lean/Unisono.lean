@@ -3,6 +3,7 @@ public import Unisono.Answers
 public import Unisono.Arrivals
 public import Unisono.Audit
 public import Unisono.Device
+public import Unisono.Due
 public import Unisono.Estimate
 public import Unisono.Fixed
 public import Unisono.Gains

@@ -37,6 +37,7 @@ every argument, whether or not they could arise in a run.
 |---|---|
 | `group_misses_iff` | The group of receivers misses a frame exactly when the level is below the largest need over the receivers. |
 | `sum_sq_errors` | The squared timing errors are the squared distances from their mean, which is receivers out of step, plus the squared mean for each, which is latency. |
+| `dueTime_position` | The position that is due at a time, from what a packet says of its first frame and of the frames after it. |
 | `groupNeed_errors`, `group_misses_errors` | Timing errors within a bound move the need of the group by no more than the bound, so the level and the paces can be chosen apart up to that. |
 
 ### 1.3 The pace (`Model.Regulation`, `Model.RegulationRandom`, `Model.Gains`)
@@ -130,12 +131,13 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 | `echo_spec`, `report_spec`, `reported_spec` | Measuring the delay of the path changes nothing about the timeline or the frames held. |
 | `adopt_spec`, `keep_newest_spec`, `new_spec` | Taking up a timeline, moving to the newest frames, and a new receiver. |
 
-### 2.7 The regulator and timing (`Player`, `Gains`)
+### 2.7 The regulator and timing (`Player`, `Gains`, `Due`)
 
 | Theorem | What it says |
 |---|---|
 | `cycle_spec`, `cycle_step_small`, `step_clamped_spec` | Planning a cycle returns for every state and schedule, and its step is within the limit of the pace, which is a step the resampler takes. |
 | `gain_spec`, `gains_spec`, `regulate_spec` | The gain of a cycle, and that the two gains the code computes and what it has the cycle read are within stated bounds of the best law's (section 1.3). |
+| `Due.due_spec` | The position that the code takes to be due at a time is the one the schedule says (section 1.2), rounded down to `2⁻³²` frame. |
 | `sender_time_total`, `due_total`, `position_units_total`, `position_from_units_total`, `step_units_total`, `step_new_total`, `position_advance_total`, `step_from_parts_per_billion_total` | The conversions between times, positions and steps return for every input. |
 
 ### 2.8 The sender (`Sender`)

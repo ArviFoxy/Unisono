@@ -124,4 +124,29 @@ theorem group_misses_errors [Nonempty ι] {ε : ℝ} (ℓ : ℝ) (e D lead : ι 
   obtain ⟨h1, h2⟩ := groupNeed_errors e D lead h
   exact ⟨fun hlt => by linarith, fun hlt => by linarith⟩
 
+/-! ## When a frame is due
+
+A schedule names one frame, captured at `capture` and to be played `level`
+after that, and says how the frames after it follow: `rate` frames a second
+at a pace of `pace` billionths, with a level whose time runs at `stretch`
+billionths of the stream's. Times are in nanoseconds. -/
+
+/-- When the frame `x` places after the schedule's frame is due. -/
+def dueTime (capture level rate pace stretch x : ℝ) : ℝ :=
+  capture + level + x * (10 ^ 9 * stretch) / (rate * pace)
+
+/-- **The position that is due at a time.** The frame that is due at `t` lies
+`(t - capture - level) · rate · pace / (10⁹ · stretch)` places after the
+schedule's frame: that position is due at `t`. The code computes it, rounded
+down to `2⁻³²` frame (`Unisono.Due.due_spec`). -/
+theorem dueTime_position {capture level rate pace stretch : ℝ} (t : ℝ)
+    (hrate : 0 < rate) (hpace : 0 < pace) (hstretch : 0 < stretch) :
+    dueTime capture level rate pace stretch
+        ((t - capture - level) * (rate * pace) / (10 ^ 9 * stretch)) = t := by
+  have h1 : rate * pace ≠ 0 := (mul_pos hrate hpace).ne'
+  have h2 : (10 : ℝ) ^ 9 * stretch ≠ 0 := (mul_pos (by norm_num) hstretch).ne'
+  simp only [dueTime]
+  field_simp
+  ring
+
 end Unisono.Model.Stream

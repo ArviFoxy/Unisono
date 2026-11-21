@@ -6,6 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Arrivals
 public import Unisono.Device
+public import Unisono.Due
 public import Unisono.Estimate
 public import Unisono.Fixed
 public import Unisono.Gains
@@ -255,6 +256,14 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Receiver.due_at_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Receiver.due_at_total
+
+/-- info: 'Unisono.Due.due_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Due.due_spec
+
+/-- info: 'Unisono.Model.Stream.dueTime_position' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Stream.dueTime_position
 
 /-- info: 'Unisono.Player.cycle_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

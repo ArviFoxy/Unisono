@@ -140,6 +140,14 @@ The sender announces it ahead of the frames it applies to, so that all
 receivers move it together. Frame $n$ is to leave each receiver's device when
 the sender's clock reads $\tau(n) + \ell(n)$.
 
+A packet states this for its first frame and for those that follow: the
+capture time and the level of that frame, the rate of the frames against the
+sender's clock, and the slope of the level. The position that is due at a
+time $t$ follows from them by one division
+(`Unisono.Model.Stream.dueTime_position`), and the code returns exactly that
+position rounded down to $2^{-32}$ frame, with nothing wrapping and no
+rounding carried from one step to the next (`Unisono.Due.due_spec`).
+
 For receiver $r$, let $t^{\mathrm{out}}_r(n)$ be the true time at which frame
 $n$ leaves its device. Its **timing error** is
 
