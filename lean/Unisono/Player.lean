@@ -43,6 +43,12 @@ theorem due_total (schedule : timing.Schedule) (time : Std.I64) :
   run
 
 @[step]
+theorem continues_total (a b : timing.Schedule) :
+    timing.Schedule.continues a b ⦃ _ => True ⦄ := by
+  unfold timing.Schedule.continues
+  run
+
+@[step]
 theorem distance_total (a b : timing.Position) : timing.distance a b ⦃ _ => True ⦄ := by
   unfold timing.distance
   run

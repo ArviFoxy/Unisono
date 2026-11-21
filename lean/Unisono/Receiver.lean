@@ -111,13 +111,30 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
     simp only [SameStream]
     exact ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hsched1⟩
 
-/-- Keeping what a packet says about when frames are due changes the schedule
-and nothing else. -/
+/-- Taking the next schedule kept into use changes the schedules and nothing
+else. -/
+@[step]
+theorem turn_spec (r : receiver.Receiver N M K) :
+    receiver.Receiver.turn r ⦃ r' => SameStream r' r ⦄ := by
+  unfold receiver.Receiver.turn
+  cases r.next <;> simp [SameStream]
+
+/-- Keeping what a packet says about when frames are due changes the
+schedules and nothing else. -/
 @[step]
 theorem note_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     receiver.Receiver.note r h ⦃ r' => SameStream r' r ⦄ := by
   unfold receiver.Receiver.note
-  simp [SameStream]
+  repeat' split
+  all_goals first
+    | (simp [SameStream]; done)
+    | (step with Unisono.Player.continues_total as ⟨b⟩
+       split
+       · simp [SameStream]
+       · first
+         | (simp [SameStream]; done)
+         | (step as ⟨r1, hsame⟩
+            simpa [SameStream] using hsame))
 
 /-! ## Which timeline is followed -/
 
@@ -1180,6 +1197,22 @@ theorem restart_stores (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std
 
 /-! ## A cycle of the device -/
 
+/-- Taking the next schedule into use when the position due has reached it
+changes the schedules and nothing else. -/
+@[step]
+theorem reached_spec (r : receiver.Receiver N M K) (now : timing.Position) (first : Std.I64) :
+    receiver.Receiver.reached r now first ⦃ out => SameStream out.2 r ⦄ := by
+  unfold receiver.Receiver.reached
+  cases r.next with
+  | none => simp [SameStream]
+  | some next =>
+    simp only
+    split
+    · simp [SameStream]
+    · step as ⟨r1, hsame⟩
+      step as ⟨o⟩
+      cases o <;> simpa [SameStream] using hsame
+
 /-- Planning a cycle of the device returns for every state and every reading
 of the clock, and changes nothing about the timeline that is followed or the
 frames that are held: only the regulator moves. -/
@@ -1205,13 +1238,27 @@ theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
         | none => simp [SameStream]
         | some now =>
           simp only
-          step as ⟨o2⟩
+          step as ⟨o2, r1, hsame⟩
           cases o2 with
-          | none => simp [SameStream]
-          | some later =>
-            simp only
-            step as ⟨out⟩
-            simp [SameStream]
+          | none =>
+            simp only [bind_ok]
+            step as ⟨o3⟩
+            cases o3 with
+            | none => simpa [SameStream] using hsame
+            | some later =>
+              simp only
+              step as ⟨out⟩
+              simpa [SameStream] using hsame
+          | some turned =>
+            obtain ⟨schedule1, now1⟩ := turned
+            simp only [bind_ok]
+            step as ⟨o3⟩
+            cases o3 with
+            | none => simpa [SameStream] using hsame
+            | some later =>
+              simp only
+              step as ⟨out⟩
+              simpa [SameStream] using hsame
   · simp [SameStream]
 
 /-! ## Reports and the delay of the path -/

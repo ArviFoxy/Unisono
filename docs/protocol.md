@@ -105,6 +105,17 @@ These rules are part of the protocol, because a sender relies on them.
   before, the receiver keeps its estimate of the sender's clock, since it is
   the same clock. Otherwise it drops the estimate and learns the clock anew.
   It keeps its estimate of the delay of the path in both cases.
+- **The level.** The level and its slope in a packet hold for the frames
+  from that packet on. A packet arrives before its frames are played, so
+  when the level takes another course at a packet, a slope that begins or
+  ends, a receiver goes on playing the frames before that packet as the
+  packets before it said, and takes the new course when the position that is
+  due reaches the packet. A receiver keeps two such changes, the start and
+  the end of a move. At a third it takes the first at once, early by at most
+  the time by which packets are ahead of what is played, so a sender that
+  wants every frame played at its level changes the course no more than
+  twice within that time. The sender of this repository decides on a move
+  once for each second of stream.
 - **The index going back.** When every frame of the followed timeline's
   packets has been behind the receiver's playhead for the time of silence,
   the receiver starts anew at the arriving packet.

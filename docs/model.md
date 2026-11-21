@@ -779,14 +779,17 @@ and every receiver follows it as section 6.4 says. The cost of a move stands
 for the two changes of pace, at its start and at its end, that all receivers
 make at once.
 
-In the code a receiver takes the level and its slope from the newest packet
-for all the frames it plays. A change of the slope therefore reaches the
-frames being played before their turn, by as much as the newest packet is
-ahead of them: their due times move by the change of the slope times that
-time, for all receivers alike, and the regulators take it out again. For a
-slope of half a millisecond a second and a level of 20 ms that is 10
-microseconds. Keeping the level by index, so that each frame is played at
-the level of its own packet, is not built.
+A packet arrives well before its frames are played, and the level of a
+frame is the one its own packet carries. A receiver therefore keeps what a
+packet says about the level until the position that is due reaches that
+packet, when the level takes another course there: a slope that begins or
+ends. Until then the frames being played are due as the packets before
+said. The receiver keeps two such changes, the start and the end of a move;
+at a third, the first comes into use at once, which moves the frames being
+played by at most the change of the slope times the time by which packets
+are ahead, for all receivers alike (`unisono_core::receiver`, `note`). A
+receiver's pace is held within three parts in a thousand, so a level cannot
+be followed faster than 3 ms a second.
 
 *Not stated in Lean:* that the level is the best over all levels and not
 only over those tried; the rule for moving; and the count of missed time

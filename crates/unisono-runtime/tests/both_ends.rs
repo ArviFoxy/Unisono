@@ -208,7 +208,8 @@ fn the_level_moves_to_what_the_receiver_needs_and_frames_follow_it() {
     // Stretches of 50 ms. A gap is priced low, so that a few seconds of
     // evidence are enough to bring the level down to the needs: a gap costs
     // as much as a millisecond of level held for six seconds. The level
-    // moves by 2 ms a second, which the receiver's pace can follow.
+    // moves by 2 ms a second, which the receiver's pace can follow: the pace
+    // is held within three in a thousand whatever limit is set.
     let choice = Choice {
         weights: Weights {
             latency: 1_000.0,
@@ -242,11 +243,8 @@ fn the_level_moves_to_what_the_receiver_needs_and_frames_follow_it() {
         run.played
     );
     // Each frame plays at the level that the sender held for it, while the
-    // level moves and after. Where the slope of the level changes, the
-    // receiver takes the new slope for the frames it is playing as soon as
-    // a packet says so, 20 ms before the frames of that packet are played:
-    // their due times move by the change of the slope times those 20 ms,
-    // 40 microseconds, and the regulator takes that out again.
+    // level moves and after: a change of the level's slope holds from the
+    // packet that brings it, not from when that packet arrives.
     assert!(run.errors.len() > 140_000, "{} frames", run.errors.len());
     // A sample that the concealment made says nothing of when its frame
     // was captured; a frame from the stream is within milliseconds.
@@ -263,7 +261,7 @@ fn the_level_moves_to_what_the_receiver_needs_and_frames_follow_it() {
         run.errors.len()
     );
     let (low, high) = spread(&mut stream);
-    assert!(low > -100e-6 && high < 100e-6, "from {low} to {high}");
+    assert!(low > -50e-6 && high < 50e-6, "from {low} to {high}");
 }
 
 /// The level that the sender held for the frame at `position`, by the

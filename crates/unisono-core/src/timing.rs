@@ -204,6 +204,35 @@ pub struct Schedule {
     pub level_slope: i32,
 }
 
+impl Schedule {
+    /// Whether `later`, the schedule of a packet further on, holds the level
+    /// on the line on which this schedule holds it: its slope is the same,
+    /// and the level at its index is what this line has there, to two
+    /// nanoseconds, which is what rounding can make of one line.
+    #[must_use]
+    pub fn continues(&self, later: &Schedule) -> bool {
+        if later.level_slope != self.level_slope
+            || later.rate != self.rate
+            || later.index < self.index
+        {
+            return false;
+        }
+        // A difference of indices and a slope of 32 bits: no wrapping.
+        let frames = (later.index as i128).wrapping_sub(self.index as i128);
+        let risen = div_floor(
+            frames.wrapping_mul(self.level_slope as i128),
+            self.rate as i64,
+        );
+        let off = (later.level as i128)
+            .wrapping_sub(self.level as i128)
+            .wrapping_sub(risen);
+        if off < -2 {
+            return false;
+        }
+        off <= 2
+    }
+}
+
 /// The reading of the sender's clock when the receiver's clock reads `time`.
 ///
 /// `line` is the receiver's estimate of its clock minus the sender's, over
@@ -324,6 +353,38 @@ mod tests {
             level: 20_000_000,
             level_slope: 0,
         }
+    }
+
+    #[test]
+    fn a_schedule_continues_another_on_the_same_line_of_the_level() {
+        let held = Schedule {
+            index: 1_000,
+            capture: 5,
+            rate: 48_000,
+            drift: 0,
+            level: 20_000_000,
+            level_slope: 0,
+        };
+        let later = |index, level, level_slope| Schedule {
+            index,
+            capture: 99,
+            level,
+            level_slope,
+            ..held
+        };
+        assert!(held.continues(&later(1_240, 20_000_000, 0)));
+        // A level that has moved, a slope that begins, and a packet from
+        // before are not on the line.
+        assert!(!held.continues(&later(1_240, 20_000_003, 0)));
+        assert!(!held.continues(&later(1_240, 20_000_000, 500_000)));
+        assert!(!held.continues(&later(760, 20_000_000, 0)));
+        // Along a slope of 480,000 ns a second, 10 ns a frame, to the two
+        // nanoseconds that rounding gives.
+        let rising = later(1_000, 20_000_000, 480_000);
+        assert!(rising.continues(&later(1_240, 20_002_400, 480_000)));
+        assert!(rising.continues(&later(1_240, 20_002_402, 480_000)));
+        assert!(!rising.continues(&later(1_240, 20_002_403, 480_000)));
+        assert!(!rising.continues(&later(1_240, 20_000_000, 480_000)));
     }
 
     #[test]

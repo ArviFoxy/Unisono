@@ -3575,7 +3575,7 @@ def player.Player.step
   timing.Step.clamped limited
 
 /-- [unisono_core::timing::advance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 290:0-311:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 319:0-340:1
     Visibility: public -/
 def timing.advance
   (start : timing.Position) (frames : Std.U32) (step : Std.I64) :
@@ -3635,7 +3635,7 @@ def player.Player.jumps
   else ok true
 
 /-- [unisono_core::timing::distance]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 278:0-284:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 307:0-313:1
     Visibility: public -/
 def timing.distance
   («from» : timing.Position) («to» : timing.Position) :
@@ -4567,13 +4567,13 @@ def receiver.Receiver.Insts.CoreMarkerCopy (N : Std.Usize) (M : Std.Usize) (K :
 }
 
 /-- [unisono_core::receiver::span_of]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 156:0-159:1 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 169:0-172:1 -/
 def receiver.span_of (header : packet.Audio) : Result Std.I64 := do
   let i ← lift (UScalar.hcast .I64 header.span)
   ok (core.num.I64.wrapping_mul i receiver.MILLISECOND)
 
 /-- [unisono_core::receiver::halved]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 163:0-165:1 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 176:0-178:1 -/
 def receiver.halved (both : Std.I64) : Result Std.I64 := do
   if both < 0#i64
   then ok 0#i64
@@ -4624,7 +4624,7 @@ def relation.Estimator.new
     }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::new]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 170:4-193:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 183:4-210:5
     Visibility: public -/
 def receiver.Receiver.new
   (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
@@ -4653,6 +4653,10 @@ def receiver.Receiver.new
       clock := e,
       arrived := a,
       schedule := none,
+      next := none,
+      next_from := 0#u64,
+      after := none,
+      after_from := 0#u64,
       player := p1,
       identity := settings.identity,
       reports := 0#u64,
@@ -4661,7 +4665,7 @@ def receiver.Receiver.new
     }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::path]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 198:4-200:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 215:4-217:5
     Visibility: public -/
 def receiver.Receiver.impl.path
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4671,7 +4675,7 @@ def receiver.Receiver.impl.path
   ok { self with path }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::delay]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 205:4-207:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 222:4-224:5
     Visibility: public -/
 def receiver.Receiver.delay
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4681,7 +4685,7 @@ def receiver.Receiver.delay
   ok self.path
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::timeline]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 211:4-217:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 228:4-234:5
     Visibility: public -/
 def receiver.Receiver.impl.timeline
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4693,7 +4697,7 @@ def receiver.Receiver.impl.timeline
   else ok none
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::playhead]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 221:4-223:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 238:4-240:5
     Visibility: public -/
 def receiver.Receiver.playhead
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4703,7 +4707,7 @@ def receiver.Receiver.playhead
   presence.Presence.impl.base self.presence
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::covers]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 228:4-230:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 245:4-247:5
     Visibility: public -/
 def receiver.Receiver.covers
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4724,7 +4728,7 @@ def relation.Estimator.impl.line
   ok self.line
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::clock]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 235:4-237:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 252:4-254:5
     Visibility: public -/
 def receiver.Receiver.impl.clock
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4734,7 +4738,7 @@ def receiver.Receiver.impl.clock
   relation.Estimator.impl.line self.clock
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::schedule]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 242:4-244:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 259:4-261:5
     Visibility: public -/
 def receiver.Receiver.impl.schedule
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -4744,7 +4748,7 @@ def receiver.Receiver.impl.schedule
   ok self.schedule
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopts]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 252:4-263:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 269:4-280:5 -/
 def receiver.Receiver.adopts
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (timeline : Std.U64) (arrival : Std.I64) :
@@ -5502,7 +5506,7 @@ def relation.Estimator.remember
   ok { self with span := i }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::adopt]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 271:4-288:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 288:4-307:5 -/
 def receiver.Receiver.adopt
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -5532,6 +5536,8 @@ def receiver.Receiver.adopt
           clock := e1,
           arrived := a,
           schedule := none,
+          next := none,
+          after := none,
           player := p1
       }
   else
@@ -5549,11 +5555,13 @@ def receiver.Receiver.adopt
           clock := e,
           arrived := a,
           schedule := none,
+          next := none,
+          after := none,
           player := p1
       }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stamped_arrival]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 292:4-297:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 311:4-316:5 -/
 def receiver.Receiver.stamped_arrival
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -5651,7 +5659,7 @@ def relation.Estimator.observe
       } sample
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::sample]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 302:4-313:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 321:4-332:5 -/
 def receiver.Receiver.sample
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrived : Std.I64)
@@ -5668,7 +5676,7 @@ def receiver.Receiver.sample
   ok { self with clock := e }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::measure]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 317:4-323:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 336:4-342:5 -/
 def receiver.Receiver.measure
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -5686,19 +5694,93 @@ def receiver.Receiver.measure
   let a ← arrivals.Arrivals.record self1.arrived header.index arrival
   ok { self1 with arrived := a }
 
+/-- [unisono_core::timing::{unisono_core::timing::Schedule}::continues]:
+    Source: 'crates/unisono-core/src/timing.rs', lines 213:4-233:5
+    Visibility: public -/
+def timing.Schedule.continues
+  (self : timing.Schedule) (later : timing.Schedule) : Result Bool := do
+  if later.level_slope != self.level_slope
+  then ok false
+  else
+    if later.rate != self.rate
+    then ok false
+    else
+      if later.index < self.index
+      then ok false
+      else
+        let i ← lift (UScalar.hcast .I128 later.index)
+        let i1 ← lift (UScalar.hcast .I128 self.index)
+        let frames ← lift (core.num.I128.wrapping_sub i i1)
+        let i2 ← lift (IScalar.cast .I128 self.level_slope)
+        let i3 ← lift (core.num.I128.wrapping_mul frames i2)
+        let i4 ← lift (UScalar.hcast .I64 self.rate)
+        let risen ← fixed.div_floor i3 i4
+        let i5 ← lift (IScalar.cast .I128 later.level)
+        let i6 ← lift (IScalar.cast .I128 self.level)
+        let i7 ← lift (core.num.I128.wrapping_sub i5 i6)
+        let off ← lift (core.num.I128.wrapping_sub i7 risen)
+        if off < (-2)#i128
+        then ok false
+        else ok (off <= 2#i128)
+
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::turn]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 406:4-413:5 -/
+def receiver.Receiver.turn
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) :
+  Result (receiver.Receiver N M K)
+  := do
+  match self.next with
+  | none =>
+    ok
+      {
+        self
+          with
+          next := self.after, next_from := self.after_from, after := none
+      }
+  | some _ =>
+    ok
+      {
+        self
+          with
+          schedule := self.next,
+          next := self.after,
+          next_from := self.after_from,
+          after := none
+      }
+
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::note]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 326:4-335:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 357:4-402:5 -/
 def receiver.Receiver.note
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
   Result (receiver.Receiver N M K)
   := do
-  ok
-    {
-      self
-        with
-        schedule :=
-          (some
+  match self.schedule with
+  | none =>
+    ok
+      {
+        self
+          with
+          schedule :=
+            (some
+              {
+                index := header.index,
+                capture := header.capture,
+                rate := header.rate,
+                drift := header.drift,
+                level := header.level,
+                level_slope := header.level_slope
+              })
+      }
+  | some used =>
+    match self.next with
+    | none =>
+      if header.index < used.index
+      then ok self
+      else
+        let b ←
+          timing.Schedule.continues used
             {
               index := header.index,
               capture := header.capture,
@@ -5706,11 +5788,143 @@ def receiver.Receiver.note
               drift := header.drift,
               level := header.level,
               level_slope := header.level_slope
-            })
-    }
+            }
+        if b
+        then
+          ok
+            {
+              self
+                with
+                schedule :=
+                  (some
+                    {
+                      index := header.index,
+                      capture := header.capture,
+                      rate := header.rate,
+                      drift := header.drift,
+                      level := header.level,
+                      level_slope := header.level_slope
+                    })
+            }
+        else
+          ok
+            {
+              self
+                with
+                next :=
+                  (some
+                    {
+                      index := header.index,
+                      capture := header.capture,
+                      rate := header.rate,
+                      drift := header.drift,
+                      level := header.level,
+                      level_slope := header.level_slope
+                    }),
+                next_from := header.index
+            }
+    | some next =>
+      match self.after with
+      | none =>
+        if header.index < next.index
+        then ok self
+        else
+          let b ←
+            timing.Schedule.continues next
+              {
+                index := header.index,
+                capture := header.capture,
+                rate := header.rate,
+                drift := header.drift,
+                level := header.level,
+                level_slope := header.level_slope
+              }
+          if b
+          then
+            ok
+              {
+                self
+                  with
+                  next :=
+                    (some
+                      {
+                        index := header.index,
+                        capture := header.capture,
+                        rate := header.rate,
+                        drift := header.drift,
+                        level := header.level,
+                        level_slope := header.level_slope
+                      })
+              }
+          else
+            ok
+              {
+                self
+                  with
+                  after :=
+                    (some
+                      {
+                        index := header.index,
+                        capture := header.capture,
+                        rate := header.rate,
+                        drift := header.drift,
+                        level := header.level,
+                        level_slope := header.level_slope
+                      }),
+                  after_from := header.index
+              }
+      | some after =>
+        if header.index < after.index
+        then ok self
+        else
+          let b ←
+            timing.Schedule.continues after
+              {
+                index := header.index,
+                capture := header.capture,
+                rate := header.rate,
+                drift := header.drift,
+                level := header.level,
+                level_slope := header.level_slope
+              }
+          if b
+          then
+            ok
+              {
+                self
+                  with
+                  after :=
+                    (some
+                      {
+                        index := header.index,
+                        capture := header.capture,
+                        rate := header.rate,
+                        drift := header.drift,
+                        level := header.level,
+                        level_slope := header.level_slope
+                      })
+              }
+          else
+            let self1 ← receiver.Receiver.turn self
+            ok
+              {
+                self1
+                  with
+                  after :=
+                    (some
+                      {
+                        index := header.index,
+                        capture := header.capture,
+                        rate := header.rate,
+                        drift := header.drift,
+                        level := header.level,
+                        level_slope := header.level_slope
+                      }),
+                  after_from := header.index
+              }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::keep_newest]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 343:4-364:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 421:4-442:5 -/
 def receiver.Receiver.keep_newest
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -5748,7 +5962,7 @@ def receiver.Receiver.keep_newest
       else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::stale]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 370:4-380:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 448:4-458:5 -/
 def receiver.Receiver.stale
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (marked : presence.Marked)
@@ -5774,7 +5988,7 @@ def receiver.Receiver.stale
           ok (i1 >= self.silence, { self with fresh := i })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::renew]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 385:4-392:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 463:4-475:5 -/
 def receiver.Receiver.renew
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) :
@@ -5785,10 +5999,20 @@ def receiver.Receiver.renew
   let e ← relation.Estimator.reset_window self.clock
   let i ← lift (UScalar.cast .U32 header.frames)
   let (m, p2) ← presence.Presence.mark p header.index i
-  ok (m, { self with presence := p2, clock := e, player := p1 })
+  ok (m,
+    {
+      self
+        with
+        presence := p2,
+        clock := e,
+        schedule := none,
+        next := none,
+        after := none,
+        player := p1
+    })
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::refresh]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 398:4-408:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 481:4-491:5 -/
 def receiver.Receiver.refresh
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio)
@@ -5816,7 +6040,7 @@ def receiver.Receiver.refresh
         else ok self
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::accept]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 411:4-425:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 494:4-508:5 -/
 def receiver.Receiver.accept
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (header : packet.Audio) (arrival : Std.I64)
@@ -5841,7 +6065,7 @@ def receiver.Receiver.accept
   ok ({ ignored := false, adopted, restarted, marked }, self5)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::packet]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 429:4-460:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 512:4-543:5
     Visibility: public -/
 def receiver.Receiver.packet
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -5897,7 +6121,7 @@ def receiver.Receiver.packet
           adopted
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::report]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 464:4-476:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 547:4-559:5
     Visibility: public -/
 def receiver.Receiver.report
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -5917,7 +6141,7 @@ def receiver.Receiver.report
   else ok (none, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reported]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 480:4-482:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 563:4-565:5
     Visibility: public -/
 def receiver.Receiver.reported
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -5928,7 +6152,7 @@ def receiver.Receiver.reported
   ok { self with departures := a }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::echo]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 490:4-508:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 573:4-591:5
     Visibility: public -/
 def receiver.Receiver.echo
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -5967,7 +6191,7 @@ def receiver.Receiver.echo
 @[global_simps, irreducible] def timing.BILLION : Std.I64 := 1000000000#i64
 
 /-- [unisono_core::timing::due]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 240:0-273:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 269:0-302:1
     Visibility: public -/
 def timing.due
   (schedule : timing.Schedule) (time : Std.I64) :
@@ -6019,7 +6243,7 @@ def timing.due
           ok (some { frame := i18, fraction := i20 })
 
 /-- [unisono_core::timing::sender_time]:
-    Source: 'crates/unisono-core/src/timing.rs', lines 213:0-233:1
+    Source: 'crates/unisono-core/src/timing.rs', lines 242:0-262:1
     Visibility: public -/
 def timing.sender_time
   (line : relation.Line) (path : Std.I64) (time : Std.I64) :
@@ -6050,8 +6274,28 @@ def timing.sender_time
   let i11 ← lift (core.num.I128.wrapping_add i10 scaled)
   fixed.saturate i11
 
+/-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::reached]:
+    Source: 'crates/unisono-core/src/receiver.rs', lines 638:4-650:5 -/
+def receiver.Receiver.reached
+  {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
+  (self : receiver.Receiver N M K) (now : timing.Position) (first : Std.I64) :
+  Result ((Option (timing.Schedule × timing.Position)) × (receiver.Receiver N
+    M K))
+  := do
+  match self.next with
+  | none => ok (none, self)
+  | some next =>
+    if now.frame < self.next_from
+    then ok (none, self)
+    else
+      let self1 ← receiver.Receiver.turn self
+      let o ← timing.due next first
+      match o with
+      | none => ok (none, self1)
+      | some due => ok (some (next, due), self1)
+
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::cycle]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 515:4-544:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 598:4-633:5
     Visibility: public -/
 def receiver.Receiver.cycle
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -6096,8 +6340,13 @@ def receiver.Receiver.cycle
                jumped := false
              }, self)
         | some now =>
-          let o2 ← timing.due schedule last
-          match o2 with
+          let (o2, self1) ← receiver.Receiver.reached self now first
+          let (schedule1, now1) ←
+            match o2 with
+            | none => ok (schedule, now)
+            | some turned => ok turned
+          let o3 ← timing.due schedule1 last
+          match o3 with
           | none =>
             ok
               ({
@@ -6105,12 +6354,12 @@ def receiver.Receiver.cycle
                  start := { frame := 0#u64, fraction := 0#u64 },
                  step := timing.Step.UNITY,
                  jumped := false
-               }, self)
+               }, self1)
           | some «then» =>
             let (p, p1) ←
-              player.Player.cycle self.player now «then» frames duration
-                schedule.level_slope
-            ok (p, { self with player := p1 })
+              player.Player.cycle self1.player now1 «then» frames duration
+                schedule1.level_slope
+            ok (p, { self1 with player := p1 })
   else
     ok
       ({
@@ -6121,7 +6370,7 @@ def receiver.Receiver.cycle
        }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::pass]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 547:4-550:5 -/
+    Source: 'crates/unisono-core/src/receiver.rs', lines 653:4-656:5 -/
 def receiver.Receiver.pass
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
   (self : receiver.Receiver N M K) (frames : Std.U32) :
@@ -6134,7 +6383,7 @@ def receiver.Receiver.pass
   ok { self with presence := p }
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::take]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 555:4-580:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 661:4-686:5
     Visibility: public -/
 def receiver.Receiver.take
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}
@@ -6156,7 +6405,7 @@ def receiver.Receiver.take
   else ok ({ first, frames := 0#u32, held := false }, self)
 
 /-- [unisono_core::receiver::{unisono_core::receiver::Receiver<N, M, K>}::skip]:
-    Source: 'crates/unisono-core/src/receiver.rs', lines 586:4-593:5
+    Source: 'crates/unisono-core/src/receiver.rs', lines 692:4-699:5
     Visibility: public -/
 def receiver.Receiver.skip
   {N : Std.Usize} {M : Std.Usize} {K : Std.Usize}

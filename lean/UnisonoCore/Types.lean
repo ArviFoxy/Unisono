@@ -310,7 +310,7 @@ structure relation.Estimator (M : Std.Usize) where
   line : Option relation.Line
 
 /-- [unisono_core::receiver::Receiver]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 108:0-152:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 108:0-165:1
     Visibility: public -/
 structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   where
@@ -329,6 +329,10 @@ structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   clock : relation.Estimator M
   arrived : arrivals.Arrivals K
   schedule : Option timing.Schedule
+  next : Option timing.Schedule
+  next_from : Std.U64
+  after : Option timing.Schedule
+  after_from : Std.U64
   player : player.Player
   identity : Std.U64
   reports : Std.U64

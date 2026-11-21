@@ -139,7 +139,20 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     /// from the stamps of audio packets.
     clock: Estimator<M>,
     arrived: Arrivals<K>,
+    /// When the frames that are being played are due.
     schedule: Option<Schedule>,
+    /// What a packet further on says, when it holds the level on another
+    /// line than `schedule`: a level that begins to move, or stops. It
+    /// comes into use when the position that is due reaches `next_from`,
+    /// the index of the first packet on its line, so that every frame is
+    /// played at the level that the sender held for it.
+    next: Option<Schedule>,
+    next_from: u64,
+    /// The same for a second change of the level's course, further on
+    /// still: a move of the level has a start and an end, and both can be
+    /// ahead of the frames being played.
+    after: Option<Schedule>,
+    after_from: u64,
     player: Player,
     /// A number that tells this receiver from the others of the stream.
     identity: u64,
@@ -184,6 +197,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             clock: Estimator::new(0, settings.limit),
             arrived: Arrivals::new(),
             schedule: None,
+            next: None,
+            next_from: 0,
+            after: None,
+            after_from: 0,
             player: Player::new(settings.regulation),
             identity: settings.identity,
             reports: 0,
@@ -278,6 +295,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.presence.restart(header.index);
         self.arrived = Arrivals::new();
         self.schedule = None;
+        self.next = None;
+        self.after = None;
         self.player.stop();
         if same_clock {
             self.clock.remember(span_of(header));
@@ -323,15 +342,74 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     }
 
     /// Keeps what `header` says about when frames are due.
+    ///
+    /// A packet arrives well before its frames are played. As long as it
+    /// holds the level on the line of the newest schedule kept, it takes
+    /// that schedule's place: it says the same of the frames it stands for,
+    /// with a later capture time. When the level takes another course at
+    /// the packet, a slope that begins or ends, what it says holds from its
+    /// index on and is kept until the position due gets there. Two such
+    /// changes are kept, the start and the end of a move of the level; at a
+    /// third, the first comes into use at once, which moves the frames being
+    /// played by at most what the level changes over the time by which
+    /// packets are ahead. A packet from before the newest schedule kept
+    /// says nothing new.
     fn note(&mut self, header: &Audio) {
-        self.schedule = Some(Schedule {
+        let said = Schedule {
             index: header.index,
             capture: header.capture,
             rate: header.rate,
             drift: header.drift,
             level: header.level,
             level_slope: header.level_slope,
-        });
+        };
+        let Some(used) = self.schedule else {
+            self.schedule = Some(said);
+            return;
+        };
+        let Some(next) = self.next else {
+            if header.index < used.index {
+                return;
+            }
+            if used.continues(&said) {
+                self.schedule = Some(said);
+            } else {
+                self.next = Some(said);
+                self.next_from = header.index;
+            }
+            return;
+        };
+        let Some(after) = self.after else {
+            if header.index < next.index {
+                return;
+            }
+            if next.continues(&said) {
+                self.next = Some(said);
+            } else {
+                self.after = Some(said);
+                self.after_from = header.index;
+            }
+            return;
+        };
+        if header.index < after.index {
+            return;
+        }
+        if !after.continues(&said) {
+            self.turn();
+            self.after_from = header.index;
+        }
+        self.after = Some(said);
+    }
+
+    /// Takes the next schedule kept into use, and the one after it in its
+    /// place.
+    fn turn(&mut self) {
+        if let Some(next) = self.next {
+            self.schedule = Some(next);
+        }
+        self.next = self.after;
+        self.next_from = self.after_from;
+        self.after = None;
     }
 
     /// Moves the stretch forward so that it ends at the last frame of the
@@ -385,6 +463,11 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     fn renew(&mut self, header: &Audio) -> Marked {
         self.presence.restart(header.index);
         self.player.stop();
+        // The index has started again, so what earlier packets said about
+        // when frames are due no longer holds.
+        self.schedule = None;
+        self.next = None;
+        self.after = None;
         // The windows of the clock's estimate are numbered by the index,
         // which has started again.
         self.clock.reset_window();
@@ -536,11 +619,34 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         let Some(now) = due(&schedule, first) else {
             return idle;
         };
+        // The position due has reached the packet at which the level takes
+        // another course: from here on that packet's schedule holds.
+        let (schedule, now) = match self.reached(&now, first) {
+            Some(turned) => turned,
+            None => (schedule, now),
+        };
         let Some(then) = due(&schedule, last) else {
             return idle;
         };
         self.player
             .cycle(now, then, frames, duration, schedule.level_slope)
+    }
+
+    /// Takes the next schedule kept into use, if the position `now` that is
+    /// due when the sender's clock reads `first` has reached the index it
+    /// holds from, and returns it with the position that is due under it.
+    fn reached(&mut self, now: &Position, first: i64) -> Option<(Schedule, Position)> {
+        let Some(next) = self.next else {
+            return None;
+        };
+        if now.frame < self.next_from {
+            return None;
+        }
+        self.turn();
+        let Some(due) = due(&next, first) else {
+            return None;
+        };
+        Some((next, due))
     }
 
     /// Moves the playhead forward by `frames`.
@@ -600,6 +706,7 @@ mod tests {
     use crate::packet::{Audio, FLAG_STAMPED, Format};
     use crate::player::Regulation;
     use crate::presence::Marked;
+    use crate::timing::Position;
 
     const SILENCE: i64 = 1_000_000_000;
 
@@ -843,6 +950,94 @@ mod tests {
         receiver.packet(&next, 2);
         let schedule = receiver.schedule().expect("a schedule after a packet");
         assert_eq!((schedule.index, schedule.capture), (110, 2_000));
+    }
+
+    #[test]
+    fn a_change_of_the_level_s_course_holds_from_its_packet_on() {
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 100, 10), 0);
+        receiver.packet(&header(7, 110, 10), 1);
+        assert_eq!(receiver.schedule().map(|used| used.index), Some(110));
+        // At the packet with index 120 the level begins to rise by 4.8 ms a
+        // second, which is 100 ns for each frame.
+        let mut rising = header(7, 120, 10);
+        rising.level_slope = 4_800_000;
+        receiver.packet(&rising, 2);
+        let mut further = header(7, 130, 10);
+        further.level_slope = 4_800_000;
+        further.level += 1_000;
+        receiver.packet(&further, 3);
+        // The frames before it are due as the packets before it said, and a
+        // packet that was overtaken changes nothing.
+        receiver.packet(&header(7, 112, 2), 4);
+        let used = receiver.schedule().expect("a schedule");
+        assert_eq!((used.index, used.level_slope), (110, 0));
+        // The position due gets to the packet where the level began to
+        // rise: from there on the newest packet of the rising level holds.
+        let before = Position {
+            frame: 119,
+            fraction: u64::MAX,
+        };
+        assert!(receiver.reached(&before, 20_000_000).is_none());
+        let at = Position {
+            frame: 120,
+            fraction: 0,
+        };
+        let (turned, _) = receiver.reached(&at, 20_000_000).expect("the change");
+        assert_eq!((turned.index, turned.level_slope), (130, 4_800_000));
+        assert_eq!(receiver.schedule(), Some(turned));
+        // A packet that goes on along the rising level takes its place.
+        let mut on = header(7, 140, 10);
+        on.level_slope = 4_800_000;
+        on.level += 2_000;
+        receiver.packet(&on, 5);
+        assert_eq!(receiver.schedule().map(|used| used.index), Some(140));
+    }
+
+    #[test]
+    fn the_start_and_the_end_of_a_move_are_both_kept_ahead() {
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 100, 10), 0);
+        // The level rises by 100 ns a frame over one packet, and holds.
+        let mut rising = header(7, 110, 10);
+        rising.level_slope = 4_800_000;
+        receiver.packet(&rising, 1);
+        let mut held = header(7, 120, 10);
+        held.level += 1_000;
+        receiver.packet(&held, 2);
+        // The frames being played are still due as the first packet said.
+        let used = receiver.schedule().expect("a schedule");
+        assert_eq!((used.index, used.level_slope), (100, 0));
+        let at = |frame| Position { frame, fraction: 0 };
+        let (turned, _) = receiver.reached(&at(110), 20_000_000).expect("the rise");
+        assert_eq!((turned.index, turned.level_slope), (110, 4_800_000));
+        assert!(receiver.reached(&at(119), 20_000_000).is_none());
+        let (turned, _) = receiver.reached(&at(120), 20_000_000).expect("the hold");
+        assert_eq!((turned.index, turned.level_slope), (120, 0));
+        assert!(receiver.reached(&at(200), 20_000_000).is_none());
+    }
+
+    #[test]
+    fn at_a_third_change_of_course_ahead_the_first_comes_into_use() {
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 100, 10), 0);
+        let mut rising = header(7, 110, 10);
+        rising.level_slope = 4_800_000;
+        receiver.packet(&rising, 1);
+        let mut held = header(7, 120, 10);
+        held.level += 1_000;
+        receiver.packet(&held, 2);
+        let mut falling = header(7, 130, 10);
+        falling.level += 1_000;
+        falling.level_slope = -4_800_000;
+        receiver.packet(&falling, 3);
+        let used = receiver.schedule().expect("a schedule");
+        assert_eq!((used.index, used.level_slope), (110, 4_800_000));
+        let at = |frame| Position { frame, fraction: 0 };
+        let (turned, _) = receiver.reached(&at(120), 20_000_000).expect("the hold");
+        assert_eq!((turned.index, turned.level_slope), (120, 0));
+        let (turned, _) = receiver.reached(&at(130), 20_000_000).expect("the fall");
+        assert_eq!((turned.index, turned.level_slope), (130, -4_800_000));
     }
 
     #[test]
