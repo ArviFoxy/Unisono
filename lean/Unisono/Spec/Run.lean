@@ -19,6 +19,12 @@ solution achieves.
 * The messages a host sends at an event are numbered on each link in the
   order of its sends, and each one that the network delivers is in transit
   after the event (`State.sendAll_delivered`).
+* A block handed over before some event of the run was handed over at an
+  earlier step, at which its handoff was the earliest pending event
+  (`Solution.lt_handedNext`, `Solution.exists_handed_step`).
+* A message that a host's action sends while it handles an event, and that
+  the network delivers, is in transit after the event
+  (`State.handle_delivered`).
 -/
 
 @[expose] public noncomputable section
@@ -209,5 +215,91 @@ theorem sendAll_delivered {h : H} {t : Time} {held : Finset ℕ} :
         omega
 
 end State
+
+end Unisono.Spec
+
+namespace Unisono.Spec
+
+variable {H : Type} {R : ℕ} {Msg : Type} [DecidableEq H] (w : World H R)
+
+namespace State
+
+theorem handle_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (h : H)
+    (t : Time) (obs : Observation H R Msg) :
+    (st.handle σ w lookahead h t obs).handedNext = st.handedNext := by
+  simp only [handle, sendAll_handedNext]
+
+/-- A step of the run either leaves the next block to be handed over as it
+is, or hands it over and moves on to the next. -/
+theorem step_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) :
+    (st.step σ w lookahead).handedNext = st.handedNext ∨
+      ((st.step σ w lookahead).handedNext = st.handedNext + 1 ∧
+        earliest (st.key w) st.due = some (.handed st.handedNext)) := by
+  unfold step
+  split
+  · rename_i b hb
+    have hmem := (earliest_spec _ _ _ hb).1
+    have hbn : b = st.handedNext := by
+      rcases st.mem_due hmem with h | ⟨r, h⟩ | ⟨p, _, h⟩ | ⟨p, _, h⟩ <;> simp_all
+    subst hbn
+    exact Or.inr ⟨rfl, hb⟩
+  · exact Or.inl (handle_handedNext w σ lookahead _ _ _ _)
+  · split
+    · exact Or.inl (handle_handedNext w σ lookahead _ _ _ _)
+    · exact Or.inl rfl
+  · split
+    · exact Or.inl (handle_handedNext w σ lookahead _ _ _ _)
+    · exact Or.inl rfl
+  · exact Or.inl rfl
+
+end State
+
+/-- A block handed over before the event of step `n` was handed over by
+then. -/
+theorem Solution.lt_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) {n b : ℕ}
+    (h : w.source.handed b < σ.eventTime w lookahead n) :
+    b < (σ.states w lookahead n).handedNext := by
+  by_contra hle
+  have h1 := w.source.handed_strictMono.monotone (not_lt.mp hle)
+  have h2 := (σ.eventTime_dueFrom w lookahead n).1
+  linarith
+
+/-- **The step at which a block is handed over.** When the run has handed
+over block `b` by step `m`, it did so at a step `n` before `m`, at which the
+earliest pending event was the handoff of block `b`. -/
+theorem Solution.exists_handed_step (σ : Solution H R Msg) (lookahead : ℕ+) {m b : ℕ}
+    (h : b < (σ.states w lookahead m).handedNext) :
+    ∃ n < m, (σ.states w lookahead n).handedNext = b ∧
+      earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due = some (.handed b) := by
+  induction m with
+  | zero => exact absurd h (Nat.not_lt_zero b)
+  | succ m ih =>
+    by_cases hm : b < (σ.states w lookahead m).handedNext
+    · obtain ⟨n, hn, h1, h2⟩ := ih hm
+      exact ⟨n, Nat.lt_succ_of_lt hn, h1, h2⟩
+    · rcases State.step_handedNext w σ lookahead (σ.states w lookahead m) with heq | ⟨heq, hearly⟩
+      · exact absurd (heq ▸ h) hm
+      · have hb : (σ.states w lookahead m).handedNext = b := by
+          have : (σ.states w lookahead (m + 1)).handedNext = (σ.states w lookahead m).handedNext + 1 := heq
+          omega
+        exact ⟨m, Nat.lt_succ_self m, hb, hb ▸ hearly⟩
+
+/-- A message that a host's action sends while it handles an event, and that
+the network delivers, is in transit after the event. -/
+theorem State.handle_delivered {Msg : Type} (w : World H R) (σ : Solution H R Msg) (lookahead : ℕ+)
+    (st : State H R Msg) (h : H) (t : Time) (obs : Observation H R Msg) (i : ℕ)
+    (hi : i < (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.length) {arr : Time}
+    (hdel : w.network.deliver h (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1 t
+      (st.sentCount h (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1
+        + ((σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.take i).countP
+          (fun s => s.1 = (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1))
+      = some arr) :
+    (⟨arr, h, (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1,
+      (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].2.1,
+      (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].2.2.filter
+        (· ∈ st.held h ∪ obs.frames)⟩ : InFlight H Msg)
+      ∈ (st.handle σ w lookahead h t obs).inFlight := by
+  simp only [State.handle]
+  exact State.sendAll_delivered w _ _ i hi hdel
 
 end Unisono.Spec

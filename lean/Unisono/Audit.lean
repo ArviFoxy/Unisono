@@ -27,6 +27,7 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.FixedDelayBounded
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
@@ -890,3 +891,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.State.sendAll_delivered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.State.sendAll_delivered
+
+/-- info: 'Unisono.Spec.Solution.exists_handed_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.exists_handed_step
+
+/-- info: 'Unisono.Spec.State.handle_delivered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.handle_delivered
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_arrives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_arrives

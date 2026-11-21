@@ -144,17 +144,31 @@ The proofs bound the cost of each frame and of each output sample from some
 point on, and use that a cost accrued at most linearly in time, $B\,T + C$
 with $C$ finite, has a long-run average at most $B$ (\lean{longRun\_le}).
 
-\subsection{The baseline in a bounded world: the next step}
+\subsection{The baseline in a bounded world}
+
+\begin{theorem}[The stream]\label{thm:stream}
+In a world within the bounds of the bounded model, let the baseline send
+each message more times than a link can drop in a row, $c > m_L$. Then every
+speaker's host $j$ holds the frames of block $b$ at every step of the run
+whose event comes later than $h(b) + d_{\max}(\text{sender}, j)$
+(\lean{block\_arrives}).
+\end{theorem}
+
+The proof rests on facts about the run of any solution
+(\path{lean/Unisono/Spec/Run.lean}): a host keeps the frames it holds; a
+message that arrives before the event of a later step has been handled by
+then; and the copies that the sender sends to a host at a handoff are its
+consecutive messages on that link, of which the bounded model delivers at
+least one within $d_{\max}$.
 
 What remains is to show that the baseline's run is at a latency, in every
 world within the bounds of the bounded model, with an explicit $E$ and for
 every $L$ above an explicit minimum. The proof follows the solution's parts,
 each bounding one source of error:
 \begin{enumerate}
-\item \emph{The run:} a message sent at true time $s$ on a link that
-  delivers it by $s + d_{\max}$ is handled before any event after
-  $s + d_{\max}$, and a host's view is the list of the events it handled,
-  with its clock's readings.
+\item \emph{The views:} a host's view is the list of the events it handled,
+  with its clock's readings, so what the baseline remembers can be traced to
+  the world.
 \item \emph{The clocks:} the estimate $\hat\theta$ errs by at most
   $(d_{\max} - d_{\min})/2$, plus the drift of the two clocks during the
   exchange and since it.
