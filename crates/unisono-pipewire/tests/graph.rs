@@ -113,13 +113,22 @@ fn verify_roundtrip(cycle: u32) {
     )
     .expect("a capture stream");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping playback stream");
 
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
-    assert!(played.len() > 15, "{} cycles played", played.len());
-    assert!(recorded.len() > 15, "{} cycles recorded", recorded.len());
+    let min_cycles = (50 * 256 / cycle as usize).max(15);
+    assert!(
+        played.len() > min_cycles,
+        "{} cycles played (expected > {min_cycles})",
+        played.len()
+    );
+    assert!(
+        recorded.len() > min_cycles,
+        "{} cycles recorded (expected > {min_cycles})",
+        recorded.len()
+    );
 
     // Each stream's positions go on without a break, and its times follow
     // them at the rate.
@@ -168,9 +177,10 @@ fn verify_roundtrip(cycle: u32) {
             start = end;
         }
     }
+    let min_matched = (20 * 256 / cycle as usize).max(10);
     assert!(
-        differences.len() > 10,
-        "{} frames found again",
+        differences.len() > min_matched,
+        "{} frames found again (expected > {min_matched})",
         differences.len()
     );
     differences.sort_by(f64::total_cmp);

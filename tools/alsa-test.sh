@@ -7,13 +7,15 @@
 # inside a private PipeWire instance (started by tools/with-pipewire.sh).
 set -euo pipefail
 
-root="$(cd "$(dirname "$0")/.." && pwd)"
+script="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+root="$(cd "$(dirname "$script")/.." && pwd)"
 cd "$root"
 
-if [[ "${UNISONO_INSIDE_PIPEWIRE:-}" == "1" ]]; then
+if [[ "${1:-}" == "--inside-pipewire" ]]; then
+    shift
     # A capture of the device named after the sink records what the sink plays.
     export PIPEWIRE_ALSA='{ stream.capture.sink = true }'
     cargo test -p unisono-alsa -- --ignored --nocapture --test-threads 1 "$@"
 else
-    UNISONO_INSIDE_PIPEWIRE=1 exec "$root/tools/with-pipewire.sh" "$0" "$@"
+    exec "$root/tools/with-pipewire.sh" "$script" --inside-pipewire "$@"
 fi

@@ -91,7 +91,7 @@ pub struct Running {
     stop: Arc<AtomicBool>,
     realtime: bool,
     cycle: usize,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<Result<(), Error>>>,
 }
 
 impl Running {
@@ -115,22 +115,32 @@ impl Running {
         self.thread.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
-    /// Stops the device and waits for its thread to end.
-    pub fn stop(mut self) {
-        self.shutdown();
+    /// Stops the device, waits for its thread to end, and returns any fatal
+    /// device error that ended the audio loop early.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the ALSA device encountered an unrecoverable
+    /// error (such as disconnection or I/O failure) or if the thread panicked.
+    pub fn stop(mut self) -> Result<(), Error> {
+        self.shutdown()
     }
 
-    fn shutdown(&mut self) {
+    fn shutdown(&mut self) -> Result<(), Error> {
         self.stop.store(true, Ordering::Release);
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        match self.thread.take() {
+            Some(thread) => match thread.join() {
+                Ok(result) => result,
+                Err(_) => Err(Error("the ALSA audio thread panicked".into())),
+            },
+            None => Ok(()),
         }
     }
 }
 
 impl Drop for Running {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.shutdown();
     }
 }
 
@@ -204,14 +214,35 @@ impl Timing {
     }
 }
 
+/// Unrecoverable cause that ended the ALSA real-time loop, formatted to an
+/// [`Error`] only after leaving the loop so steady-state audio paths never
+/// allocate.
+enum FatalReason {
+    Alsa(&'static str, alsa::Error),
+    Disconnected,
+}
+
+impl FatalReason {
+    fn into_error(self) -> Error {
+        match self {
+            FatalReason::Alsa(what, error) => Error(format!("ALSA {what}: {error}")),
+            FatalReason::Disconnected => Error("ALSA device disconnected".into()),
+        }
+    }
+}
+
 /// Outcome of polling an ALSA device for the next cycle.
 enum Due {
     /// A full cycle is ready, with `(raw_time_ns, delay_frames)`.
     Ready(i64, i64),
-    /// Timed out or recovered from a transient xrun; keep waiting.
+    /// Timed out or waiting for more frames; keep waiting.
     Wait,
-    /// Unrecoverable device error (e.g. `ENODEV`); exit the audio loop.
-    Fatal,
+    /// Recovered from an xrun or transient device error; keep waiting and
+    /// advance frame positions across the gap on the next ready cycle.
+    Recovered,
+    /// Unrecoverable device error (e.g. `ENODEV`, `EIO`, `EBADFD`); exit the
+    /// audio loop and report the cause.
+    Fatal(FatalReason),
 }
 
 /// Opens the ALSA device named by `settings` for `direction`.
@@ -288,15 +319,13 @@ fn open(settings: &Settings, direction: Direction) -> Result<(PCM, Timing), Erro
 
 /// Recovers from a transient ALSA error (`EPIPE`, `ESTRPIPE`, `EINTR`),
 /// restarting capture devices immediately if recovery left them `Prepared`.
-/// Returns `false` if the error is unrecoverable (e.g. `ENODEV`).
-fn recover(pcm: &PCM, error: alsa::Error, direction: Direction) -> bool {
-    if pcm.try_recover(error, true).is_err() {
-        return false;
-    }
+/// Returns `Err` with the underlying ALSA error if recovery fails.
+fn recover(pcm: &PCM, error: alsa::Error, direction: Direction) -> Result<(), alsa::Error> {
+    pcm.try_recover(error, true)?;
     if direction == Direction::Capture && pcm.state() == State::Prepared {
-        return pcm.start().is_ok();
+        pcm.start()?;
     }
-    true
+    Ok(())
 }
 
 /// Polls `pcm` until a full cycle is ready, returning its timestamp and delay
@@ -304,41 +333,44 @@ fn recover(pcm: &PCM, error: alsa::Error, direction: Direction) -> bool {
 // The numbers of the system are narrower on machines of 32 bits.
 #[allow(clippy::useless_conversion)]
 fn due(pcm: &PCM, timing: &mut Timing, direction: Direction) -> Due {
-    if direction == Direction::Capture && pcm.state() == State::Prepared && pcm.start().is_err() {
-        return Due::Fatal;
+    if direction == Direction::Capture
+        && pcm.state() == State::Prepared
+        && let Err(error) = pcm.start()
+    {
+        return Due::Fatal(FatalReason::Alsa("starting capture device", error));
     }
     match pcm.wait(Some(PATIENCE)) {
         Ok(true) => {}
         Ok(false) => return Due::Wait,
         Err(error) => {
-            return if recover(pcm, error, direction) {
-                Due::Wait
-            } else {
-                Due::Fatal
+            return match recover(pcm, error, direction) {
+                Ok(()) => Due::Recovered,
+                Err(error) => Due::Fatal(FatalReason::Alsa("waiting on device", error)),
             };
         }
     }
     let status = match pcm.status() {
         Ok(status) => status,
         Err(error) => {
-            return if recover(pcm, error, direction) {
-                Due::Wait
-            } else {
-                Due::Fatal
+            return match recover(pcm, error, direction) {
+                Ok(()) => Due::Recovered,
+                Err(error) => Due::Fatal(FatalReason::Alsa("reading device status", error)),
             };
         }
     };
     match status.get_state() {
         State::XRun => {
-            if pcm.prepare().is_err() {
-                return Due::Fatal;
+            if let Err(error) = pcm.prepare() {
+                return Due::Fatal(FatalReason::Alsa("preparing device after xrun", error));
             }
-            if direction == Direction::Capture && pcm.start().is_err() {
-                return Due::Fatal;
+            if direction == Direction::Capture
+                && let Err(error) = pcm.start()
+            {
+                return Due::Fatal(FatalReason::Alsa("restarting capture after xrun", error));
             }
-            return Due::Wait;
+            return Due::Recovered;
         }
-        State::Disconnected => return Due::Fatal,
+        State::Disconnected => return Due::Fatal(FatalReason::Disconnected),
         _ => {}
     }
     if usize::try_from(status.get_avail()).unwrap_or(0) < timing.cycle {
@@ -419,7 +451,8 @@ impl Capture for NoCapture {
 }
 
 /// Runs the ALSA real-time I/O loop after obtaining `io_f32` and setting
-/// `SCHED_FIFO` once up front.
+/// `SCHED_FIFO` once up front. Returns `Err` if an unrecoverable ALSA error
+/// ended the loop early.
 fn serve<P: Playback, C: Capture>(
     pcm: &PCM,
     timing: &mut Timing,
@@ -428,29 +461,53 @@ fn serve<P: Playback, C: Capture>(
     samples: &mut [f32],
     stopping: &AtomicBool,
     ready: &mpsc::SyncSender<Result<bool, Error>>,
-) {
+) -> Result<(), Error> {
     let io = match pcm.io_f32() {
         Ok(io) => io,
         Err(error) => {
             let _ = ready.send(Err(Error(format!("opening ALSA float I/O: {error}"))));
-            return;
+            return Ok(());
         }
     };
     let _ = ready.send(Ok(ahead()));
     let mut frames_done: u64 = 0;
+    let mut last_ready: Option<(i64, u64)> = None;
+    let mut xrun = false;
+    let mut fatal_reason: Option<FatalReason> = None;
     while !stopping.load(Ordering::Acquire) {
         let (time, waiting) = match due(pcm, timing, direction) {
             Due::Ready(time, waiting) => (time, waiting),
             Due::Wait => continue,
-            Due::Fatal => break,
+            Due::Recovered => {
+                xrun = true;
+                continue;
+            }
+            Due::Fatal(reason) => {
+                fatal_reason = Some(reason);
+                break;
+            }
         };
+        if xrun {
+            if let Some((prev_time, prev_frames)) = last_ready {
+                let elapsed_ns = time.saturating_sub(prev_time);
+                if elapsed_ns > 0 {
+                    let elapsed_frames = u64::try_from(
+                        i128::from(elapsed_ns) * i128::from(timing.rate) / 1_000_000_000,
+                    )
+                    .unwrap_or(0);
+                    if elapsed_frames > prev_frames {
+                        frames_done = frames_done.saturating_add(elapsed_frames - prev_frames);
+                    }
+                }
+            }
+            xrun = false;
+        }
         match side {
             Side::Playback(playback) => {
                 // The frame written now leaves after those that wait.
                 let leaves = time.saturating_add(timing.nanoseconds(waiting));
                 playback.cycle(samples, frames_done, leaves);
                 let mut offset_frames = 0usize;
-                let mut fatal = false;
                 while offset_frames < timing.cycle && !stopping.load(Ordering::Acquire) {
                     let slice = samples
                         .get(offset_frames * timing.channels..)
@@ -462,15 +519,21 @@ fn serve<P: Playback, C: Capture>(
                             frames_done = frames_done.saturating_add(written as u64);
                         }
                         Err(error) => {
-                            if !recover(pcm, error, direction) {
-                                fatal = true;
+                            match recover(pcm, error, direction) {
+                                Ok(()) => xrun = true,
+                                Err(error) => {
+                                    fatal_reason = Some(FatalReason::Alsa("writing audio", error));
+                                }
                             }
                             break;
                         }
                     }
                 }
-                if fatal {
+                if fatal_reason.is_some() {
                     break;
+                }
+                if offset_frames > 0 {
+                    last_ready = Some((time, offset_frames as u64));
                 }
             }
             Side::Capture(capture) => {
@@ -482,15 +545,22 @@ fn serve<P: Playback, C: Capture>(
                         let count = read.saturating_mul(timing.channels);
                         capture.cycle(samples.get(..count).unwrap_or(&[]), frames_done, captured);
                         frames_done = frames_done.saturating_add(read as u64);
+                        last_ready = Some((time, read as u64));
                     }
-                    Err(error) => {
-                        if !recover(pcm, error, direction) {
+                    Err(error) => match recover(pcm, error, direction) {
+                        Ok(()) => xrun = true,
+                        Err(error) => {
+                            fatal_reason = Some(FatalReason::Alsa("reading audio", error));
                             break;
                         }
-                    }
+                    },
                 }
             }
         }
+    }
+    match fatal_reason {
+        Some(reason) => Err(reason.into_error()),
+        None => Ok(()),
     }
 }
 
@@ -536,7 +606,7 @@ where
                 &mut samples,
                 &stopping,
                 &ready_tx,
-            );
+            )
         })
         .map_err(|error| Error(format!("starting the thread of the device: {error}")))?;
 

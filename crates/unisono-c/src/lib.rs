@@ -36,6 +36,10 @@ type Audio = ReceiverAudio<256, 64, 8, 64>;
 /// Maximum number of receivers accepted by one sender.
 const MAX_RECEIVERS: usize = 4_096;
 
+/// Maximum sample rate accepted through the C API, bounding the level
+/// chooser's 2-minute stretch history allocation (`<= 50,000` stretches).
+const MAX_RATE: u32 = 1_000_000;
+
 /// Number of buffers in the capture-to-network ring.
 const CAPTURE_BUFFERS: usize = 64;
 
@@ -187,6 +191,9 @@ unsafe fn start_sender(options: &SenderOptions) -> Result<Sender, String> {
     };
     if options.cycle_frames == 0 {
         return Err("the cycle frame count is not zero".into());
+    }
+    if options.rate > MAX_RATE {
+        return Err(format!("sample rate exceeds maximum ({MAX_RATE} Hz)"));
     }
     if options.receivers.is_null() || !options.receivers.is_aligned() || options.receiver_count == 0
     {
@@ -388,6 +395,9 @@ pub unsafe extern "C" fn unisono_receiver_defaults(settings: *mut ReceiverOption
 ///
 /// The pointers of `options` are null or point to what the header says.
 unsafe fn start_receiver(options: &ReceiverOptions) -> Result<Receiver, String> {
+    if options.rate > MAX_RATE {
+        return Err(format!("sample rate exceeds maximum ({MAX_RATE} Hz)"));
+    }
     // SAFETY: the caller says that `listen` is null or a text.
     let listen = unsafe { address(options.listen) }?;
     let playback_settings = PlaybackSettings {
@@ -418,7 +428,7 @@ unsafe fn start_receiver(options: &ReceiverOptions) -> Result<Receiver, String> 
     let playback = ReceiverPlayback::new(&playback_settings);
     let sizes = Sizes {
         buffers: 64,
-        datagram: 9_000,
+        datagram: send::MAX_DATAGRAM,
         messages: 64,
     };
     let (network_end, audio_end) = receive::link(sizes);
@@ -645,18 +655,40 @@ mod tests {
             assert!(unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
 
             opts.level = 30_000_000;
-            opts.rate = 100;
-            opts.packet_frames = 60_000; // exceeds MAX_UDP_PAYLOAD
+            opts.rate = 2_000_000; // exceeds MAX_RATE
             assert!(unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
 
-            // Valid IPv6 target with NULL bind (auto-selects `[::]:0`) and low rate.
+            opts.rate = 100;
+            opts.packet_frames = 1_500; // exceeds MAX_DATAGRAM (9000 bytes)
+            assert!(unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
+
+            // Unconditionally test low-rate start plus zero/overflow capture on IPv4.
+            let ipv4_target = CString::new("127.0.0.1:9999").expect("cstr");
+            let v4_targets = [ipv4_target.as_ptr()];
+            opts.receivers = v4_targets.as_ptr();
             opts.packet_frames = 10;
-            let tx = unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len());
-            if !tx.is_null() {
-                let sample = [0.0f32; 4];
-                unisono_sender_capture(tx, sample.as_ptr(), 0, 0, unisono_clock());
-                unisono_sender_capture(tx, sample.as_ptr(), usize::MAX, 0, unisono_clock());
-                unisono_sender_stop(tx);
+            let tx_v4 = unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len());
+            assert!(
+                !tx_v4.is_null(),
+                "IPv4 start failed: {:?}",
+                CStr::from_ptr(err.as_ptr())
+            );
+            let sample = [0.0f32; 4];
+            unisono_sender_capture(tx_v4, sample.as_ptr(), 0, 0, unisono_clock());
+            unisono_sender_capture(tx_v4, sample.as_ptr(), usize::MAX, 0, unisono_clock());
+            unisono_sender_stop(tx_v4);
+
+            // When IPv6 is available on the host, NULL bind with an IPv6 target
+            // must select `[::]:0` and succeed (never silently ignored).
+            if UdpSocket::bind("[::1]:0").is_ok() {
+                opts.receivers = targets.as_ptr();
+                let tx_v6 = unisono_sender_start(&raw const opts, err.as_mut_ptr(), err.len());
+                assert!(
+                    !tx_v6.is_null(),
+                    "IPv6 default-bind start failed: {:?}",
+                    CStr::from_ptr(err.as_ptr())
+                );
+                unisono_sender_stop(tx_v6);
             }
         }
     }

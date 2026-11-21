@@ -205,8 +205,8 @@ fn a_ramp_played_on_the_device_is_what_the_sink_plays() {
     )
     .expect("a capture stream");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping ALSA playback device");
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
     hold(&played, &recorded, 500e3);
@@ -233,8 +233,8 @@ fn what_the_sink_plays_is_captured_on_the_device() {
     )
     .expect("an ALSA device that captures");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping ALSA playback device");
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
     hold(&played, &recorded, 500e3);

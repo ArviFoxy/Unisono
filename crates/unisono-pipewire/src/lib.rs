@@ -23,7 +23,9 @@
 //! of channels that are asked for; PipeWire converts what its devices take
 //! or give.
 
+use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 use std::thread::JoinHandle;
 
 use pipewire as pw;
@@ -118,7 +120,7 @@ impl std::error::Error for Error {}
 /// A stream that runs, until it is stopped.
 pub struct Running {
     quit: pw::channel::Sender<()>,
-    thread: Option<JoinHandle<()>>,
+    thread: Option<JoinHandle<Result<(), Error>>>,
 }
 
 impl Running {
@@ -129,23 +131,33 @@ impl Running {
         self.thread.as_ref().is_none_or(JoinHandle::is_finished)
     }
 
-    /// Stops the stream and waits for its thread to end.
-    pub fn stop(mut self) {
-        self.shutdown();
+    /// Stops the stream, waits for its thread to end, and returns any fatal
+    /// stream error that ended the mainloop early.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`Error`] if the PipeWire stream entered an error state or
+    /// if its thread panicked.
+    pub fn stop(mut self) -> Result<(), Error> {
+        self.shutdown()
     }
 
-    fn shutdown(&mut self) {
+    fn shutdown(&mut self) -> Result<(), Error> {
         // A loop that ended already does not take the message.
         let _ = self.quit.send(());
-        if let Some(thread) = self.thread.take() {
-            let _ = thread.join();
+        match self.thread.take() {
+            Some(thread) => match thread.join() {
+                Ok(result) => result,
+                Err(_) => Err(Error("the PipeWire stream thread panicked".into())),
+            },
+            None => Ok(()),
         }
     }
 }
 
 impl Drop for Running {
     fn drop(&mut self) {
-        self.shutdown();
+        let _ = self.shutdown();
     }
 }
 
@@ -233,9 +245,9 @@ impl<P: Playback, C: Capture> State<P, C> {
         i64::try_from(wide).unwrap_or(i64::MAX)
     }
 
-    /// Computes total delay in nanoseconds from `time.delay()`, queued stream
-    /// bytes, and resampler-buffered frames.
-    fn total_delay_ns(&self, time: &pw::stream::Time, stride: usize) -> i64 {
+    /// Computes total delay in nanoseconds from `time.delay()` (graph path
+    /// delay) and `time.buffered()` (adapter/resampler-buffered stream frames).
+    fn total_delay_ns(&self, time: &pw::stream::Time) -> i64 {
         let rate = time.rate();
         let path_delay = if rate.denom == 0 {
             0
@@ -244,9 +256,7 @@ impl<P: Playback, C: Capture> State<P, C> {
                 / i128::from(rate.denom);
             i64::try_from(nanoseconds).unwrap_or(0)
         };
-        let queued_frames = time.queued() / (stride as u64).max(1);
-        let extra_frames = time.buffered().saturating_add(queued_frames);
-        path_delay.saturating_add(self.frames_ns(extra_frames))
+        path_delay.saturating_add(self.frames_ns(time.buffered()))
     }
 
     /// Advances `self.position` across any xrun gap indicated by `time.ticks()`
@@ -318,7 +328,7 @@ impl<P: Playback, C: Capture> State<P, C> {
         }
         self.sync_position(&time);
         let now = self.raw(time.now());
-        let delay = self.total_delay_ns(&time, stride);
+        let delay = self.total_delay_ns(&time);
         let position = self.position;
         if let Side::Playback(playback) = &mut self.side
             && let Some(samples) = self.samples.get_mut(..frames * channels)
@@ -337,52 +347,71 @@ impl<P: Playback, C: Capture> State<P, C> {
     }
 
     fn process_capture(&mut self, stream: &pw::stream::Stream, channels: usize, stride: usize) {
-        let mut callback_frames = 0u64;
-        let mut callback_ticks: Option<u64> = None;
-        for drained in 0..MAX_CAPTURE_BUFFERS {
+        let mut buffers: [Option<pw::buffer::Buffer<'_>>; MAX_CAPTURE_BUFFERS] =
+            [const { None }; MAX_CAPTURE_BUFFERS];
+        let mut frame_counts = [0usize; MAX_CAPTURE_BUFFERS];
+        let mut count = 0usize;
+        let mut total_frames = 0u64;
+        let max_frames = self.samples.len() / channels;
+        while count < MAX_CAPTURE_BUFFERS {
             let Some(mut buffer) = stream.dequeue_buffer() else {
                 break;
             };
-            let Ok(time) = stream.time() else {
-                continue;
-            };
-            let Some(data) = buffer.datas_mut().first_mut() else {
-                continue;
-            };
-            let (offset, size) = (data.chunk().offset() as usize, data.chunk().size() as usize);
-            let Some(bytes) = data.data() else {
-                continue;
-            };
-            let Some(bytes) = bytes.get(offset..offset.saturating_add(size)) else {
-                continue;
-            };
-            let frames = (bytes.len() / stride).min(self.samples.len() / channels);
+            let frames = buffer
+                .datas_mut()
+                .first_mut()
+                .and_then(|data| {
+                    let (offset, size) =
+                        (data.chunk().offset() as usize, data.chunk().size() as usize);
+                    let bytes = data.data()?.get(offset..offset.saturating_add(size))?;
+                    Some((bytes.len() / stride).min(max_frames))
+                })
+                .unwrap_or(0);
             if frames == 0 {
                 continue;
             }
-            if drained == 0 {
-                self.sync_position(&time);
-            }
-            let now = self.raw(time.now());
-            let delay = self.total_delay_ns(&time, stride);
-            let length = self.frames_ns(frames as u64);
-            let first = now.saturating_sub(delay).saturating_sub(length);
+            frame_counts[count] = frames;
+            total_frames = total_frames.saturating_add(frames as u64);
+            buffers[count] = Some(buffer);
+            count += 1;
+        }
+        if count == 0 {
+            return;
+        }
+        let Ok(time) = stream.time() else {
+            return;
+        };
+        self.sync_position(&time);
+        let now = self.raw(time.now());
+        let delay = self.total_delay_ns(&time);
+        let mut remaining = total_frames;
+        for idx in 0..count {
+            let Some(mut buffer) = buffers[idx].take() else {
+                continue;
+            };
+            let frames = frame_counts[idx];
+            let first = now
+                .saturating_sub(delay)
+                .saturating_sub(self.frames_ns(remaining));
+            remaining = remaining.saturating_sub(frames as u64);
             let position = self.position;
-            if let Side::Capture(capture) = &mut self.side
-                && let Some(samples) = self.samples.get_mut(..frames * channels)
-            {
-                for (sample, place) in samples.iter_mut().zip(bytes.as_chunks::<4>().0) {
-                    *sample = f32::from_le_bytes(*place);
+            if let Some(data) = buffer.datas_mut().first_mut() {
+                let (offset, size) = (data.chunk().offset() as usize, data.chunk().size() as usize);
+                if let Some(bytes) = data
+                    .data()
+                    .and_then(|raw| raw.get(offset..offset.saturating_add(size)))
+                    && let Side::Capture(capture) = &mut self.side
+                    && let Some(samples) = self.samples.get_mut(..frames * channels)
+                {
+                    for (sample, place) in samples.iter_mut().zip(bytes.as_chunks::<4>().0) {
+                        *sample = f32::from_le_bytes(*place);
+                    }
+                    capture.cycle(samples, position, first);
                 }
-                capture.cycle(samples, position, first);
             }
             self.position = self.position.saturating_add(frames as u64);
-            callback_frames = callback_frames.saturating_add(frames as u64);
-            callback_ticks = Some(time.ticks());
         }
-        if let Some(ticks) = callback_ticks {
-            self.last_ticks = Some((ticks, callback_frames));
-        }
+        self.last_ticks = Some((time.ticks(), total_frames));
     }
 }
 
@@ -409,10 +438,7 @@ where
         .stack_size(STACK_SIZE)
         .spawn(move || {
             pw::init();
-            let result = serve(side, &settings, &made);
-            if let Err(error) = result {
-                let _ = made.send(Err(error));
-            }
+            serve(side, &settings, &made)
         })
         .map_err(|error| Error(format!("starting the thread of the stream: {error}")))?;
     match outcome.recv() {
@@ -432,12 +458,31 @@ where
 }
 
 /// Makes the stream and runs PipeWire's loop until it is told to quit or the
-/// stream enters an error state.
+/// stream enters an error state. Startup errors are reported through `made`;
+/// runtime stream errors after startup are returned to the joining caller.
 fn serve<P, C>(
     side: Side<P, C>,
     settings: &Settings,
     made: &std::sync::mpsc::Sender<Result<pw::channel::Sender<()>, Error>>,
 ) -> Result<(), Error>
+where
+    P: Playback + Send + 'static,
+    C: Capture + Send + 'static,
+{
+    match serve_inner(side, settings, made) {
+        Ok(runtime_result) => runtime_result,
+        Err(startup_error) => {
+            let _ = made.send(Err(startup_error));
+            Ok(())
+        }
+    }
+}
+
+fn serve_inner<P, C>(
+    side: Side<P, C>,
+    settings: &Settings,
+    made: &std::sync::mpsc::Sender<Result<pw::channel::Sender<()>, Error>>,
+) -> Result<Result<(), Error>, Error>
 where
     P: Playback + Send + 'static,
     C: Capture + Send + 'static,
@@ -477,14 +522,24 @@ where
         position: 0,
         last_ticks: None,
     };
+    // Register `state_changed` on its own `()` listener so the main-loop
+    // thread and the `RT_PROCESS` data thread never hold concurrent `&mut`
+    // references to `State`.
+    let stream_error: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+    let error_cell = Rc::clone(&stream_error);
     let loop_on_error = mainloop.clone();
-    let listener = stream
-        .add_local_listener_with_user_data(state)
-        .state_changed(move |_stream, _state, _old, new| {
-            if matches!(new, pw::stream::StreamState::Error(_)) {
+    let state_listener = stream
+        .add_local_listener_with_user_data(())
+        .state_changed(move |_stream, (), _old, new| {
+            if let pw::stream::StreamState::Error(message) = new {
+                *error_cell.borrow_mut() = Some(message.clone());
                 loop_on_error.quit();
             }
         })
+        .register()
+        .map_err(failed("listening to the stream state"))?;
+    let process_listener = stream
+        .add_local_listener_with_user_data(state)
         .process(|stream, state| state.process(stream))
         .register()
         .map_err(failed("listening to the stream"))?;
@@ -529,11 +584,16 @@ where
     });
     let _ = made.send(Ok(quit));
     mainloop.run();
-    // Disconnect the stream before dropping the listener so the RT callback
+    // Disconnect the stream before dropping the listeners so the RT callback
     // cannot observe torn-down user data.
     let _ = stream.disconnect();
-    drop(listener);
-    Ok(())
+    drop(process_listener);
+    drop(state_listener);
+    let runtime_result = match stream_error.borrow_mut().take() {
+        Some(message) => Err(Error(format!("PipeWire stream error: {message}"))),
+        None => Ok(()),
+    };
+    Ok(runtime_result)
 }
 
 #[cfg(test)]

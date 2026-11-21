@@ -147,16 +147,20 @@ impl Capturing {
         }
     }
 
-    /// Stops capturing.
-    fn finish(self) {
+    /// Stops capturing and returns any fatal audio-device error.
+    fn finish(self) -> Result<(), Wrong> {
         match self {
-            Capturing::Software(thread) => {
-                let _ = thread.join();
-            }
+            Capturing::Software(thread) => thread
+                .join()
+                .map_err(|_| Wrong("the capture thread failed".into())),
             #[cfg(feature = "pipewire")]
-            Capturing::PipeWire(running) => running.stop(),
+            Capturing::PipeWire(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("capturing with PipeWire: {error}"))),
             #[cfg(feature = "alsa")]
-            Capturing::Alsa(running) => running.stop(),
+            Capturing::Alsa(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("capturing with ALSA: {error}"))),
         }
     }
 }
@@ -221,7 +225,7 @@ fn start_capture<S: FnMut(u64, i64, &mut [f32]) + Send + 'static>(
                 .map_err(|error| Wrong(format!("capturing with ALSA: {error}")))?;
             let negotiated = running.cycle();
             if negotiated > ring_frames {
-                running.stop();
+                let _ = running.stop();
                 return Err(Wrong(format!(
                     "ALSA negotiated a cycle of {negotiated} frames, larger than the \
                      capture ring buffer of {ring_frames} frames"
@@ -402,7 +406,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         Ok(thread) => thread,
         Err(error) => {
             stop.store(true, Ordering::Relaxed);
-            capturing.finish();
+            let _ = capturing.finish();
             return Err(Wrong(format!("starting the network thread: {error}")));
         }
     };
@@ -430,23 +434,24 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         .stop()
         .map_err(|_| Wrong("the network thread failed".into()))?;
     stop.store(true, Ordering::Relaxed);
-    capturing.finish();
+    let audio_result = capturing.finish();
     let total_dropped = dropped.load(Ordering::Relaxed);
     summarize(&stopped.network.network, total_dropped);
     if let Some(error) = stopped.error {
         return Err(Wrong(format!("sending: {error}")));
     }
-    Ok(())
+    audio_result
 }
 
 /// Says what the sender did.
 fn summarize(network: &SenderNetwork, dropped: u64) {
     let counts = network.counts();
     println!(
-        "sent packets {} answers {} filled {} restarts {} unsent {} dropped-cycles {dropped} \
-         level-moves {} level {} again {}",
+        "sent packets {} answers {} ignored {} filled {} restarts {} unsent {} \
+         dropped-cycles {dropped} level-moves {} level {} again {}",
         counts.packets,
         counts.answers,
+        counts.ignored,
         counts.filled,
         counts.restarts,
         counts.unsent,
@@ -470,6 +475,7 @@ fn kept_packets(options: &Options) -> Result<usize, Wrong> {
 struct Counters {
     packets: Tally,
     answers: Tally,
+    ignored: Tally,
     filled: Tally,
     restarts: Tally,
     dropped: Tally,
@@ -498,6 +504,12 @@ impl Counters {
                 .tally(
                     "unisono_sender_answers_total",
                     "Reports of receivers answered.",
+                )
+                .map_err(named)?,
+            ignored: metrics
+                .tally(
+                    "unisono_sender_ignored_datagrams_total",
+                    "Incoming datagrams dropped because their source address was not in --to.",
                 )
                 .map_err(named)?,
             filled: metrics
@@ -599,6 +611,7 @@ impl Counters {
         self.level.set(level as f64 * 1e-9);
         self.packets.update(counts.packets);
         self.answers.update(counts.answers);
+        self.ignored.update(counts.ignored);
         self.filled.update(counts.filled);
         self.restarts.update(counts.restarts);
         self.dropped.update(dropped);

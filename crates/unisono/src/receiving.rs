@@ -115,14 +115,22 @@ impl Playing {
         }
     }
 
-    /// Stops the playback backend.
-    fn finish(self) {
+    /// Stops the playback backend and returns any fatal audio-device error.
+    #[cfg_attr(
+        not(any(feature = "pipewire", feature = "alsa")),
+        allow(clippy::unnecessary_wraps)
+    )]
+    fn finish(self) -> Result<(), Wrong> {
         match self {
-            Playing::Software(_) => {}
+            Playing::Software(_) => Ok(()),
             #[cfg(feature = "pipewire")]
-            Playing::PipeWire(running) => running.stop(),
+            Playing::PipeWire(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("playing with PipeWire: {error}"))),
             #[cfg(feature = "alsa")]
-            Playing::Alsa(running) => running.stop(),
+            Playing::Alsa(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("playing with ALSA: {error}"))),
         }
     }
 }
@@ -238,7 +246,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
 
     let sizes = Sizes {
         buffers: 64,
-        datagram: 9_000,
+        datagram: unisono_runtime::send::MAX_DATAGRAM,
         messages: 64,
     };
     let (network_end, audio_end) = receive::link(sizes);
@@ -308,7 +316,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         }
     }
 
-    playing.finish();
+    let audio_result = playing.finish();
     let stopped = networking
         .stop()
         .map_err(|_| Wrong("the network thread failed".into()))?;
@@ -319,7 +327,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     if let Some(error) = stopped.error {
         return Err(Wrong(format!("receiving: {error}")));
     }
-    Ok(())
+    audio_result
 }
 
 /// What a device of the stream is like, which an audio system is told.
