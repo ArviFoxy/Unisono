@@ -14,6 +14,11 @@ public import Unisono.Spec.Models.Bounded
 What the baseline achieves in every world within the bounds of the bounded
 model (`Unisono.Spec.Models.Bounded`).
 
+* **Copies.** For any solution, when a host sends more copies of a message
+  to another host, as consecutive messages on the link, than the link can
+  lose in a row, one copy arrives within the link's delays
+  (`Solution.copy_inFlight`).
+
 * **The stream.** When the baseline sends each message more times than a
   link can drop in a row, every speaker's host holds the frames of a block
   at every step of the run whose event comes later than the block's handoff
@@ -29,6 +34,38 @@ model (`Unisono.Spec.Models.Bounded`).
 -/
 
 @[expose] public noncomputable section
+
+namespace Unisono.Spec
+
+variable {H : Type} {R : ℕ} {Msg : Type} [DecidableEq H]
+
+/-- **One of the copies arrives.** In a world within bounds, when the host
+of step `n` sends `c` copies of a message to host `j` as consecutive
+messages on the link, and `c` exceeds the losses that a link may have in a
+row, one copy is in transit after the step and arrives within the link's
+least and longest delays. -/
+theorem Solution.copy_inFlight (σ : Solution H R Msg) (w : World H R) (B : Bounds H)
+    (hw : w.WithinBounds B) (lookahead : ℕ+) {n : ℕ} {h : H} {t : Time}
+    {obs : Observation H R Msg} (hn : σ.handled w lookahead n = some (h, t, obs))
+    {S : List (H × Msg × Finset ℕ)}
+    (hS : (σ h ((σ.states w lookahead n).views h ++ [⟨(w.clock h).read t, obs⟩])).sends = S)
+    {j : H} {msg : Msg} {F : Finset ℕ} {i0 c : ℕ} (hc : B.lossRun < c)
+    (hcopies : ∀ k < c, ∃ hk : i0 + k < S.length, S[i0 + k] = (j, msg, F)
+      ∧ (S.take (i0 + k)).countP (fun s => s.1 = j) = k) :
+    ∃ arr, t + B.delayLeast h j ≤ arr ∧ arr ≤ t + B.delayMost h j
+      ∧ (⟨arr, h, j, msg, F.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames)⟩
+        : InFlight H Msg) ∈ (σ.states w lookahead (n + 1)).inFlight := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, hdelays, hlosses⟩ := hw
+  obtain ⟨k, hk, hsome⟩ := hlosses h j ((σ.states w lookahead n).sentCount h j) (fun _ => t)
+  obtain ⟨arr, harr⟩ := Option.isSome_iff_exists.mp hsome
+  obtain ⟨hidx, hget, hcount⟩ := hcopies k (lt_of_le_of_lt hk hc)
+  have hdel := hdelays h j t _ arr harr
+  have hin := σ.sent_inFlight w lookahead hn hS hidx (arr := arr)
+    (by rw [hget]; simp only; rw [hcount]; exact harr)
+  rw [hget] at hin
+  exact ⟨arr, by linarith [hdel.1], by linarith [hdel.2], hin⟩
+
+end Unisono.Spec
 
 namespace Unisono.Solutions.FixedDelay
 

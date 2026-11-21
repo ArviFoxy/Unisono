@@ -26,6 +26,7 @@ public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.FixedDelay
 public import Unisono.Solutions.FixedDelayBounded
+public import Unisono.Solutions.FixedDelayMemory
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run

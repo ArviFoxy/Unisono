@@ -28,6 +28,7 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.FixedDelayBounded
+public import Unisono.Solutions.FixedDelayMemory
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
@@ -935,3 +936,47 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.advance_tracks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.advance_tracks
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_received' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_received
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_latest
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_received' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_received
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_latest
+
+/-- info: 'Unisono.Solutions.FixedDelay.asked_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.asked_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_after_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_after_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_none
+
+/-- info: 'Unisono.Solutions.FixedDelay.answered_question' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answered_question
+
+/-- info: 'Unisono.Solutions.FixedDelay.answered_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answered_latest
+
+/-- info: 'Unisono.Spec.Solution.sent_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.sent_inFlight
+
+/-- info: 'Unisono.Spec.Solution.copy_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.copy_inFlight

@@ -625,4 +625,66 @@ theorem Solution.handled_of_mem_views (σ : Solution H R Msg) (lookahead : ℕ+)
 
 end Views
 
+section Sent
+
+/-- **What a step sends is in transit after it, when the network delivers
+it.** At step `n`, which handles an event of host `h` at true time `t`, the
+`i`-th message that `h` sends, to host `j`, is the message on the link from
+`h` to `j` numbered by the messages sent on that link before it. When the
+network delivers that message, it is in transit after the step, with those
+of its frames that `h` holds. -/
+theorem Solution.sent_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ}
+    {h : H} {t : Time} {obs : Observation H R Msg}
+    (hn : σ.handled w lookahead n = some (h, t, obs)) {S : List (H × Msg × Finset ℕ)}
+    (hS : (σ h ((σ.states w lookahead n).views h ++ [⟨(w.clock h).read t, obs⟩])).sends = S)
+    {i : ℕ} (hi : i < S.length) {arr : Time}
+    (hdel : w.network.deliver h S[i].1 t
+      ((σ.states w lookahead n).sentCount h S[i].1 + (S.take i).countP (fun s => s.1 = S[i].1))
+      = some arr) :
+    (⟨arr, h, S[i].1, S[i].2.1,
+      S[i].2.2.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames)⟩ : InFlight H Msg)
+      ∈ (σ.states w lookahead (n + 1)).inFlight := by
+  subst hS
+  set st := σ.states w lookahead n with hstdef
+  show _ ∈ (st.step σ w lookahead).inFlight
+  unfold Solution.handled at hn
+  rw [← hstdef] at hn
+  rcases he : earliest (st.key w) st.due with _ | d
+  · rw [he] at hn
+    simp at hn
+  · rw [he] at hn
+    unfold State.step
+    rw [he]
+    cases d with
+    | handed b =>
+      simp only [Option.some.injEq, Prod.mk.injEq] at hn
+      obtain ⟨rfl, rfl, rfl⟩ := hn
+      exact State.handle_delivered w σ lookahead st _ _ _ i hi hdel
+    | asked r b =>
+      simp only [Option.some.injEq, Prod.mk.injEq] at hn
+      obtain ⟨rfl, rfl, rfl⟩ := hn
+      exact State.handle_delivered w σ lookahead st _ _ _ i hi hdel
+    | arrival p =>
+      cases hm : st.inFlight[p]? with
+      | none =>
+        simp [hm] at hn
+      | some m =>
+        simp only [hm, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
+        obtain ⟨rfl, rfl, rfl⟩ := hn
+        simp only [hm]
+        exact State.handle_delivered w σ lookahead { st with inFlight := st.inFlight.eraseIdx p }
+          _ _ _ i hi hdel
+    | timer p =>
+      cases hm : st.timers[p]? with
+      | none =>
+        simp [hm] at hn
+      | some u =>
+        simp only [hm, Option.map_some, Option.some.injEq, Prod.mk.injEq] at hn
+        obtain ⟨rfl, rfl, rfl⟩ := hn
+        simp only [hm]
+        exact State.handle_delivered w σ lookahead { st with timers := st.timers.eraseIdx p }
+          _ _ _ i hi hdel
+
+end Sent
+
 end Unisono.Spec
