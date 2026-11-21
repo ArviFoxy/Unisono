@@ -37,6 +37,12 @@ variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 abbrev memoryOf (h : H) (l : List (Event H R Payload)) : Memory H R :=
   l.foldl (remember p h) Memory.empty
 
+/-- The baseline acts on the last event of a view with what it remembers
+from the events before. -/
+theorem solution_append (h : H) (l : List (Event H R Payload)) (e : Event H R Payload) :
+    (solution p : Solution H R Payload) h (l ++ [e]) = act p h (memoryOf p h l) e := by
+  simp [solution, memoryOf]
+
 /-- What a host remembers after one more event. -/
 theorem memoryOf_append (h : H) (l : List (Event H R Payload)) (e : Event H R Payload) :
     memoryOf p h (l ++ [e]) = remember p h (memoryOf p h l) e := by

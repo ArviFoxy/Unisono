@@ -623,6 +623,74 @@ theorem Solution.handled_of_mem_views (σ : Solution H R Msg) (lookahead : ℕ+)
         · simp at he
       · simp at he
 
+/-- The event that the run handles at a step occurs at the step's event
+time. -/
+theorem Solution.handled_time (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {h : H} {t : Time}
+    {obs : Observation H R Msg} (hn : σ.handled w lookahead n = some (h, t, obs)) :
+    σ.eventTime w lookahead n = t := by
+  unfold Solution.handled at hn
+  unfold Solution.eventTime
+  split at hn
+  · rename_i b he
+    rw [he]
+    simp only [Option.some.injEq, Prod.mk.injEq] at hn
+    exact hn.2.1
+  · rename_i r b he
+    rw [he]
+    simp only [Option.some.injEq, Prod.mk.injEq] at hn
+    exact hn.2.1
+  · rename_i p he
+    rw [he]
+    obtain ⟨m, hm, heq⟩ := Option.map_eq_some_iff.mp hn
+    simp only [Prod.mk.injEq] at heq
+    simp [State.key, hm, heq.2.1]
+  · rename_i p he
+    rw [he]
+    obtain ⟨u, hu, heq⟩ := Option.map_eq_some_iff.mp hn
+    simp only [Prod.mk.injEq] at heq
+    simp [State.key, hu, heq.2.1]
+  · simp at hn
+
+/-- **The run's event times never decrease.** -/
+theorem Solution.eventTime_mono (σ : Solution H R Msg) (lookahead : ℕ+) :
+    Monotone (σ.eventTime w lookahead) :=
+  monotone_nat_of_le_succ (σ.eventTime_le_succ w lookahead)
+
+/-- **Each event of a view was handled at the step whose view held exactly
+the events before it.** -/
+theorem Solution.handled_of_views_eq (σ : Solution H R Msg) (lookahead : ℕ+) {k : ℕ} {h : H}
+    {l₁ l₂ : List (Event H R Msg)} {e : Event H R Msg}
+    (hv : (σ.states w lookahead k).views h = l₁ ++ e :: l₂) :
+    ∃ i < k, (σ.states w lookahead i).views h = l₁ ∧ ∃ t obs,
+      σ.handled w lookahead i = some (h, t, obs) ∧ e = ⟨(w.clock h).read t, obs⟩ := by
+  induction k generalizing l₂ with
+  | zero => simp [Solution.states, State.start] at hv
+  | succ k ih =>
+    rw [σ.views_succ w lookahead k h] at hv
+    have older : (σ.states w lookahead k).views h = l₁ ++ e :: l₂ →
+        ∃ i < k + 1, (σ.states w lookahead i).views h = l₁ ∧ ∃ t obs,
+          σ.handled w lookahead i = some (h, t, obs) ∧ e = ⟨(w.clock h).read t, obs⟩ := by
+      intro hv'
+      obtain ⟨i, hi, rest⟩ := ih hv'
+      exact ⟨i, Nat.lt_succ_of_lt hi, rest⟩
+    split at hv
+    · rename_i h' t obs hk
+      split_ifs at hv with hh
+      · subst hh
+        rcases List.eq_nil_or_concat l₂ with rfl | ⟨l₂', x, rfl⟩
+        · obtain ⟨h1, h2⟩ := List.append_inj' hv rfl
+          refine ⟨k, Nat.lt_succ_self k, h1, t, obs, hk, ?_⟩
+          simpa using h2.symm
+        · have hv' : (σ.states w lookahead k).views h ++ [⟨(w.clock h).read t, obs⟩]
+              = (l₁ ++ e :: l₂') ++ [x] := by
+            rw [hv]; simp
+          obtain ⟨i, hi, rest⟩ := ih (List.append_inj' hv' rfl).1
+          exact ⟨i, Nat.lt_succ_of_lt hi, rest⟩
+      · simp only [List.append_nil] at hv
+        exact older hv
+    · simp only [List.append_nil] at hv
+      exact older hv
+
 end Views
 
 section Sent

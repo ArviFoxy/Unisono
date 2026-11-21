@@ -201,13 +201,19 @@ each bounding one source of error:
 \item \emph{The views} (proved): a host's view is the list of the events it
   handled, with its clock's readings, and every message of the baseline in
   transit was sent where it should have been (\lean{origin\_inFlight}), so
-  what the baseline remembers can be traced to the world.
-\item \emph{The clocks} (proved): the estimate $\hat\theta$ errs from the
-  true difference of the two clocks at the sender's reading by at most half
-  the largest difference of the two delays, plus the clocks' rate error
-  times the mean delay (\lean{offset\_error}), and the difference of two
-  clocks drifts by at most twice their rate error per second
-  (\lean{offset\_drift}).
+  what the baseline remembers can be traced to the world. A host other than
+  the sender's remembers the latest block that arrived and the estimate of
+  the latest question answered (\path{lean/Unisono/Solutions/FixedDelayMemory.lean}).
+\item \emph{The clocks} (proved): every question is answered, so at every
+  step later than a question plus the longest delays to the sender and back,
+  the asking host remembers an estimate from a question as late or later
+  (\lean{answer\_reaches}); the estimate it remembers is an NTP sample whose
+  question and answer took between the least and the longest delays
+  (\lean{offset\_sample}). Such an estimate errs from the true difference of
+  the two clocks at the sender's reading by at most half the largest
+  difference of the two delays, plus the clocks' rate error times the mean
+  delay (\lean{offset\_error}), and the difference of two clocks drifts by
+  at most twice their rate error per second (\lean{offset\_drift}).
 \item \emph{The target:} the capture time of $x^*_k$ errs from
   $o_r(k) - L$ by at most the clock error, the timestamps' errors
   $2\varepsilon_R$, and the rate errors over the extrapolated spans, so

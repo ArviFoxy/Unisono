@@ -980,3 +980,43 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.copy_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.copy_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.replicate_copies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.replicate_copies
+
+/-- info: 'Unisono.Solutions.FixedDelay.question_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.question_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.answer_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answer_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.question_answered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.question_answered
+
+/-- info: 'Unisono.Solutions.FixedDelay.answer_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answer_reaches
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_sample' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_sample
+
+/-- info: 'Unisono.Spec.Solution.handled_time' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_time
+
+/-- info: 'Unisono.Spec.Solution.eventTime_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_mono
+
+/-- info: 'Unisono.Spec.Solution.handled_of_views_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_views_eq
+
+/-- info: 'Unisono.Solutions.FixedDelay.solution_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.solution_append
