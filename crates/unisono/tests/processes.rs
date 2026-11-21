@@ -20,7 +20,7 @@
 //! the measurement.
 
 use std::io::{BufRead, BufReader, Read};
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
 use std::process::{Child, Command, Stdio};
 
 use unisono_runtime::proxy::{Impairment, Proxy};
@@ -56,29 +56,27 @@ impl Clock {
     }
 }
 
-/// A free port on the loopback interface.
-fn free() -> SocketAddr {
-    let socket = UdpSocket::bind("127.0.0.1:0").expect("a socket");
-    socket.local_addr().expect("its address")
-}
-
 fn program() -> Command {
     Command::new(env!("CARGO_BIN_EXE_unisono"))
 }
 
-/// Starts a receiver that listens at `listen`, is told that the path from
-/// the sender takes `path` nanoseconds, and keeps what it plays in `record`
-/// for `seconds`.
+/// Starts a receiver that is told that the path from the sender takes
+/// `path` nanoseconds, and keeps what it plays in `record` for `seconds`.
+/// It listens at `listen`, or, without one, at a port that the system
+/// chooses for it: no port that a test picks beforehand stays free for
+/// certain until the receiver takes it. Returns the receiver and the address
+/// it listens at, which is the first thing it writes.
 fn receiver(
-    listen: SocketAddr,
+    listen: Option<SocketAddr>,
     clock: Clock,
     drift: i64,
     path: i64,
     seconds: u32,
     record: &str,
-) -> Child {
-    program()
-        .args(["receive", "--listen", &listen.to_string()])
+) -> (Child, SocketAddr) {
+    let listen = listen.map_or_else(|| "127.0.0.1:0".to_owned(), |address| address.to_string());
+    let mut child = program()
+        .args(["receive", "--listen", &listen])
         .args(["--path", &path.to_string()])
         .args([
             "--drift",
@@ -91,7 +89,21 @@ fn receiver(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("a receiver")
+        .expect("a receiver");
+    let mut line = String::new();
+    let stdout = child.stdout.take().expect("its output");
+    let mut lines = BufReader::new(stdout);
+    lines
+        .read_line(&mut line)
+        .expect("the receiver's first line");
+    // "listening ADDRESS"
+    let address = line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|address| address.parse().ok())
+        .unwrap_or_else(|| panic!("the receiver said `{line}`"));
+    child.stdout = Some(lines.into_inner());
+    (child, address)
 }
 
 /// Starts a sender to `to` for `seconds`, and returns it with the time its
@@ -271,7 +283,12 @@ fn two_receivers_on_clocks_of_their_own_play_together() {
     ];
     let drifts = [80_000, -60_000];
     let delays = [1_000_000, 3_000_000];
-    let listen = [free(), free()];
+    let (receivers, listen): (Vec<Child>, Vec<SocketAddr>) = (0..2)
+        .map(|place| {
+            let (clock, drift, path) = (clocks[place], drifts[place], delays[place]);
+            receiver(None, clock, drift, path, 11, &records[place])
+        })
+        .unzip();
     let proxies: Vec<Proxy> = listen
         .iter()
         .zip(delays)
@@ -281,12 +298,6 @@ fn two_receivers_on_clocks_of_their_own_play_together() {
                 ..Impairment::NONE
             };
             Proxy::start(*address, path, path, 9).expect("a proxy")
-        })
-        .collect();
-    let receivers: Vec<Child> = (0..2)
-        .map(|place| {
-            let (clock, drift, path) = (clocks[place], drifts[place], delays[place]);
-            receiver(listen[place], clock, drift, path, 11, &records[place])
         })
         .collect();
     let to: Vec<SocketAddr> = proxies.iter().map(Proxy::near).collect();
@@ -361,21 +372,27 @@ fn a_poor_link_and_a_receiver_that_starts_again() {
         delay: 1_000_000,
         ..Impairment::NONE
     };
-    let (poor_at, clean_at) = (free(), free());
+    let own = Clock { offset: 0, skew: 0 };
+
+    // The first receiver runs the whole time behind the poor link; the
+    // second stops after four seconds and another starts in its place.
+    let (steady, poor_at) = receiver(None, clock, 40_000, 1_000_000, 11, &record("steady.raw"));
+    let (early, clean_at) = receiver(None, clock, -30_000, 1_000_000, 4, &record("early.raw"));
     let proxies = [
         Proxy::start(poor_at, poor, clean, 21).expect("a proxy"),
         Proxy::start(clean_at, clean, clean, 22).expect("a proxy"),
     ];
     let to: Vec<SocketAddr> = proxies.iter().map(Proxy::near).collect();
-    let own = Clock { offset: 0, skew: 0 };
-
-    // The first receiver runs the whole time behind the poor link; the
-    // second stops after four seconds and another starts in its place.
-    let steady = receiver(poor_at, clock, 40_000, 1_000_000, 11, &record("steady.raw"));
-    let early = receiver(clean_at, clock, -30_000, 1_000_000, 4, &record("early.raw"));
     let (sender, start) = sender(&to, own, 0, 10);
     let early_out = finish(early);
-    let late = receiver(clean_at, clock, -30_000, 1_000_000, 6, &record("late.raw"));
+    let (late, _) = receiver(
+        Some(clean_at),
+        clock,
+        -30_000,
+        1_000_000,
+        6,
+        &record("late.raw"),
+    );
     let sent = finish(sender);
     let steady_out = finish(steady);
     let late_out = finish(late);

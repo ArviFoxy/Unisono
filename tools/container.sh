@@ -18,7 +18,14 @@ name="$1"
 shift
 image="unisono-test-$name"
 
-docker build --quiet --tag "$image" --file "$root/containers/$name/Dockerfile" "$root" > /dev/null
+# What the build says is shown only when it fails.
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+if ! docker build --progress=plain --tag "$image" \
+    --file "$root/containers/$name/Dockerfile" "$root" > "$log" 2>&1; then
+    cat "$log" >&2
+    exit 1
+fi
 mkdir -p "$root/target/container/cargo"
 docker run --rm --name "$image-$$" \
     --user "$(id -u):$(id -g)" \

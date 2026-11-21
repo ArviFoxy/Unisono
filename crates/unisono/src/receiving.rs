@@ -61,7 +61,8 @@ unisono receive --listen ADDRESS [options]
 
 Receives a stream and plays it on a software device.
 
-  --listen ADDRESS    where to receive
+  --listen ADDRESS    where to receive; with port 0 the system chooses the
+                      port, and the first line written says which
   --stream N          the stream's number (1)
   --identity N        a number that tells this receiver from the others (1)
   --rate HZ           frames per second (48000)
@@ -113,6 +114,12 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
 
     let socket =
         Socket::bind(listen).map_err(|error| Wrong(format!("binding {listen}: {error}")))?;
+    // With port 0 the system chooses the port: say which, before anything
+    // else, so that whoever started the program can send to it.
+    let listening = socket
+        .address()
+        .map_err(|error| Wrong(format!("the address of the socket: {error}")))?;
+    println!("listening {listening}");
     let playback = playback(options, stream, rate, channels)?;
     let sizes = Sizes {
         buffers: 64,

@@ -7,9 +7,15 @@
 # WirePlumber, and the Rust toolchain of the repository.
 FROM docker.io/library/archlinux:base-devel@sha256:fa2d4ce3310ddd90a4208e5168be8ad367da5129af1245f38fd2d803bcbe3239
 
+# The archive at times refuses a download; the packages are asked for again
+# before the build is given up.
 RUN echo 'Server = https://archive.archlinux.org/repos/2026/11/15/$repo/os/$arch' \
         > /etc/pacman.d/mirrorlist \
-    && pacman -Syyuu --noconfirm pipewire wireplumber clang rustup \
+    && for attempt in 1 2 3 4 5; do \
+           pacman -Syyuu --noconfirm pipewire wireplumber clang rustup && break; \
+           if [ "$attempt" = 5 ]; then exit 1; fi; \
+           sleep 20; \
+       done \
     && pacman -Scc --noconfirm
 
 ENV RUSTUP_HOME=/opt/rustup HOME=/tmp
