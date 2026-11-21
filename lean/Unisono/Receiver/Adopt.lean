@@ -64,7 +64,8 @@ theorem span_of_total (h : packet.Audio) : receiver.span_of h ⦃ _ => True ⦄ 
   step*
 
 @[step]
-theorem arrivals_new_total (K : Std.Usize) : arrivals.Arrivals.new K ⦃ _ => True ⦄ := by
+theorem arrivals_new_spec (K : Std.Usize) :
+    arrivals.Arrivals.new K ⦃ a => arrivals.Arrivals.new K = ok a ⦄ := by
   unfold arrivals.Arrivals.new
   simp
 
@@ -110,11 +111,13 @@ theorem measure_spec (r : receiver.Receiver N M K) (h : packet.Audio) (arrival :
     simp only [SameStream]
     exact ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hsched1⟩
 
-/-- Taking the next schedule kept into use changes the schedules and nothing
-else. -/
+/-- Taking the next schedule kept into use changes only the schedules. -/
 @[step]
 theorem turn_spec (r : receiver.Receiver N M K) :
-    receiver.Receiver.turn r ⦃ r' => SameStream r' r ⦄ := by
+    receiver.Receiver.turn r ⦃ r' =>
+      SameStream r' r ∧ r'.path = r.path ∧ r'.clock = r.clock ∧ r'.arrived = r.arrived
+      ∧ r'.player = r.player ∧ r'.identity = r.identity ∧ r'.reports = r.reports
+      ∧ r'.departures = r.departures ∧ r'.answers = r.answers ⦄ := by
   unfold receiver.Receiver.turn
   cases r.next <;> simp [SameStream]
 
@@ -132,7 +135,7 @@ theorem note_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
        · simp [SameStream]
        · first
          | (simp [SameStream]; done)
-         | (step as ⟨r1, hsame⟩
+         | (step as ⟨r1, hsame, _, _, _, _, _, _, _, _⟩
             simpa [SameStream] using hsame))
 
 /-! ## Which timeline is followed -/
@@ -239,14 +242,16 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
               r'.clock.kept = r.clock.kept ∧ r'.clock.len = r.clock.len
               ∧ r'.clock.line = r.clock.line))
       ∧ (r.following = false ∨ h.clock ≠ r.clock_id →
-          r'.clock.len.val = 0 ∧ r'.clock.line = none ∧ r'.departures = r'.arrived
+          r'.clock.len.val = 0 ∧ r'.clock.line = none
+          ∧ arrivals.Arrivals.new K = ok r'.arrived
+          ∧ arrivals.Arrivals.new K = ok r'.departures
           ∧ ∀ k, k < (8#usize).val → ∀ p, r'.answers.places.val[k]? = some p → p.held = false) ⦄ := by
   unfold receiver.Receiver.adopt
   split
   · rename_i hf
     simp only [bind_ok]
     step as ⟨p, hpb, hph⟩
-    step as ⟨a⟩
+    step as ⟨a, ha⟩
     step with Unisono.Player.stop_total as ⟨p1⟩
     split
     · rename_i hclk
@@ -271,12 +276,12 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       · intro _ heq
         exact absurd heq hclk'
       · intro _
-        exact ⟨he_len, he_line, ha1⟩
+        exact ⟨he_len, he_line, ha, ha, ha1⟩
   · rename_i hnf
     have hnf' : r.following = false := by simpa using hnf
     simp only [bind_ok]
     step as ⟨p, hpb, hph⟩
-    step as ⟨a⟩
+    step as ⟨a, ha⟩
     step with Unisono.Player.stop_total as ⟨p1⟩
     simp only [Bool.false_eq_true, ↓reduceIte]
     step as ⟨i1⟩
@@ -284,7 +289,7 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     step with Unisono.Answers.clear_spec as ⟨a1, ha1⟩
     refine ⟨hpb, hph, ?_, ?_⟩
     · intro hc; rw [hnf'] at hc; cases hc
-    · intro _; exact ⟨he_len, he_line, ha1⟩
+    · intro _; exact ⟨he_len, he_line, ha, ha, ha1⟩
 
 /-! ## Keeping the newest frames before the clock is known -/
 

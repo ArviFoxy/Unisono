@@ -97,7 +97,8 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 | `mean_time_spec`, `anchor_near_mean` | That mean, rounded down to a nanosecond. |
 | `through_best`, `through_excess` | Read in real numbers, the stored line is the best line of section 1.1: the highest at the mean of the times, and the most likely one up to the rounding. |
 | `side_spec`, `is_under_spec`, `bridge_spec`, `slope_within_spec`, `limited_spec`, `eval_spec` | The parts of the fit and line evaluation: the side of a line a sample lies on, whether a line is under all kept samples, the two samples the line is drawn through, the exact slope-bound test, the line at the slope limit, and exact clamped line evaluation. |
-| `put_spec`, `drop_oldest_spec`, `forget_before_spec`, `append_spec`, `keep_spec`, `end_window_spec`, `new_spec`, `remember_spec`, `reset_window_spec`, `consider_spec`, `overtaken_spec` | Keeping, bounding, and forgetting samples change what they say and nothing else, preserving the kept-count bound `len ≤ M`. |
+| `put_spec`, `drop_oldest_spec`, `forget_before_spec`, `new_spec`, `remember_spec`, `reset_window_spec`, `consider_spec`, `overtaken_spec` | Placing, dropping, forgetting, initializing, clamping `span`, resetting the window, updating the window minimum (`consider_spec`), and checking for overtaken samples behave as stated. |
+| `append_spec`, `keep_spec`, `end_window_spec` | Appending, keeping a sample, and ending a window preserve the kept-count bound `len ≤ M` (and `keep_spec` restores it unconditionally). |
 | `observe_spec`, `observe_later`, `observe_in_order` | From any state: a sample that can come from an overtaken packet leaves the estimator exactly as it is, and every other one is taken in. So an estimator takes a stream in again within the time it remembers, whatever it held. |
 | `observe_total`, `end_window_total` | Taking in a packet and ending a window return for every input. |
 
@@ -137,7 +138,7 @@ pace; a cycle costs the weighted squared distance plus the squared change.
 |---|---|
 | `cycle_spec`, `cycle_step_small`, `step_clamped_spec` | Planning a cycle returns for every state and schedule, and its step is within the limit of the pace, which is a step the resampler takes. |
 | `gain_spec`, `gains_spec`, `regulate_spec` | The gain of a cycle, and that the two gains the code computes and what it has the cycle read are within stated bounds of the best law's (section 1.3). |
-| `Due.due_spec`, `Due.dueUnits_eq_floor` | `timing::due` returns `none` if and only if rate, pace, or stretch is non-positive or the frame falls outside `[0, 2⁶⁴)`, and otherwise returns the exact position from section 1.2 rounded down to `2⁻³²` frame. |
+| `Due.due_spec`, `Due.dueUnits_eq_floor` | `timing::due` returns `none` if and only if rate, pace, or stretch is non-positive or the frame falls outside `[0, 2⁶⁴)`, and otherwise returns the exact position from section 1.2 (for the schedule's capture time from packet headers, when `time - capture - level` fits in `i64`) rounded down to `2⁻³²` frame. |
 | `sender_time_total`, `due_total`, `position_units_total`, `position_from_units_total`, `step_units_total`, `step_new_total`, `position_advance_total`, `step_from_parts_per_billion_total` | The conversions between times, positions and steps return for every input. |
 
 ### 2.8 The sender (`Sender`)

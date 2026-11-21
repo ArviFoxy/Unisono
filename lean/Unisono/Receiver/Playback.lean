@@ -312,32 +312,42 @@ theorem restart_stores (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std
 /-! ## A cycle of the device -/
 
 /-- Taking queued schedules into use when the position due has reached them
-changes the schedules and nothing else. -/
+changes only the schedules. -/
 @[step]
 theorem reached_spec (r : receiver.Receiver N M K) (schedule : timing.Schedule)
     (now : timing.Position) (first : Std.I64) :
-    receiver.Receiver.reached r schedule now first ⦃ out => SameStream out.2 r ⦄ := by
+    receiver.Receiver.reached r schedule now first ⦃ out =>
+      SameStream out.2 r ∧ out.2.path = r.path ∧ out.2.clock = r.clock
+      ∧ out.2.arrived = r.arrived ∧ out.2.player = r.player ∧ out.2.identity = r.identity
+      ∧ out.2.reports = r.reports ∧ out.2.departures = r.departures
+      ∧ out.2.answers = r.answers ⦄ := by
   unfold receiver.Receiver.reached
   cases r.next with
   | none => simp [SameStream]
   | some next =>
     simp only
     split
-    · step as ⟨r1, hsame1⟩
+    · step as ⟨r1, hsame1, hp1, hc1, ha1, hpl1, hid1, hrep1, hdep1, hans1⟩
       step as ⟨o⟩
       cases o with
-      | none => simpa [SameStream] using hsame1
+      | none =>
+        simpa using ⟨hsame1, hp1, hc1, ha1, hpl1, hid1, hrep1, hdep1, hans1⟩
       | some turned =>
         simp only
         cases r1.next with
-        | none => simpa [SameStream] using hsame1
+        | none =>
+          simpa using ⟨hsame1, hp1, hc1, ha1, hpl1, hid1, hrep1, hdep1, hans1⟩
         | some next1 =>
           simp only
           split
-          · step as ⟨r2, hsame2⟩
+          · step as ⟨r2, hsame2, hp2, hc2, ha2, hpl2, hid2, hrep2, hdep2, hans2⟩
             step as ⟨o1⟩
-            cases o1 <;> simpa [SameStream] using hsame2.trans hsame1
-          · simpa [SameStream] using hsame1
+            cases o1 <;>
+              simpa using
+                ⟨hsame2.trans hsame1, hp2.trans hp1, hc2.trans hc1, ha2.trans ha1,
+                  hpl2.trans hpl1, hid2.trans hid1, hrep2.trans hrep1, hdep2.trans hdep1,
+                  hans2.trans hans1⟩
+          · simpa using ⟨hsame1, hp1, hc1, ha1, hpl1, hid1, hrep1, hdep1, hans1⟩
     · simp [SameStream]
 
 /-- Asking which position is due at a time returns for every state and every
@@ -360,11 +370,15 @@ theorem due_at_total (r : receiver.Receiver N M K) (time : Std.I64) :
   · simp
 
 /-- Planning a cycle of the device returns for every state and every reading
-of the clock, and changes nothing about the timeline that is followed or the
-frames that are held: only the schedules and the regulator move. -/
+of the clock, and changes only the schedules and the regulator: every other
+field of the receiver stays as it was. -/
 theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
     (frames : Std.U32) :
-    receiver.Receiver.cycle r time duration frames ⦃ out => SameStream out.2 r ⦄ := by
+    receiver.Receiver.cycle r time duration frames ⦃ out =>
+      SameStream out.2 r ∧ out.2.path = r.path ∧ out.2.clock = r.clock
+      ∧ out.2.arrived = r.arrived ∧ out.2.identity = r.identity
+      ∧ out.2.reports = r.reports ∧ out.2.departures = r.departures
+      ∧ out.2.answers = r.answers ⦄ := by
   unfold receiver.Receiver.cycle relation.Estimator.impl.line
   split
   · simp only [bind_ok]
@@ -384,19 +398,21 @@ theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
         | none => simp [SameStream]
         | some now =>
           simp only
-          step as ⟨o2, r1, hsame⟩
+          step as ⟨o2, r1, hsame, hp, hc, ha, _, hid, hrep, hdep, hans⟩
           cases o2 with
-          | none => simpa [SameStream] using hsame
+          | none =>
+            simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
           | some turned =>
             obtain ⟨schedule1, now1⟩ := turned
             simp only
             step as ⟨o3⟩
             cases o3 with
-            | none => simpa [SameStream] using hsame
+            | none =>
+              simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
             | some later =>
               simp only
               step as ⟨out⟩
-              simpa [SameStream] using hsame
+              simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
   · simp [SameStream]
 
 /-! ## Reports and the delay of the path -/

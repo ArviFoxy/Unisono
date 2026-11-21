@@ -142,9 +142,27 @@ fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
             )?;
         }
     }
-    let moduli = [0usize, 1, 2, 3, 7, 8, 12, 1_000_003, u32::MAX as usize];
+    let moduli: &[usize] = &[
+        0usize,
+        1,
+        2,
+        3,
+        7,
+        8,
+        12,
+        1_000_003,
+        u32::MAX as usize,
+        #[cfg(target_pointer_width = "64")]
+        ((u32::MAX as usize) + 1),
+        #[cfg(target_pointer_width = "64")]
+        (1usize << 40),
+        #[cfg(target_pointer_width = "64")]
+        ((1usize << 63) + 17),
+        #[cfg(target_pointer_width = "64")]
+        usize::MAX,
+    ];
     for &a in &dividends {
-        for m in moduli {
+        for &m in moduli {
             let result = match fixed::rem_euclid_wide(a, m) {
                 Some(r) => format!("1 {r}"),
                 None => "0 0".to_string(),
@@ -1212,7 +1230,7 @@ fn needs_wire_case(
 
     let mut raw = [0u8; 96];
     if packet::write_needs(recent, &mut raw) {
-        let used = packet::REPORT + 9 + usize::from(recent.count) * 4;
+        let used = packet::REPORT + 9 + usize::from(recent.count).min(packet::RECENT) * 4;
         let valid = &raw[..used];
         let mut mutated = valid.to_vec();
         if !mutated.is_empty() {
@@ -1299,6 +1317,33 @@ fn needs_cases(out: &mut impl Write) -> io::Result<()> {
         results.push(i128::from(recent.newest));
         results.extend(recent.needs.map(i128::from));
         writeln!(out, " -> {}", join(&results))?;
+        needs_wire_case(out, &mut sequence, &recent)?;
+    }
+    // Exercise `write_needs` and `parse_needs` with counts above 6 (up to and
+    // past `RECENT = 11`) as well as `newest < count` (truncation at stretch 0).
+    let wide_counts = [
+        (7u8, 100u64),
+        (10, 5),
+        (11, 10),
+        (11, 3),
+        (11, u64::MAX),
+        (12, 50),
+        (255, 0),
+    ];
+    for (count, newest) in wide_counts {
+        let mut arr = packet::Recent::NONE.needs;
+        for (idx, slot) in arr.iter_mut().enumerate() {
+            *slot = if idx % 3 == 0 {
+                i32::MIN
+            } else {
+                i32::try_from((sequence.signed() % 500_000).clamp(-500_000, 500_000)).unwrap_or(0)
+            };
+        }
+        let recent = packet::Recent {
+            count,
+            newest,
+            needs: arr,
+        };
         needs_wire_case(out, &mut sequence, &recent)?;
     }
     Ok(())

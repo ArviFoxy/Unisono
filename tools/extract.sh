@@ -37,9 +37,11 @@ if [ ! -x "$aeneas/bin/aeneas" ] || [ ! -x "$aeneas/charon/bin/charon" ]; then
 fi
 
 # Every function of the core is translated. Only what a type derives may
-# depend on whether the crate is being translated.
-hidden="$(grep -rn -E 'cfg(_attr|!)?[[:space:]]*\([^)]*translating' "$root/crates/unisono-core/src" \
-    | grep -v -E ':[^:]*:[[:space:]]*#\[cfg_attr\(not\(translating\), derive\([A-Za-z, ]+\)\)\][[:space:]]*$' || true)"
+# depend on whether the crate is being translated; reject any other
+# non-comment mention of `translating` (including nested `cfg(all(...))`).
+hidden="$(grep -rn '\btranslating\b' "$root/crates/unisono-core/src" \
+    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*//' \
+    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#\[cfg_attr\(not\(translating\), derive\([A-Za-z, ]+\)\)\][[:space:]]*$' || true)"
 if [ -n "$hidden" ]; then
     echo "the core has code that the translation would not see:" >&2
     echo "$hidden" >&2
