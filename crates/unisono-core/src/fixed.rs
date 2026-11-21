@@ -87,9 +87,67 @@ pub fn div_floor_wide(a: i128, b: i128) -> i128 {
     }
 }
 
+/// The largest power of four that an `i128` holds: 2^126.
+const LARGEST_POWER_OF_FOUR: i128 = 85_070_591_730_234_615_865_843_651_857_942_052_864;
+
+/// Returns the square root of `x`, rounded down: the largest integer whose
+/// square is at most `x`.
+///
+/// For a negative `x` the result is 0.
+#[must_use]
+pub fn root(x: i128) -> i128 {
+    if x <= 0 {
+        return 0;
+    }
+    // One bit of the root in each round, from the highest. `rest` is `x`
+    // less the square of the bits found so far, and `found` holds those
+    // bits, moved up so that a bit to try can be added to twice their value.
+    let mut rest = x;
+    let mut found: i128 = 0;
+    let mut bit = LARGEST_POWER_OF_FOUR;
+    let mut round = 0u32;
+    while round < 64 {
+        let trial = found.wrapping_add(bit);
+        found = found.wrapping_shr(1);
+        if rest >= trial {
+            rest = rest.wrapping_sub(trial);
+            found = found.wrapping_add(bit);
+        }
+        bit = bit.wrapping_shr(2);
+        round = round.saturating_add(1);
+    }
+    found
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, saturate};
+    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, root, saturate};
+
+    #[test]
+    fn root_is_the_largest_integer_whose_square_fits() {
+        assert_eq!(
+            (root(-5), root(0), root(1), root(2), root(3), root(4)),
+            (0, 0, 1, 1, 1, 2)
+        );
+        // Around squares of every size, and at the largest number.
+        for bits in 1..63u32 {
+            for base in [
+                (1i128 << bits) - 1,
+                1i128 << bits,
+                (1i128 << bits) + 12_345 % (1i128 << bits),
+            ] {
+                let square = base * base;
+                assert_eq!(root(square), base);
+                assert_eq!(root(square - 1), base - 1);
+                assert_eq!(root(square + 2 * base), base);
+                assert_eq!(root(square + 2 * base + 1), base + 1);
+            }
+        }
+        let largest = root(i128::MAX);
+        assert_eq!(largest, 13_043_817_825_332_782_212);
+        assert!(largest.checked_mul(largest).is_some());
+        assert!((largest + 1).checked_mul(largest + 1).is_none());
+    }
 
     #[test]
     fn div_floor_rounds_toward_negative_infinity() {

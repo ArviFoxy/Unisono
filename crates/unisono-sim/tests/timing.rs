@@ -229,7 +229,9 @@ fn timing_is_close_from_the_first_sound_on() {
 fn a_receiver_that_takes_its_device_to_run_at_the_nominal_rate_leaves_the_bound() {
     // The schedule's pace is then wrong by the device's 120 parts per
     // million against its host, and the regulator is left with the error
-    // sqrt(2) * 120e-6 / (4 per second), which is 42 microseconds.
+    // that `(2 - g) / g` cycles at that pace make, where `g` is the
+    // regulator's gain on the pace: 0.0297 for a gain of 4 per second and
+    // cycles of 5.3 ms, which gives 42 microseconds.
     let mut scene = scene(&WIRED_CALM, 20, |receivers| {
         receivers[0].cycle_length = CycleLength::Nominal;
     });

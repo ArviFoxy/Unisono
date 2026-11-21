@@ -91,6 +91,25 @@ fn mul_shift_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+fn root_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut inputs = vec![i128::MAX, i128::MAX - 1, i128::MIN, -1, 0, 1, 2, 3, 4];
+    for bits in [1u32, 16, 31, 32, 33, 47, 62, 63] {
+        let base = 1i128 << bits;
+        for near in [base - 1, base, base + 1] {
+            inputs.extend([near * near - 1, near * near, near * near + 1]);
+        }
+    }
+    let mut sequence = Sequence(21);
+    for _ in 0..300 {
+        let wide = (i128::from(sequence.signed()) << 64) | i128::from(sequence.next());
+        inputs.push(wide >> (sequence.next() % 128));
+    }
+    for x in inputs {
+        writeln!(out, "root {x} -> {}", fixed::root(x))?;
+    }
+    Ok(())
+}
+
 fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
     let divisors = [1, 2, 3, 7, 1 << 32, i64::MAX, 0, -1, i64::MIN];
     let mut dividends = vec![i128::MAX, i128::MIN, i128::MIN + 1];
@@ -834,7 +853,8 @@ fn unit_cases(out: &mut impl Write) -> io::Result<()> {
 
 /// Runs of cycles through a regulator. Each cycle is six numbers: the frame
 /// and fraction of the position due at its start, the same for its end, the
-/// number of frames and the duration. The results of each are the plan's
+/// number of frames, the duration and the slope of the level. The results of
+/// each are the plan's
 /// number of frames, the frame and fraction of its start, its step and
 /// whether it jumped.
 fn player_cases(out: &mut impl Write) -> io::Result<()> {
@@ -870,10 +890,18 @@ fn player_cases(out: &mut impl Write) -> io::Result<()> {
             };
             let then = timing::advance(now, frames, step);
             let duration = i64::from(frames) * 20_833 + sequence.signed() % 1_000;
-            let plan = player.cycle(now, then, frames, duration);
+            // Mostly a level that holds, at times one that moves, and at
+            // times a slope that no packet could carry.
+            #[allow(clippy::cast_possible_truncation)]
+            let slope = match sequence.next() % 6 {
+                0 => (sequence.signed() % 2_000_000) as i32,
+                1 => sequence.signed() as i32,
+                _ => 0,
+            };
+            let plan = player.cycle(now, then, frames, duration, slope);
             write!(
                 out,
-                " {} {} {} {} {frames} {duration}",
+                " {} {} {} {} {frames} {duration} {slope}",
                 now.frame, now.fraction, then.frame, then.fraction
             )?;
             results.extend(plan_numbers(&plan));
@@ -1092,6 +1120,7 @@ fn main() -> io::Result<()> {
     saturate_cases(&mut out)?;
     mul_shift_cases(&mut out)?;
     div_floor_cases(&mut out)?;
+    root_cases(&mut out)?;
     relation_cases(&mut out)?;
     packet_cases(&mut out)?;
     presence_cases(&mut out)?;

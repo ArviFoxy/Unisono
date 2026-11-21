@@ -447,85 +447,169 @@ cycle.
 
 ### 6.4 The regulator
 
-The receiver's resampler reads the stream at a rate $1 + u$ relative to its
-device. The schedule of section 3 asks for a position and a rate $1 + \hat u$.
-Both follow from the fitted lines and from the capture times and levels that
-the sender announces, so $\hat u$ includes the rate of the sender's device and
-the slope of a moving level. Let $e$ be the time by which the resampler is
-behind the schedule and $\tilde u = u - \hat u$. Then $\dot e = -\tilde u$, and
-the regulator is
+The receiver's resampler reads the stream at a pace of its own. The schedule
+of section 3, as the receiver estimates it, says where it should be reading
+and how fast. The regulator chooses the pace, once for each cycle of the
+device, from what the receiver knows before the cycle. This section states
+that choice as a problem, solves it, and says what is proved.
 
-$$\dot{\tilde u} \;=\; \kappa^2 e \;-\; \sqrt2\,\kappa\,\tilde u ,
-\qquad \kappa = (w_{\mathrm{sync}} / w_{\mathrm{rough}})^{1/4},
-\qquad |u| \le u_{\max} .$$
+**The problem.** Before a cycle the receiver knows two numbers, both in
+frames:
 
-For the terms $w_{\mathrm{sync}}\,e^2 + w_{\mathrm{rough}}\,\dot u^2$ of the
-objective, with $e$ observed exactly and $\hat u$ constant, this law is optimal;
-it has damping $1/\sqrt2$. *Not stated in Lean.*
+- $E$, the distance by which the position it reads at is behind the
+  schedule;
+- $v$, by how much the cycle would read further than the schedule advances
+  over it, if it kept the pace of the cycle before.
 
-The scheduled rate $\hat u$ is fed forward. Under a constant drift the error
-therefore goes to zero without an integrator in the loop. An error $d$ in
-$\hat u$ leaves an error $\sqrt2\,d/\kappa$.
+It chooses $w$, the change of its pace: the cycle then reads $v + w$ further
+than the schedule advances. Between two cycles the receiver's estimate of the
+schedule is revised, in position by $\xi_1$ frames and in pace by $-\xi_2$
+frames a cycle. One cycle therefore takes the state $(E, v)$ to
 
-The bound $u_{\max}$ is on the whole rate, the scheduled part included: a level
-that moves and a regulator that corrects share it.
+$$E' = E - v - w + \xi_1, \qquad v' = v + w + \xi_2 .$$
 
-A change of the playback rate is heard as a change of pitch when it is large
-and fast enough; published thresholds for pure tones are one to three parts per
-thousand. In steady state the rate moves by far less: the line of section 6.3
-changes by fractions of a microsecond per window.
+A cycle costs $\rho\,E^2 + w^2$, with one number $\rho > 0$. The first term is
+the timing error of section 5, the second the change of the pace, which is
+what is heard as a change of pitch. With the weights of section 5 and cycles
+of length $h$, $\rho = a^4$ for $a = \kappa h$ and
+$\kappa = (w_{\mathrm{sync}} / w_{\mathrm{rough}})^{1/4}$, the regulator's gain
+per second: a pace that is constant within a cycle changes only between the
+cycles, and the sum of its squared changes, divided by $h$, is the integral of
+$\dot u^2$ for the smoothest pace through the same values. The timing error
+is charged where it is measured, at the start of each cycle.
 
-**In steps of the device's cycle.** The code (`unisono_core::player`) runs the
-law once for each cycle of the device. Let $h$ be the length of a cycle,
-$a = \kappa h$, $E$ the distance by which the position read is behind the
-schedule, in frames, and $v$ the number of frames that a cycle reads beyond
-what the schedule advances. One cycle is
+The receiver may choose each $w$ from everything it has seen before that
+cycle, in any way. The problem is to make the cost of all cycles smallest:
+their sum when the schedule is not revised, and the mean of their sum when it
+is.
 
-$$v' = (1 - \sqrt2\,a)\,v + a^2 E, \qquad E' = E - v' .$$
+**The solution.** Let $d$, strictly between 0 and 1, be the smaller root of
 
-The second equation is not computed: the position is advanced by what was
-read, exactly, and $E$ is measured against the schedule again at the next
-cycle. The matrix of the two equations has determinant $1 - \sqrt2\,a$ and
-trace $2 - a^2 - \sqrt2\,a$, so the recursion is stable exactly for
-$0 < a < \sqrt6 - \sqrt2 \approx 1.04$; the code holds $a$ at one half or
-below. The pace as a whole, scheduled and corrected, is held within
-$u_{\max}$: the step from one output frame to the next is limited, and $v$ is
-then what was read beyond the schedule with that step, not what the recursion
-asked for. A distance beyond a set number of frames is not played away: the
-position jumps to the schedule.
+$$d + \frac1d \;=\; \frac{a^2 + \sqrt{a^4 + 16}}{2},
+\qquad\text{so that}\qquad a^2\,d\,(1 + d^2) = (1 - d^2)^2 ,$$
 
-About the recursion over the real numbers, in `Unisono.Model.Regulator`:
+and $g = 1 - d^2$. The law is
 
-- A quadratic form of $(E, v)$, the area spanned by a state and the state
-  after it, is multiplied by exactly $1 - \sqrt2\,a$ in every cycle
-  (`energy_step`). For $0 < a \le \tfrac12$ it is positive definite and
-  bounds the distance (`distance_le_energy`).
-- From rest, as after a start or a jump, the distance after $k$ cycles is at
-  most $\sqrt{12}\,(1 - \sqrt2\,a)^{k/2}$ times the distance at the start
-  (`distance_from_rest`), and from any state it is bounded the same way by the
-  form at the start (`distance_after`).
-- With a pace that is wrong by $d$ frames a cycle, the state moves as without
-  the error around the point where the distance is $\sqrt2\,d/a$
-  (`stepWith_shift`), so that is where the distance tends.
-- A cycle whose correction is at the limit $L$ starts at least
-  $\sqrt2\,L/a$ from the schedule and ends $L$ nearer (`at_limit`), so the
+$$w \;=\; a^2 d\,E \;-\; g\,v,
+\qquad\text{that is, the cycle reads}\quad d^2\,v + a^2 d\,E
+\quad\text{further than the schedule advances.}$$
+
+Its cost of all cycles from the state $(E, v)$, when the schedule is not
+revised, is the value
+
+$$V(E, v) \;=\; g\,\Bigl(v - \frac{g}{2 - g}\,E\Bigr)^{2} + \frac{a^4}{g}\,E^2 .$$
+
+All of the following is proved in Lean, for the recursion over the real
+numbers, in `Unisono.Model.Regulation` and `Unisono.Model.RegulationRandom`.
+The statements there have $g$ as the parameter; the gain on the distance is
+then $g^2/(2-g)$ and the weight is $g^4 / ((2-g)^2 (1-g))$, which are $a^2 d$
+and $a^4$ for the $g$ above (`gainE_gainFor`, `weight_gainFor`), and no other
+$g$ between 0 and 1 belongs to the weight $a^4$ (`gain_unique`).
+
+- *One identity carries everything* (`cost_add_value`): for every state and
+  every $w$, the cost of the cycle plus the value of the state after it is
+  the value of the state before it plus $(w - w^\ast)^2 / (1 - g)$, where
+  $w^\ast$ is what the law chooses.
+- *A schedule that is not revised.* The costs of all cycles under the law add
+  up to the value (`total_cost_law`), and for every sequence of changes of
+  the pace whatever, chosen with or without knowledge of the future, the
+  costs add up to at least the value if they add up at all
+  (`total_cost_ge`). So the law is the best there is, from every state.
+- *A schedule that is revised.* Let each revision have the mean zero given
+  everything the receiver has seen before it, and a finite mean square;
+  nothing else is asked of the revisions, which need not be independent, of
+  one law, or Gaussian. For every way of choosing the pace from what has been
+  seen, and every number of cycles, the mean cost of the cycles plus the mean
+  value of the state after them is the mean value at the start, plus the mean
+  values of the revisions, plus the mean of $(w - w^\ast)^2/(1-g)$ over the
+  cycles (`mean_cost_sum`). The first two parts are the same for every way of
+  playing; the law makes the third zero (`mean_cost_law_le`). What any other
+  way of playing loses against the law is exactly that third part.
+- *The true schedule.* The receiver follows its estimate, and $E$ is the
+  distance to the estimate. When the estimate of a quantity is its mean given
+  what the receiver has seen, the mean squared distance of the receiver's
+  position from the true quantity is the mean squared distance from the
+  estimate plus the mean squared error of the estimate
+  (`mean_square_split`), and the second part is the same for every way of
+  playing. A revision of such an estimate has the mean zero given what was
+  seen before (`unforeseen_revision`). So with estimates of that kind, the
+  law that is best against the estimate is best against the truth.
+- *How fast it settles.* Under the law every cycle multiplies the value by
+  exactly $d^2$ (`value_step`, `value_step_gainFor`). From rest, as after a
+  start or a jump, the squared distance after $k$ cycles is at most
+  $(2 - g)\,d^{2k}$ times the squared distance at the start
+  (`distance_from_rest`).
+- *A pace that is wrong.* When the schedule advances by $\delta$ frames more
+  in each cycle than the receiver is told, the state moves as without the
+  error around the point where the distance is $(2 - g)\,\delta / g$
+  (`next_shift`), so that is where the distance tends.
+- *The limit.* A cycle whose pace is held at the limit $L$ starts at least
+  $(2 - g) L / g$ from the schedule and ends $L$ nearer (`at_limit`), so the
   limit holds for no more cycles in a row than the distance holds limits.
 
-About the code: planning a cycle returns for every state, schedule and reading
-of the clock, and the step of its plan is within the limit of the pace,
-however far the schedule advances over the cycle and whatever the state of the
-regulator (`Unisono.Player.cycle_spec`). The limit counts as three in a
-thousand when it is set higher, so every step is one that the resampler takes
-(`cycle_step_small`). Planning a cycle changes nothing of a receiver but its
-regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
+For short cycles, $g \approx \sqrt2\,a$ and $a^2 d \approx a^2$: the law
+becomes $\dot{\tilde u} = \kappa^2 e - \sqrt2\,\kappa\,\tilde u$, with damping
+$1/\sqrt2$, which is the best law of the problem in continuous time. For the
+cycles that a device has, the two differ by terms of the order of $a$, and
+only the law above is the best.
+
+**What the result assumes.** That the revisions cannot be foreseen is an
+assumption about the estimates and about the world. For the revisions of the
+position it holds when the schedule that the regulator follows is the mean of
+the true schedule given what the receiver has seen (`unforeseen_revision`).
+For the revisions of the pace it holds when, besides, the pace of the true
+schedule is expected to stay as it is, as for clocks whose frequency wanders
+without a direction; that step is *not stated in Lean*. The estimates of
+section 6.3 are not derived as such means: the line under the samples lies
+above the true relation by up to the bound given there, and the device's line
+is a least-squares fit to its last reports. What that costs is *not stated
+in Lean* either. *Monitor:* the correlation between successive revisions of
+the schedule's position and pace, which is zero for revisions that cannot be
+foreseen.
+
+**The level's slope.** The sender announces the level and its slope with the
+frames they apply to, so a change of the slope is no revision: the receiver
+knows it before it plays the frames. The regulator carries the pace of the
+cycle before over to the new slope and applies the law to what remains. A
+moving level is therefore followed at once, by all receivers alike, and the
+change of pace at the start and at the end of a move belongs to the cost of
+moving the level (section 6.5), not to the regulator.
+
+**The limit of the pace.** The bound $u_{\max}$ is on the whole pace, the
+scheduled part included: a level that moves and a regulator that corrects
+share it. The step from one output frame to the next is limited, and the pace
+that is kept for the next cycle is that of the step taken. A change of the
+playback rate is heard as a change of pitch when it is large and fast enough;
+published thresholds for pure tones are one to three parts per thousand. In
+steady state the rate moves by far less: the line of section 6.3 changes by
+fractions of a microsecond per window. A distance beyond a set number of
+frames is not played away: the position jumps to the schedule.
+
+**The code** (`unisono_core::player`) keeps the position and the pace of the
+cycle before, and computes $v$, the gains $d^2$ and $a^2 d$ from the gain per
+second and the length of the cycle, and the step, in whole numbers. The
+square roots are taken exactly, rounded down (`unisono_core::fixed::root`),
+and $\sqrt{y^2 - 4}$ for $y = d + 1/d$ is taken as $\sqrt{a^2 y}$, which is
+the same number and loses nothing for a small $a$; a test holds the gains
+against the formulas above to eight decimal places for cycles from a tenth of
+a millisecond to a quarter of a second. The gain of a cycle is held at one or
+below.
+
+About the code, in Lean: planning a cycle returns for every state, schedule
+and reading of the clock, and the step of its plan is within the limit of the
+pace, however far the schedule advances over the cycle and whatever the state
+of the regulator (`Unisono.Player.cycle_spec`). The limit counts as three in
+a thousand when it is set higher, so every step is one that the resampler
+takes (`cycle_step_small`). Planning a cycle changes nothing of a receiver
+but its regulator (`Unisono.Receiver.cycle_spec`). *Not yet stated in Lean:*
 how far the computation in whole numbers is from the recursion in real
 numbers, and that after the limit has let go it does not take hold again.
 
 In simulation (`crates/unisono-sim/tests/timing.rs`), with the cycle lengths
 taken from a device that is 120 parts per million off its nominal rate, the
 remaining error is as the formula above says when the receiver ignores that
-rate: $\sqrt2 \cdot 120\cdot10^{-6} / \kappa$, which is 42 microseconds for
-$\kappa = 4$ per second.
+rate: $(2 - g)/g$ cycles at 120 parts per million, which is 42 microseconds
+for a gain of 4 per second and cycles of 5.3 ms.
 
 **Large errors.** At a start and after a pause the error can be far larger
 than the bound on the rate removes quickly. Slewing at the largest rate left,
@@ -609,5 +693,6 @@ sender announces ahead, at a rate within the bound of section 6.4.
 | Stamps err toward delay | 2.2 | the fitted line | samples that lower the line by much |
 | Smallest delays equal in both directions for equal sizes, up to an unknown constant | 2.3, 2.5 | the offset | half-sum of the two fitted lines |
 | Device reports: bounded error of either sign, constant delay | 2.4 | device lines | residuals of reports |
+| Revisions of the schedule have the mean zero given what the receiver has seen | 6.4 | the regulator's law being the best | correlation between successive revisions |
 | Delivery delay: baseline, deviation, pauses | 4 | level | histograms and records of each part |
 | The laws of the delivery delay hold over the time the evidence covers | 6.5 | level | short-window against long-window estimates |

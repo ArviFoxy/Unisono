@@ -243,4 +243,27 @@ theorem mul_shift_spec (a b : Std.I64) (shift : Std.U32) :
     have hmin : min shift.val 64 = shift.val := by omega
     rw [r_post, i3_post, i2_post, product_post, i_post, i1_post, key, hmin]
 
+/-- The square root returns for every number: its sixty-four rounds end. -/
+@[step]
+theorem root_total (x : Std.I128) : fixed.root x ⦃ _ => True ⦄ := by
+  unfold fixed.root
+  split
+  · simp
+  · unfold fixed.root_loop
+    apply loop.spec_decr_nat
+      (measure := fun s : Std.I128 × Std.I128 × Std.I128 × Std.U32 => 64 - s.2.2.2.val)
+      (inv := fun _ => True)
+    · rintro ⟨rest, found, bit, round⟩ -
+      unfold fixed.root_loop.body
+      simp only
+      split
+      · have hlt : round.val < 64 := by scalar_tac
+        have hnext : (core.num.U32.saturating_add round 1#u32).val = round.val + 1 :=
+          U32.saturating_add_one_val round 64 hlt (by scalar_tac)
+        simp only [lift, bind_ok]
+        split <;>
+          (simp only [bind_ok, Std.uncurry, WP.spec_ok]; exact ⟨trivial, by rw [hnext]; omega⟩)
+      · simp
+    · trivial
+
 end Unisono.Fixed

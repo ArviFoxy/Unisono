@@ -10,7 +10,8 @@ public import Unisono.Fixed
 public import Unisono.Answers
 public import Unisono.Model.Exchange
 public import Unisono.Model.LineFit
-public import Unisono.Model.Regulator
+public import Unisono.Model.Regulation
+public import Unisono.Model.RegulationRandom
 public import Unisono.Model.SupportLine
 public import Unisono.Needs
 public import Unisono.Packet
@@ -241,22 +242,6 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Player.due_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Player.due_total
-
-/-- info: 'Unisono.Model.Regulator.energy_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Model.Regulator.energy_step
-
-/-- info: 'Unisono.Model.Regulator.distance_from_rest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Model.Regulator.distance_from_rest
-
-/-- info: 'Unisono.Model.Regulator.stepWith_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Model.Regulator.stepWith_shift
-
-/-- info: 'Unisono.Model.Regulator.at_limit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Model.Regulator.at_limit
 
 /-- info: 'Unisono.Receiver.echo_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -573,3 +558,55 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Packet.parse_needs_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Packet.parse_needs_total
+
+/-- info: 'Unisono.Model.Regulation.cost_add_value' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.cost_add_value
+
+/-- info: 'Unisono.Model.Regulation.value_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.value_step
+
+/-- info: 'Unisono.Model.Regulation.total_cost_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.total_cost_ge
+
+/-- info: 'Unisono.Model.Regulation.total_cost_law' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.total_cost_law
+
+/-- info: 'Unisono.Model.Regulation.weight_gainFor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.weight_gainFor
+
+/-- info: 'Unisono.Model.Regulation.gain_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.gain_unique
+
+/-- info: 'Unisono.Model.RegulationRandom.mean_cost_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.mean_cost_sum
+
+/-- info: 'Unisono.Model.RegulationRandom.mean_cost_law_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.mean_cost_law_le
+
+/-- info: 'Unisono.Model.RegulationRandom.unforeseen_revision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.unforeseen_revision
+
+/-- info: 'Unisono.Model.RegulationRandom.mean_square_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.mean_square_split
+
+/-- info: 'Unisono.Model.Regulation.distance_from_rest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.distance_from_rest
+
+/-- info: 'Unisono.Model.Regulation.next_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.next_shift
+
+/-- info: 'Unisono.Model.Regulation.at_limit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Regulation.at_limit

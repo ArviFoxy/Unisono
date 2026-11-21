@@ -172,16 +172,16 @@ def planNumbers (plan : player.Plan) : List Int :=
   [plan.frames.val, plan.start.frame.val, plan.start.fraction.val, plan.step.offset.val,
     if plan.jumped then 1 else 0]
 
-/-- Applies one cycle of six numbers to a regulator and collects the plan;
+/-- Applies one cycle of seven numbers to a regulator and collects the plan;
 see `player_cases` in the Rust program. -/
 def playerStep (state : player.Player × List Int) (cycle : List Int) :
     Result (player.Player × List Int) :=
   match cycle with
-  | [frame, fraction, laterFrame, laterFraction, frames, duration] => do
+  | [frame, fraction, laterFrame, laterFraction, frames, duration, slope] => do
     let out ← player.Player.cycle state.1
       { frame := unsigned .U64 frame, fraction := unsigned .U64 fraction }
       { frame := unsigned .U64 laterFrame, fraction := unsigned .U64 laterFraction }
-      (unsigned .U32 frames) (signed .I64 duration)
+      (unsigned .U32 frames) (signed .I64 duration) (signed .I32 slope)
     pure (out.2, state.2 ++ planNumbers out.1)
   | _ => pure (state.1, state.2 ++ [-2])
 
@@ -365,6 +365,7 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   | "mul_shift", [a, b, shift] =>
     result (fixed.mul_shift (signed .I64 a) (signed .I64 b) (unsigned .U32 shift))
       (fun r => [r.val])
+  | "root", [x] => result (fixed.root (signed .I128 x)) (fun r => [r.val])
   | "div_floor", [a, b] =>
     result (fixed.div_floor (signed .I128 a) (signed .I64 b)) (fun r => [r.val])
   | "div_floor_wide", [a, b] =>
@@ -431,11 +432,11 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   | "step_parts", [parts] =>
     result (timing.Step.from_parts_per_billion (signed .I64 parts)) (fun r => [r.offset.val])
   | "player", gain :: limit :: jump :: count :: rest =>
-    match groups 6 rest with
+    match groups 7 rest with
     | some cycles =>
       if cycles.length = count then result (runPlayer gain limit jump cycles) id
       else .error "the number of cycles is not the stated one"
-    | none => .error "cycles are not groups of six"
+    | none => .error "cycles are not groups of seven"
   | "device", rate :: count :: rest =>
     match quads rest with
     | some reports =>

@@ -539,7 +539,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         let Some(then) = due(&schedule, last) else {
             return idle;
         };
-        self.player.cycle(now, then, frames, duration)
+        self.player
+            .cycle(now, then, frames, duration, schedule.level_slope)
     }
 
     /// Moves the playhead forward by `frames`.

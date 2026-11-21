@@ -60,8 +60,20 @@ theorem gain_total (p : player.Player) (duration : Std.I64) :
   run
 
 @[step]
-theorem regulate_total (p : player.Player) (behind duration : Std.I64) :
-    player.Player.regulate p behind duration ⦃ _ => True ⦄ := by
+theorem gains_total (p : player.Player) (duration : Std.I64) :
+    player.Player.gains p duration ⦃ _ => True ⦄ := by
+  unfold player.Player.gains
+  run
+
+@[step]
+theorem ahead_total (p : player.Player) (frames : Std.U32) (scheduled : Std.I64)
+    (slope : Std.I32) : player.Player.ahead p frames scheduled slope ⦃ _ => True ⦄ := by
+  unfold player.Player.ahead
+  run
+
+@[step]
+theorem regulate_total (p : player.Player) (behind ahead duration : Std.I64) :
+    player.Player.regulate p behind ahead duration ⦃ _ => True ⦄ := by
   unfold player.Player.regulate
   run
 
@@ -202,8 +214,9 @@ theorem step_spec (p : player.Player) (wanted : Std.I64) (frames : Std.U32)
 /-- Playing a cycle takes a step within the limit of the pace and leaves the
 settings of the regulator as they are. -/
 @[step]
-theorem play_spec (p : player.Player) (frames : Std.U32) (scheduled behind duration : Std.I64) :
-    player.Player.play p frames scheduled behind duration
+theorem play_spec (p : player.Player) (frames : Std.U32)
+    (scheduled behind ahead duration : Std.I64) :
+    player.Player.play p frames scheduled behind ahead duration
       ⦃ r => -reach p ≤ r.1.2.offset.val ∧ r.1.2.offset.val ≤ reach p
         ∧ r.2.regulation = p.regulation ⦄ := by
   unfold player.Player.play
@@ -223,8 +236,8 @@ reads at most `reach` units of 2^-64 frame more or less than one frame of the
 stream for each output frame, whatever the schedule does over it. -/
 @[step]
 theorem cycle_spec (p : player.Player) (now later : timing.Position) (frames : Std.U32)
-    (duration : Std.I64) :
-    player.Player.cycle p now later frames duration
+    (duration : Std.I64) (slope : Std.I32) :
+    player.Player.cycle p now later frames duration slope
       ⦃ r => -reach p ≤ r.1.step.offset.val ∧ r.1.step.offset.val ≤ reach p ∧
         r.2.regulation = p.regulation ⦄ := by
   unfold player.Player.cycle
@@ -240,7 +253,8 @@ theorem cycle_spec (p : player.Player) (now later : timing.Position) (frames : S
     · step as ⟨behind⟩
       step as ⟨jumped⟩
       cases jumped
-      · simp only [Bool.false_eq_true, ↓reduceIte, bind_ok]
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        step as ⟨ahead⟩
         step as ⟨start, st, q, hlo, hhi, hreg⟩
         exact ⟨hlo, hhi, hreg⟩
       · simp only [↓reduceIte, bind_ok]
@@ -251,11 +265,11 @@ theorem cycle_spec (p : player.Player) (now later : timing.Position) (frames : S
 either way, which is a pace within four in a thousand of one frame for each
 output frame. -/
 theorem cycle_step_small (p : player.Player) (now later : timing.Position) (frames : Std.U32)
-    (duration : Std.I64) :
-    player.Player.cycle p now later frames duration
+    (duration : Std.I64) (slope : Std.I32) :
+    player.Player.cycle p now later frames duration slope
       ⦃ r => -2^56 < r.1.step.offset.val ∧ r.1.step.offset.val < 2^56 ⦄ := by
   have hb := reach_bounds p
-  apply WP.spec_mono (cycle_spec p now later frames duration)
+  apply WP.spec_mono (cycle_spec p now later frames duration slope)
   intro r hr
   omega
 
