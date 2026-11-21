@@ -9,6 +9,7 @@ public import Unisono.Device
 public import Unisono.Fixed
 public import Unisono.Answers
 public import Unisono.Model.Exchange
+public import Unisono.Model.Level
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
 public import Unisono.Model.RegulationRandom
@@ -610,3 +611,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.Regulation.at_limit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.Regulation.at_limit
+
+/-- info: 'Unisono.Model.Level.measure_largest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.measure_largest
+
+/-- info: 'Unisono.Model.Level.integral_predictive' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.integral_predictive

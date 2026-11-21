@@ -31,7 +31,9 @@ use unisono_dsp::Parameters;
 use unisono_runtime::clock;
 use unisono_runtime::level::{Choice, Weights};
 use unisono_runtime::pump::{ReceiverPlayback, Totals};
-use unisono_runtime::receive::{self, Intake, ReceiverAudio, ReceiverNetwork, Reporting, Sizes};
+use unisono_runtime::receive::{
+    self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
+};
 use unisono_runtime::send::{self, SenderCounts, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Input, Output};
@@ -55,8 +57,10 @@ struct Run {
     played: Totals,
     /// The level at the end, in nanoseconds.
     level: i64,
-    /// How far from that level the latency was, in seconds, of each frame
-    /// played in the last three seconds.
+    /// The lowest and the highest level on the way, in nanoseconds.
+    range: (i64, i64),
+    /// How far from the level that the sender held for it the latency was,
+    /// in seconds, of each frame played in the last three seconds.
     errors: Vec<f64>,
 }
 
@@ -137,6 +141,9 @@ fn run(choice: Option<Choice>, limit: u32, seconds: i64) -> Run {
     let mut output = Output::new(device, frames);
 
     let end = start + seconds * 1_000_000_000;
+    // The level that the sender holds for the frame with each index, as far
+    // as the loop sees it: between two turns it moves along a line.
+    let mut levels: Vec<(u64, i64)> = Vec::new();
     loop {
         let now = clock::raw();
         if now > end {
@@ -144,32 +151,41 @@ fn run(choice: Option<Choice>, limit: u32, seconds: i64) -> Run {
         }
         input.run(now, &mut capture_end);
         sender.turn(0).expect("the sender");
+        levels.push((sender.sender().next(), sender.sender().current_level()));
         network.turn(0).expect("the receiver's network end");
         output.run(now, &mut audio);
         std::thread::sleep(Duration::from_micros(500));
     }
 
-    assert_eq!(capture_end.dropped(), 0);
     let sent = sender.counts();
+    nothing_lost(capture_end.dropped(), sent, network.counts());
+    let lowest = levels.iter().map(|(_, level)| *level).min().unwrap_or(0);
+    let highest = levels.iter().map(|(_, level)| *level).max().unwrap_or(0);
+    Run {
+        sent,
+        played: audio.playback().totals(),
+        level: sender.sender().current_level(),
+        range: (lowest, highest),
+        errors: errors(input.device(), &output, end - 3_000_000_000, &levels),
+    }
+}
+
+/// Checks that the capture thread dropped no cycle, that the sender sent
+/// every packet and answered reports, and that the receiver's network thread
+/// handed every packet over.
+fn nothing_lost(dropped: u64, sent: SenderCounts, received: NetworkCounts) {
+    assert_eq!(dropped, 0);
     assert_eq!(
         (sent.filled, sent.restarts, sent.unsent),
         (0, 0, 0),
         "{sent:?}"
     );
     assert!(sent.answers > 10, "{sent:?}");
-    let received = network.counts();
     assert_eq!(received.dropped, 0, "{received:?}");
     assert!(
         received.packets + 2 >= sent.packets,
         "{received:?} against {sent:?}"
     );
-    let level = sender.sender().current_level();
-    Run {
-        sent,
-        played: audio.playback().totals(),
-        level,
-        errors: errors(input.device(), &output, end - 3_000_000_000, level),
-    }
 }
 
 /// The 2nd and the 98th percentile of `errors`.
@@ -188,27 +204,28 @@ fn frames_play_a_level_after_they_were_captured() {
 }
 
 #[test]
-fn the_level_falls_to_what_the_receiver_needs_and_frames_follow_it() {
-    // Stretches of 50 ms; the evidence is at least a second of them. The
-    // level moves by 10 ms a second, which the receiver's pace can follow.
+fn the_level_moves_to_what_the_receiver_needs_and_frames_follow_it() {
+    // Stretches of 50 ms. A gap is priced low, so that a few seconds of
+    // evidence are enough to bring the level down to the needs: a gap costs
+    // as much as a millisecond of level held for six seconds. The level
+    // moves by 2 ms a second, which the receiver's pace can follow.
     let choice = Choice {
         weights: Weights {
             latency: 1_000.0,
             target: 0,
             off_target: 0.0,
-            gap: 600.0,
-            missed: 60_000.0,
-            moving: 5.0,
+            gap: 6.0,
+            missed: 600.0,
+            moving: 1.0,
         },
         history: 2_400,
-        least: 20,
-        slope: 10_000_000,
+        slope: 2_000_000,
     };
-    let mut run = run(Some(choice), 20_000_000, 8);
+    let run = run(Some(choice), 20_000_000, 10);
     // The first frame of a packet waits 5 ms for the packet to fill, up to a
     // cycle of the capture device and its lead, 6.3 ms, and up to a cycle of
     // the playback device and its lead, 9.3 ms: a level of about 20 ms is
-    // what the frames need, and a move from 30 ms saves most of the rest.
+    // what the frames need, and the level comes down to that from 30 ms.
     assert!(run.sent.moves >= 1, "{:?}", run.sent);
     assert!(
         run.level > 16_000_000 && run.level < 26_000_000,
@@ -216,24 +233,68 @@ fn the_level_falls_to_what_the_receiver_needs_and_frames_follow_it() {
         run.level,
         run.sent
     );
-    // While the level fell every frame was there in time.
-    assert_eq!(
-        (run.played.concealed, run.played.behind),
-        (0, 0),
+    assert!(run.range.1 <= LEVEL, "the level rose to {}", run.range.1);
+    // Where the level settles, a frame now and then needs a little more
+    // than any before it: nearly all frames are played from the stream.
+    assert!(
+        run.played.concealed * 100 < run.played.played && run.played.behind == 0,
         "{:?}",
         run.played
     );
-    // The level settles within the first half of the run, and the frames
-    // of the second half play at it.
+    // Each frame plays at the level that the sender held for it, while the
+    // level moves and after. Where the slope of the level changes, the
+    // receiver takes the new slope for the frames it is playing as soon as
+    // a packet says so, 20 ms before the frames of that packet are played:
+    // their due times move by the change of the slope times those 20 ms,
+    // 40 microseconds, and the regulator takes that out again.
     assert!(run.errors.len() > 140_000, "{} frames", run.errors.len());
-    let (low, high) = spread(&mut run.errors);
-    assert!(low > -50e-6 && high < 50e-6, "from {low} to {high}");
+    // A sample that the concealment made says nothing of when its frame
+    // was captured; a frame from the stream is within milliseconds.
+    let mut stream: Vec<f64> = run
+        .errors
+        .iter()
+        .copied()
+        .filter(|error| error.abs() < 5e-3)
+        .collect();
+    assert!(
+        stream.len() * 100 >= run.errors.len() * 90,
+        "{} of {} frames from the stream",
+        stream.len(),
+        run.errors.len()
+    );
+    let (low, high) = spread(&mut stream);
+    assert!(low > -100e-6 && high < 100e-6, "from {low} to {high}");
 }
 
-/// How far from `level` the latency is of each frame that `output` played
+/// The level that the sender held for the frame at `position`, by the
+/// `levels` seen at the turns of the loop, in nanoseconds.
+fn level_at(levels: &[(u64, i64)], position: f64) -> f64 {
+    // An index and a level in nanoseconds are far below 2^52.
+    #[allow(clippy::cast_precision_loss)]
+    let point = |(index, level): (u64, i64)| (index as f64, level as f64);
+    let after = levels.partition_point(|&seen| point(seen).0 <= position);
+    match (
+        after.checked_sub(1).and_then(|at| levels.get(at)),
+        levels.get(after),
+    ) {
+        (Some(&before), Some(&next)) => {
+            let ((from, low), (to, high)) = (point(before), point(next));
+            if to > from {
+                low + (high - low) * (position - from) / (to - from)
+            } else {
+                low
+            }
+        }
+        (Some(&seen), None) | (None, Some(&seen)) => point(seen).1,
+        (None, None) => 0.0,
+    }
+}
+
+/// How far from its level the latency is of each frame that `output` played
 /// from `from` on: the time it left the playback device, less the time the
-/// device `capture` took it, less the level, in seconds.
-fn errors(capture: &Device, output: &Output, from: i64, level: i64) -> Vec<f64> {
+/// device `capture` took it, less the level that the sender held for it, in
+/// seconds.
+fn errors(capture: &Device, output: &Output, from: i64, levels: &[(u64, i64)]) -> Vec<f64> {
     let mut errors = Vec::new();
     for (count, frame) in (0u64..).zip(output.recorded().as_chunks::<CHANNELS>().0) {
         let left = output.device().played(count);
@@ -252,7 +313,7 @@ fn errors(capture: &Device, output: &Output, from: i64, level: i64) -> Vec<f64> 
         #[allow(clippy::cast_precision_loss)]
         let taken = before as f64 + (after - before) as f64 * position.fract();
         #[allow(clippy::cast_precision_loss)]
-        errors.push((left as f64 - taken - level as f64) * 1e-9);
+        errors.push((left as f64 - taken - level_at(levels, position)) * 1e-9);
     }
     errors
 }

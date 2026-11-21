@@ -342,7 +342,7 @@ impl Counters {
 /// The costs are counted in units in which a millisecond of level costs one
 /// each second, so that a cost given as `S` seconds is what that millisecond
 /// costs when it is held for `S` seconds. The evidence is the needs of the
-/// last two minutes, and at least five seconds of them.
+/// last two minutes.
 fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choice>, Wrong> {
     match options.get("level-choice", String::from("on"))?.as_str() {
         "on" => {}
@@ -371,7 +371,6 @@ fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choi
             moving,
         },
         history: stretches(120),
-        least: stretches(5),
         slope: slope.saturating_mul(1_000),
     }))
 }

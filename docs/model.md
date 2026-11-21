@@ -649,9 +649,7 @@ between the largest of the receivers' rates and their sum. So each receiver
 reports, for each stretch of frame indices, the largest need of a frame in
 it. The stretches are the same for all receivers, because they are counted in
 the index. The sender takes the largest over the receivers for each stretch
-and has the need of the group. A rate far out in the tail rests on few
-events, so $\Gamma$ and $\Phi$ are estimated as posterior means under a prior
-for the tail, and a group with little evidence gets high rates at low levels.
+and has the need of the group.
 
 A receiver measures the need of the first frame of each packet when it takes
 the packet in: the level of that frame, less the time by which the frame is
@@ -660,29 +658,98 @@ once, the sender's capture cycle and packetizing as well as the path and the
 receiver's own device, and it does not depend on the level in force. Reports
 carry the needs of the last eleven stretches, so a lost report loses nothing.
 
-The sender estimates $\Gamma$ and $\Phi$ from $y_k$, the need of the group in
-stretch $k$, over the stretches of the last minutes; a stretch lasts $D$
-seconds. The frames of a stretch need less the later they were captured,
-since they waited less for the pause that delayed them, so a stretch with
-$y_k > \ell$ is late from its first frame and misses about
-$\min(y_k - \ell, D)$ seconds of frames, and a gap starts at stretch $k$
-when $y_k > \ell \ge y_{k-1}$. Below a threshold $u$, the need that only ten
-stretches exceed, both are counted. Above $u$, the excess $z = y_k - u$ of a
-stretch is taken as exponential with a rate that has a gamma prior of shape
-$a_0 = 1$ and rate $b_0 = 2$ ms: a median excess of about three
-milliseconds, between the jitter of a wired link and the pauses of a
-wireless one, counted as much as one excess. After $n$ excesses that add up
-to $Z$, an excess is larger than $x$ with probability $(b/(b+x))^a$, where
-$a = a_0 + n$ and $b = b_0 + Z$, and the probability that a stretch exceeds
-$u$ has a uniform prior. On needs drawn with pauses of 10 to 80 ms every 5,
-30 or 300 seconds, the level chosen from two minutes of them cost within 6%
-of the best level held over the next half hour.
+**The decision.** The sender does not know the law of the needs. It has the
+needs $y_1, \dots, y_m$ of the group in the $m$ stretches it has seen; a
+stretch lasts $D$ seconds. Held at the level $\ell$, a stretch that needs $y$,
+after a stretch that needed $p$, costs
 
-The level moves to another minimum only when the cost saved, over the time the
-evidence covers, exceeds the cost of the move. It moves along a path that the
-sender announces ahead, at a rate within the bound of section 6.4.
+$$c(\ell;\,p, y) \;=\; w_{\mathrm{gap}}\,[\,p \le \ell < y\,]
+\;+\; w_{\mathrm{miss}}\,\min\bigl((y - \ell)^+,\, D\bigr),$$
 
-*Not yet stated in Lean.*
+where $[\cdot]$ is 1 when the condition holds and 0 otherwise, and
+$(x)^+$ is $x$ when positive and 0 otherwise. The first term counts a gap
+where one starts: the stretch needs more than the level and the stretch
+before did not. The second is the time of the frames missed: the frames of a
+stretch need less the later they were captured, since they waited less for
+the pause that delayed them, so a stretch with $y > \ell$ is late from its
+first frame and misses about $\min(y - \ell, D)$ seconds. That count of
+missed time is exact for a pause that begins at the start of a stretch, and
+too large by less than one stretch for each pause otherwise. The cost per
+second of holding $\ell$ is
+
+$$J(\ell) \;=\; w_{\mathrm{lat}}\,\ell + w_{\mathrm{tgt}}\,(\ell - L_0)^2
++ \frac1D\,\bigl(\text{the mean of } c(\ell;\,p, y) \text{ over the next stretch}\bigr),$$
+
+and the sender chooses the level that makes it smallest. What remains to say
+is what the next stretch is expected to be.
+
+*One in $m + 1$.* Nothing sets the next stretch apart from those seen: the
+law of the $m + 1$ needs is taken to be the same in every order. Then, if no
+two needs are equal, the next need is the largest of them with the
+probability $1/(m+1)$, whatever the law is.
+*Lean:* `Unisono.Model.Level.measure_largest`. After evidence of the length
+$T = mD$, a need above all that were seen is therefore expected about once in
+$T$. This is why little evidence holds the level high.
+
+*The next stretch.* With the probability $1/(m+1)$ the next stretch needs more
+than any that was seen, and starts a gap if its need is above the level.
+Otherwise it is one of the stretches seen, each as likely as the others. The
+mean of the cost is then
+
+$$\frac{c_1(\ell) + \sum_{k=1}^{m} c(\ell;\,y_{k-1}, y_k)}{m + 1},$$
+
+where $c_1(\ell)$ is the mean cost of a stretch that needs more than all
+seen. *Lean:* `Unisono.Model.Level.integral_predictive`. Taking a stretch
+that falls between two needs seen as the larger of them does not lower the
+cost.
+
+*How much more.* How far above the largest need seen, $M$, the need of such
+a stretch lies is not something the needs seen can say. It is taken from a
+law fixed beforehand: the need exceeds $x$, for $x \ge M$, with the
+probability $\bigl((S + M)/(S + x)\bigr)^2$, with $S = 20$ ms. This is the law
+$(1 + x/S)^{-2}$ of a need about which nothing is known, given that it is
+above $M$. The scale $S$ is the order of what packets and the cycles of
+devices take; the law has no variance, and under it a new largest need lies
+above the last by $S + M$ on average, so that pauses have no typical size.
+The numbers are about links and devices in general and are not fitted to
+anything. *Monitor:* how far each new largest need lay above the one before.
+
+The level so chosen is the best decision under what is stated: the law of
+the next stretch above, and the cost $J$. It is found among the needs that
+were seen, the level $L_0$ and 256 further levels up to two seconds, which
+are closer together near the needs: the mean cost falls only where the level
+passes a need that was seen, or smoothly above the largest of them.
+
+On needs drawn with pauses of 10 to 80 ms every 5, 30 or 300 seconds
+(`unisono_runtime::level`, in its tests), the level chosen from two or ten
+minutes of them cost at most 9% more, over the next half hour, than the best
+level held, which only hindsight gives, when a gap is priced as a
+millisecond of level held for one or for ten minutes. When a gap is priced
+as a millisecond held for a hundred minutes, the level is held higher than
+hindsight would: one large need in two minutes, or none, is no ground to
+expect few of them, and the cost was up to 1.9 times the best.
+
+**Moving the level.** The level moves to another minimum only when the cost
+saved, over the time the evidence covers, exceeds the cost of the move. This
+rule is *not derived*: it takes the time that the evidence covers as the time
+for which what was seen will go on. The level moves along a line that the
+sender announces with the frames, at a slope within the bound of section 6.4,
+and every receiver follows it as section 6.4 says. The cost of a move stands
+for the two changes of pace, at its start and at its end, that all receivers
+make at once.
+
+In the code a receiver takes the level and its slope from the newest packet
+for all the frames it plays. A change of the slope therefore reaches the
+frames being played before their turn, by as much as the newest packet is
+ahead of them: their due times move by the change of the slope times that
+time, for all receivers alike, and the regulators take it out again. For a
+slope of half a millisecond a second and a level of 20 ms that is 10
+microseconds. Keeping the level by index, so that each frame is played at
+the level of its own packet, is not built.
+
+*Not stated in Lean:* that the level is the best over all levels and not
+only over those tried; the rule for moving; and the count of missed time
+from the largest need of a stretch.
 
 ## 7. Assumptions at a glance
 
@@ -696,3 +763,5 @@ sender announces ahead, at a rate within the bound of section 6.4.
 | Revisions of the schedule have the mean zero given what the receiver has seen | 6.4 | the regulator's law being the best | correlation between successive revisions |
 | Delivery delay: baseline, deviation, pauses | 4 | level | histograms and records of each part |
 | The laws of the delivery delay hold over the time the evidence covers | 6.5 | level | short-window against long-window estimates |
+| Nothing sets the next stretch apart from those seen | 6.5 | the level | how often a need exceeds all before it, against one in the number seen |
+| A stretch that needs more than all seen: the law of how much more | 6.5 | the level | how far each new largest need lay above the one before |
