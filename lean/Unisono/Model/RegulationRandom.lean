@@ -663,4 +663,60 @@ theorem mean_square_split {S p : Ω → ℝ} {k : ℕ} (hS : MemLp S 2 μ) (hp :
         rw [integral_add i12 i3, integral_add i1 i2', integral_const_mul, hcross]
         ring
 
+/-! ## Where the state and its revisions come from
+
+Let `S k` be the position of the stream that is truly due at the start of
+cycle `k`. Before cycle `k` the receiver's best estimate of it is its mean
+given what has been seen, and its best estimate of how far the schedule
+advances over the cycle is the mean of `S (k + 1) - S k`. With these
+estimates the distance to the schedule moves as the problem says
+(`distance_step`): by what the cycle reads beyond the advance that was
+expected, and by the revision of the estimate of `S (k + 1)`, which is
+unforeseen (`unforeseen_revision`). The revision of the expected advance is
+unforeseen as well when, given what is known before a cycle, the schedule is
+expected to advance as far over the cycle after it as over the cycle itself
+(`unforeseen_pace`): when the pace of the true schedule is expected to stay
+as it is. -/
+
+/-- **The distance to the estimated schedule, from one cycle to the next.**
+When the receiver's position before cycle `k` is `p` and the cycle reads
+`read`, the distance of the next position behind the next estimate is the
+distance before, less what was read beyond the advance that was expected,
+plus the revision of the estimate. -/
+theorem distance_step {S : ℕ → Ω → ℝ} (hS : ∀ k, MemLp (S k) 2 μ) (k : ℕ) (p read : Ω → ℝ) :
+    ∀ᵐ ω ∂μ, (μ[S (k + 1) | ℱ (k + 1)]) ω - (p ω + read ω)
+      = ((μ[S k | ℱ k]) ω - p ω) - (read ω - (μ[S (k + 1) - S k | ℱ k]) ω)
+        + ((μ[S (k + 1) | ℱ (k + 1)]) ω - (μ[S (k + 1) | ℱ k]) ω) := by
+  have hsub : μ[S (k + 1) - S k | ℱ k] =ᵐ[μ] μ[S (k + 1) | ℱ k] - μ[S k | ℱ k] :=
+    condExp_sub ((hS (k + 1)).integrable one_le_two) ((hS k).integrable one_le_two) _
+  filter_upwards [hsub] with ω h
+  rw [h, Pi.sub_apply]
+  ring
+
+/-- **A revision of the expected advance cannot be foreseen** when the pace
+of the true schedule is expected to stay as it is: when, given what is known
+before cycle `k`, the schedule is expected to advance as far over cycle
+`k + 1` as over cycle `k`. -/
+theorem unforeseen_pace {S : ℕ → Ω → ℝ} (hS : ∀ k, MemLp (S k) 2 μ) (k : ℕ)
+    (hpace : μ[S (k + 2) - S (k + 1) | ℱ k] =ᵐ[μ] μ[S (k + 1) - S k | ℱ k]) :
+    Unforeseen ℱ μ k
+      (μ[S (k + 2) - S (k + 1) | ℱ (k + 1)] - μ[S (k + 1) - S k | ℱ k]) := by
+  have hle : ℱ k ≤ ℱ (k + 1) := ℱ.mono (Nat.le_succ k)
+  have hX : MemLp (S (k + 2) - S (k + 1)) 2 μ := (hS (k + 2)).sub (hS (k + 1))
+  have hY : MemLp (S (k + 1) - S k) 2 μ := (hS (k + 1)).sub (hS k)
+  refine ⟨⟨stronglyMeasurable_condExp.sub (stronglyMeasurable_condExp.mono hle),
+    (hX.condExp one_le_two).sub (hY.condExp one_le_two)⟩, ?_⟩
+  have h1 : μ[μ[S (k + 2) - S (k + 1) | ℱ (k + 1)] - μ[S (k + 1) - S k | ℱ k] | ℱ k]
+      =ᵐ[μ] μ[μ[S (k + 2) - S (k + 1) | ℱ (k + 1)] | ℱ k]
+        - μ[μ[S (k + 1) - S k | ℱ k] | ℱ k] :=
+    condExp_sub integrable_condExp integrable_condExp _
+  have h2 : μ[μ[S (k + 2) - S (k + 1) | ℱ (k + 1)] | ℱ k]
+      =ᵐ[μ] μ[S (k + 2) - S (k + 1) | ℱ k] :=
+    condExp_condExp_of_le hle (ℱ.le (k + 1))
+  have h3 : μ[μ[S (k + 1) - S k | ℱ k] | ℱ k] = μ[S (k + 1) - S k | ℱ k] :=
+    condExp_of_stronglyMeasurable (ℱ.le k) stronglyMeasurable_condExp integrable_condExp
+  filter_upwards [h1, h2, hpace] with ω e1 e2 e3
+  rw [e1, Pi.sub_apply, e2, h3, e3]
+  simp
+
 end Unisono.Model.RegulationRandom

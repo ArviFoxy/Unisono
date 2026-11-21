@@ -644,3 +644,11 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.RegulationRandom.mean_cost_rate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.RegulationRandom.mean_cost_rate
+
+/-- info: 'Unisono.Model.RegulationRandom.distance_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.distance_step
+
+/-- info: 'Unisono.Model.RegulationRandom.unforeseen_pace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.RegulationRandom.unforeseen_pace

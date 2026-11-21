@@ -589,18 +589,24 @@ cycles that a device has, the two differ by terms of the order of $a$, and
 only the law above is the best.
 
 **What the result assumes.** That the revisions cannot be foreseen is an
-assumption about the estimates and about the world. For the revisions of the
-position it holds when the schedule that the regulator follows is the mean of
-the true schedule given what the receiver has seen (`unforeseen_revision`).
-For the revisions of the pace it holds when, besides, the pace of the true
-schedule is expected to stay as it is, as for clocks whose frequency wanders
-without a direction; that step is *not stated in Lean*. The estimates of
-section 6.3 are not derived as such means: the line under the samples lies
-above the true relation by up to the bound given there, and the device's line
-is a least-squares fit to its last reports. What that costs is *not stated
-in Lean* either. *Monitor:* the correlation between successive revisions of
-the schedule's position and pace, which is zero for revisions that cannot be
-foreseen.
+assumption about the estimates and about the world. Let the schedule that the
+regulator follows be the mean of the true schedule given what the receiver
+has seen, and the advance it expects over a cycle the mean of the true
+advance. Then the distance to the schedule moves from cycle to cycle as the
+problem says (`distance_step`), and the revision of the position has the mean
+zero given what was seen (`unforeseen_revision`). The revision of the
+expected advance has the mean zero as well when, given what is known before
+a cycle, the true schedule is expected to advance as far over the cycle
+after it as over the cycle itself (`unforeseen_pace`): when the pace of the
+true schedule is expected to stay as it is, as for clocks whose frequency
+wanders without a direction.
+
+The estimates of section 6.3 are not derived as such means: the line under
+the samples lies above the true relation by up to the bound given there, and
+the device's line is a least-squares fit to its last reports. What that
+costs is *not stated in Lean*. *Monitor:* the correlation between successive
+revisions of the schedule's position and pace, which is zero for revisions
+that cannot be foreseen.
 
 **The level's slope.** The sender announces the level and its slope with the
 frames they apply to, so a change of the slope is no revision: the receiver
