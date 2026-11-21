@@ -114,14 +114,15 @@ unisono_receiver *unisono_receiver_start(
     const unisono_receiver_settings *settings, char *error,
     size_t error_size);
 
-/* The port that the receiver receives on. */
+/* The port that the receiver receives on. Must not be called concurrently
+ * with `unisono_receiver_play` or `unisono_receiver_stop`. */
 uint16_t unisono_receiver_port(const unisono_receiver *receiver);
 
 /* Fills the `frame_count` frames at `frames` with what the playback device
- * is to play in one cycle. `position` is the device's count of frames at
- * the first of them and `time` when that frame leaves the device. Frames
- * for which the stream has nothing are silence or a continuation of what
- * was played. */
+ * is to play in one cycle. `frames` need not be initialized by the caller.
+ * `position` is the device's count of frames at the first of them and `time`
+ * when that frame leaves the device. Frames for which the stream has nothing
+ * are silence or a continuation of what was played. */
 void unisono_receiver_play(unisono_receiver *receiver, float *frames,
                            size_t frame_count, uint64_t position,
                            int64_t time);
