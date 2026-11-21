@@ -27,6 +27,8 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Spec.Checks
+public import Unisono.Spec.Models.Delays
 
 /-!
 # The axioms the theorems rest on
@@ -772,3 +774,81 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.RegulationRandom.unforeseen_pace' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.RegulationRandom.unforeseen_pace
+
+/-! ## Checks of the specification's definitions -/
+
+/-- info: 'Unisono.Spec.speed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.speed_eq
+
+/-- info: 'Unisono.Spec.missedAt_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_none
+
+/-- info: 'Unisono.Spec.missedAt_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_after
+
+/-- info: 'Unisono.Spec.missedAt_continues' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_continues
+
+/-- info: 'Unisono.Spec.missedAt_skip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_skip
+
+/-- info: 'Unisono.Spec.missedAt_repeat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_repeat
+
+/-- info: 'Unisono.Spec.missedAt_after_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_after_gap
+
+/-- info: 'Unisono.Spec.missedAt_resume' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_resume
+
+/-- info: 'Unisono.Spec.sum_pairs_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sum_pairs_eq
+
+/-- info: 'Unisono.Spec.Solution.eventTime_le_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_le_succ
+
+/-- info: 'Unisono.Spec.Solution.decided' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.decided
+
+/-- info: 'Unisono.Spec.Link.deliver_after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Link.deliver_after
+
+/-- info: 'Unisono.Spec.discontinuities_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuities_gap
+
+/-- info: 'Unisono.Spec.discontinuityAt_jump' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_jump
+
+/-- info: 'Unisono.Spec.roughnessCost_across' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.roughnessCost_across
+
+/-- info: 'Unisono.Spec.latencyCost_unplayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.latencyCost_unplayed
+
+/-- info: 'Unisono.Spec.syncCost_one_off' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.syncCost_one_off
+
+/-- info: 'Unisono.Spec.Bounds.example_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Bounds.example_within
+
+/-- info: 'Unisono.Spec.DelayModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.DelayModel.example_holds
