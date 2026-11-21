@@ -13,6 +13,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use unisono_core::player::Regulation;
 use unisono_dsp::Parameters;
+use unisono_runtime::audio::Playback as AudioPlayback;
 use unisono_runtime::pump::{ReceiverPlayback, Settings};
 use unisono_runtime::receive::{
     self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
@@ -23,16 +24,21 @@ use unisono_runtime::{clock, memory};
 
 use crate::exported::{Metrics, Tally};
 use crate::options::{Options, Wrong};
-use crate::sleep_until;
-use unisono_metrics::FloatGauge;
+use crate::{System, sleep_until};
+use unisono_metrics::{Counter, FloatGauge};
 
 /// The receiver: room for 16,384 frames, 64 samples of the sender's clock,
 /// the arrivals of 8 packets, and 64 reports of its device.
 type Playback = ReceiverPlayback<256, 64, 8, 64>;
 
+/// The receiver's audio thread.
+type Audio = ReceiverAudio<256, 64, 8, 64>;
+
 /// The options of `unisono receive`.
 pub(crate) const OPTIONS: &[&str] = &[
     "listen",
+    "audio",
+    "device",
     "stream",
     "identity",
     "rate",
@@ -60,6 +66,11 @@ Receives a stream and plays it on a software device.
   --identity N        a number that tells this receiver from the others (1)
   --rate HZ           frames per second (48000)
   --channels N        samples in a frame (2)
+  --audio software|pipewire
+                      the device to play on: one of software, which plays to
+                      nothing at its own rate, or PipeWire, when the program
+                      is built with it (software)
+  --device NAME       with PipeWire, the node to play to (the default)
   --cycle FRAMES      frames in a cycle of the device (256)
   --drift PPB         how much faster the device runs, in parts per billion (0)
   --lead MS           how long before a cycle plays it is asked for (4)
@@ -89,6 +100,10 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let lead: i64 = options.get("lead", 4)?;
     let seconds: i64 = options.get("seconds", 0)?;
     let record: Option<String> = options.all("record").first().cloned();
+    let system = System::from_options(options)?;
+    if record.is_some() && system != System::Software {
+        return Err(Wrong("`--record` needs the software device".into()));
+    }
     if rate == 0 || channels == 0 || cycle == 0 {
         return Err(Wrong("the rate, channels and cycle are not zero".into()));
     }
@@ -120,7 +135,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     } else {
         None
     };
-    let mut audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
+    let audio: Audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
     let start = clock::raw();
     let device = Device {
         rate,
@@ -138,13 +153,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     };
     let mut output = Output::new(device, kept);
 
-    let mut metrics = Metrics::new();
-    let mut counters = Counters::new(&mut metrics)?;
-    if let Some(address) = options.addresses("metrics")?.first() {
-        metrics
-            .serve(*address)
-            .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
-    }
+    let counters = Counters::served(options)?;
 
     let stop = Arc::new(AtomicBool::new(false));
     let stopping = Arc::clone(&stop);
@@ -166,19 +175,80 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         eprintln!("unisono: memory is not locked: {error}");
     }
 
-    let end = start.saturating_add(seconds.saturating_mul(1_000_000_000));
-    while seconds == 0 || clock::raw() < end {
-        output.run(clock::raw(), &mut audio);
-        counters.update(audio.playback());
-        sleep_until(output.due());
-    }
+    let seen = Seen::of(&counters);
+    let counted = Counted { audio, counters };
+    let end = (seconds > 0).then(|| start.saturating_add(seconds.saturating_mul(1_000_000_000)));
+    let shape = Shape {
+        rate,
+        channels,
+        cycle,
+    };
+    play(system, counted, &mut output, shape, end)?;
     stop.store(true, Ordering::Relaxed);
     let counts = networking
         .join()
         .map_err(|_| Wrong("the network thread failed".into()))?;
-    summarize(&counts, audio.playback());
+    summarize(&counts, &seen);
     if let Some(path) = record {
         write_record(&path, &output).map_err(|error| Wrong(format!("writing {path}: {error}")))?;
+    }
+    Ok(())
+}
+
+/// What a device of the stream is like, which PipeWire is told.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(feature = "pipewire"), allow(dead_code))]
+struct Shape {
+    rate: u32,
+    channels: u8,
+    cycle: usize,
+}
+
+/// Plays on the device of `system` until the raw clock reads `end`, or for
+/// ever.
+// Without PipeWire there is one device, which needs neither the shape nor a
+// way to fail.
+#[cfg_attr(
+    not(feature = "pipewire"),
+    allow(
+        unused_variables,
+        clippy::needless_pass_by_value,
+        clippy::unnecessary_wraps
+    )
+)]
+fn play(
+    system: System,
+    mut counted: Counted,
+    output: &mut Output,
+    shape: Shape,
+    end: Option<i64>,
+) -> Result<(), Wrong> {
+    let going = || end.is_none_or(|end| clock::raw() < end);
+    match system {
+        System::Software => {
+            while going() {
+                output.run(clock::raw(), &mut counted);
+                sleep_until(output.due());
+            }
+        }
+        #[cfg(feature = "pipewire")]
+        System::PipeWire(target) => {
+            let settings = unisono_pipewire::Settings {
+                name: "unisono-receive".into(),
+                rate: shape.rate,
+                channels: u32::from(shape.channels),
+                target,
+                monitor: false,
+                largest_cycle: 8_192,
+                cycle: u32::try_from(shape.cycle).unwrap_or(256),
+            };
+            let running = unisono_pipewire::play(counted, settings)
+                .map_err(|error| Wrong(format!("playing with PipeWire: {error}")))?;
+            while going() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            running.stop();
+        }
     }
     Ok(())
 }
@@ -235,6 +305,18 @@ struct Counters {
 }
 
 impl Counters {
+    /// The counters, among metrics that are served where `--metrics` says.
+    fn served(options: &Options) -> Result<Counters, Wrong> {
+        let mut metrics = Metrics::new();
+        let counters = Counters::new(&mut metrics)?;
+        if let Some(address) = options.addresses("metrics")?.first() {
+            metrics
+                .serve(*address)
+                .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
+        }
+        Ok(counters)
+    }
+
     fn new(metrics: &mut Metrics) -> Result<Counters, Wrong> {
         let named = |error| Wrong(format!("registering metrics: {error:?}"));
         Ok(Counters {
@@ -276,9 +358,27 @@ impl Counters {
     }
 }
 
+/// What the receiver did, read from its metrics.
+struct Seen {
+    played: Counter,
+    concealed: Counter,
+    jumps: Counter,
+    delay: FloatGauge,
+}
+
+impl Seen {
+    fn of(counters: &Counters) -> Seen {
+        Seen {
+            played: counters.played.handle(),
+            concealed: counters.concealed.handle(),
+            jumps: counters.jumps.handle(),
+            delay: counters.delay.clone(),
+        }
+    }
+}
+
 /// Says what the receiver did.
-fn summarize(counts: &NetworkCounts, playback: &Playback) {
-    let totals = playback.totals();
+fn summarize(counts: &NetworkCounts, seen: &Seen) {
     println!(
         "received packets {} answers {} reports {} dropped {} played {} concealed {} jumps {} \
          delay {}",
@@ -286,9 +386,27 @@ fn summarize(counts: &NetworkCounts, playback: &Playback) {
         counts.answers,
         counts.reports,
         counts.dropped,
-        totals.played,
-        totals.concealed,
-        totals.jumps,
-        playback.receiver().delay()
+        seen.played.get(),
+        seen.concealed.get(),
+        seen.jumps.get(),
+        (seen.delay.get() * 1e9).round()
     );
+}
+
+/// The receiver's audio thread, which puts what it did into the metrics
+/// after each cycle.
+struct Counted {
+    audio: Audio,
+    counters: Counters,
+}
+
+impl AudioPlayback for Counted {
+    fn channels(&self) -> usize {
+        self.audio.channels()
+    }
+
+    fn cycle(&mut self, frames: &mut [f32], position: u64, time: i64) {
+        self.audio.cycle(frames, position, time);
+        self.counters.update(self.audio.playback());
+    }
 }

@@ -20,6 +20,11 @@ pub(crate) struct Tally {
 }
 
 impl Tally {
+    /// Another handle to the counter, which counts the same.
+    pub(crate) fn handle(&self) -> Counter {
+        self.counter.clone()
+    }
+
     /// Takes in that `total` is counted now.
     pub(crate) fn update(&mut self, total: u64) {
         if total > self.last {

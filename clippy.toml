@@ -1,0 +1,2 @@
+# Words in documentation that are names, not code.
+doc-valid-idents = ["PipeWire", ".."]

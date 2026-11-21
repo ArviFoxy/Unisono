@@ -6,10 +6,15 @@ edition.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+# PipeWire as an audio system, beside the software devices.
+pipewire = ["dep:unisono-pipewire"]
+
 [dependencies]
 unisono-core.workspace = true
 unisono-dsp.workspace = true
 unisono-metrics.workspace = true
+unisono-pipewire = { path = "../unisono-pipewire", version = "0.1.0", optional = true }
 unisono-runtime.workspace = true
 
 [lints]

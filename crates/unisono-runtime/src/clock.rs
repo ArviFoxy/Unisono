@@ -111,6 +111,31 @@ pub fn system() -> i64 {
     read(libc::CLOCK_REALTIME)
 }
 
+/// The monotonic clock now, in nanoseconds: the clock that audio systems
+/// give their times in, which a time service slews.
+#[must_use]
+pub fn monotonic() -> i64 {
+    read(libc::CLOCK_MONOTONIC)
+}
+
+/// A clock that a [`Tracker`] relates to the raw clock.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Other {
+    /// The system clock, which the kernel stamps packets with.
+    System,
+    /// The monotonic clock, which audio systems give their times in.
+    Monotonic,
+}
+
+impl Other {
+    fn read(self) -> i64 {
+        match self {
+            Other::System => system(),
+            Other::Monotonic => monotonic(),
+        }
+    }
+}
+
 /// Whether this host has both clocks.
 #[must_use]
 pub fn supported() -> bool {
@@ -134,9 +159,16 @@ pub struct Reading {
 /// once, and returns the measurement with the smallest error.
 #[must_use]
 pub fn measure(tries: u32) -> Reading {
-    let mut best = once();
+    measure_of(Other::System, tries)
+}
+
+/// Measures `other` against the raw clock `tries` times, at least once, and
+/// returns the measurement with the smallest error.
+#[must_use]
+pub fn measure_of(other: Other, tries: u32) -> Reading {
+    let mut best = once(other);
     for _ in 1..tries {
-        let reading = once();
+        let reading = once(other);
         if reading.error < best.error {
             best = reading;
         }
@@ -144,9 +176,9 @@ pub fn measure(tries: u32) -> Reading {
     best
 }
 
-fn once() -> Reading {
+fn once(other: Other) -> Reading {
     let before = raw();
-    let between = system();
+    let between = other.read();
     let after = raw();
     let width = after.saturating_sub(before).max(0);
     let middle = before.saturating_add(width / 2);
@@ -178,9 +210,12 @@ pub enum Unconverted {
     TooOld(i64),
 }
 
-/// The relation between the system clock and the raw clock, kept current.
+/// The relation between another clock and the raw clock, kept current: the
+/// system clock, unless the tracker is made for another.
 #[derive(Clone, Copy, Debug)]
 pub struct Tracker {
+    /// The clock that is related to the raw clock.
+    other: Other,
     longest_age: i64,
     /// The older measurement that the rate is taken from.
     base: Option<Reading>,
@@ -204,7 +239,16 @@ impl Tracker {
     /// further than `longest_age` nanoseconds from its latest measurement.
     #[must_use]
     pub const fn new(longest_age: i64) -> Tracker {
+        Tracker::of(Other::System, longest_age)
+    }
+
+    /// A tracker of `other` against the raw clock, which has measured
+    /// nothing and converts no time that is further than `longest_age`
+    /// nanoseconds from its latest measurement.
+    #[must_use]
+    pub const fn of(other: Other, longest_age: i64) -> Tracker {
         Tracker {
+            other,
             longest_age,
             base: None,
             following: None,
@@ -276,7 +320,7 @@ impl Tracker {
 
     /// Measures the clocks now and takes the measurement in.
     pub fn refresh(&mut self) -> Reading {
-        let reading = measure(2);
+        let reading = measure_of(self.other, 2);
         self.take(reading);
         reading
     }

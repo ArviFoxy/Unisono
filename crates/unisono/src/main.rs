@@ -91,6 +91,35 @@ impl Signal {
 /// memory within what the system lets it lock.
 pub(crate) const STACK: usize = 512 * 1024;
 
+/// The audio system that a program plays to or captures from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum System {
+    /// A device made of software, which runs at its own rate and plays to
+    /// nothing or captures a signal.
+    Software,
+    /// PipeWire, with the node to connect to, if one is named.
+    #[cfg(feature = "pipewire")]
+    PipeWire(Option<String>),
+}
+
+impl System {
+    /// The system that `--audio` and `--device` name.
+    pub(crate) fn from_options(options: &Options) -> Result<System, Wrong> {
+        let device: Option<String> = options.all("device").first().cloned();
+        match options.get("audio", "software".to_string())?.as_str() {
+            "software" => Ok(System::Software),
+            #[cfg(feature = "pipewire")]
+            "pipewire" => Ok(System::PipeWire(device)),
+            #[cfg(not(feature = "pipewire"))]
+            "pipewire" => {
+                let _ = device;
+                Err(Wrong("this program is built without PipeWire".into()))
+            }
+            other => Err(Wrong(format!("there is no audio system `{other}`"))),
+        }
+    }
+}
+
 /// What runs a command.
 type Command = fn(&Options) -> Result<(), Wrong>;
 

@@ -661,6 +661,7 @@ dependencies = [
  "unisono-core",
  "unisono-dsp",
  "unisono-metrics",
+ "unisono-pipewire",
  "unisono-runtime",
 ]
 

@@ -25,9 +25,11 @@ test: interleavings
 interleavings:
     RUSTFLAGS="--cfg loom" CARGO_TARGET_DIR=target/loom cargo test --package unisono-runtime --lib --release ring::
 
-# Compile every crate for every target platform.
+# Compile every crate for every target platform. The crate for PipeWire
+# builds against the system's PipeWire and is left out; the program does not
+# need it.
 targets:
-    for target in {{ targets }}; do cargo check --workspace --target "$target" || exit 1; done
+    for target in {{ targets }}; do cargo check --workspace --exclude unisono-pipewire --target "$target" || exit 1; done
 
 # Fetch Aeneas and build the translator from Rust to Lean (slow the first time).
 proof-tools:
@@ -62,6 +64,11 @@ realtime:
 # most, against their budgets, and time them.
 cost:
     cargo run --quiet --release --package cycle-cost
+
+# The tests against a running PipeWire, in the container of
+# containers/pipewire. Needs docker; continuous integration runs it too.
+pipewire:
+    tools/container.sh pipewire tools/pipewire-test.sh
 
 # Hold the dependencies against deny.toml: known vulnerabilities, licences
 # and sources. Needs cargo-deny; continuous integration runs it too.

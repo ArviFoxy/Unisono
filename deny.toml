@@ -6,8 +6,18 @@ version = 2
 [licenses]
 version = 2
 # The licences that a dependency may have. Unicode-3.0 is that of the tables
-# in a crate that the procedural macros of a test tool use.
-allow = ["MIT", "Apache-2.0", "MPL-2.0", "Unicode-3.0"]
+# in a crate that the procedural macros of a test tool use; BSD-3-Clause, ISC
+# and Apache-2.0 with the LLVM exception are those of the tools that build
+# the bindings to PipeWire. All are permissive and go with MPL-2.0.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Apache-2.0 WITH LLVM-exception",
+]
 
 [bans]
 multiple-versions = "deny"
@@ -15,9 +25,10 @@ wildcards = "deny"
 # The crates of the workspace that are not published depend on the others by
 # path alone.
 allow-wildcard-paths = true
-# loom is used only to test the ring between threads; which versions of
-# other crates it brings is its own matter.
-skip-tree = [{ crate = "loom" }]
+# loom is used only to test the ring between threads, and the bindings to
+# PipeWire only by the crate for that audio system; which versions of other
+# crates they bring is their own matter.
+skip-tree = [{ crate = "loom" }, { crate = "pipewire" }]
 
 [sources]
 unknown-registry = "deny"
