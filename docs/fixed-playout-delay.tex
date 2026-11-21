@@ -166,18 +166,25 @@ world within the bounds of the bounded model, with an explicit $E$ and for
 every $L$ above an explicit minimum. The proof follows the solution's parts,
 each bounding one source of error:
 \begin{enumerate}
-\item \emph{The views:} a host's view is the list of the events it handled,
-  with its clock's readings, so what the baseline remembers can be traced to
-  the world.
-\item \emph{The clocks:} the estimate $\hat\theta$ errs by at most
-  $(d_{\max} - d_{\min})/2$, plus the drift of the two clocks during the
-  exchange and since it.
+\item \emph{The views} (proved): a host's view is the list of the events it
+  handled, with its clock's readings, and every message of the baseline in
+  transit was sent where it should have been (\lean{origin\_inFlight}), so
+  what the baseline remembers can be traced to the world.
+\item \emph{The clocks} (proved): the estimate $\hat\theta$ errs from the
+  true difference of the two clocks at the sender's reading by at most half
+  the largest difference of the two delays, plus the clocks' rate error
+  times the mean delay (\lean{offset\_error}), and the difference of two
+  clocks drifts by at most twice their rate error per second
+  (\lean{offset\_drift}).
 \item \emph{The target:} the capture time of $x^*_k$ errs from
   $o_r(k) - L$ by at most the clock error, the timestamps' errors
-  $2\varepsilon_R$, and the rate errors over the extrapolated spans.
-\item \emph{The pace:} when $w$ exceeds the drift of the target per output
-  sample by enough to absorb a jump of the target within one block, $x_k$
-  follows $x^*_k$ within one such jump.
+  $2\varepsilon_R$, and the rate errors over the extrapolated spans, so
+  $x^*_k$ lies within some $B$ frames of the trajectory $T_k$ whose capture
+  time is exactly $o_r(k) - L$.
+\item \emph{The pace} (proved): $T_k$ advances by one frame per output
+  sample within the devices' rate error $\nu$. When $w > \nu$, a position
+  that starts within $B$ of $T_k$, as the baseline's does by starting at
+  its target, stays within $B$ of it (\lean{advance\_tracks}).
 \item \emph{The data:} the frames that $x_k$ needs, within the resampler's
   lookahead $a$, have arrived when the device requests the block once $L$
   exceeds $E$ plus the longest chain of delays, $d_{\max}$, the handoff

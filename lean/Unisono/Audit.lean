@@ -923,3 +923,15 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.offset_drift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.offset_drift
+
+/-- info: 'Unisono.Spec.Solution.handled_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_before
+
+/-- info: 'Unisono.Spec.Solution.handled_of_mem_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_mem_views
+
+/-- info: 'Unisono.Solutions.FixedDelay.advance_tracks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.advance_tracks

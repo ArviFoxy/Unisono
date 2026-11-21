@@ -22,6 +22,10 @@ model (`Unisono.Spec.Models.Bounded`).
   was sent where it should have been: a block message at its block's
   handoff, a question with its origin's reading, an answer with the
   sender's reading when a question arrived (`origin_inFlight`).
+* **The pace.** A position corrected towards its target by at most `w`
+  frames per output sample stays within `B` frames of a trajectory when the
+  targets do and the trajectory drifts from one frame per output sample by
+  less than `w` (`advance_tracks`).
 -/
 
 @[expose] public noncomputable section
@@ -280,5 +284,40 @@ theorem origin_inFlight (w : World H R) (lookahead : ℕ+) (hsender : p.sender =
         · rw [ho]
         · rw [ho, ← hsender]
           exact hq
+
+/-- **The pace follows the target.** Let a speaker's position `x` advance by
+one frame per output sample, corrected towards the target `xs` by at most
+`w` frames, and let the target stay within `B` frames of a trajectory `T`
+that advances by one frame per output sample within `ν < w`. A position
+that starts within `B` of the trajectory stays within `B` of it. -/
+theorem advance_tracks {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K : ℕ)
+    (hstep : ∀ k, K ≤ k → x (k + 1) = x k + 1 + clamp w (xs (k + 1) - x k - 1))
+    (hband : ∀ k, K ≤ k → |xs k - T k| ≤ B)
+    (hT : ∀ k, K ≤ k → |T (k + 1) - T k - 1| ≤ ν)
+    (hstart : |x K - T K| ≤ B) :
+    ∀ k, K ≤ k → |x k - T k| ≤ B := by
+  intro k hk
+  induction hk with
+  | refl => exact hstart
+  | step hle ih =>
+    rename_i k
+    have hb := abs_le.mp (hband (k + 1) (Nat.le_succ_of_le hle))
+    have hν := abs_le.mp (hT k hle)
+    have hd := abs_le.mp ih
+    rw [hstep k hle]
+    unfold clamp
+    set a := xs (k + 1) - x k - 1
+    rcases le_or_gt a w with ha | ha
+    · rw [min_eq_right ha]
+      rcases le_or_gt (-w) a with ha' | ha'
+      · rw [max_eq_right ha']
+        rw [abs_le]
+        constructor <;> linarith
+      · rw [max_eq_left ha'.le]
+        rw [abs_le]
+        constructor <;> linarith
+    · rw [min_eq_left ha.le, max_eq_right (by linarith)]
+      rw [abs_le]
+      constructor <;> linarith
 
 end Unisono.Solutions.FixedDelay

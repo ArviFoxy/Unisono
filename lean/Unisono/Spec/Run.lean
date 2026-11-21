@@ -34,6 +34,10 @@ solution achieves.
 * A handled handoff is the handoff of a block, and a handled arrival is the
   arrival of a message in transit (`Solution.handled_handed`,
   `Solution.handled_received`).
+* A message in transit that arrives before the event of a later step is
+  handled at a step between them (`Solution.handled_before`), and a host's
+  view holds exactly the events it handled before, each with its clock's
+  reading (`Solution.mem_views_of_handled`, `Solution.handled_of_mem_views`).
 -/
 
 @[expose] public noncomputable section
@@ -517,5 +521,108 @@ theorem Solution.handled_received (σ : Solution H R Msg) (lookahead : ℕ+) {n 
   · simp at hn
 
 end Handled
+
+section Views
+
+variable (w : World H R)
+
+namespace State
+
+/-- A message in transit stays in transit at a step of the run, or the step
+handles its arrival. -/
+theorem step_inFlight_or_handled (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg)
+    {m : InFlight H Msg} (hm : m ∈ st.inFlight) :
+    m ∈ (st.step σ w lookahead).inFlight ∨
+      ∃ p, earliest (st.key w) st.due = some (.arrival p) ∧ st.inFlight[p]? = some m := by
+  unfold step
+  split
+  · exact Or.inl (handle_inFlight_mem w st σ lookahead hm)
+  · exact Or.inl (handle_inFlight_mem w st σ lookahead hm)
+  · rename_i p hp
+    split
+    · rename_i m' hm'
+      by_cases hin : m ∈ st.inFlight.eraseIdx p
+      · exact Or.inl (handle_inFlight_mem w _ σ lookahead hin)
+      · right
+        obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hm
+        have hip : i = p := by
+          by_contra hne
+          exact hin (List.mem_eraseIdx_iff_getElem.mpr ⟨i, hi, hne, rfl⟩)
+        subst hip
+        exact ⟨i, hp, List.getElem?_eq_getElem hi⟩
+    · exact Or.inl hm
+  · split
+    · exact Or.inl (handle_inFlight_mem w _ σ lookahead hm)
+    · exact Or.inl hm
+  · exact Or.inl hm
+
+end State
+
+/-- **A message is handled before any later event.** A message in transit at
+step `n` that arrives before the event of a later step `k` is handled at a
+step between them: its destination observes its arrival. -/
+theorem Solution.handled_before (σ : Solution H R Msg) (lookahead : ℕ+) {n k : ℕ}
+    {m : InFlight H Msg} (hm : m ∈ (σ.states w lookahead n).inFlight) (hnk : n ≤ k)
+    (harr : m.arrival < σ.eventTime w lookahead k) :
+    ∃ i, n ≤ i ∧ i < k ∧
+      σ.handled w lookahead i = some (m.destination, m.arrival, .received m.origin m.contents m.frames) := by
+  have hinv : ∀ j, n ≤ j → m ∈ (σ.states w lookahead j).inFlight ∨
+      ∃ i, n ≤ i ∧ i < j ∧ σ.handled w lookahead i
+        = some (m.destination, m.arrival, .received m.origin m.contents m.frames) := by
+    intro j hj
+    induction hj with
+    | refl => exact Or.inl hm
+    | step hle ih =>
+      rcases ih with hin | ⟨i, hi1, hi2, hi3⟩
+      · rcases State.step_inFlight_or_handled w σ lookahead _ hin with hin' | ⟨p, hp, hpm⟩
+        · exact Or.inl hin'
+        · right
+          refine ⟨_, hle, Nat.lt_succ_self _, ?_⟩
+          unfold Solution.handled
+          rw [hp]
+          simp [hpm]
+      · exact Or.inr ⟨i, hi1, Nat.lt_succ_of_lt hi2, hi3⟩
+  rcases hinv k hnk with hin | h
+  · have := (σ.eventTime_dueFrom w lookahead k).2.2.1 m hin
+    exact absurd harr (not_lt.mpr this)
+  · exact h
+
+/-- **A host's view holds every event it handled.** -/
+theorem Solution.mem_views_of_handled (σ : Solution H R Msg) (lookahead : ℕ+) {i k : ℕ}
+    {h : H} {t : Time} {obs : Observation H R Msg}
+    (hi : σ.handled w lookahead i = some (h, t, obs)) (hik : i < k) :
+    (⟨(w.clock h).read t, obs⟩ : Event H R Msg) ∈ (σ.states w lookahead k).views h := by
+  induction hik with
+  | refl =>
+    rw [σ.views_succ w lookahead i h, hi]
+    simp
+  | step _ ih =>
+    rw [σ.views_succ w lookahead _ h]
+    exact List.mem_append_left _ ih
+
+/-- **A host's view holds nothing else.** Every event in a host's view is
+one that the host handled at an earlier step, with its clock's reading at
+the time of the event. -/
+theorem Solution.handled_of_mem_views (σ : Solution H R Msg) (lookahead : ℕ+) {k : ℕ} {h : H}
+    {e : Event H R Msg} (he : e ∈ (σ.states w lookahead k).views h) :
+    ∃ i < k, ∃ t obs, σ.handled w lookahead i = some (h, t, obs) ∧
+      e = ⟨(w.clock h).read t, obs⟩ := by
+  induction k with
+  | zero => simp [Solution.states, State.start] at he
+  | succ k ih =>
+    rw [σ.views_succ w lookahead k h] at he
+    rcases List.mem_append.mp he with he | he
+    · obtain ⟨i, hi, t, obs, h1, h2⟩ := ih he
+      exact ⟨i, Nat.lt_succ_of_lt hi, t, obs, h1, h2⟩
+    · split at he
+      · rename_i h' t obs hk
+        split_ifs at he with hh
+        · subst hh
+          rw [List.mem_singleton] at he
+          exact ⟨k, Nat.lt_succ_self k, t, obs, hk, he⟩
+        · simp at he
+      · simp at he
+
+end Views
 
 end Unisono.Spec
