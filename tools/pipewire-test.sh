@@ -11,7 +11,7 @@
 # PipeWire that the host runs is not touched.
 #
 # It runs as it is on a host with PipeWire, and in the container of
-# containers/pipewire, which `just pipewire` builds and runs it in.
+# containers/audio, which `just pipewire` builds and runs it in.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
