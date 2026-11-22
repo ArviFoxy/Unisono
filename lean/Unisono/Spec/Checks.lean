@@ -850,14 +850,17 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
         rw [hmix]
         exact tendsto_const_nhds }
 
-/-- **The second-order model is not empty (and non-degenerate)**: a 3-host star
-(sender `0`, speakers on hosts `1` and `2`) over a uniform probability space on
-`Bool × Bool`, with nonzero uncorrelated jitter of variance `1` on the links
-`(0, 1)` and `(0, 2)`, satisfies `SecondOrderModel.Holds`. -/
+/-- **The second-order model is not empty**: a 3-host star (sender `0`, speakers
+on hosts `1` and `2`) over a uniform probability space on `Bool × Bool`, with
+nonzero uncorrelated link jitter of variance `1` on links `(0, 1)` and `(0, 2)`
+and zero clock, device, and timestamp noise, satisfies `SecondOrderModel.Holds`.
+Satisfiability with nonzero `ClockNoise` remains open because Gaussian
+realizations of white or random-walk frequency noise do not yield globally
+monotone `Clock` paths. -/
 theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
     (P : Measure (Bool × Bool)) (world : Bool × Bool → World (Fin 3) 2)
     (d : Bool × Bool → Fin 3 → Fin 3 → Link),
-    IsProbabilityMeasure P ∧ m.Holds P world d ∧
+    m.Holds P world d ∧
       m.ownJitter 0 1 = ⟨1, fun _ => 1⟩ ∧ m.ownJitter 0 2 = ⟨1, fun _ => 1⟩ := by
   let P : Measure (Bool × Bool) :=
     (4 : ℝ≥0∞)⁻¹ • (Measure.dirac (false, false) + Measure.dirac (false, true)
@@ -868,6 +871,19 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
       Set.indicator_univ, Pi.one_apply, smul_eq_mul]
     have h4 : (1 : ℝ≥0∞) + 1 + 1 + 1 = 4 := by norm_num
     rw [h4, ENNReal.inv_mul_cancel (by norm_num) (by norm_num)]
+  have hmemLp : ∀ f : Bool × Bool → ℝ, MemLp f 2 P := by
+    intro f
+    have : IsProbabilityMeasure P := hP
+    refine MemLp.of_bound (Measurable.aestronglyMeasurable (measurable_of_countable f))
+      (max (max |f (false, false)| |f (false, true)|)
+        (max |f (true, false)| |f (true, true)|)) (ae_of_all _ fun ω => ?_)
+    rw [Real.norm_eq_abs]
+    rcases ω with ⟨b₁, b₂⟩
+    cases b₁ <;> cases b₂
+    · exact le_trans (le_max_left _ _) (le_max_left _ _)
+    · exact le_trans (le_max_right _ _) (le_max_left _ _)
+    · exact le_trans (le_max_left _ _) (le_max_right _ _)
+    · exact le_trans (le_max_right _ _) (le_max_right _ _)
   have hint : ∀ f : Bool × Bool → ℝ,
       ∫ ω, f ω ∂P = (f (false, false) + f (false, true) + f (true, false) + f (true, true)) / 4 := by
     intro f
@@ -946,29 +962,29 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
   have hclk_zero : ∀ ω i t τ, secondDifference (fun t => ((world ω).clock i).read t - t) t τ = 0 := by
     intro ω i t τ
     simp [world, secondDifference]
-  have hdev_cap : ∀ ω k j, gridDifference (devicePhase ((world ω).clock (world ω).sender)
-      (world ω).source.capture m.rate) k j = 0 := by
+  have hdev_cap : ∀ ω k j, gridDifference (devicePhase (world ω).source.capture m.rate) k j = 0 := by
     intro ω k j
     simp [m, world, devicePhase, gridDifference]
-  have hdev_spk : ∀ ω r k j, gridDifference (devicePhase ((world ω).clock ((world ω).host r))
-      ((world ω).speaker r).out m.rate) k j = 0 := by
+  have hdev_spk : ∀ ω r k j,
+      gridDifference (devicePhase ((world ω).speaker r).out m.rate) k j = 0 := by
     intro ω r k j
     simp only [m, world, devicePhase, gridDifference]
     push_cast
-    simp only [div_one, id]
+    simp only [div_one]
     ring
-  refine ⟨m, P, world, d, hP, ?_, by simp [m, ownJ], by simp [m, ownJ]⟩
+  refine ⟨m, P, world, d, ?_, by simp [m, ownJ], by simp [m, ownJ]⟩
   refine
-    { network := fun _ _ _ _ _ => rfl
+    { prob := hP
+      network := fun _ _ _ _ _ => rfl
       rate_eq := fun _ => rfl
-      clocks := fun i => ⟨fun t τ => by simp [hclk_zero],
+      clocks := fun i => ⟨fun _ _ => hmemLp _, fun t τ => by simp [hclk_zero],
         fun t₁ τ₁ t₂ τ₂ => by simp [m, hclk_zero, secondDifferenceCovariance_zero]⟩
       clocks_uncorrelated := fun i j _ t₁ τ₁ t₂ τ₂ => by simp [hclk_zero]
       jitter := ⟨fun _ _ _ => 0, fun _ _ _ => 0, own,
         fun ω i j u => by simp [d],
-        fun _ => ⟨fun _ => by simp [m], fun _ _ => by simp [m]⟩,
-        fun _ => ⟨fun _ => by simp [m], fun _ _ => by simp [m]⟩,
-        fun i j => ⟨fun s => by
+        fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
+        fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
+        fun i j => ⟨fun _ => hmemLp _, fun s => by
             rw [hint]
             by_cases h1 : i = 0 ∧ j = 1
             · simp [m, ownJ, own, s1, h1]; norm_num
@@ -984,7 +1000,6 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
               · simp [m, ownJ, own, h1, h2]⟩,
         fun _ _ _ _ _ => by simp,
         fun _ _ _ _ _ => by simp,
-        fun _ _ _ _ => by simp,
         fun _ _ _ _ _ => by simp,
         fun _ _ _ _ _ => by simp,
         fun i j i' j' hne s u => by
@@ -1007,21 +1022,39 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
             · simp [hzero_left i j h1 h2],
         fun _ _ _ _ _ => by simp [hclk_zero],
         fun _ _ _ _ _ => by simp [hclk_zero],
-        fun _ _ _ _ _ _ => by simp [hclk_zero]⟩
-      capture := ⟨fun k j => by simp [hdev_cap],
+        fun _ _ _ _ _ _ => by simp [hclk_zero],
+        fun _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ => by simp [world, captureError],
+        fun _ _ _ => by simp [world, captureError],
+        fun _ _ _ _ => by simp [world, captureError],
+        fun _ _ _ _ => by simp [world, playbackError],
+        fun _ _ _ _ => by simp [world, playbackError],
+        fun _ _ _ _ _ => by simp [world, playbackError]⟩
+      capture := ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_cap],
         fun k₁ j₁ k₂ j₂ => by simp [m, hdev_cap, secondDifferenceCovariance_zero]⟩
-      playback := fun r => ⟨fun k j => by simp [hdev_spk],
+      playback := fun r => ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_spk],
         fun k₁ j₁ k₂ j₂ => by simp [m, hdev_spk, secondDifferenceCovariance_zero]⟩
       capture_clock_uncorrelated := fun i t τ k j => by simp [hclk_zero]
       playback_clock_uncorrelated := fun i r t τ k j => by simp [hclk_zero]
       capture_playback_uncorrelated := fun r k₁ j₁ k₂ j₂ => by simp [hdev_cap]
       playback_uncorrelated := fun r r' _ k₁ j₁ k₂ j₂ => by simp [hdev_spk]
-      capture_timestamps := ⟨fun b => by simp [world, captureError],
+      capture_timestamps := ⟨fun _ => hmemLp _, fun b => by simp [world, captureError],
         fun b b' => by simp [m, world, captureError]⟩
-      playback_timestamps := fun r => ⟨fun b => by simp [world, playbackError],
+      playback_timestamps := fun r => ⟨fun _ => hmemLp _, fun b => by simp [world, playbackError],
         fun b b' => by simp [m, world, playbackError]⟩
       capture_playback_timestamps_uncorrelated := fun r b₁ b₂ => by simp [world, captureError]
-      playback_timestamps_uncorrelated := fun r r' _ b₁ b₂ => by simp [world, playbackError] }
+      playback_timestamps_uncorrelated := fun r r' _ b₁ b₂ => by simp [world, playbackError]
+      clock_capture_timestamps_uncorrelated := fun i t τ b => by simp [hclk_zero]
+      clock_playback_timestamps_uncorrelated := fun i r t τ b => by simp [hclk_zero]
+      capture_device_capture_timestamps_uncorrelated := fun k j b => by simp [hdev_cap]
+      capture_device_playback_timestamps_uncorrelated := fun r k j b => by simp [hdev_cap]
+      playback_device_capture_timestamps_uncorrelated := fun r k j b => by simp [hdev_spk]
+      playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
 
 end Further
 

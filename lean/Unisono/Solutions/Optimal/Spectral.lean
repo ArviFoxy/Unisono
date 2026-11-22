@@ -13,11 +13,10 @@ public import Unisono.Spec.Models.SecondOrder
 /-!
 # Spectral factorization and steady-state filter identities
 
-In the time domain, `Unisono.Solutions.Optimal.ModalControl` proves that the
-optimal playback controller applies `Unisono.Model.Regulation.law` to the
-conditional-mean state in each decoupled mode (common and differential). This
-module records the companion frequency-domain and steady-state algebraic
-identities:
+In the time domain, `Unisono.Solutions.Optimal.ModalControl` analyzes applying
+`Unisono.Model.Regulation.law` to the conditional-mean state in each decoupled
+mode (common and differential). This module records the companion
+frequency-domain and steady-state algebraic identities:
 
 * **Controller spectral factorization (`weight_factor`, `step_step`).** On the
   unit circle `z = e^{iω}`, the per-cycle control weight `weight g + |1 - z|⁴`
@@ -26,20 +25,22 @@ identities:
 * **Continuous-time Butterworth prototype (`butterworth`).** The continuous-time
   quadratic cost `c₀² + c₂² ω⁴` (squared position error plus squared rate of
   change of playback pace) factors as `|c₂ (iω)² + c₁ (iω) + c₀|²` with
-  `c₁² = 2 c₀ c₂`, i.e., a critically damped second-order Butterworth filter
-  with damping ratio `ζ = 1 / √2` and natural frequency `(c₀ / c₂)^{1/2}`.
-* **Scalar random-walk Wiener/Kalman steady state (`filterRoot_*`,
-  `estimate_factor`, `riccati_fixed`, `posterior_variance`,
-  `revision_variance`).** For a scalar random walk with step variance `q`
-  observed under white measurement noise of variance `r`, the unique root
-  `a ∈ (0, 1)` of `a² - (2 + q / r) a + 1 = 0` yields the steady-state Kalman
-  gain `K = 1 - a`, posterior variance `r (1 - a)`, and innovation-revision
-  variance `q`.
-* **Two-state oscillator process covariance (`clockProcessCov_nonneg`).** For
-  an IEEE 1139 clock with white-frequency variance rate `q₀ = white / 2` and
-  random-walk-frequency variance rate `q₂ = 2 π² · walk`, the exact
-  continuous-time `[phase, frequency]` increment covariance matrix over any
-  step `dt ≥ 0` is positive semidefinite.
+  `c₁² = 2 c₀ c₂`, a second-order Butterworth filter with damping ratio
+  `ζ = 1 / √2` (distinct from critical damping `ζ = 1`) and natural frequency
+  `(c₀ / c₂)^{1/2}`.
+* **Scalar random-walk Riccati/spectral algebra (`filterRoot_*`,
+  `filterRoot_unique`, `estimate_factor`, `riccati_fixed`,
+  `posterior_variance`, `revision_variance`).** For `s = q / r > 0`,
+  `filterRoot s` is the unique root `a ∈ (0, 1)` of `a² - (2 + s) a + 1 = 0`,
+  yielding the algebraic Riccati fixed point `p = r (1 - a) / a`, gain
+  `K = 1 - a`, simplified posterior variance `(1 - K) p = r (1 - a)`, and
+  squared innovation-revision variance `K² (p + r) = q`.
+* **Positive semidefiniteness of the two-state oscillator covariance matrix
+  formula (`clockProcessCov_nonneg`).** For `ClockNoise` parameters `c` with
+  `q₀ = c.whiteVarianceRate` and `q₂ = c.walkVarianceRate`, the 2×2 matrix
+  formula `Q(dt)` for `dt ≥ 0` is positive semidefinite. (This proves matrix
+  semidefiniteness rather than constructing a stochastic process or proving
+  `Q(dt)` is the increment covariance of a `SecondOrderModel`.)
 -/
 
 @[expose] public noncomputable section
@@ -83,8 +84,9 @@ theorem step_step {g : ℝ} (hg1 : g < 1) (x : ℝ × ℝ) :
   constructor <;> field_simp <;> ring
 
 /-- **Continuous-time Butterworth spectral factorization.** When
-`c₁² = 2 c₀ c₂`, the second-order polynomial `W(s) = c₂ s² + c₁ s + c₀`
-satisfies `|W(iω)|² = c₀² + c₂² ω⁴` for every real angular frequency `ω`. -/
+`c₁² = 2 c₀ c₂`, the second-order Butterworth polynomial
+`W(s) = c₂ s² + c₁ s + c₀` (damping ratio `ζ = 1 / √2`) satisfies
+`|W(iω)|² = c₀² + c₂² ω⁴` for every real angular frequency `ω`. -/
 theorem butterworth {c₀ c₁ c₂ : ℝ} (hc : c₁ ^ 2 = 2 * c₀ * c₂) (ω : ℝ) :
     Complex.normSq (c₂ * (Complex.I * ω) ^ 2 + c₁ * (Complex.I * ω) + c₀)
       = c₀ ^ 2 + c₂ ^ 2 * ω ^ 4 := by
@@ -123,6 +125,18 @@ theorem filterRoot_lt_one {s : ℝ} (hs : 0 < s) : filterRoot s < 1 := by
     nlinarith
   simp only [filterRoot]
   linarith
+
+/-- **Uniqueness of `filterRoot s` in `(0, 1)`.** For any `s > 0`, `filterRoot s`
+is the unique root of `a² - (2 + s) a + 1 = 0` strictly inside `(0, 1)`. -/
+theorem filterRoot_unique {s a : ℝ} (hs : 0 < s) (ha1 : a < 1)
+    (hroot : a ^ 2 - (2 + s) * a + 1 = 0) : a = filterRoot s := by
+  have hb := filterRoot_eq hs.le
+  have hb1 : filterRoot s < 1 := filterRoot_lt_one hs
+  have hdiff : (a - filterRoot s) * (a + filterRoot s - (2 + s)) = 0 := by nlinarith
+  have hneg : a + filterRoot s - (2 + s) < 0 := by linarith
+  rcases mul_eq_zero.mp hdiff with h | h
+  · linarith
+  · linarith
 
 /-- **Spectral factorization of noisy random-walk observations.** When
 `a² - (2 + q / r) a + 1 = 0`, every nonzero `z : ℂ` satisfies
@@ -168,18 +182,17 @@ theorem riccati_fixed {q r a : ℝ} (hr : 0 < r) (ha0 : 0 < a) (ha1 : a < 1)
   · rw [hsum]
     field_simp
 
-/-- **Steady-state posterior estimation variance.** After incorporating a
-measurement with gain `K = 1 - a`, the posterior variance `(1 - K) p` simplifies
-to `r (1 - a)`. -/
+/-- **Algebraic simplification of the Riccati posterior variance.** Substituting
+the steady-state gain `K = 1 - a` and prior variance `p = r (1 - a) / a` from
+`riccati_fixed` into `(1 - K) p` yields `r (1 - a)`. -/
 theorem posterior_variance {r a : ℝ} (ha0 : 0 < a) :
     (1 - (1 - a)) * (r * (1 - a) / a) = r * (1 - a) := by
   field_simp
   ring
 
-/-- **Steady-state estimate-revision variance.** At each measurement update, the
-conditional-mean estimate moves by `K` times the innovation (variance `p + r`),
-so its squared revision variance `K² (p + r)` equals the process step variance
-`q`. -/
+/-- **Steady-state estimate-revision variance.** At the Riccati fixed point,
+`K² (p + r) = (1 - a)² (r (1 - a) / a + r)` simplifies to the process step
+variance `q`. -/
 theorem revision_variance {q r a : ℝ} (hr : 0 < r) (ha0 : 0 < a)
     (hroot : a ^ 2 - (2 + q / r) * a + 1 = 0) :
     (1 - a) ^ 2 * (r * (1 - a) / a + r) = q := by
@@ -194,12 +207,11 @@ theorem revision_variance {q r a : ℝ} (hr : 0 < r) (ha0 : 0 < a)
   field_simp
   ring
 
-/-- **Positive semidefiniteness of the two-state oscillator process covariance.**
-For a clock with `ClockNoise` parameters `c`, over an interval `dt ≥ 0` the
-continuous-time `[phase, frequency]` increment covariance matrix has entries
-`Q₀₀ = q₀ dt + q₂ dt³ / 3`, `Q₀₁ = Q₁₀ = q₂ dt² / 2`, `Q₁₁ = q₂ dt`, where
-`q₀ = c.whiteVarianceRate` and `q₂ = c.walkVarianceRate`. Its quadratic form is
-nonnegative for every `(u, v) : ℝ × ℝ`. -/
+/-- **Positive semidefiniteness of the two-state oscillator covariance matrix
+formula.** Given `ClockNoise` parameters `c` and `dt ≥ 0`, the symmetric 2×2
+matrix with entries `Q₀₀ = q₀ dt + q₂ dt³ / 3`, `Q₀₁ = Q₁₀ = q₂ dt² / 2`,
+`Q₁₁ = q₂ dt` (where `q₀ = c.whiteVarianceRate` and `q₂ = c.walkVarianceRate`)
+has nonnegative quadratic form for every `(u, v) : ℝ × ℝ`. -/
 theorem clockProcessCov_nonneg (c : ClockNoise) (dt : ℝ) (hdt : 0 ≤ dt) (u v : ℝ) :
     0 ≤ (c.whiteVarianceRate * dt + c.walkVarianceRate * dt ^ 3 / 3) * u ^ 2
         + 2 * (c.walkVarianceRate * dt ^ 2 / 2) * u * v

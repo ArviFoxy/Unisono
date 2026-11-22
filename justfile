@@ -53,6 +53,7 @@ lint:
 
 test: interleavings
     cargo test --workspace
+    cargo run --quiet --package unisono-sim --example star -- --smoke > /dev/null
 
 # Check the ring between threads under every interleaving of its two threads.
 interleavings:

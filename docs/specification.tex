@@ -596,33 +596,33 @@ statement about finite time windows needs one. The model is not empty
 The model \lean{SecondOrderModel} specifies the means and covariances of the
 oscillator, network, and audio-device noise
 (\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Among the six objectives,
-synchronization, tracking, and linearized playback roughness are quadratic in
-the timing errors, while mean latency is linear; for linear estimators and
-quadratic controllers, first and second moments therefore determine the
-steady-state performance. Missed samples and discontinuities additionally
-depend on the tail duration distribution of link pauses, outages, and packet
-drops from \lean{DelayModel}.
+synchronization, tracking, and playback roughness are quadratic in the timing
+errors and playback speed changes, while mean latency is linear; for linear
+estimators and linear control laws, first and second moments therefore
+determine the steady-state performance on those four objectives. Missed
+samples and discontinuities additionally depend on how long link pauses and
+outages last and how often packets are dropped, as in \lean{DelayModel}.
 
 \begin{definition}[Second-order model]
 A host's clock reads $C_i(t) = t + \phi_i(t)$ at true time $t$, where
 $\phi_i$ is the clock's \emph{phase}. Its fractional frequency
-$\dot\phi_i$ has the IEEE~1139 one-sided power spectral density
+$\dot\phi_i$ has the IEEE~Std~1139-2008 one-sided power spectral density
 \[
   S_i(f) = h_{0,i} + \frac{h_{-1,i}}{f} + \frac{h_{-2,i}}{f^2},
   \qquad f > 0,
 \]
 whose three terms are white, flicker, and random-walk frequency noise
-(\lean{ClockNoise}), the power-law terms that govern quartz and crystal
-oscillators. In state-space form, the white-frequency component adds phase
-diffusion at variance rate $q_{0,i} = h_{0,i}/2$
+(\lean{ClockNoise}), the power-law terms used to model quartz and crystal
+oscillators (IEEE~Std~1139-2008). In state-space form, the white-frequency
+component adds phase diffusion at variance rate $q_{0,i} = h_{0,i}/2$
 (\lean{whiteVarianceRate}), while the random-walk component adds
-fractional-frequency diffusion at variance rate
-$q_{2,i} = 2\pi^2 h_{-2,i}$ (\lean{walkVarianceRate}). Because first
-differences of a phase with random-walk frequency noise are not stationary,
-the model specifies second differences
+fractional-frequency diffusion at variance rate $q_{2,i} = 2\pi^2 h_{-2,i}$
+(\lean{walkVarianceRate}). Because first differences of a phase with
+random-walk frequency noise are not stationary, the model specifies second
+differences
 $\Delta^2_\tau \phi(t) = \phi(t + 2\tau) - 2\phi(t + \tau) + \phi(t)$: they
-have mean zero and covariances (\lean{FollowsNoise},
-\lean{secondDifferenceCovariance})
+are square-integrable under the probability measure $P$, with mean zero and
+covariances (\lean{FollowsNoise}, \lean{secondDifferenceCovariance})
 \[
   E\bigl[\Delta^2_{\tau_1}\phi(t_1)\,\Delta^2_{\tau_2}\phi(t_2)\bigr]
   = \int_0^\infty \frac{S(f)}{(2\pi f)^2}\,
@@ -630,8 +630,9 @@ have mean zero and covariances (\lean{FollowsNoise},
       \bigl(e^{2\pi i f \tau_1} - 1\bigr)^2\,
       \overline{\bigl(e^{2\pi i f \tau_2} - 1\bigr)^2}\Bigr]\,df .
 \]
-The integral converges for all three components. The phase second differences
-of distinct hosts are uncorrelated.
+The integral converges for all three components
+(\lean{secondDifferenceCovariance\_integrableOn}). The phase second
+differences of distinct hosts are uncorrelated.
 
 Each link's delay consists of its baseline, its jitter, and its pauses,
 outages, and drops, as in \lean{DelayModel}. The jitter on the directed link
@@ -640,31 +641,44 @@ from host $i$ to host $j$ decomposes additively as
   J_{ij}(t) = J^{\mathrm{tx}}_i(t) + J^{\mathrm{rx}}_j(t) + J^{\mathrm{own}}_{ij}(t),
 \]
 separating sender-side transmit jitter $J^{\mathrm{tx}}_i$ (shared across
-links leaving $i$, e.g.\ NIC queuing or OS scheduling), receiver-side arrival
-jitter $J^{\mathrm{rx}}_j$ (shared across links entering $j$, e.g.\ shared
-Wi-Fi medium or interrupt latency), and link-specific jitter
-$J^{\mathrm{own}}_{ij}$. Each component is wide-sense stationary with constant
-mean and lag-dependent covariance (\lean{JitterNoise}), and all three jitter
-families are mutually uncorrelated across components, hosts, and links.
+links leaving $i$, such as network-interface queueing or operating-system
+scheduling), receiver-side arrival jitter $J^{\mathrm{rx}}_j$ (shared across
+links entering $j$, such as receive-side interrupt latency or a shared
+wireless medium), and link-specific jitter $J^{\mathrm{own}}_{ij}$. Each
+component is square-integrable and wide-sense stationary with constant mean
+and lag-dependent covariance (\lean{JitterNoise}, \lean{HasMoments}). Distinct
+senders' transmit jitter processes are uncorrelated, transmit jitter at host
+$i$ is uncorrelated with receive jitter at any other host $j \ne i$ (leaving
+same-host uplink--downlink correlation and shared-medium receive correlation
+unconstrained), and link-specific jitter is uncorrelated across distinct
+links and with both transmit and receive jitter.
 
-The capture device's timing deviates from the sender's clock, and each
-playback device's timing from its host's clock, according to the same
-power-law clock model on the nominal sample grid $k/\rho$
-(\lean{devicePhase}, \lean{FollowsNoiseOnGrid}), where $\rho > 0$ is the
-nominal frame rate. Capture timestamps add white zero-mean noise of variance
-$\sigma_{\mathrm{cap}}^2$, and each speaker $r$'s playback timestamps add
-white zero-mean noise of variance $\sigma_{\mathrm{play},r}^2$
-(\lean{WhiteErrors}). Host clocks, audio devices, network jitter components,
-and timestamp errors are mutually uncorrelated across distinct sources.
+The capture device's timing and each playback device's timing deviate from
+true time according to the same power-law clock model on the nominal sample
+grid $k/\rho$ (\lean{devicePhase}, \lean{FollowsNoiseOnGrid}), where
+$\rho > 0$ is the nominal frame rate; measuring device phase against true
+time permits audio hardware with independent crystals (such as USB audio
+interfaces) as well as host-clocked devices. Capture timestamps add
+square-integrable white zero-mean noise of variance $\sigma_{\mathrm{cap}}^2$,
+and each speaker $r$'s playback timestamps add square-integrable white
+zero-mean noise of variance $\sigma_{\mathrm{play},r}^2$ (\lean{WhiteErrors}).
+Host clocks, audio devices, network jitter components, and timestamp errors
+are mutually uncorrelated across distinct sources.
 \end{definition}
+
+A three-host witness with nonzero uncorrelated link jitter confirms that
+\lean{SecondOrderModel} is satisfiable (\lean{SecondOrderModel.example\_holds}).
+In that witness, clocks, devices, and timestamps carry zero noise; constructing
+a witness with nonzero \lean{ClockNoise} whose clock readings remain strictly
+increasing is left open. No theorem in the repository currently takes
+\lean{SecondOrderModel} as a hypothesis.
+
+\subsection{Communication topologies}
 
 Communication topologies are classified directly on \lean{Solution}
 (\path{lean/Unisono/Spec/Topologies.lean}): \lean{UsesGraph} restricts every
 sent message $(h \to j)$ to an allowed adjacency relation, and \lean{IsStar}
 specializes this to star graphs where every message either leaves or enters
-the sender ($h = \text{sender} \lor j = \text{sender}$). A non-degenerate
-three-host witness with nonzero uncorrelated link jitter confirms that
-\lean{SecondOrderModel} is satisfiable
-(\lean{SecondOrderModel.example\_holds}).
+the sender ($h = \text{sender} \lor j = \text{sender}$).
 
 \end{document}

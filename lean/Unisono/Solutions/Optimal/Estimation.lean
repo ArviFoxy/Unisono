@@ -15,8 +15,8 @@ public import Mathlib.Tactic.Ring
 /-!
 # Clock-offset estimation for star and peer (receiver–receiver) topologies
 
-This module analyzes pairwise clock-offset estimation across both communication
-topologies:
+This module records algebraic and `L²` identities for linear clock-offset
+estimation in both communication topologies:
 
 1. **Star topology (sender–receiver communication only).**
    * Each receiver `r` estimates its clock offset `θ r = φ_s - φ_r` relative to
@@ -24,46 +24,59 @@ topologies:
      sender's clock/capture phase, `φ_r` is receiver `r`'s clock/playback phase,
      and `m r` is the network/timestamp measurement error.
    * When two receivers apply the same linear filter (`star_pair_error_same`),
-     sender-clock wander `φ_s` cancels identically in their relative timing
-     error.
-   * When two receivers apply *different* filters (e.g., heterogeneous Wi-Fi
-     and Ethernet links), `star_pair_error_heterogeneous` exposes the exact
-     leakage `(F₁ - F₂) φ_s`.
-   * Embedding a sender-timestamped virtual-clock correction `c_S` in the audio
-     stream (`disciplined_schedule_error`) removes raw sender wander without
-     assuming zero broadcast delay or zero broadcast jitter: heterogeneous
-     filters only see the residual `φ_s - c_S`.
-   * Under inverse-variance weighting across `R` independent receiver noise
-     terms with variances `σ_r²` and consensus variance `V_bc = (∑ σ_r⁻²)⁻¹`,
-     the residual error `m_r - m̄` has exact variance `σ_r² - V_bc`
-     (`residual_variance_sub`, `residual_variance_L2`), strictly *less* than
-     `σ_r²` because `m_r` is positively correlated with `m̄`.
+     sender-clock wander `φ_s` cancels in their relative timing error.
+   * When two receivers apply different linear filters (for instance, on
+     heterogeneous wired and wireless links), `star_pair_error_heterogeneous`
+     exhibits the leakage `(F₁ - F₂) φ_s`.
+   * Under an index-aligned common schedule correction `sRef` subtracted by
+     both receivers (`disciplined_schedule_error`), heterogeneous filters see
+     `δ_S = φ_s - sRef` instead of `φ_s`. This is an aligned algebraic
+     identity (it does not model broadcast delay or jitter); when `sRef`
+     estimates `φ_s` relative to the receivers' mean, `δ_S` contains both
+     estimation noise and the precision-weighted receiver-clock mean.
+   * Under inverse-variance weighting across `R` pairwise-uncorrelated `L²`
+     receiver errors with second moments `σ_r²` and combined parameter
+     `V_bc = (∑ σ_r⁻²)⁻¹`, the residual `m_r - m̄` has second moment
+     `σ_r² - V_bc` (`residual_variance_sub`, `residual_variance_L2`), strictly
+     less than `σ_r²` (equal to the variance when the errors are zero-mean;
+     biased errors such as static asymmetry or queueing bias violate the
+     orthogonality hypothesis).
 
 2. **Peer / receiver–receiver topology (Graph-Laplacian BLUE & Thomson's
    Principle).**
-   * On any finite directed measurement graph `G = (V, E)` where edge
-     `e = (u, v)` observes `φ v - φ u + η_e` with independent zero-mean noise
-     of variance `v_e > 0`, a linear estimator `∑ e, f e * y e` is unbiased for
-     `φ t - φ s` if and only if `f` is a unit `s → t` flow
+   * On any finite directed measurement graph `G = (V, E)` with edge weights
+     `var e > 0`, a linear estimator `∑ e, f e * y e` recovers `φ t - φ s` on
+     every noiseless clock vector `φ` if and only if `f` is a unit `s → t` flow
      (`linear_unbiased_iff_unitFlow`).
-   * **Thomson's Principle (`thomson_blue_optimal`)**: if a vertex potential
-     `ψ` solves the weighted graph Laplacian `L_G ψ = 1_t - 1_s`, then the
-     induced electrical flow `f*_e = (ψ (dst e) - ψ (src e)) / v_e` is the
-     unique minimum-variance linear unbiased estimator (BLUE), with exact
-     variance equal to the effective resistance `ψ t - ψ s`.
-   * **Exact topology corollaries:**
-     - **Star graph (`star_effective_resistance`):** minimum variance between
-       receivers `r₁ ≠ r₂` is `v r₁ + v r₂`.
-     - **Complete peer graph `K_{R+1}` (`complete_graph_effective_resistance`):**
-       with equal edge variance `v`, minimum variance drops from `2 v` to
-       `2 v / (R + 1)` — an exact `(R + 1)×` variance reduction over a star.
-     - **Wi-Fi sender with wired peer link (`wifi_sender_wired_peers_resistance`):**
-       two speakers with Wi-Fi sender variance `v_w` and direct peer link
-       variance `v_p` achieve parallel effective resistance
-       `(2 v_w v_p) / (2 v_w + v_p) < v_p`, bypassing the Wi-Fi bottleneck.
-     - **Asymmetry cancellation (`symmetric_peer_cancels_sender_asymmetry`):**
-       a symmetric direct peer link cancels arbitrary unknown sender-link
-       asymmetries `α₁, α₂` that leave an irreducible bias `α₁ - α₂` in a star.
+   * **Exact linear bias under edge asymmetries (`graph_estimator_bias`).**
+     When edge `e` carries static bias `α e` (such as a one-way delay
+     asymmetry), any unit `s → t` flow `f` has exact estimation bias
+     `∑ e, f e * α e`. Zero bias for arbitrary unknown sender-link asymmetries
+     holds only for estimators that assign zero flow to those biased edges,
+     not in general for the minimum-variance graph BLUE.
+   * **Thomson's Principle (`thomson_blue_optimal`).** The algebraic quadratic
+     form `flowVariance G f = ∑ e, G.var e * f e ^ 2` (which equals estimation
+     variance when edge measurement errors are zero-mean and mutually
+     uncorrelated with variances `G.var e`; links sharing one wireless medium
+     can violate uncorrelatedness) is uniquely minimized over unit `s → t`
+     flows by the electrical flow `f*_e = (ψ (dst e) - ψ (src e)) / var e`,
+     achieving effective resistance `ψ t - ψ s`.
+   * **Topology corollaries:**
+     - **Star graph (`star_effective_resistance`):** effective resistance
+       between receivers `r₁ ≠ r₂` is `v r₁ + v r₂`.
+     - **Complete peer graph `K_N` (`complete_graph_effective_resistance`,
+       `complete_graph_equal_budget`):** with equal edge variance `v` per link
+       (`N (N - 1) / 2` links vs `N - 1` spokes), effective resistance is
+       `2 v / N` (`N×` smaller than `2 v`); at the *same total probe budget*
+       across all links (`v_K = (N / 2) * v`), effective resistance is `v`
+       (a `2×` reduction for every `N ≥ 2`).
+     - **Wi-Fi sender with wired peer link (`wifi_sender_wired_peers_resistance`,
+       `triangle_blue_bias`):** two speakers with Wi-Fi sender variance `vW`
+       and wired peer variance `vP` achieve parallel effective resistance
+       `2 vW vP / (2 vW + vP)`, while the graph BLUE retains bias
+       `(vP / (2 vW + vP)) * (α₁ - α₀) + (2 vW / (2 vW + vP)) * αP` under
+       edge biases `(α₀, α₁, αP)` (whereas the peer-only estimator has bias
+       `αP`, zero when the peer link is symmetric).
 -/
 
 @[expose] public noncomputable section
@@ -92,8 +105,7 @@ theorem linFilter_sub (w x y : ℕ → ℝ) (k : ℕ) :
 /-- **Sender-clock cancellation under identical filters.** When two receivers
 observe `θ_i = φ_s - φ_i` with measurement errors `m_i` and apply the same
 linear filter `w`, their relative estimation error
-`(F(θ₁ + m₁) - θ₁) - (F(θ₂ + m₂) - θ₂)` is completely independent of the
-sender clock trajectory `φ_s`. -/
+`(F(θ₁ + m₁) - θ₁) - (F(θ₂ + m₂) - θ₂)` does not depend on `φ_s`. -/
 theorem star_pair_error_same (w φs φ₁ φ₂ m₁ m₂ : ℕ → ℝ) (k : ℕ) :
     (linFilter w (fun t => (φs t - φ₁ t) + m₁ t) k - (φs k - φ₁ k))
       - (linFilter w (fun t => (φs t - φ₂ t) + m₂ t) k - (φs k - φ₂ k))
@@ -116,16 +128,15 @@ theorem star_pair_error_heterogeneous (w₁ w₂ φs φ₁ φ₂ m₁ m₂ : ℕ
   rw [linFilter_add, linFilter_sub, linFilter_add, linFilter_sub]
   ring
 
-/-- **Sender-disciplined timestamped schedule.** Suppose the sender embeds a
-correction `cS(t)` tagged with sender time inside the audio stream (eliminating
-any assumption of zero broadcast delay or jitter). Each receiver `i` measures
-the corrected virtual-clock offset `(φs - cS) - φ_i + m_i` and filters it with
-its own filter `w_i`. Then heterogeneous filters see only the *residual*
-sender error `δS = φs - cS`, never raw sender clock wander `φs`. In
-particular, when `cS` tracks `φs` (`δS = 0`), heterogeneous-filter leakage
-vanishes identically. -/
-theorem disciplined_schedule_error (w₁ w₂ φs cS φ₁ φ₂ m₁ m₂ : ℕ → ℝ) (k : ℕ) :
-    let δS : ℕ → ℝ := fun t => φs t - cS t
+/-- **Aligned schedule-subtraction identity.** Substituting the residual
+`δS t = φs t - sRef t` for `φs t` in `star_pair_error_heterogeneous` replaces
+the raw sender-phase leakage `(F₁ - F₂) φ_s` with `(F₁ - F₂) δS`. This assumes
+both receivers subtract the same correction `sRef` at the same cycle index `t`
+(it does not model broadcast delay, broadcast jitter, or extrapolation error);
+moreover, if `sRef` estimates `φ_s` relative to the receivers' mean, `δS`
+includes both estimation error and that receiver-clock mean. -/
+theorem disciplined_schedule_error (w₁ w₂ φs sRef φ₁ φ₂ m₁ m₂ : ℕ → ℝ) (k : ℕ) :
+    let δS : ℕ → ℝ := fun t => φs t - sRef t
     (linFilter w₁ (fun t => (δS t - φ₁ t) + m₁ t) k - (δS k - φ₁ k))
       - (linFilter w₂ (fun t => (δS t - φ₂ t) + m₂ t) k - (δS k - φ₂ k))
     = (linFilter w₁ δS k - linFilter w₂ δS k)
@@ -159,12 +170,10 @@ theorem sum_invVarWeight {R : ℕ} (hR : 0 < R) {σ2 : Fin R → ℝ} (hσ : ∀
   simp only [invVarWeight, consensusVar, div_eq_mul_inv, ← Finset.mul_sum]
   exact inv_mul_cancel₀ hS
 
-/-- **Exact algebraic residual variance identity (fixing the `+ V_bc` sign bug).**
-For `R` independent receiver errors with variances `σ2 r > 0` and
-precision-weighted mean `m̄ = ∑ i, α i * m i` (`α i = V_bc / σ2 i`), the
-variance of the residual `m r - m̄` is
-`(1 - α r)² σ2 r + ∑_{i ≠ r} (α i)² σ2 i = σ2 r - V_bc`,
-strictly *less* than `σ2 r` because `m r` enters `m̄` with positive weight. -/
+/-- **Algebraic residual-variance identity.** For weights
+`α i = V_bc / σ2 i` with `σ2 i > 0` and `V_bc = (∑ i, (σ2 i)⁻¹)⁻¹`,
+`(1 - α r)² σ2 r + ∑_{i ≠ r} (α i)² σ2 i = σ2 r - V_bc`, strictly less than
+`σ2 r` because `m r` enters `m̄` with positive weight. -/
 theorem residual_variance_sub {R : ℕ} (hR : 0 < R) {σ2 : Fin R → ℝ} (hσ : ∀ r, 0 < σ2 r)
     (r : Fin R) :
     ∑ i : Fin R, ((if i = r then (1 : ℝ) else 0) - invVarWeight σ2 i) ^ 2 * σ2 i
@@ -194,11 +203,14 @@ theorem residual_variance_sub {R : ℕ} (hR : 0 < R) {σ2 : Fin R → ℝ} (hσ 
   rw [hV]
   ring
 
-/-- **Exact `L²` variance of `m r - m̄` under pairwise uncorrelated errors.**
-For any `L²` random variables `m : Fin R → Ω → ℝ` with `∫ (m i)² = σ2 i > 0`
-and `∫ m i * m j = 0` for `i ≠ j`, the weighted consensus average
-`m̄ = ∑ i, invVarWeight σ2 i * m i` has variance `consensusVar σ2` and each
-residual `m r - m̄` has exact second moment `σ2 r - consensusVar σ2`. -/
+/-- **`L²` second moment of `m r - m̄` under pairwise orthogonal errors.**
+For any `L²` random variables `m : Fin R → Ω → ℝ` with second moments
+`∫ (m i)² = σ2 i > 0` and pairwise orthogonality `∫ m i * m j = 0` for `i ≠ j`
+(which equals uncorrelatedness with variance `σ2 i` when each `m i` has zero
+mean, and fails when errors share a nonzero bias such as queueing bias or
+asymmetry), the precision-weighted average `m̄ = ∑ i, invVarWeight σ2 i * m i`
+has second moment `consensusVar σ2` and each residual `m r - m̄` has second
+moment `σ2 r - consensusVar σ2`. -/
 theorem residual_variance_L2 {Ω : Type*} [MeasurableSpace Ω] {μ : Measure Ω}
     {R : ℕ} (hR : 0 < R) {σ2 : Fin R → ℝ} (hσ : ∀ r, 0 < σ2 r)
     {m : Fin R → Ω → ℝ} (hm : ∀ i, MemLp (m i) 2 μ)
@@ -256,9 +268,10 @@ end StarEstimation
 
 section GraphBlue
 
-/-- A finite directed measurement graph on vertices `V` with edges `E`. Each
-edge `e` represents an unbiased pairwise clock-offset measurement
-`y e = φ (dst e) - φ (src e) + η e` with independent noise variance `var e > 0`. -/
+/-- A finite directed measurement graph on vertices `V` with edges `E` and
+positive edge weights `var e > 0`. In the statistical interpretation, edge `e`
+observes `y e = φ (dst e) - φ (src e) + α e + η e`, where `α e` is static bias
+and `η e` is zero-mean noise with variance `var e`. -/
 structure EdgeGraph (V E : Type*) [Fintype V] [DecidableEq V] [Fintype E] where
   src : E → V
   dst : E → V
@@ -293,9 +306,9 @@ theorem sum_flow_grad (G : EdgeGraph V E) (f : E → ℝ) (φ : V → ℝ) :
 def IsUnitFlow (G : EdgeGraph V E) (s t : V) (f : E → ℝ) : Prop :=
   ∀ u : V, flowDiv G f u = (if u = t then (1 : ℝ) else 0) - (if u = s then 1 else 0)
 
-/-- **Unbiasedness equivalence.** A linear estimator `y ↦ ∑ e, f e * y e`
-recovers `φ t - φ s` exactly for every noiseless clock vector `φ : V → ℝ` if
-and only if `f` is a unit `s → t` flow. -/
+/-- **Unbiasedness equivalence (zero-bias edges).** A linear estimator
+`y ↦ ∑ e, f e * y e` recovers `φ t - φ s` for every noiseless, unbiased clock
+vector `φ : V → ℝ` if and only if `f` is a unit `s → t` flow. -/
 theorem linear_unbiased_iff_unitFlow (G : EdgeGraph V E) (s t : V) (f : E → ℝ) :
     (∀ φ : V → ℝ, ∑ e : E, f e * (φ (G.dst e) - φ (G.src e)) = φ t - φ s)
       ↔ IsUnitFlow G s t f := by
@@ -323,8 +336,25 @@ theorem linear_unbiased_iff_unitFlow (G : EdgeGraph V E) (s t : V) (f : E → �
     simp only [mul_sub, mul_ite, mul_one, mul_zero, Finset.sum_sub_distrib,
       Finset.sum_ite_eq' Finset.univ, Finset.mem_univ, ↓reduceIte]
 
-/-- Noise variance `∑ e, G.var e * (f e)²` of a linear estimator with edge
-weights `f` under independent edge noise of variance `G.var e`. -/
+/-- **Exact bias of a graph linear estimator under static edge biases.**
+When each edge measurement carries static bias `α e` (such as a one-way delay
+asymmetry), `y e = φ (dst e) - φ (src e) + α e`, any unit `s → t` flow `f`
+incurs estimation bias `∑ e, f e * α e` relative to `φ t - φ s`. In
+particular, bias vanishes for arbitrary unknown sender-link asymmetries only
+if `f` puts zero weight on those links (not in general for the minimum-variance
+graph BLUE). -/
+theorem graph_estimator_bias (G : EdgeGraph V E) {s t : V} {f : E → ℝ}
+    (hf : IsUnitFlow G s t f) (φ : V → ℝ) (α : E → ℝ) :
+    (∑ e : E, f e * ((φ (G.dst e) - φ (G.src e)) + α e)) - (φ t - φ s)
+      = ∑ e : E, f e * α e := by
+  have hunb := (linear_unbiased_iff_unitFlow G s t f).mpr hf φ
+  simp only [mul_add, Finset.sum_add_distrib, hunb]
+  ring
+
+/-- Algebraic quadratic form `∑ e, G.var e * (f e)²` associated with edge
+weights `f`. When edge measurement errors are zero-mean and mutually
+uncorrelated with variances `G.var e`, this equals the estimator's variance
+(note that links sharing one wireless medium need not be uncorrelated). -/
 def flowVariance (G : EdgeGraph V E) (f : E → ℝ) : ℝ :=
   ∑ e : E, G.var e * f e ^ 2
 
@@ -333,14 +363,15 @@ vertex potential `ψ : V → ℝ` (Ohm's law with resistance `R_e = var e`). -/
 def electricalFlow (G : EdgeGraph V E) (ψ : V → ℝ) (e : E) : ℝ :=
   (ψ (G.dst e) - ψ (G.src e)) / G.var e
 
-/-- **Thomson's Principle (Graph-Laplacian BLUE optimality).** Suppose vertex
-potential `ψ : V → ℝ` solves the weighted graph Laplacian for unit injection
-from `s` to `t`, i.e., `IsUnitFlow G s t (electricalFlow G ψ)`. Then:
+/-- **Thomson's Principle (algebraic Graph-Laplacian BLUE optimality).**
+Suppose vertex potential `ψ : V → ℝ` solves the weighted graph Laplacian for
+unit injection from `s` to `t`, i.e., `IsUnitFlow G s t (electricalFlow G ψ)`.
+Then:
 1. For every unit `s → t` flow `f`,
    `flowVariance G f = flowVariance G f* + flowVariance G (f - f*)`.
-2. The electrical flow achieves exact variance `ψ t - ψ s` (the effective
+2. The electrical flow achieves `flowVariance G f* = ψ t - ψ s` (the effective
    resistance between `s` and `t`).
-3. Every unbiased linear estimator has variance at least `ψ t - ψ s`, with
+3. Every unit `s → t` flow has `flowVariance` at least `ψ t - ψ s`, with
    equality if and only if `f = electricalFlow G ψ`. -/
 theorem thomson_blue_optimal (G : EdgeGraph V E) {s t : V} {ψ : V → ℝ}
     (hψ : IsUnitFlow G s t (electricalFlow G ψ)) :
@@ -407,12 +438,12 @@ theorem thomson_blue_optimal (G : EdgeGraph V E) {s t : V} {ψ : V → ℝ}
     · intro heq
       rw [heq, hvarStar]
 
-/-! ### Exact topology corollaries -/
+/-! ### Topology corollaries -/
 
 /-- **Star topology effective resistance.** On a star graph with hub `0 : Fin (R + 1)`
 and `R` spokes `r : Fin R` connecting `0 → r.succ` with probe variance `v r > 0`,
-the minimum linear unbiased estimation variance for `φ r₂.succ - φ r₁.succ`
-(`r₁ ≠ r₂`) is exactly `v r₁ + v r₂`. -/
+the minimum `flowVariance` for `φ r₂.succ - φ r₁.succ` (`r₁ ≠ r₂`) is
+`v r₁ + v r₂`. -/
 def starGraph {R : ℕ} (v : Fin R → ℝ) (hv : ∀ r, 0 < v r) :
     EdgeGraph (Fin (R + 1)) (Fin R) where
   src := fun _ => 0
@@ -463,11 +494,12 @@ theorem star_effective_resistance {R : ℕ} (v : Fin R → ℝ) (hv : ∀ r, 0 <
   rw [hdiff] at hth
   exact ⟨hunit, hth.1, hth.2.2.1⟩
 
-/-- **Complete peer graph `K_{R+1}` effective resistance.** When all `N = R + 1`
-hosts (sender plus `R` receivers) exchange symmetric pairwise probes of equal
-variance `v > 0` across every ordered pair `(i, j)` with `i < j`, the minimum
-variance for estimating any pair's relative offset `φ t - φ s` (`s ≠ t`) is
-`2 v / (R + 1)` — an exact `(R + 1)×` variance reduction over the star's `2 v`. -/
+/-- **Complete peer graph `K_N` effective resistance.** When all `N = R + 1`
+hosts exchange pairwise probes of equal variance `v > 0` across all
+`N (N - 1) / 2` edges `(i, j)` with `i < j`, the minimum `flowVariance` for
+estimating `φ t - φ s` (`s ≠ t`) is `2 v / N`. Note that `K_N` uses `N / 2`
+times as many links as a star on `N` vertices (`N - 1` spokes); see
+`complete_graph_equal_budget` for the equal-total-probe-budget comparison. -/
 def completeGraph (N : ℕ) (v : ℝ) (hv : 0 < v) :
     EdgeGraph (Fin N) { p : Fin N × Fin N // p.1 < p.2 } where
   src := fun e => e.1.1
@@ -489,11 +521,8 @@ theorem complete_graph_effective_resistance {N : ℕ} (hN : 2 ≤ N) {v : ℝ} (
   have hvne : v ≠ 0 := hv.ne'
   have hunit : IsUnitFlow G s t (electricalFlow G ψ) := by
     intro u
-    -- Rewrite the directed sum over `i < j` as the sum over all `j ≠ u` of `(ψ u - ψ j) / v`.
     have hdiv_all : flowDiv G (electricalFlow G ψ) u
         = ∑ w : Fin N, (ψ u - ψ w) / v := by
-      -- For every unordered pair `{a, b}` with `a < b`, edge `(a, b)` contributes
-      -- `(ψ u - ψ w) / v` when `{a, b} = {u, w}` and `0` otherwise.
       unfold flowDiv electricalFlow G completeGraph
       have hterm : ∀ e : { p : Fin N × Fin N // p.1 < p.2 },
           (if e.1.2 = u then (ψ e.1.2 - ψ e.1.1) / v else 0)
@@ -571,12 +600,32 @@ theorem complete_graph_effective_resistance {N : ℕ} (hN : 2 ≤ N) {v : ℝ} (
   rw [hdiff] at hth
   exact ⟨hunit, hth.1, hth.2.2.1⟩
 
+/-- **Equal-probe-budget comparison for `K_N` versus the star.** Splitting the
+star's total probe budget (`N - 1` spokes at variance `v`) uniformly across all
+`N (N - 1) / 2` edges of `K_N` scales each edge's variance to `vK = (N / 2) * v`.
+The complete graph's effective resistance between any two vertices is then
+`2 * vK / N = v`, a `2×` reduction relative to the star's `2 v` for every
+`N ≥ 2` (rather than `N×`). -/
+theorem complete_graph_equal_budget {N : ℕ} (hN : 2 ≤ N) {v : ℝ} (hv : 0 < v)
+    {s t : Fin N} (hne : s ≠ t) :
+    let hvK : 0 < (N : ℝ) / 2 * v := by
+      have : (0 : ℝ) < N := by exact_mod_cast (show 0 < N by omega)
+      positivity
+    let G := completeGraph N ((N : ℝ) / 2 * v) hvK
+    let ψ : Fin N → ℝ := fun u =>
+      (((N : ℝ) / 2 * v) / N) * ((if u = t then (1 : ℝ) else 0) - (if u = s then 1 else 0))
+    flowVariance G (electricalFlow G ψ) = v := by
+  intro hvK G ψ
+  have h := (complete_graph_effective_resistance hN hvK hne).2.1
+  have hNne : (N : ℝ) ≠ 0 := by exact_mod_cast (show N ≠ 0 by omega)
+  rw [h]
+  field_simp
+
 /-- **Wi-Fi sender + wired peers (parallel effective resistance).**
 Consider 3 hosts (`Fin 3`): sender `0` on Wi-Fi with probe variance `vW > 0`
 to speakers `1` and `2`, plus a direct wired peer link `(1, 2)` with probe
-variance `vP > 0`. The exact BLUE variance for `φ 2 - φ 1` is the parallel
-combination `2 vW vP / (2 vW + vP)`, strictly better than *both* the star's
-`2 vW` and the direct peer link alone (`vP`). -/
+variance `vP > 0`. The minimum `flowVariance` for `φ 2 - φ 1` is the parallel
+combination `2 vW vP / (2 vW + vP)`, smaller than both `2 vW` and `vP`. -/
 def triangleGraph (vW vP : ℝ) (hvW : 0 < vW) (hvP : 0 < vP) :
     EdgeGraph (Fin 3) (Fin 3) where
   -- Edge 0: (0 -> 1) Wi-Fi, Edge 1: (0 -> 2) Wi-Fi, Edge 2: (1 -> 2) wired peer
@@ -622,16 +671,49 @@ theorem wifi_sender_wired_peers_resistance {vW vP : ℝ} (hvW : 0 < vW) (hvP : 0
     nlinarith
   exact ⟨hunit, hth.1, hltP, hltW, hth.2.2.1⟩
 
-/-- **Symmetric direct peer link cancels arbitrary sender-link asymmetries.**
-In a star where link `(0, 1)` has static one-way asymmetry `α₁` and link
-`(0, 2)` has static one-way asymmetry `α₂`, the star-inferred relative offset
-`(φ₀ - φ₁ + α₁) - (φ₀ - φ₂ + α₂)` carries bias `α₁ - α₂` relative to the true
-inter-receiver offset `φ₂ - φ₁`. A direct symmetric peer link measuring
-`φ₂ - φ₁` directly cancels `α₁` and `α₂` completely. -/
-theorem symmetric_peer_cancels_sender_asymmetry (φ₀ φ₁ φ₂ α₁ α₂ : ℝ) :
-    ((φ₀ - φ₁ + α₁) - (φ₀ - φ₂ + α₂)) - (φ₂ - φ₁) = α₁ - α₂
-      ∧ (φ₂ - φ₁) - (φ₂ - φ₁) = 0 := by
-  constructor <;> ring
+/-- **Exact bias of the triangle BLUE versus the peer-only estimator.**
+On `triangleGraph vW vP` with edge biases `α = ![α₀, α₁, αP]` (where `α₀` and
+`α₁` are the one-way asymmetries on sender links `(0, 1)` and `(0, 2)` and `αP`
+is the bias on the direct peer link `(1, 2)`):
+1. The Graph-Laplacian BLUE `electricalFlow` routes fraction `vP / (2 vW + vP)`
+   through the sender path and `2 vW / (2 vW + vP)` through the peer link, so
+   its estimation bias for `φ 2 - φ 1` is
+   `(vP / (2 vW + vP)) * (α₁ - α₀) + (2 vW / (2 vW + vP)) * αP`
+   (nonzero whenever `α₁ ≠ α₀`, even if `αP = 0`).
+2. The peer-only unit flow `fPeer = ![0, 0, 1]` has bias `αP`, which vanishes
+   whenever the direct peer link is symmetric (`αP = 0`). -/
+theorem triangle_blue_bias {vW vP : ℝ} (hvW : 0 < vW) (hvP : 0 < vP)
+    (φ : Fin 3 → ℝ) (α₀ α₁ αP : ℝ) :
+    let G := triangleGraph vW vP hvW hvP
+    let reff := (2 * vW * vP) / (2 * vW + vP)
+    let ψ : Fin 3 → ℝ := ![0, -(reff / 2), reff / 2]
+    let α : Fin 3 → ℝ := ![α₀, α₁, αP]
+    let fPeer : Fin 3 → ℝ := ![0, 0, 1]
+    IsUnitFlow G 1 2 fPeer
+      ∧ ((∑ e : Fin 3, electricalFlow G ψ e * ((φ (G.dst e) - φ (G.src e)) + α e))
+            - (φ 2 - φ 1)
+          = (vP / (2 * vW + vP)) * (α₁ - α₀) + (2 * vW / (2 * vW + vP)) * αP)
+      ∧ ((∑ e : Fin 3, fPeer e * ((φ (G.dst e) - φ (G.src e)) + α e))
+            - (φ 2 - φ 1)
+          = αP) := by
+  intro G reff ψ α fPeer
+  have hden : (2 * vW + vP) ≠ 0 := by linarith
+  have hvW_ne : vW ≠ 0 := hvW.ne'
+  have hvP_ne : vP ≠ 0 := hvP.ne'
+  have hunit_blue : IsUnitFlow G 1 2 (electricalFlow G ψ) :=
+    (wifi_sender_wired_peers_resistance hvW hvP).1
+  have hunit_peer : IsUnitFlow G 1 2 fPeer := by
+    intro u
+    fin_cases u <;>
+    · simp [flowDiv, Fin.sum_univ_three, G, triangleGraph, fPeer]
+  refine ⟨hunit_peer, ?_, ?_⟩
+  · rw [graph_estimator_bias G hunit_blue φ α]
+    simp only [Fin.sum_univ_three, electricalFlow, G, triangleGraph, ψ, reff, α,
+      Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val]
+    field_simp
+    ring
+  · rw [graph_estimator_bias G hunit_peer φ α]
+    simp [Fin.sum_univ_three, fPeer, α]
 
 end GraphBlue
 

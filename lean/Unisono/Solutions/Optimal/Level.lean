@@ -8,50 +8,68 @@ public import Mathlib.Analysis.SpecialFunctions.Log.Basic
 public import Mathlib.MeasureTheory.Integral.Bochner.Set
 
 /-!
-# Optimal playout latency level under link pauses and discontinuities
+# Playout latency margin under a continuous-time Campbell pause model
 
-A **pause** (the link-outage model of `Unisono.Spec.DelayModel`) is an interval
-during which packets are delayed or dropped on a link. If the nominal playout
-level leaves a safety margin of `m` seconds above baseline path and processing
-delays, a non-overlapping pause of duration `h` causes `(h - m)⁺ = max (h - m) 0`
-seconds of missed audio and triggers a playback discontinuity (click/glitch)
-whenever `h > m`.
+This module analyzes a standalone continuous-time approximation to the playout
+buffer-level problem. It does not import `Unisono.Spec.Objectives`; its
+objective `J(m)` is a continuous-time Campbell-formula model with the following
+simplifications relative to the discrete specification:
 
-By Campbell's formula for stationary marked point processes with pause intensity
-measure `ν = λ μ` (arrival rate `λ` per second times duration law `μ`), a
-margin `m` incurs steady-state per-second cost:
+* **Pauses versus outages.** A **pause** of duration `h` holds packets on a
+  link for `h` seconds before delivering them, so a safety margin of `m`
+  seconds above baseline path and processing delays absorbs up to `m` seconds
+  and leaves `(h - m)⁺ = max (h - m) 0` seconds of missed audio and one
+  discontinuity (click) whenever `h > m`. By contrast, during an **outage**
+  where packets are dropped rather than delayed, the entire outage duration is
+  missed regardless of `m`; the model here describes pauses only.
+* **Unit conversion.** `J(m)` measures missed audio in **seconds per second**
+  (`∫ (h - m)⁺ dν`), whereas `Unisono.Spec.Objectives.World.missed` counts
+  missed **output samples per second**. Converting a specification missed-sample
+  weight `c_M` to `wM` multiplies by the audio sample rate `ρ`: `wM = ρ * c_M`.
+* **Discrete effects omitted.** This continuous-time model omits discrete
+  device block-request boundaries, resampler lookahead, background jitter
+  tails, and overlapping pauses.
+
+Under Campbell's formula for a stationary marked point process with pause
+intensity measure `ν = λ μ` (arrival rate `λ` per second times duration
+distribution `μ`), a playout margin `m` incurs steady-state per-second cost:
 
     J(m) = wΛ · m + wΘ · (m - m₀)² + wM · ∫ (h - m)⁺ dν + wD · ν {h > m}
 
-where `wΛ` prices mean latency, `wΘ` prices quadratic lip-sync deviation from
-a target margin `m₀`, `wM` prices missed audio fraction, and `wD` prices
-discontinuity rate.
+where `wΛ` prices mean latency, `wΘ` prices quadratic deviation from a target
+lip-sync margin `m₀` (determined by the target latency minus baseline path and
+processing delay), `wM` prices missed seconds per second, and `wD` prices
+discontinuities per second.
 
 ## Main results
 
 * **Missed-fraction quantile rule (`margin_best_missed`).** When `wΘ = 0` and
   `wD = 0`, any margin `m` satisfying `wM · ν {h > m} ≤ wΛ ≤ wM · ν {h ≥ m}`
   globally minimizes `wΛ · m + wM · ∫ (h - m)⁺ dν`.
-* **Lip-sync tracking optimum (`margin_best_tracking`).** With quadratic
-  tracking penalty `wΘ ≥ 0`, any margin `m` satisfying
+* **Tracking + missed-fraction optimum (`margin_best_tracking`).** With
+  quadratic tracking penalty `wΘ ≥ 0` around target margin `m₀` and `wD = 0`,
+  any margin `m` satisfying
   `wM · ν {h > m} ≤ wΛ + 2 wΘ (m - m₀) ≤ wM · ν {h ≥ m}` globally minimizes
   `wΛ · m + wΘ · (m - m₀)² + wM · ∫ (h - m)⁺ dν`.
-* **Fleet-averaged pause measure (`fleet_average_missed_cost`).** Because
-  `Unisono.Spec.World.missed` averages missed audio across all `R` speakers
-  (`1 / R` factor), the fleet-wide expected missed cost at a shared margin `m`
-  is governed by the *average* pause measure `ν̄ = (1 / R) ∑ r, ν r` (not the
-  sum and not the worst single speaker).
-* **Closed-form exponential optimum with discontinuities
-  (`margin_best_exponential_with_clicks`).** When pauses arrive at rate `λ > 0`
-  with exponentially distributed durations of mean `hBar > 0`, pricing
-  discontinuities (`wD ≥ 0`) preserves convexity on `m ≥ 0` and yields the exact
-  global minimizer
-  `m* = max 0 (hBar * log (λ * (wM + wD / hBar) / wΛ))`.
-* **Non-convexity under general discontinuities
-  (`discontinuity_nonconvex_example`).** For a deterministic/atomic pause
-  duration `h₀ > 0`, pricing discontinuities (`wD > 0`) introduces a downward jump
-  at `m = h₀`, breaking convexity and invalidating local missed-only quantile
-  rules—justifying a 1D search over candidate margins in practice.
+* **Linearity over fleet-averaged pause measures
+  (`fleet_average_missed_cost`).** Averaging the Campbell missed-audio cost
+  across `R` speakers with pause measures `ν r` at a shared margin `m` equals
+  the single-measure cost under `ν̄ = (1 / R) ∑ r, ν r`. (This is an integral
+  linearity identity for the Campbell model, not a theorem about
+  `World.missed`.)
+* **Closed-form exponential optimum with discontinuities in low-latency mode
+  (`margin_best_exponential_with_clicks`).** When `wΘ = 0`, `wΛ > 0`, and
+  pauses arrive at rate `λ > 0` with a single shared exponential duration
+  distribution of mean `hBar > 0`, pricing discontinuities (`wD ≥ 0`) preserves
+  convexity on `m ≥ 0` and yields the global minimizer
+  `m* = max 0 (hBar * log (λ * (wM + wD / hBar) / wΛ))`. (Note: a mixture of
+  exponential pause distributions with different means across speakers is not
+  exponential.)
+* **Non-convexity under atomic pauses with discontinuities
+  (`discontinuity_nonconvex_example`).** For a fixed pause duration `h₀ > 0`,
+  the step discontinuity of the indicator `1_{m < h₀}` breaks convexity when
+  `wD * λ > wΛ * h₀`, showing why general pause distributions with click
+  penalties require a 1D search rather than a local quantile rule.
 -/
 
 @[expose] public noncomputable section
@@ -114,9 +132,9 @@ theorem margin_best_missed (ν : Measure ℝ) [IsFiniteMeasure ν]
     nlinarith [mul_le_mul_of_nonneg_left hmono hwM,
       mul_nonneg (sub_nonneg.2 hxm) (sub_nonneg.2 hhigh)]
 
-/-- **Lip-sync tracking + missed-fraction optimality.** With latency weight `wΛ`,
-quadratic tracking penalty `wΘ ≥ 0` around target margin `m₀`, and missed-audio
-weight `wM ≥ 0`, any margin `m` satisfying the subgradient bracket
+/-- **Tracking + missed-fraction optimality.** With latency weight `wΛ`,
+quadratic tracking penalty `wΘ ≥ 0` around target margin `m₀`, missed-audio
+weight `wM ≥ 0`, and `wD = 0`, any margin `m` satisfying the subgradient bracket
 `wM · ν {h > m} ≤ wΛ + 2 wΘ (m - m₀) ≤ wM · ν {h ≥ m}` globally minimizes
 `x ↦ wΛ · x + wΘ · (x - m₀)² + wM · ∫ max (h - x) 0 dν`. -/
 theorem margin_best_tracking (ν : Measure ℝ) [IsFiniteMeasure ν]
@@ -132,12 +150,10 @@ theorem margin_best_tracking (ν : Measure ℝ) [IsFiniteMeasure ν]
   have hsq : 0 ≤ wΘ * (x - m) ^ 2 := mul_nonneg hwΘ (sq_nonneg _)
   linarith
 
-/-- **Fleet-averaged pause cost across `R` speakers.** Because
-`Unisono.Spec.World.missed` averages the missed fraction across all `R > 0`
-speakers, if each speaker `r` sees pause measure `ν r` (shifted by its baseline
-delay), the fleet-averaged objective at a shared margin `m` equals the
-single-measure objective under the fleet-averaged measure
-`ν̄ = (R : ℝ≥0∞)⁻¹ • ∑ r, ν r`. -/
+/-- **Linearity of the Campbell missed-audio cost over fleet-averaged pause
+measures.** For `R > 0` speakers with finite pause measures `ν r`, averaging
+the Campbell missed-audio cost across `r` at a shared margin `m` equals the
+single-measure cost under `ν̄ = (R : ℝ≥0∞)⁻¹ • ∑ r, ν r`. -/
 theorem fleet_average_missed_cost {R : ℕ} (hR : 0 < R) (ν : Fin R → Measure ℝ)
     [∀ r, IsFiniteMeasure (ν r)]
     (hint : ∀ r, Integrable (fun h => h) (ν r)) (wΛ wM m : ℝ) :
@@ -159,17 +175,17 @@ theorem fleet_average_missed_cost {R : ℕ} (hR : 0 < R) (ν : Fin R → Measure
     nsmul_eq_mul, ← Finset.mul_sum]
   field_simp
 
-/-- **Closed-form exponential pause optimum including discontinuities.**
-Suppose pauses arrive at rate `lam > 0` with exponentially distributed
-durations of mean `hBar > 0`, so at margin `x ≥ 0`:
+/-- **Closed-form exponential pause optimum with discontinuities (low-latency
+mode, `wΘ = 0`).** Suppose pauses arrive at rate `lam > 0` with a single shared
+exponential duration distribution of mean `hBar > 0`, so at margin `x ≥ 0`:
 * expected missed time per second is `lam * hBar * exp (-x / hBar)`,
 * expected discontinuity (click) rate is `lam * exp (-x / hBar)`.
 
-With latency weight `wΛ > 0`, missed-audio weight `wM ≥ 0`, and discontinuity
-weight `wD ≥ 0`, the combined objective
+With latency weight `wΛ > 0`, missed-audio weight `wM`, discontinuity weight
+`wD`, and `wM * hBar + wD > 0` (and `wΘ = 0`), the combined objective
 `J(x) = wΛ * x + wM * (lam * hBar * exp (-x / hBar)) + wD * (lam * exp (-x / hBar))`
 is globally minimized over all `x ≥ 0` by
-`m* = max 0 (hBar * log (lam * (wM + wD / hBar) / wΛ))` (when `wM + wD / hBar > 0`). -/
+`m* = max 0 (hBar * log (lam * (wM + wD / hBar) / wΛ))`. -/
 theorem margin_best_exponential_with_clicks {wΛ wM wD lam hBar : ℝ}
     (hwΛ : 0 < wΛ) (hlam : 0 < lam) (hhBar : 0 < hBar) (hpos : 0 < wM * hBar + wD)
     {x : ℝ} (hx : 0 ≤ x) :
@@ -253,10 +269,9 @@ identical pauses of fixed duration `h₀ > 0` arriving at rate `lam > 0`, so at
 margin `m` the combined cost is
 `J(m) = wΛ * m + wM * lam * max (h₀ - m) 0 + wD * lam * (if m < h₀ then 1 else 0)`.
 Whenever `wΛ ≥ 0` and `wD * lam > wΛ * h₀` (even with `wM = 0`), the
-discontinuity jump at `m = h₀` breaks convexity
-(`J(h₀ / 2) > (J(0) + J(h₀)) / 2`) and makes `m = h₀` strictly beat `m = 0`
-(`J(h₀) < J(0)`), showing why general pause distributions with click penalties
-require a 1D search rather than a local quantile rule. -/
+step discontinuity of the indicator at `m = h₀` breaks convexity
+(`J(h₀ / 2) > (J(0) + J(h₀)) / 2`) and makes `m = h₀` beat `m = 0`
+(`J(h₀) < J(0)`). -/
 theorem discontinuity_nonconvex_example {wΛ wM wD lam h₀ : ℝ}
     (hwΛ : 0 ≤ wΛ) (hwM : 0 ≤ wM) (hlam : 0 < lam) (hh₀ : 0 < h₀)
     (hclick : wΛ * h₀ < wD * lam) :
