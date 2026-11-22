@@ -854,9 +854,10 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
 on hosts `1` and `2`) over a uniform probability space on `Bool × Bool`, with
 nonzero uncorrelated link jitter of variance `1` on links `(0, 1)` and `(0, 2)`
 and zero clock, device, and timestamp noise, satisfies `SecondOrderModel.Holds`.
-Satisfiability with nonzero `ClockNoise` remains open because Gaussian
-realizations of white or random-walk frequency noise do not yield globally
-monotone `Clock` paths. -/
+Band-limiting `ClockNoise` to `[lowFreq, highFreq]` resolves the rate-bound
+incompatibility (`secondDifferenceCovariance_diag_le`), while constructing a
+witness with nonzero `ClockNoise` whose clock paths remain strictly increasing
+remains open. -/
 theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
     (P : Measure (Bool × Bool)) (world : Bool × Bool → World (Fin 3) 2)
     (d : Bool × Bool → Fin 3 → Fin 3 → Link),
@@ -949,6 +950,8 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
   let m : SecondOrderModel (Fin 3) 2 :=
     { rate := 1
       rate_pos := one_pos
+      sender := 0
+      host := fun r => if r = 0 then 1 else 2
       clock := fun _ => ClockNoise.zero
       txJitter := fun _ => ⟨0, fun _ => 0⟩
       rxJitter := fun _ => ⟨0, fun _ => 0⟩
@@ -977,6 +980,8 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
     { prob := hP
       network := fun _ _ _ _ _ => rfl
       rate_eq := fun _ => rfl
+      sender_eq := fun _ => rfl
+      host_eq := fun _ _ => rfl
       clocks := fun i => ⟨fun _ _ => hmemLp _, fun t τ => by simp [hclk_zero],
         fun t₁ τ₁ t₂ τ₂ => by simp [m, hclk_zero, secondDifferenceCovariance_zero]⟩
       clocks_uncorrelated := fun i j _ t₁ τ₁ t₂ τ₂ => by simp [hclk_zero]
@@ -998,8 +1003,6 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
             · by_cases h2 : i = 0 ∧ j = 2
               · simp [m, ownJ, own, s2, h2]; norm_num
               · simp [m, ownJ, own, h1, h2]⟩,
-        fun _ _ _ _ _ => by simp,
-        fun _ _ _ _ _ => by simp,
         fun _ _ _ _ _ => by simp,
         fun _ _ _ _ _ => by simp,
         fun i j i' j' hne s u => by
@@ -1039,9 +1042,9 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
         fun k₁ j₁ k₂ j₂ => by simp [m, hdev_cap, secondDifferenceCovariance_zero]⟩
       playback := fun r => ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_spk],
         fun k₁ j₁ k₂ j₂ => by simp [m, hdev_spk, secondDifferenceCovariance_zero]⟩
-      capture_clock_uncorrelated := fun i t τ k j => by simp [hclk_zero]
-      playback_clock_uncorrelated := fun i r t τ k j => by simp [hclk_zero]
-      capture_playback_uncorrelated := fun r k₁ j₁ k₂ j₂ => by simp [hdev_cap]
+      capture_clock_uncorrelated := fun i _ t τ k j => by simp [hclk_zero]
+      playback_clock_uncorrelated := fun i r _ t τ k j => by simp [hclk_zero]
+      capture_playback_uncorrelated := fun r _ k₁ j₁ k₂ j₂ => by simp [hdev_cap]
       playback_uncorrelated := fun r r' _ k₁ j₁ k₂ j₂ => by simp [hdev_spk]
       capture_timestamps := ⟨fun _ => hmemLp _, fun b => by simp [world, captureError],
         fun b b' => by simp [m, world, captureError]⟩

@@ -37,6 +37,7 @@
 \pdfstringdefDisableCommands{\def\lean#1{#1}}
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
 
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}[section]
@@ -69,23 +70,28 @@ To keep the boundary between formal proofs and modeling approximations clear:
   per-frame modal decomposition of \lean{World.syncCost} and
   \lean{World.trackingCost}, the per-cycle roughness scaling for linear speed
   ramps and boundary steps, a host-timeline shift lower bound on
-  \lean{World.sync} and \lean{World.tracking}, and a two-sided star-versus-peer
-  asymmetry separation theorem (\lean{peer\_beats\_star\_asymmetry\_bound})
-  exhibiting a concrete causal peer solution that achieves zero synchronization
-  error on worlds where every qualifying star solution incurs error at least
-  $A^2$. We also define two simplified per-sample reference protocols
-  (\lean{StarProtocol} and \lean{PeerProtocol}) and prove topology membership,
-  non-Zeno progress, and speed-bound safety, without proving objective bounds
-  for them.
+  \lean{World.sync} and \lean{World.tracking}, and a separation theorem on two
+  three-host worlds with ideal clocks and constant delays, whose sender links
+  have one-way asymmetries $+A$ and $-A$
+  (\lean{peer\_beats\_star\_asymmetry\_bound}). In one of them, every star
+  solution that meets the hypotheses of Theorem~\ref{thm:star-peer-sep}
+  (including \lean{FixedDelay.solution}, \lean{StarProtocol.solution}, and the
+  tight forwarding-only witness \lean{ForwardStar.solution}) has
+  synchronization cost at least $A^2$. A peer witness written for these worlds
+  (\lean{PeerSync.solution}) has cost $0$ in both. We also define two
+  simplified per-sample reference protocols (\lean{StarProtocol} and
+  \lean{PeerProtocol}) and prove topology membership, non-Zeno progress, and
+  speed-bound safety, without proving objective bounds for them.
 \item \textbf{Per-cycle linear-quadratic control approximation
   (\lean{ModalControl}, \lean{Spectral}).} The control optimality theorems
   minimize a per-cycle quadratic cost (\lean{multiCycleCost}) rather than the
   full nonlinear \lean{World} objectives. Multi-speaker optimality theorems
   assume one shared observation filtration and therefore act as
   \emph{centralized benchmarks} (lower bounds for decentralized controllers).
-  For independent star receivers, we characterize both the uncorrelated-error
-  optimum and the common-plus-private decomposition when the sender's clock
-  wanders, using a discrete Lyapunov solver for the shared star gain.
+  For independent star receivers, we prove optimality only when cross-receiver
+  position errors are pairwise uncorrelated; when the sender's clock wanders,
+  we prove a common-plus-private cost identity and solve the coupled
+  Kalman-filter plus regulator Lyapunov equation numerically.
 \item \textbf{Linear graph estimation (\lean{Estimation}) and standalone
   Campbell playout buffering (\lean{Level}).} Clock-offset estimation theorems
   characterize linear unbiased estimators on graphs via Kirchhoff flows and
@@ -112,27 +118,37 @@ Dimension & Star topology (sender $\leftrightarrow$ receiver) & Peer topology (w
 Clock estimation &
   Sliding-window minimum round-trip time (RTT) selector and two-state Kalman
   filter per link; optional causal sender-disciplined schedule reduces mixed-link
-  spread when the sender's frequency walk is large. &
+  spread when the sender's frequency walk is very large ($100\times$ stress case). &
   Graph-Laplacian best linear unbiased estimator (BLUE) via Thomson's principle:
-  reduces pairwise variance by $(R{+}1)\times$ at equal per-link probe rate
-  ($2\times$ at equal total probe budget) on $K_{R+1}$, and routes around a
-  noisy wireless sender over wired peer links. \\
+  on $K_{R+1}$ (the complete graph on the sender and $R$ speakers), reduces
+  pairwise variance by $(R{+}1)\times$ at equal per-link probe rate ($2\times$
+  at equal total probe budget for $R \ge 2$), and routes around a noisy wireless
+  sender over wired peer links. \\
+\addlinespace[4pt]
 Link asymmetry &
   Two-sided separation: on shifted worlds with star asymmetry $\pm A$, every
-  qualifying star solution incurs $\max(\mathrm{sync}) \ge A^2$. &
+  qualifying star solution incurs $\max(\mathrm{sync}) \ge A^2$ (tightly
+  attained by \lean{ForwardStar.solution}). &
   Symmetric direct peer links enable a peer-only estimator with zero
-  inter-speaker bias (concrete witness achieves $\mathrm{sync} = 0$). The
-  minimum-variance graph BLUE retains a small nonzero bias proportional to
-  weight routed through the sender links. \\
+  inter-speaker bias (an idealized-world witness achieves $\mathrm{sync} = 0$).
+  The minimum-variance graph BLUE retains a nonzero bias determined by the
+  sender-to-peer variance ratio (from $0.83\,\mu\text{s}$ up to
+  $1497\,\mu\text{s}$ in our triangle examples). \\
+\addlinespace[4pt]
 Playback control &
-  Decentralized single-gain control rule: optimal weight is
-  $\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$ when errors are uncorrelated,
-  shifting toward $\tilde c_\Theta$ as sender clock wander grows. &
+  Decentralized single-gain control: when cross-receiver position errors are
+  uncorrelated, the optimal gain is
+  $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$. When the
+  sender's clock wanders, no theorem covers the noisy-measurement star;
+  filter-in-the-loop Lyapunov analysis shows noisy measurements push the best
+  shared gain below $\mathrm{gainForWeight}(\tilde c_\Theta)$. &
   Centralized benchmark uses two-gain modal control $(g_{\mathrm{com}},
   g_{\mathrm{diff}})$. Setting $g_{\mathrm{com}} = 0$ is optimal only when
-  latency is unpriced ($\tilde c_\Theta = 0$, no missed-sample cost) and lets
-  mean latency drift; practical low-latency peer control pairs $g_{\mathrm{diff}}$
-  with a small $g_{\mathrm{com,low}} > 0$. \\
+  latency is unpriced ($\tilde c_\Theta = 0$, no missed-sample cost), lets mean
+  latency drift, and causes permanent inter-speaker spread under decentralized
+  startup loss. Low-latency peer control pairs $g_{\mathrm{diff}}$ with a small
+  $g_{\mathrm{com,low}} > 0$. \\
+\addlinespace[4pt]
 Playout level &
   \multicolumn{2}{>{\raggedright\arraybackslash}p{12.4cm}@{}}{Analyzed in a
   standalone continuous-time Campbell pause model (not specific to topology).
@@ -152,23 +168,23 @@ Playout level &
 \toprule
 Symbol & Meaning \\
 \midrule
-$R$, $N_{\mathrm{host}}$ & Number of speakers ($R \ge 1$); total number of hosts in a communication graph. \\
+$R$, $N_{\mathrm{host}}$ & Number of speakers; total number of hosts in a communication graph ($K_{R+1}$ denotes the complete graph on $1$ sender and $R$ speakers). \\
 $\rho$, $\Delta t$, $M$ & Nominal audio frame rate ($\text{s}^{-1}$); regulation cycle length ($\text{s}$); samples per cycle $M = \rho\Delta t$. \\
 $c_S, c_\Lambda, c_\Theta, c_R, c_M, c_D$ & Specification objective weights (synchronization, mean latency, tracking, roughness, missed samples, discontinuities; \path{docs/specification.pdf}). \\
 $\tilde c_S, \tilde c_\Theta, \tilde c_M$ & Per-cycle normalized control weights $\tilde c_S = (c_S / c_R)\Delta t^4$, $\tilde c_\Theta = (c_\Theta / c_R)\Delta t^4$; missed-seconds weight $\tilde c_M = \rho c_M$. \\
 $\tau_{\mathrm{cap}}(n)$, $T_r(n)$, $\ell_r(n)$ & True capture time of frame $n$; true playback time on speaker $r$; latency $\ell_r(n) = T_r(n) - \tau_{\mathrm{cap}}(n)$, with group mean $\bar\ell$ and deviation $\delta_r = \ell_r - \bar\ell$. \\
 $S_{r,k}$, $p_{r,k}$, $u_{r,k}$, $\Delta u_{r,k}$ & Due source position at start of cycle $k$; speaker $r$'s position; frames read in cycle $k$; pace change $\Delta u_{r,k} = u_{r,k} - u_{r,k-1}$; position error $e_{r,k} = S_{r,k} - p_{r,k}$. \\
-$g$, $\mathrm{weight}(g)$, $V_g(E, v)$ & Control gain $g \in (0, 1)$; $\mathrm{weight}(g) = g^4 / ((2-g)^2(1-g))$; quadratic value-to-go of \lean{Regulation.value}. \\
-$\phi_h(t)$, $\theta_r(t)$, $\eta_r$ & Clock phase deviation of host $h$ ($C_h(t) = t + \phi_h(t)$); relative offset $\theta_r = \phi_{\mathrm{src}} - \phi_r$ against sender $\mathrm{src}$; measurement error $\eta_r$ with variance $\sigma_r^2$. \\
-$s_{\mathrm{ref}}$, $\delta_{\mathrm{src}}$, $V_{\mathrm{bc}}$ & Sender-disciplined schedule correction; residual $\delta_{\mathrm{src}} = \phi_{\mathrm{src}} - s_{\mathrm{ref}}$; harmonic-sum variance $V_{\mathrm{bc}} = (\sum_r \sigma_r^{-2})^{-1}$. \\
-$G = (V, E)$, $v_e$, $\alpha_e$ & Directed measurement graph with endpoints $a, b \in V$, edge variance $v_e > 0$, edge bias $\alpha_e$, weighted Laplacian $L_G = B^\top W B$, and effective resistance $R_{\mathrm{eff}}(a, b)$. \\
-$\Delta(h)$, $w^+, w^-$ & Host-timeline shift of \lean{World.shiftHosts} ($\Delta(\mathrm{src}) = 0$); shifted worlds under $+\Delta$ and $-\Delta$. \\
+$g$, $\mathrm{weight}(g)$, $V_g(E, v)$ & Control gain $g \in (0, 1)$; $\mathrm{weight}(g) = g^4 / ((2-g)^2(1-g))$; quadratic value-to-go of \lean{Regulation.value}; excess pace $v_k$. \\
+$\phi_h(t)$, $\theta_r(t)$, $\eta_r$ & Clock phase deviation of host $h$ ($C_h(t) = t + \phi_h(t)$); relative offset $\theta_r = \phi_{\mathrm{src}} - \phi_r$ against sender $\mathrm{src}$; measurement error $\eta_r$ with standard deviation $\sigma_r$. \\
+$s_{\mathrm{ref}}$, $\delta_{\mathrm{src}}$, $V_{\mathrm{bc}}$, $\omega_r$ & Sender-disciplined schedule correction; residual $\delta_{\mathrm{src}} = \phi_{\mathrm{src}} - s_{\mathrm{ref}}$; harmonic-sum variance $V_{\mathrm{bc}} = (\sum_r \sigma_r^{-2})^{-1}$; precision weight $\omega_r = V_{\mathrm{bc}}/\sigma_r^2$. \\
+$G = (V, E)$, $\sigma_a^2$, $\alpha_a$ & Directed measurement graph with vertices $i, j \in V$, edges $a \in E$, edge variance $\sigma_a^2 > 0$, static edge bias $\alpha_a$, weighted Laplacian $L_G = B^\top W B$, and effective resistance $R_{\mathrm{eff}}(i, j)$. \\
+$\pi$, $\Delta(h)$, $w^+, w^-$ & Specification \lean{Solution} $\pi$; host-timeline shift $\Delta(h)$ ($\Delta(\mathrm{src}) = 0$); shifted worlds under $+\Delta$ and $-\Delta$; star-link asymmetry magnitude $A$. \\
 $t_1, t_2, t_4$ & Network Time Protocol (NTP) probe timestamps: requester send time, responder receive/reply time, requester receive time. \\
-$m$, $m_0$, $d$, $\nu$ & Playout safety margin ($\text{s}$); target lip-sync margin (target latency minus baseline path and processing delay); pause duration $d \ge 0$; pause intensity measure $\nu = \lambda\mu$ (rate $\lambda$, duration distribution $\mu$, mean $\bar d$). \\
-$N_0$ & Frame threshold from which every speaker plays every frame. \\
+$m$, $m_0$, $d$, $\nu$ & Playout safety margin ($\text{s}$); target lip-sync margin; pause duration $d \ge 0$; pause intensity measure $\nu = \lambda\mu$ (rate $\lambda$, duration distribution $\mu$, mean $\bar d$). \\
+$J_{\mathrm{ctrl}}(g)$, $J_{\mathrm{buf}}(m)$ & Stationary per-cycle Lyapunov control cost at gain $g$; steady-state Campbell playout-margin cost at margin $m$. \\
 \bottomrule
 \end{tabular}
-\caption{Summary of notation used throughout this report.}
+\caption{Summary of notation used throughout this report (each symbol is also defined at first use).}
 \label{tab:notation}
 \end{table}
 
@@ -232,8 +248,8 @@ it causes missed samples when it falls below the network delay.
 \subsection{Per-cycle roughness scaling and weight conversion}
 
 The specification charges roughness per output sample:
-\lean{World.roughness} sums $(v_{j+1} - v_j)^2 / (t_{j+1} - t_j)$ over each
-speaker's output samples, where $v_j$ is the instantaneous playback speed. By
+\lean{World.roughness} sums $(s_{j+1} - s_j)^2 / (t_{j+1} - t_j)$ over each
+speaker's output samples, where $s_j$ is the instantaneous playback speed. By
 contrast, the per-cycle control problem in Section~\ref{sec:control} charges
 squared pace change $\Delta u^2$ once per cycle in frames per cycle. Converting
 specification weights $(c_S, c_\Theta, c_R)$ into per-cycle weights requires
@@ -254,12 +270,13 @@ $M = \rho\Delta t \in \mathbb{N}_+$ the number of output samples per cycle
   specification roughness accrued over that cycle is
   $M \cdot \Delta u^2 / (\rho^2 \Delta t^3)$—that is, $\rho\Delta t$ times as
   much.
-\item (\lean{cyclePositionWeight\_eq}) Under within-cycle linear speed ramps,
-  converting a specification quadratic timing cost
-  $c_{\mathrm{pos}}\,(e / \rho)^2\,\Delta t$ (with timing error $e / \rho$
-  seconds held over duration $\Delta t$) and roughness cost
-  $c_R\,\Delta u^2 / (\rho^2 \Delta t^3)$ to unit per-cycle roughness weight
-  gives the dimensionless per-cycle position weight
+\item (\lean{cyclePositionWeight\_eq}, an algebraic identity on real numbers
+  that mentions neither \lean{World} nor \lean{Weights}) Let the speed ramp
+  linearly within a cycle. A position error of $e$ frames held for the cycle
+  costs $c_{\mathrm{pos}}\cdot(e / \rho)^2\cdot\Delta t$. A pace change of
+  $\Delta u$ frames per cycle costs $c_R\cdot\Delta u^2 / (\rho^2 \Delta t^3)$.
+  The sum is $c_R / (\rho^2 \Delta t^3)$ times
+  $\tilde c_{\mathrm{pos}}\cdot e^2 + \Delta u^2$, with
   \[
     \tilde c_{\mathrm{pos}} = \frac{c_{\mathrm{pos}}}{c_R}\,\Delta t^4 .
   \]
@@ -310,24 +327,26 @@ Consider $R > 0$ speakers operating over equal-duration cycles
 $k = 0, 1, \dots$. Speaker $r$ starts cycle $k$ at source position $p_{r,k}$,
 reads $u_{r,k}$ frames during cycle $k$ ($p_{r,k+1} = p_{r,k} + u_{r,k}$), and
 incurs pace change $\Delta u_{r,k} = u_{r,k} - u_{r,k-1}$. Let $S_{r,k}$ denote
-the due source position at the start of cycle $k$: the position captured $L$
+the due source position at the start of cycle $k$ (the position captured $L$
 seconds before the first output sample of cycle $k$, where $L$ is the target
-latency. Normalized by roughness weight, the per-cycle cost
-(\lean{multiCycleCost} in \path{lean/Unisono/Solutions/Optimal/ModalControl.lean})
-is
+latency), and define speaker $r$'s \emph{position error}
+$e_{r,k} = S_{r,k} - p_{r,k}$. Normalized by roughness weight, the per-cycle
+cost (\lean{multiCycleCost} in
+\path{lean/Unisono/Solutions/Optimal/ModalControl.lean}) is
 \[
-  C_k = \tilde c_S\,\operatorname{Var}_r(S_{r,k} - p_{r,k})
-      + \frac{\tilde c_\Theta}{R}\sum_{r=1}^R (S_{r,k} - p_{r,k})^2
+  \mathrm{cost}_k = \tilde c_S\,\operatorname{Var}_r(e_{r,k})
+      + \frac{\tilde c_\Theta}{R}\sum_{r=1}^R e_{r,k}^2
       + \frac{1}{R}\sum_{r=1}^R \Delta u_{r,k}^2 .
 \]
 For any gain $g \in (0, 1)$, define
 $\mathrm{weight}(g) = g^4 / \bigl((2 - g)^2(1 - g)\bigr)$. For any positive
-per-cycle weight $w > 0$, \lean{gainForWeight} $w$ denotes the unique
-$g \in (0, 1)$ satisfying $\mathrm{weight}(g) = w$
+per-cycle weight $\tilde c > 0$, \lean{gainForWeight} $\tilde c$ denotes the
+unique $g \in (0, 1)$ satisfying $\mathrm{weight}(g) = \tilde c$
 (\lean{weight\_gainForWeight}, \lean{gainForWeight\_unique}). (Note: the
-earlier helper \lean{Regulation.gainFor} takes the fourth root $a = w^{1/4}$,
-satisfying $\mathrm{weight}(\mathrm{gainFor}(a)) = a^4$; using $w$ directly
-with \lean{gainFor} would pass $w^4$ instead of $w$.)
+earlier helper \lean{Regulation.gainFor} takes the fourth root $\tilde c^{1/4}$,
+satisfying $\mathrm{weight}(\mathrm{gainFor}(\tilde c^{1/4})) = \tilde c$;
+passing $\tilde c$ directly to \lean{gainFor} would pass $\tilde c^4$ instead
+of $\tilde c$.)
 
 Given an observation filtration $(\mathcal{F}_k)$, let
 $E_k = \E[S_k \mid \mathcal{F}_k] - p_k$ be the estimated position lag and
@@ -348,8 +367,8 @@ In \path{lean/Unisono/Solutions/Optimal/ModalControl.lean}
 (\lean{single\_cost\_split}, \lean{single\_law\_optimal},
 \lean{single\_law\_unique\_ae}), assume:
 \begin{itemize}
-\item $(\mathcal{F}_k)$ is a filtration on a probability space $(\Omega, \mu)$,
-\item $S_k \in L^2(\mu)$ satisfies
+\item $(\mathcal{F}_k)$ is a filtration on a probability space $(\Omega, \Prob)$,
+\item $S_k \in L^2(\Prob)$ satisfies
   $\E[S_{k+2} - S_{k+1} \mid \mathcal{F}_k] =
    \E[S_{k+1} - S_k \mid \mathcal{F}_k]$ almost surely for all $k$,
 \item initial position $p_0$ and initial pace $u_{-1}$ are
@@ -360,11 +379,13 @@ Then for every horizon $n \in \mathbb{N}$:
 \item For every $\mathcal{F}$-adapted policy $u$, the expected $n$-cycle cost
   plus terminal value-to-go splits into a policy-independent estimation floor
   (from $\operatorname{Var}(S_k \mid \mathcal{F}_k)$ and conditional-mean
-  innovations) plus the control cost of the conditional-mean state.
+  revisions) plus the control cost of the conditional-mean state.
 \item Applying \lean{Regulation.law} with gain $g$ to the conditional-mean
   state (\lean{lawRead}) is $\mathcal{F}$-adapted and minimizes the expected
   $n$-cycle cost plus terminal value-to-go over all $\mathcal{F}$-adapted
-  policies, for any noise distribution with finite second moments.
+  policies, for any noise distribution with finite second moments. (In
+  practice, a Kalman filter computes exact conditional means only for a
+  linear-Gaussian model with known noise parameters.)
 \item Any $\mathcal{F}$-adapted policy achieving the minimum equals
   \lean{lawRead} almost surely at every cycle $k < n$.
 \end{enumerate}
@@ -380,7 +401,7 @@ The next two theorems are therefore \emph{centralized benchmarks}: they give
 lower bounds on the cost achievable by any decentralized star or peer policy
 using less information.
 
-\begin{theorem}[Centralized two-gain lip-sync benchmark and long-run rate]
+\begin{theorem}[Centralized two-gain lip-sync benchmark and long-run bounds]
 \label{thm:lipsync-opt}
 In \path{ModalControl.lean} (\lean{multi\_lipsync\_optimal},
 \lean{multi\_lipsync\_unique\_ae}, \lean{multi\_lipsync\_cost\_rate},
@@ -408,14 +429,13 @@ Then:
   minimizes expected $n$-cycle \lean{multiCycleCost} plus expected modal
   terminal value-to-go over all $\mathcal{F}$-adapted policies, and any
   minimizer equals $u^*$ almost surely on $k < n$.
-\item Under stationary per-cycle estimation error and innovation variance
-  ($\E[(S_{r,k} - \E[S_{r,k} \mid \mathcal{F}_k])^2]$ and
-  $\E[V_g(\text{innovation}_k)]$ constant in $k$), the long-run average
-  per-cycle cost $\frac{1}{n}\sum_{k=0}^{n-1} \E[C_k]$ of $u^*$ converges to
-  the sum of the common-mode and averaged differential-mode stationary floors,
-  and for any $\mathcal{F}$-adapted policy whose terminal expected modal
-  value-to-go grows sublinearly ($o(n)$), its long-run cost rate is no smaller
-  than that of $u^*$.
+\item Let $s$ be a constant. Suppose the two modes' floors sum to at least $s$
+  at every cycle, and the revisions have bounded second moments. Then for every
+  $\varepsilon > 0$, every $\mathcal{F}$-adapted policy's average expected cost
+  exceeds $s - \varepsilon$ at infinitely many horizons
+  (\lean{multi\_lipsync\_cost\_rate}). If the floors sum to at most $s$, the
+  expected cost of $u^*$ over $n$ cycles is at most $n \cdot s$ plus its
+  initial value-to-go (\lean{multi\_lipsync\_law\_cost\_le}).
 \end{enumerate}
 \end{theorem}
 
@@ -435,7 +455,7 @@ plus differential terminal value-to-go over all $\mathcal{F}$-adapted policies,
 and any minimizer equals $u^*$ almost surely on $k < n$.
 \end{theorem}
 
-\begin{remark}[Mean latency drift when $g_{\mathrm{com}} = 0$]
+\begin{remark}[Mean latency drift and startup spread when $g_{\mathrm{com}} = 0$]
 \label{rem:drift}
 Theorem~\ref{thm:lowlat-opt} applies only to \lean{multiCycleCost} with
 $\tilde c_\Theta = 0$, which contains neither the specification's linear latency
@@ -446,27 +466,30 @@ matched initial frequencies, a sender clock with random-walk frequency
 coefficient $h_{-2} = 5\times 10^{-16}\,\text{Hz}$ (consumer quartz) accumulates
 phase standard deviation $\sqrt{2\pi^2 h_{-2} T^3 / 3}$ over duration $T$:
 about $12\,\text{ms}$ after one hour and $1.5\,\text{s}$ after one day,
-eventually emptying or overflowing any fixed playout buffer. A practical
-low-latency peer controller therefore cannot set $g_{\mathrm{com}} = 0$; it
-must retain a small common-mode loop ($g_{\mathrm{com,low}} > 0$) that holds
-the operating playout margin against buffer underrun while keeping common-mode
-roughness low (verified quantitatively in Section~\ref{sec:sim-peer}).
+eventually emptying or overflowing any fixed playout buffer. In addition, as
+Section~\ref{sec:sim-peer} demonstrates in a receiver-local peer simulation,
+setting $g_{\mathrm{com}} = 0$ prevents receivers that initialize from
+different relayed measurements (due to relay delay or packet loss) from ever
+reconciling their common-mode baselines, leaving a permanent inter-speaker
+spread. Low-latency peer control therefore retains a small positive common-mode
+gain ($g_{\mathrm{com,low}} > 0$) to bound mean offset error and reconcile
+receiver baselines while keeping common-mode roughness low.
 \end{remark}
 
 \begin{remark}[Differential-mode disturbance split]
-By the variance identity \lean{consensus\_roughness\_savings}, if one speaker
-$r_0$ incurs a step error $\Delta$ while all other speakers stay aligned,
+By the variance identity \lean{consensus\_one\_hot\_var}, if one speaker
+$r_0$ incurs a step error $\delta_0$ while all other speakers stay aligned,
 projecting the correction onto the zero-mean subspace reduces the immediate sum
-of squared adjustments from $\Delta^2$ to $\frac{R-1}{R}\Delta^2$. However,
-this projection leaves the group mean shifted by $\Delta / R$: in lip-sync
+of squared adjustments from $\delta_0^2$ to $\frac{R-1}{R}\delta_0^2$. However,
+this projection leaves the group mean shifted by $\delta_0 / R$: in lip-sync
 mode, removing that shift through the common mode adds
-$R(\Delta / R)^2 = \Delta^2 / R$ and restores the total $\Delta^2$; without a
-common-mode loop, the mean latency remains shifted by $\Delta / R$.
+$R(\delta_0 / R)^2 = \delta_0^2 / R$ and restores the total $\delta_0^2$;
+without a common-mode loop, the mean latency remains shifted by $\delta_0 / R$.
 \end{remark}
 
 \subsection{Decentralized pure-star team control}
 
-In a star topology where receivers do not exchange tracking errors, receiver
+In a star topology where receivers do not exchange position errors, receiver
 $r$ chooses $u_{r,k}$ using only its local filtration $(\mathcal{F}_{r,k})$.
 
 \begin{theorem}[Decentralized star optimum under uncorrelated errors]
@@ -478,28 +501,32 @@ In \path{ModalControl.lean} (\lean{decentralized\_star\_cost\_eq},
   $\mathrm{weight}(g_{\mathrm{indep}}) = \frac{R-1}{R}\tilde c_S + \tilde c_\Theta$,
 \item each receiver $r$ has its own filtration $(\mathcal{F}_{r,k})$ and
   satisfies the hypotheses of Theorem~\ref{thm:single-sep},
-\item cross-receiver tracking errors are pairwise uncorrelated at every cycle
-  $k < n$, $\E[e_{r,k} e_{r',k}] = 0$ for all $r \ne r'$, both under the
-  candidate policy and under \lean{lawRead} with gain $g_{\mathrm{indep}}$.
+\item cross-receiver position errors $e_{r,k} = S_{r,k} - p_{r,k}$ are pairwise
+  uncorrelated at every cycle $k < n$, $\E[e_{r,k} e_{r',k}] = 0$ for all
+  $r \ne r'$, both under the candidate policy and under \lean{lawRead} with
+  gain $g_{\mathrm{indep}}$.
 \end{itemize}
 Then running \lean{lawRead} with gain $g_{\mathrm{indep}}$ on each receiver's
 local filtration minimizes expected $n$-cycle \lean{multiCycleCost} plus
 averaged terminal value-to-go among all such uncorrelated decentralized
 policies. The effective weight $\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$ is
 larger than $\tilde c_\Theta$ (which ignores synchronization) and smaller than
-$\tilde c_S + \tilde c_\Theta$ because $1/R$ of a receiver's error moves the
-group mean.
+$\tilde c_S + \tilde c_\Theta$ because $1/R$ of a receiver's position error
+moves the group mean.
 \end{theorem}
 
-When the sender's clock wanders, the uncorrelated-error hypothesis of
-Theorem~\ref{thm:star-weight} fails: every receiver tracks
-$\theta_r = \phi_{\mathrm{src}} - \phi_r$, so the filtered sender-phase
-tracking error $e_{\mathrm{com}}$ is shared across all $R$ receivers.
+Let $\phi_h(t)$ denote host $h$'s clock phase deviation ($C_h(t) = t + \phi_h(t)$)
+and $\theta_r(t) = \phi_{\mathrm{src}}(t) - \phi_r(t)$ receiver $r$'s clock
+offset relative to the sender $\mathrm{src}$. Whenever the sender's clock
+wanders or the sender's transmit jitter is shared across links, the
+uncorrelated-error hypothesis of Theorem~\ref{thm:star-weight} fails: every
+receiver tracks $\theta_r$, so the filtered sender-phase position error
+$e_{\mathrm{com}}$ is shared across all $R$ receivers.
 
-\begin{theorem}[Common-plus-private star cost split]
+\begin{theorem}[Common-plus-private star cost identity]
 \label{thm:star-split}
 In \path{ModalControl.lean} (\lean{symmetric\_star\_cost\_split}), suppose each
-receiver's tracking error and pace change decompose as
+receiver's position error and pace change decompose as
 $e_r = e_{\mathrm{com}} + e_{\mathrm{priv},r}$ and
 $\Delta u_r = \Delta u_{\mathrm{com}} + \Delta u_{\mathrm{priv},r}$, where
 $e_{\mathrm{com}}$ is uncorrelated with each $e_{\mathrm{priv},r}$,
@@ -507,7 +534,7 @@ $\Delta u_{\mathrm{com}}$ is uncorrelated with each $\Delta u_{\mathrm{priv},r}$
 and the private errors $e_{\mathrm{priv},r}$ are pairwise uncorrelated across
 $r \ne r'$. Then
 \[
-  \E[C_k]
+  \E[\mathrm{cost}_k]
   = \Bigl(\tilde c_\Theta\,\E[e_{\mathrm{com}}^2] + \E[\Delta u_{\mathrm{com}}^2]\Bigr)
   + \frac{1}{R}\sum_{r=1}^R
     \Bigl(\bigl(\tfrac{R-1}{R}\tilde c_S + \tilde c_\Theta\bigr)\E[e_{\mathrm{priv},r}^2]
@@ -515,16 +542,20 @@ $r \ne r'$. Then
 \]
 \end{theorem}
 
-Because the common error $e_{\mathrm{com}}$ cancels from
-$\operatorname{Var}_r(e_r)$, it pays only $\tilde c_\Theta$, whereas private
-errors pay $\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$. When all star
-receivers share one scalar gain $g_{\mathrm{star}}$ (without sender-clock
-sharing), the optimal shared gain $g_{\mathrm{star}}^*$ lies between
-$\mathrm{gainForWeight}(\tilde c_\Theta)$ and
-$\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$, shifting
-toward $\mathrm{gainForWeight}(\tilde c_\Theta)$ as sender wander grows
-relative to receiver wander. Section~\ref{sec:sim-lyap} solves the discrete
-Lyapunov equation numerically to quantify this shift.
+Theorem~\ref{thm:star-split} is a cost identity, not a minimization. Under the
+idealized assumption that every receiver knows its true offset $\theta_r$ and
+frequency without measurement noise, the shared gain $g_{\mathrm{star}}^*$ that
+minimizes stationary cost lies between $\mathrm{gainForWeight}(\tilde c_\Theta)$
+and $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$.
+However, \emph{this interval does not hold once measurement noise and a Kalman
+filter are in the loop}: a wandering sender raises each receiver's Kalman gain,
+which passes more private measurement noise into the regulator (charged at
+$\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$) and drives the best shared gain
+strictly \emph{below} $\mathrm{gainForWeight}(\tilde c_\Theta)$. Moreover, a
+star receiver measures only the difference $\theta_r = \phi_{\mathrm{src}} - \phi_r$
+and cannot separate sender wander from receiver wander from its own data.
+Section~\ref{sec:sim-lyap} solves both the perfect-information benchmark and
+the coupled filter-in-the-loop Lyapunov equation to quantify this effect.
 
 \subsection{Companion spectral and state-space identities}
 
@@ -550,10 +581,11 @@ Section~\ref{sec:control}:
   $\kappa^2 - (2 + \gamma)\kappa + 1 = 0$, giving the steady-state gain
   $K = 1 - \kappa$, algebraic Riccati fixed point
   $P_{\infty} = \sigma_{\mathrm{meas}}^2(1 - \kappa)/\kappa$, posterior identity
-  $(1 - K)P_{\infty} = \sigma_{\mathrm{meas}}^2(1 - \kappa)$, and innovation
-  variance $K^2(P_{\infty} + \sigma_{\mathrm{meas}}^2) = q$.
+  $(1 - K)P_{\infty} = \sigma_{\mathrm{meas}}^2(1 - \kappa)$, innovation
+  variance $P_{\infty} + \sigma_{\mathrm{meas}}^2$, and steady-state estimate
+  revision variance $K^2(P_{\infty} + \sigma_{\mathrm{meas}}^2) = q$.
 \item \emph{Two-state oscillator covariance matrix}
-  (\lean{clockProcessCov\_nonneg}): for IEEE~Std~1139-2008 parameters
+  (\lean{clockProcessCov\_nonneg}): for IEEE~Std~1139-2008 spectral parameters
   \cite{ieee1139} $q_0 = h_0/2$ and $q_2 = 2\pi^2 h_{-2}$ and any
   $\Delta t \ge 0$, the matrix
   \[
@@ -599,14 +631,14 @@ filter $F_r$. In \path{lean/Unisono/Solutions/Optimal/Estimation.lean}:
   precision-weighted mean of the receivers' phases plus estimation noise, which
   still leaks through $F_1 - F_2$ and shifts the group toward the receivers'
   mean clock rather than the capture clock. Section~\ref{sec:sim-sched}
-  evaluates a fully causal version with uplink and downlink delays, dropped
-  reports, and closed-loop tracking error.
+  evaluates a causal version with local step-0 startup, uplink and downlink
+  delays, dropped reports, and closed-loop position error.
 \item \emph{Residual second moment} (\lean{residual\_variance\_sub},
   \lean{residual\_variance\_L2}): for zero-mean, pairwise uncorrelated errors
   $\eta_1, \dots, \eta_R$ with second moments $\sigma_r^2 > 0$,
   $V_{\mathrm{bc}} = (\sum_i \sigma_i^{-2})^{-1}$, weights
-  $\alpha_r = V_{\mathrm{bc}} / \sigma_r^2$, and weighted average
-  $\bar\eta = \sum_i \alpha_i \eta_i$,
+  $\omega_r = V_{\mathrm{bc}} / \sigma_r^2$, and weighted average
+  $\bar\eta = \sum_i \omega_i \eta_i$,
   \[
     \E[\bar\eta^2] = V_{\mathrm{bc}},
     \qquad
@@ -626,14 +658,15 @@ host $h$'s timeline by $\Delta(h)$, with $\Delta(\mathrm{src}) = 0$. The delay
 from $i$ to $j$ changes by $\Delta(j) - \Delta(i)$, and round-trip times do not
 change (\lean{World.shiftHosts\_rtt\_eq}).
 
-Because each host's local view of events depends only on its own shifted clock
-and arrivals at that host—not on how events at other hosts interleave in true
-time—we prove host-local causal invariance (\lean{Solution.plays\_shiftHosts})
-without any global event-order assumption: the only event-timing hypothesis is
-\lean{Solution.NoCrossOriginCollision} (two messages sent from different origins
-do not arrive at the same host at the same true time). This yields
-general lower bounds for \emph{every} topology—both star and peer—when all
-links are shifted (\lean{sync\_shiftHosts\_lower\_bound} and
+\lean{Solution.plays\_shiftHosts} shows that shifting host timelines changes no
+playback decision. It assumes that shifted delays stay positive, that event
+times are unbounded in both worlds, and that no two messages from different
+origins reach one host at the same true time
+(\lean{Solution.NoCrossOriginCollision}, needed because the run model breaks
+simultaneous arrival ties by global send order). It assumes nothing about the
+order of events at different hosts. This yields general lower bounds for
+\emph{every} topology—both star and peer—when all links are shifted
+(\lean{sync\_shiftHosts\_lower\_bound} and
 \lean{tracking\_shiftHosts\_lower\_bound}). Any synchronization advantage of
 peer communication therefore rests on direct receiver--receiver links remaining
 symmetric while sender links carry unknown asymmetry.
@@ -662,7 +695,7 @@ In \path{lean/Unisono/Solutions/Optimal/SpecSolutions.lean}:
   \item on every star link ($i = \mathrm{src} \lor j = \mathrm{src}$), every
     delivered message in $w$ has delay strictly greater than
     $|\Delta(j) - \Delta(i)|$ (no delay bound is imposed on peer links),
-  \item $\sigma$ is a star solution (\lean{IsStar}) with unbounded event times
+  \item $\pi$ is a star solution (\lean{IsStar}) with unbounded event times
     (non-Zeno progress) in $w$, $w^+$, and $w^-$, and satisfies
     \lean{NoCrossOriginCollision} in $w$,
   \item capture times in $w$ are unbounded, and there exists $N_0 \in \mathbb{N}$
@@ -671,7 +704,7 @@ In \path{lean/Unisono/Solutions/Optimal/SpecSolutions.lean}:
   \end{itemize}
   Then
   \[
-    \max\bigl(w^+.\mathrm{sync}(\sigma),\; w^-.\mathrm{sync}(\sigma)\bigr)
+    \max\bigl(w^+.\mathrm{sync}(\pi),\; w^-.\mathrm{sync}(\pi)\bigr)
     \ge \operatorname{Var}_r\bigl(\Delta(\mathrm{host}(r))\bigr) .
   \]
   An analogous lower bound $\ge A^2$ holds on \lean{World.tracking} for every
@@ -682,62 +715,87 @@ In \path{lean/Unisono/Solutions/Optimal/SpecSolutions.lean}:
   non-sender hosts $h_1, h_2$, the NTP offset formula \cite{mills2010}
   $t_2 - \frac{t_1 + t_4}{2}$ equals the shifted offset difference
   $(b_2 - \Delta(h_2)) - (b_1 - \Delta(h_1))$.
-\item \textbf{Concrete peer solution beating the star bound}
-  (\lean{peer\_beats\_star\_asymmetry\_bound}): for any $A \in (0, 1/4)$, let
-  $(w^+, w^-) = (\mathrm{sepWorldPlus}\;A,\; \mathrm{sepWorldMinus}\;A)$ be
-  the pair of 3-host worlds with star-link delay $1/2$, symmetric peer-link
-  delay $1/10$ (allowing $1/10 < 2A$, e.g.\ $A = 1/5$), and shifts
-  $\Delta = (0, A, -A)$. Then every star solution satisfying the hypotheses of
-  part~2 incurs $\max(w^+.\mathrm{sync}, w^-.\mathrm{sync}) \ge A^2$, whereas
-  the concrete causal peer solution \lean{PeerSync.solution} uses only star
-  links and the symmetric peer link $1 \leftrightarrow 2$
-  (\lean{PeerSync.usesGraph}), makes unbounded progress
-  (\lean{PeerSync.progress}), plays every frame $n \ge 2$ on both speakers, and
-  achieves $w^+.\mathrm{sync} = 0$ and $w^-.\mathrm{sync} = 0$
-  (\lean{PeerSync.sync\_eq\_zero}).
+\item \textbf{Two-sided separation and tight witness:}
+  for any $A \in (0, 1/4)$, let $w^+ = \mathrm{sepWorldPlus}\;A$ and
+  $w^- = \mathrm{sepWorldMinus}\;A$ be the pair of 3-host worlds with ideal
+  rate-1 clocks, constant star-link delay $1/2$, constant symmetric peer-link
+  delay $1/10$ (allowing $1/10 < 2A$, e.g.\ $A = 1/5$), speaker~1's request
+  grid staggered by $1/3\,\text{s}$ from speaker~0's so star clock queries
+  never collide at the sender, and shifts $\Delta = (0, A, -A)$
+  (\lean{peer\_beats\_star\_asymmetry\_bound}). Then:
+  \begin{itemize}
+  \item every qualifying star solution $\pi$ (meeting part~2) incurs
+    $\max\bigl(w^+.\mathrm{sync}(\pi), w^-.\mathrm{sync}(\pi)\bigr) \ge A^2$.
+    Because of the $1/3\,\text{s}$ stagger, both \lean{FixedDelay} and
+    \lean{StarProtocol} satisfy \lean{NoCrossOriginCollision} on
+    \lean{sepBaseWorld} (proved as \lean{noCrossOriginCollision\_sepBaseWorld}
+    in each namespace);
+  \item the bound is tight: the forwarding-only star witness
+    \lean{ForwardStar.solution} satisfies \lean{IsStar},
+    \lean{NoCrossOriginCollision}, and progress, plays every frame $n \ge 2$,
+    and attains $w^+.\mathrm{sync} = A^2$ and $w^-.\mathrm{sync} = A^2$
+    (\lean{ForwardStar.sync\_eq});
+  \item the idealized-world peer witness \lean{PeerSync.solution} uses only
+    star links and the symmetric peer link $1 \leftrightarrow 2$
+    (\lean{PeerSync.usesGraph}), makes unbounded progress
+    (\lean{PeerSync.progress}), plays every frame $n \ge 2$ on both speakers,
+    and achieves $w^+.\mathrm{sync} = 0$ and $w^-.\mathrm{sync} = 0$
+    (\lean{PeerSync.sync\_eq\_zero}).
+  \end{itemize}
 \end{enumerate}
 \end{theorem}
+
+\lean{PeerSync.solution} is a witness tailored to the idealized worlds
+$(w^+, w^-)$, not a general protocol: it plays source position $k - 2$ (plus
+its staggered offset and one peer-probe adjustment) without reading device
+timestamps, relies on exact rate-1 clocks, one frame per block, constant
+symmetric peer delay, and zero packet loss, drifts without bound if clock rates
+differ, stalls speaker~1 if its single probe is lost, and incurs higher
+tracking cost in $w^+$ ($(2 + A)^2$) than \lean{ForwardStar.solution}
+($4 + A^2$).
 
 \subsection{Graph-Laplacian BLUE, equal probe budgets, and asymmetry bias}
 
 Let $G = (V, E)$ be a directed graph on $N_{\mathrm{host}}$ hosts where each
-edge $e = (\mathrm{src}(e) \to \mathrm{dst}(e))$ provides a pairwise offset
-measurement $y_e = \phi(\mathrm{dst}(e)) - \phi(\mathrm{src}(e)) + \eta_e$ with
-edge weight parameter $v_e > 0$ and bias $\alpha_e = \E[\eta_e]$. In
-\path{lean/Unisono/Solutions/Optimal/Estimation.lean}, \lean{flowVariance} is
-defined algebraically as $\sum_{e \in E} v_e f_e^2$; when edge errors are
-zero-mean and mutually independent with variances $v_e$, this equals the
-variance of the linear estimator $\hat\Delta_f = \sum_{e \in E} f_e y_e$.
-(Independence can fail when multiple links share one Wi-Fi medium.)
+edge $a = (\mathrm{src}(a) \to \mathrm{dst}(a)) \in E$ provides a pairwise
+offset measurement $y_a = \phi(\mathrm{dst}(a)) - \phi(\mathrm{src}(a)) + \eta_a$
+with edge variance parameter $\sigma_a^2 > 0$ and static edge bias
+$\alpha_a = \E[\eta_a]$. In \path{lean/Unisono/Solutions/Optimal/Estimation.lean},
+\lean{flowVariance} is defined algebraically as $\sum_{a \in E} \sigma_a^2 f_a^2$;
+when edge errors are zero-mean and mutually independent with variances
+$\sigma_a^2$, this equals the variance of the linear estimator
+$\hat\theta_f = \sum_{a \in E} f_a y_a$. (Independence can fail when multiple
+links share one Wi-Fi medium.)
 
 \begin{theorem}[Kirchhoff unbiasedness, Thomson's principle, and edge bias]
 \label{thm:thomson}
-In \path{Estimation.lean}, for any two vertices $a, b \in V$:
+In \path{Estimation.lean}, for any two vertices $i, j \in V$:
 \begin{enumerate}
-\item (\lean{linear\_unbiased\_iff\_unitFlow}) When $\alpha_e = 0$ for all $e$,
-  $\hat\Delta_f = \sum_{e \in E} f_e y_e$ recovers $\phi(b) - \phi(a)$ for all
-  clock vectors $\phi$ if and only if $f$ is a unit $a \to b$ flow:
-  $\operatorname{div}_G(f) = \mathbf{1}_b - \mathbf{1}_a$.
+\item (\lean{linear\_unbiased\_iff\_unitFlow}) When $\alpha_a = 0$ for all
+  $a \in E$, $\hat\theta_f = \sum_{a \in E} f_a y_a$ recovers
+  $\phi(j) - \phi(i)$ for all clock vectors $\phi$ if and only if $f$ is a unit
+  $i \to j$ flow: $\operatorname{div}_G(f) = \mathbf{1}_j - \mathbf{1}_i$.
 \item (\lean{thomson\_blue\_optimal}, \cite{doyle1984,barooah2007,giridhar2006})
-  Let $\psi : V \to \R$ solve $L_G \psi = \mathbf{1}_b - \mathbf{1}_a$ where
-  $B$ is the edge-vertex incidence matrix, $W = \operatorname{diag}(v_e^{-1})$,
-  and $L_G = B^\top W B$, and set
-  $f_e^* = (\psi(\mathrm{dst}(e)) - \psi(\mathrm{src}(e))) / v_e$. Then every
-  unit $a \to b$ flow $f$ satisfies
+  Let $\psi : V \to \R$ solve $L_G \psi = \mathbf{1}_j - \mathbf{1}_i$ where
+  $B$ is the edge-vertex incidence matrix,
+  $W = \operatorname{diag}(\sigma_a^{-2})$, and $L_G = B^\top W B$, and set
+  $f_a^* = (\psi(\mathrm{dst}(a)) - \psi(\mathrm{src}(a))) / \sigma_a^2$. Then
+  every unit $i \to j$ flow $f$ satisfies
   \[
-    \sum_{e \in E} v_e f_e^2
-    = \underbrace{\bigl(\psi(b) - \psi(a)\bigr)}_{R_{\mathrm{eff}}(a, b)}
-      + \sum_{e \in E} v_e (f_e - f_e^*)^2
-    \ge R_{\mathrm{eff}}(a, b),
+    \sum_{a \in E} \sigma_a^2 f_a^2
+    = \underbrace{\bigl(\psi(j) - \psi(i)\bigr)}_{R_{\mathrm{eff}}(i, j)}
+      + \sum_{a \in E} \sigma_a^2 (f_a - f_a^*)^2
+    \ge R_{\mathrm{eff}}(i, j),
   \]
   with equality if and only if $f = f^*$.
-\item (\lean{graph\_estimator\_bias}) Under nonzero edge biases $\alpha_e$, the
-  bias of any unit $a \to b$ flow $f$ is $\sum_{e \in E} f_e \alpha_e$.
+\item (\lean{graph\_estimator\_bias}) Under nonzero edge biases $\alpha_a$, the
+  bias of any unit $i \to j$ flow $f$ is $\sum_{a \in E} f_a \alpha_a$.
 \end{enumerate}
 \end{theorem}
 
 Solving the $(N_{\mathrm{host}}{-}1)\times(N_{\mathrm{host}}{-}1)$ symmetric
-positive definite (SPD) reduced Laplacian system $L_{\mathrm{red}} \hat\phi = B_{\mathrm{red}}^\top W y$
+positive definite (SPD) reduced Laplacian system
+$L_{\mathrm{red}} \hat\phi = B_{\mathrm{red}}^\top W y$
 (pinning $\hat\phi_{\mathrm{src}} = 0$) yields the BLUE for every host offset
 simultaneously, with covariance $L_{\mathrm{red}}^{-1}$ across the $R$
 receivers. In particular, the variance of the group mean estimate
@@ -748,34 +806,38 @@ off-diagonal correlations).
 
 \begin{corollary}[Topology resistances, probe-budget scaling, and triangle bias]
 \label{cor:topologies}
-From Theorem~\ref{thm:thomson} (\path{Estimation.lean}):
+From Theorem~\ref{thm:thomson} (\path{Estimation.lean}), for $R \ge 2$ speakers
+(so a speaker pair exists):
 \begin{itemize}
 \item \emph{Star graph} (\lean{star\_effective\_resistance}): for speakers
-  $r_1 \ne r_2$ with sender-link variances $v_{r_1}, v_{r_2}$,
-  $R_{\mathrm{eff}}(r_1, r_2) = v_{r_1} + v_{r_2}$.
+  $r_1 \ne r_2$ with sender-link variances $\sigma_{r_1}^2, \sigma_{r_2}^2$,
+  $R_{\mathrm{eff}}(r_1, r_2) = \sigma_{r_1}^2 + \sigma_{r_2}^2$.
 \item \emph{Complete peer graph $K_{R+1}$ at equal per-link rate}
-  (\lean{complete\_graph\_effective\_resistance}): if all $R(R+1)/2$ edges have
-  variance $v$, $R_{\mathrm{eff}}(r_1, r_2) = \frac{2v}{R+1}$, an $(R+1)\times$
-  variance reduction over the star ($2v$).
+  (\lean{complete\_graph\_effective\_resistance}): on the complete graph
+  $K_{R+1}$ (the sender plus $R$ speakers, $R(R+1)/2$ edges), if every edge has
+  variance $\sigma^2$, $R_{\mathrm{eff}}(r_1, r_2) = \frac{2\sigma^2}{R+1}$, an
+  $(R+1)\times$ variance reduction over the star ($2\sigma^2$).
 \item \emph{Complete peer graph $K_{R+1}$ at equal total probe budget}
   (\lean{complete\_graph\_equal\_budget}): splitting the star's total probe
-  rate ($R$ links at variance $v$) uniformly across all $R(R+1)/2$ edges scales
-  each edge's variance to $v_K = \frac{R+1}{2}v$, yielding
-  $R_{\mathrm{eff}}(r_1, r_2) = v$—a $2\times$ reduction over the star's $2v$
-  for every $R \ge 1$.
+  rate ($R$ links at variance $\sigma^2$) uniformly across all $R(R+1)/2$ edges
+  scales each edge's variance to $\sigma_K^2 = \frac{R+1}{2}\sigma^2$, yielding
+  $R_{\mathrm{eff}}(r_1, r_2) = \sigma^2$—a $2\times$ reduction over the star's
+  $2\sigma^2$ for every $R \ge 2$.
 \item \emph{Wi-Fi sender plus wired peer link}
   (\lean{wifi\_sender\_wired\_peers\_resistance}): for two speakers sharing a
-  Wi-Fi sender (variance $v_W$) and connected by a wired peer link (variance
-  $v_P$), $R_{\mathrm{eff}}(1, 2) = \frac{2 v_W v_P}{2 v_W + v_P} < \min(v_P, 2 v_W)$.
+  Wi-Fi sender (variance $\sigma_W^2$) and connected by a wired peer link
+  (variance $\sigma_P^2$),
+  $R_{\mathrm{eff}}(1, 2) = \frac{2 \sigma_W^2 \sigma_P^2}{2 \sigma_W^2 + \sigma_P^2}
+   < \min(\sigma_P^2, 2 \sigma_W^2)$.
 \item \emph{Bias of the triangle BLUE vs.\ peer-only estimator}
   (\lean{triangle\_blue\_bias}): on the same triangle with sender-link biases
   $\alpha_0, \alpha_1$ and peer-link bias $\alpha_P$, the graph BLUE routes
-  weight $\frac{v_P}{2 v_W + v_P}$ through the sender links, so its bias for
-  $\phi_2 - \phi_1$ is
+  weight $\frac{\sigma_P^2}{2 \sigma_W^2 + \sigma_P^2}$ through the sender
+  links, so its bias for $\phi_2 - \phi_1$ is
   \[
     \mathrm{bias}_{\mathrm{BLUE}}
-    = \frac{v_P}{2 v_W + v_P}(\alpha_1 - \alpha_0)
-    + \frac{2 v_W}{2 v_W + v_P}\alpha_P .
+    = \frac{\sigma_P^2}{2 \sigma_W^2 + \sigma_P^2}(\alpha_1 - \alpha_0)
+    + \frac{2 \sigma_W^2}{2 \sigma_W^2 + \sigma_P^2}\alpha_P .
   \]
   With $\alpha_0 = +750\,\mu\text{s}$, $\alpha_1 = -750\,\mu\text{s}$, and
   $\alpha_P = 0$ (star bias $1500\,\mu\text{s}$): equal link standard deviations
@@ -808,7 +870,8 @@ the discrete specification:
   so the missed-seconds weight is $\tilde c_M = \rho c_M$.
 \item \emph{Discrete effects omitted.} Device block-request boundaries,
   resampler lookahead, background jitter tails, and overlapping pauses are not
-  modeled in $J(m)$ (they are tested in simulation in Section~\ref{sec:sim-margin}).
+  modeled in $J_{\mathrm{buf}}(m)$ (they are tested in simulation in
+  Section~\ref{sec:sim-margin}).
 \end{itemize}
 
 Let $\nu = \lambda\mu$ be a finite pause intensity measure (arrival rate
@@ -816,7 +879,7 @@ $\lambda$ times duration distribution $\mu$), and let $m_0 \ge 0$ be the target
 lip-sync margin (target latency minus baseline path and processing delay). The
 steady-state per-second margin cost is
 \[
-  J(m) = c_\Lambda m + c_\Theta (m - m_0)^2
+  J_{\mathrm{buf}}(m) = c_\Lambda m + c_\Theta (m - m_0)^2
        + \tilde c_M \int (d - m)^+\,d\nu(d)
        + c_D\,\nu\{d > m\} .
 \]
@@ -838,7 +901,7 @@ In \path{lean/Unisono/Solutions/Optimal/Level.lean}:
     \tilde c_M\,\nu\{d > m\} \le c_\Lambda + 2 c_\Theta (m - m_0)
     \le \tilde c_M\,\nu\{d \ge m\}
   \]
-  globally minimizes $J(m)$ over $\R$ (\lean{margin\_best\_missed},
+  globally minimizes $J_{\mathrm{buf}}(m)$ over $\R$ (\lean{margin\_best\_missed},
   \lean{margin\_best\_tracking}).
 \item \emph{Closed-form exponential optimum with discontinuities in low-latency
   mode} (\lean{margin\_best\_exponential\_with\_clicks}): assume
@@ -848,8 +911,8 @@ In \path{lean/Unisono/Solutions/Optimal/Level.lean}:
     duration distribution of mean $\bar d > 0$ (a mixture of exponentials with
     different means across speakers is not exponential).
   \end{itemize}
-  Then $J(m) = c_\Lambda m + \lambda(\tilde c_M \bar d + c_D) e^{-m / \bar d}$
-  is convex on $m \ge 0$ and globally minimized by
+  Then $J_{\mathrm{buf}}(m) = c_\Lambda m + \lambda(\tilde c_M \bar d + c_D) e^{-m / \bar d}$
+  is globally minimized on $m \ge 0$ by
   \[
     m^* = \max\!\left(0,\;
       \bar d \ln\!\left(\frac{\lambda\,(\tilde c_M + c_D / \bar d)}{c_\Lambda}\right)\right) .
@@ -858,13 +921,14 @@ In \path{lean/Unisono/Solutions/Optimal/Level.lean}:
   (\lean{discontinuity\_nonconvex\_example}): for a fixed pause duration
   $d_0 > 0$ arriving at rate $\lambda > 0$, whenever $c_D \lambda > c_\Lambda d_0$
   the step indicator $\mathbf{1}_{m < d_0}$ creates a downward jump at $m = d_0$
-  with $J(d_0) < J(0)$ and $J(d_0/2) > \frac{1}{2}(J(0) + J(d_0))$. General
-  pause distributions with $c_D > 0$ therefore require a 1D search over
+  with $J_{\mathrm{buf}}(d_0) < J_{\mathrm{buf}}(0)$ and
+  $J_{\mathrm{buf}}(d_0/2) > \frac{1}{2}(J_{\mathrm{buf}}(0) + J_{\mathrm{buf}}(d_0))$.
+  General pause distributions with $c_D > 0$ therefore require a 1D search over
   candidate margins rather than a local quantile rule \cite{unisono-spec}.
 \end{enumerate}
 \end{theorem}
 
-\section{Concrete specification protocols and design summary}
+\section{Concrete specification protocols and controller design summary}
 \label{sec:impl}
 
 In \path{lean/Unisono/Solutions/Optimal/SpecSolutions.lean}, we classify the
@@ -873,13 +937,14 @@ per-sample \lean{Unisono.Spec.Solution} protocols, \lean{StarProtocol} and
 \lean{PeerProtocol}. Neither protocol implements the two-state Kalman filter or
 per-cycle control of Sections~\ref{sec:control}--\ref{sec:estimation}, and no
 theorem bounds their synchronization, tracking, roughness, or missed-sample
-objectives. They serve as verified executable references in the event-driven
-run model:
+objectives. Furthermore, their safety and progress theorems also hold when
+\lean{copies = 0} (in which case no messages are sent and nothing plays). They
+serve as reference protocols in the event-driven run model:
 \begin{itemize}
 \item \lean{StarProtocol.solution}: runs non-blocking sliding-window minimum-RTT
   probes with the sender and updates playback pace per sample via clamped
   \lean{Regulation.law} on the lag state
-  $\bigl((S_k - 1) - p_{k-1},\; v_{k-1} - 1\bigr)$, proved to match
+  $\bigl((S_k - 1) - p_{k-1},\; s_{k-1} - 1\bigr)$, proved to match
   \lean{Regulation.next} when unclamped
   (\lean{StarProtocol.stepSample\_matches\_regulation\_next}). We prove
   \lean{StarProtocol.isStar}, unbounded event times (\lean{StarProtocol.progress},
@@ -888,51 +953,63 @@ run model:
   bounded world.
 \item \lean{PeerProtocol.solution}: extends \lean{StarProtocol} with direct
   peer clock probes, one-hop peer path averaging (\lean{senderOffset}),
-  periodic \lean{Payload.peerState} broadcasts, and separated common and
-  differential modal regulation. We prove \lean{PeerProtocol.usesGraph},
-  \lean{PeerProtocol.progress} (under a per-host peer-count bound
+  periodic \lean{Payload.peerState} broadcasts (sending post-step lag together
+  with post-step pace), and separated common and differential modal regulation.
+  We prove \lean{PeerProtocol.usesGraph}, \lean{PeerProtocol.progress} (under a
+  per-host peer-count bound
   $\forall h,\; \mathrm{length}(\mathrm{peers}(h)) \le \mathrm{maxPeers}$),
   \lean{PeerProtocol.request\_step}, and \lean{PeerProtocol.withinSpeed}.
 \end{itemize}
 
-\paragraph{Implementation summary for production controllers.}
+\paragraph{Controller design summary.}
 \begin{enumerate}
 \item \emph{Deduplicated sliding-window minimum-RTT probe selector.} Retain the
   last $N_{\mathrm{win}}$ received replies (e.g.\ $N_{\mathrm{win}} = 8$,
   emitting an update every four replies) without blocking on dropped User
-  Datagram Protocol (UDP) packets,
-  and tag each exchange with a monotonic identifier so a single reply is never
-  fed to the filter twice. Estimate measurement variance online from the median
-  excess RTT above the window minimum, floored by a fixed conservative hardware
-  floor rather than the unobserved true timestamp variance.
+  Datagram Protocol (UDP) packets, and tag each exchange with a monotonic
+  identifier so a single reply is never fed to the filter twice. Estimate
+  measurement variance online from the median excess RTT above the window
+  minimum, floored by a fixed conservative floor rather than the unobserved
+  true timestamp variance.
 \item \emph{Timestamped Kalman filter in Joseph form.} Store posterior
   $(\hat\theta, \hat f, P)$ at the measurement midpoint timestamp
-  $t_{\mathrm{last}}$. On each new measurement at
-  $t_{\mathrm{meas}} \ge t_{\mathrm{last}}$, predict across
-  $\Delta t = t_{\mathrm{meas}} - t_{\mathrm{last}}$ using $Q(\Delta t)$, apply
-  the covariance update in Joseph's stabilized quadratic form
+  $t_{\mathrm{last}}$, where $P$ is the $2 \times 2$ error covariance matrix.
+  On each new measurement at $t_{\mathrm{meas}} \ge t_{\mathrm{last}}$, predict
+  across $\Delta t = t_{\mathrm{meas}} - t_{\mathrm{last}}$ using $Q(\Delta t)$,
+  apply the covariance update in Joseph's stabilized quadratic form
   $P^+ = (I - K H) P (I - K H)^\top + \sigma_{\mathrm{meas}}^2 K K^\top$
-  \cite{bucy1968} to preserve
-  symmetry and positive semidefiniteness, and read playback-time estimates by
-  read-only extrapolation $\hat\theta + \hat f(t_{\mathrm{now}} - t_{\mathrm{last}})$.
+  \cite{bucy1968} (with $2 \times 2$ identity matrix $I$, observation matrix
+  $H = [1, 0]$, and $2$-element Kalman gain $K = P H^\top / (H P H^\top + \sigma_{\mathrm{meas}}^2)$)
+  to preserve symmetry and positive semidefiniteness, and read playback-time
+  estimates by read-only extrapolation
+  $\hat\theta + \hat f(t_{\mathrm{now}} - t_{\mathrm{last}})$.
 \item \emph{Weight conversion and star gain selection.} Convert specification
   weights via $\tilde c_S = (c_S / c_R)\Delta t^4$ and
   $\tilde c_\Theta = (c_\Theta / c_R)\Delta t^4$ (Theorem~\ref{thm:weight-conv}),
-  and ramp playback speed linearly across each cycle. In a pure star, choose
-  $g_{\mathrm{star}}^*$ between $\mathrm{gainForWeight}(\tilde c_\Theta)$ and
-  $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$ according
-  to the ratio of sender-to-receiver clock wander (Theorem~\ref{thm:star-split}).
-\item \emph{Peer deployment.} When speakers can communicate over a local area
-  network (LAN), exchange direct pairwise probes, solve the
+  and ramp playback speed linearly across each cycle. In a pure star with
+  uncorrelated errors, use
+  $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$
+  (Theorem~\ref{thm:star-weight}). When the sender's clock wanders and
+  measurements are noisy, include the actual filter and probe cadence in the
+  Lyapunov calculation (Section~\ref{sec:sim-lyap}); the optimal shared gain
+  falls below $\mathrm{gainForWeight}(\tilde c_\Theta)$ as measurement noise
+  grows.
+\item \emph{Decentralized peer deployment.} When speakers can communicate over
+  a local area network (LAN), exchange direct pairwise probes, relay link
+  measurements among peers, extrapolate relayed links over their relay age
+  using local per-edge frequency estimates, solve the local
   $(N_{\mathrm{host}}{-}1)\times(N_{\mathrm{host}}{-}1)$ Graph-Laplacian BLUE
-  system, and use the correlated common-mode variance
-  $\frac{1}{R^2}\mathbf{1}^\top L_{\mathrm{red}}^{-1}\mathbf{1}$ in the
-  common-mode filter. Feed common and differential modes into
-  \lean{Regulation.law} with $(g_{\mathrm{com}}, g_{\mathrm{diff}})$ in
-  lip-sync mode or $(g_{\mathrm{com,low}}, g_{\mathrm{diff}})$ with a small
-  $g_{\mathrm{com,low}} > 0$ in low-latency mode. If sender links have large
-  asymmetry and peer links are symmetric, monitor or down-weight sender paths
-  in differential estimation (Corollary~\ref{cor:topologies}).
+  system on each receiver's active graph, and feed the resulting common-mode
+  mean (with correlated variance
+  $\frac{1}{R^2}\mathbf{1}^\top L_{\mathrm{red}}^{-1}\mathbf{1}$) and
+  differential offset into \lean{Regulation.law} with
+  $(g_{\mathrm{com}}, g_{\mathrm{diff}})$ in lip-sync mode or
+  $(g_{\mathrm{com,low}}, g_{\mathrm{diff}})$ with a small
+  $g_{\mathrm{com,low}} > 0$ in low-latency mode. Because cycle measurements
+  reveal only the sum of edge biases around a cycle and never identify which
+  link carries the asymmetry, down-weighting sender links in differential
+  estimation requires prior knowledge of link types (e.g.\ wired peer LAN vs.\
+  asymmetric wireless sender).
 \end{enumerate}
 
 \section{Simulation evaluation}
@@ -941,23 +1018,34 @@ run model:
 All numbers in Tables~\ref{tab:lyap}--\ref{tab:margin} come from
 \texttt{cargo run --release -p unisono-sim --example star}
 (\path{crates/unisono-sim/src/star.rs}, regression-tested in
-\path{crates/unisono-sim/tests/star.rs}). Clock trajectories draw correlated
-$[\phi, \dot\phi]$ increments using the Cholesky factor of $Q(\Delta t)$ with
-IEEE~Std~1139-2008 coefficients \cite{ieee1139}:
+\path{crates/unisono-sim/tests/star.rs}). Throughout this section, RMS denotes
+root-mean-square, and every Monte Carlo table reports 20-seed medians and
+interquartile ranges (IQR, $[p_{25}, p_{75}]$) or 20-seed pooled estimates.
+
+Clock trajectories draw correlated $[\phi, \dot\phi]$ increments using the
+Cholesky factor of $Q(\Delta t)$, parameterized by the IEEE~Std~1139-2008
+spectral coefficients $h_0, h_{-1}, h_{-2}$ \cite{ieee1139} (IEEE~Std~1139
+defines these quantities; the numerical presets below are representative
+modeling parameters, not values prescribed by the standard):
 \begin{itemize}
 \item \emph{Temperature-compensated crystal oscillator (TCXO):}
   $h_0 = 2\times 10^{-18}\,\text{s}$, $h_{-2} = 5\times 10^{-20}\,\text{Hz}$
   (Allan deviation $\sigma_y(1\,\text{s}) \approx 10^{-9}$; an oven-controlled
   crystal oscillator, OCXO, would reach $\le 10^{-11}$).
 \item \emph{Consumer quartz:} $h_0 = 2\times 10^{-14}\,\text{s}$,
-  $h_{-2} = 5\times 10^{-16}\,\text{Hz}$ ($\sigma_y(1\,\text{s}) \approx 10^{-7}$).
+  $h_{-2} = 5\times 10^{-16}\,\text{Hz}$ ($\sigma_y(1\,\text{s}) \approx 1.1\times 10^{-7}$).
 \item \emph{Consumer quartz with $1/f$ flicker frequency noise:} same $h_0, h_{-2}$
   plus $h_{-1} = 10^{-14}$, synthesized by an 8-pole logarithmically spaced
-  Ornstein--Uhlenbeck bank \cite{kasdin1995} ($\sigma_y \approx 1.2\times 10^{-7}$
-  over $1$--$100\,\text{s}$).
-\item \emph{Wandering quartz:} same $h_0$ with a random-walk frequency
-  coefficient $h_{-2} = 5\times 10^{-14}\,\text{Hz}$ ($100$ times larger than
-  consumer quartz).
+  Ornstein--Uhlenbeck bank \cite{barnes1971} integrated with the exact $2 \times 2$
+  joint Gaussian transition for frequency and integrated phase (flicker floor
+  $\sqrt{2\ln 2 \cdot h_{-1}} \approx 1.18\times 10^{-7}$; full Allan deviation
+  $\sigma_y(1\,\text{s}) \approx 1.65\times 10^{-7}$ and
+  $\sigma_y(100\,\text{s}) \approx 5.9\times 10^{-7}$).
+\item \emph{Wandering quartz (stress case):} same $h_0$ with
+  $h_{-2} = 5\times 10^{-14}\,\text{Hz}$ ($100\times$ consumer quartz). Its
+  frequency standard deviation reaches $24\,\text{ppm}$ after $600\,\text{s}$,
+  $70\,\text{ppm}$ after $5{,}000\,\text{s}$, and $140\,\text{ppm}$ after
+  $20{,}000\,\text{s}$.
 \end{itemize}
 Wired links use $100\,\mu\text{s}$ minimum delay, $5\,\mu\text{s}$ clear
 excess, and $10\%$ queueing ($200\,\mu\text{s}$ excess); Wi-Fi links use
@@ -966,166 +1054,295 @@ contention ($3\,\text{ms}$ excess), $30\,\text{ms}$ mean pauses every
 $20\,\text{s}$, and $2\%$ independent per-direction UDP packet loss. Wired
 links use $2\,\mu\text{s}$ hardware timestamp noise in the TCXO case and
 $10\,\mu\text{s}$ software timestamp noise in all quartz cases; Wi-Fi uses
-$10\,\mu\text{s}$ timestamp noise. Every Monte Carlo table reports 20-seed
-medians and interquartile ranges (IQR, $[p_{25}, p_{75}]$).
+$10\,\mu\text{s}$ timestamp noise.
 
-\subsection{Optimal shared star gain under sender clock wander}
+\subsection{Information assumptions and simulator simplifications}
+\label{sec:sim-assumptions}
+
+A real host observes only its own clock readings, its own audio device's
+requests and timestamps, the messages it actually receives (with delay and
+loss), and settings fixed in advance. Table~\ref{tab:info} records where each
+simulated component uses parameters beyond local observations, and lists the
+main simplifications separating the simulator from a physical deployment:
+
+\begin{table}[htb]
+\centering
+\small
+\begin{tabular}{@{}l >{\raggedright\arraybackslash}p{8.8cm}@{}}
+\toprule
+Component & Parameters beyond local node observations \\
+\midrule
+Table~\ref{tab:lyap} (shared star gain) &
+  Both clocks' true noise $(h_0, h_{-2})$; Part~A also assumes exact
+  noiseless offsets every $10\,\text{ms}$, while Part~B models noisy
+  measurements with the true variance and cadence. \\
+Table~\ref{tab:star} (star controllers) &
+  Measurements, variance floor, nominal variance, and playback deadlines
+  ($\min\mathrm{RTT}/2$) use only local data; matched rows pass true
+  $(h_0, h_{-2})$ priors (Table~\ref{tab:prior} sweeps prior errors from
+  $0.01\times$ to $10\times$). \\
+Table~\ref{tab:sched} (causal schedule) &
+  Messages are delayed and lost, and step-0 startup is strictly local; sender
+  and receivers know true link variances and oscillator noise parameters. \\
+Table~\ref{tab:peer} (peer topologies) &
+  \texttt{Cent} rows are centralized benchmarks (same-step global BLUE and
+  shared filters); \texttt{Dec} rows are receiver-local with 1-step ($0.5\,\text{s}$)
+  relay delay and $2\%$ loss. Both know true edge variances and oscillator
+  parameters. \\
+Table~\ref{tab:margin} (playout margin) &
+  Uses true pause rate $\lambda$ and mean duration $\bar d$ (estimating $\bar d$
+  to $\pm 10\%$ takes $\sim 100$ pauses, or $\sim 33\,\text{min}$ at one pause
+  per $20\,\text{s}$). \\
+\bottomrule
+\end{tabular}
+\caption{Information assumptions of each simulation table.}
+\label{tab:info}
+\end{table}
+
+In addition, the simulator simplifies the physical problem in five ways:
+(1)~no simulated audio device has its own independent crystal or device
+timestamp error, so few-microsecond spreads exclude audio-device timing error;
+(2)~all receivers make control decisions on aligned true-time cycles rather
+than drifting device-request grids;
+(3)~in Table~\ref{tab:star}, audio stream delivery uses an independent draw of
+the downlink (so a pause holding audio does not simultaneously hold clock
+probes, pauses are independent across receivers, packet drops are independent
+with no multi-packet outages, and no packet repair is enabled even though
+\path{crates/unisono-sim/src/protection.rs} models repair);
+(4)~Tables~\ref{tab:sched} and~\ref{tab:peer} draw Gaussian offset
+measurements directly rather than simulating NTP exchanges, and treat peer
+link errors as mutually independent (a $5\,\mu\text{s}$ peer link corresponds
+to wired Ethernet rather than double-hop Wi-Fi through an access point);
+(5)~Table~\ref{tab:peer} judges low-latency controllers by RMS offset error
+without simulating missed audio blocks, and selects $g_{\mathrm{com,low}} = 0.005$
+by hand.
+
+\subsection{Shared star gain: perfect-information benchmark vs.\ filter in the loop}
 \label{sec:sim-lyap}
 
 Table~\ref{tab:lyap} solves the discrete Lyapunov equation for the stationary
-per-cycle cost of $R = 4$ star receivers ($\Delta t = 10\,\text{ms}$,
-$\tilde c_S = 10^{-5}$, $\tilde c_\Theta = 10^{-7}$) sharing one gain $g$ as
-the sender's random-walk coefficient $h_{-2}$ scales from $0$ to $1000\times$
-consumer quartz. Benchmarks are
+per-cycle cost $J_{\mathrm{ctrl}}(g)$ of $R = 4$ symmetric star receivers
+($\Delta t = 10\,\text{ms}$, $\tilde c_S = 10^{-5}$, $\tilde c_\Theta = 10^{-7}$)
+sharing one scalar gain $g$. Reference gains are
 $\mathrm{gainForWeight}(\tilde c_\Theta) = 0.02484$,
-$\mathrm{gainForWeight}(\frac{3}{4}\tilde c_S + \tilde c_\Theta) = 0.07157$,
+$g_{\mathrm{indep}} = \mathrm{gainForWeight}(\frac{3}{4}\tilde c_S + \tilde c_\Theta) = 0.07157$,
 and $\mathrm{gainForWeight}(\tilde c_S + \tilde c_\Theta) = 0.07664$.
+
+Part~A shows the \emph{perfect-information benchmark}: each receiver is driven
+directly by the true clock increments every $10\,\text{ms}$ with zero
+measurement noise and no filter (using the corrected negative cross-covariance
+$\operatorname{Cov}(\xi_1, \xi_2) = -q_2 \Delta t^3 / 2$ in
+\texttt{cycle\_clock\_innovation\_cov}). Part~B puts each receiver's steady-state
+two-state Kalman filter in the loop (\texttt{filtered\_star\_lyapunov\_cost},
+\texttt{optimal\_filtered\_star\_gain}) at $100\times$ sender wander across
+three measurement regimes.
 
 \begin{table}[htb]
 \centering
 \small
 \begin{tabular}{@{}l r r r r@{}}
 \toprule
-Sender noise scale & Optimal $g_{\mathrm{star}}^*$ & $J(g_{\mathrm{star}}^*)$ & $J(g_{\mathrm{indep}})$ & Cost reduction \\
+\multicolumn{5}{@{}l}{\textbf{Part A: Perfect-information benchmark (exact offsets every $10\,\text{ms}$, no filter)}} \\
 \midrule
-$0\times$ (ideal sender)  & 0.07157 & $2.116{\times}10^{-20}$ & $2.116{\times}10^{-20}$ &  0.00\% \\
-$1\times$ consumer quartz & 0.06073 & $2.575{\times}10^{-20}$ & $2.700{\times}10^{-20}$ &  4.63\% \\
-$10\times$ $h_{-2}$       & 0.05796 & $2.970{\times}10^{-20}$ & $3.173{\times}10^{-20}$ &  6.40\% \\
-$100\times$ $h_{-2}$      & 0.04066 & $6.204{\times}10^{-20}$ & $7.899{\times}10^{-20}$ & 21.46\% \\
-$1000\times$ $h_{-2}$     & 0.02681 & $2.909{\times}10^{-19}$ & $5.516{\times}10^{-19}$ & 47.27\% \\
+Sender noise scale & Optimal $g_{\mathrm{star}}^*$ & $J_{\mathrm{ctrl}}(g_{\mathrm{star}}^*)$ & $J_{\mathrm{ctrl}}(g_{\mathrm{indep}})$ & Reduction \\
+\midrule
+$0\times$ (ideal sender)  & 0.07157 & $2.121{\times}10^{-20}$ & $2.121{\times}10^{-20}$ &  0.00\% \\
+$1\times$ consumer quartz & 0.06073 & $2.583{\times}10^{-20}$ & $2.708{\times}10^{-20}$ &  4.63\% \\
+$10\times$ $h_{-2}$       & 0.05775 & $2.993{\times}10^{-20}$ & $3.205{\times}10^{-20}$ &  6.61\% \\
+$100\times$ $h_{-2}$      & 0.04013 & $6.307{\times}10^{-20}$ & $8.175{\times}10^{-20}$ & 22.84\% \\
+$1000\times$ $h_{-2}$     & 0.02675 & $2.973{\times}10^{-19}$ & $5.787{\times}10^{-19}$ & 48.63\% \\
+\midrule
+\multicolumn{5}{@{}l}{\textbf{Part B: Kalman filter in the loop ($100\times$ sender $h_{-2}$, noisy phase measurements)}} \\
+\midrule
+Measurement cadence \& noise & Optimal $g_{\mathrm{filt}}^*$ & Saving vs.\ $g_{\mathrm{indep}}$ & \multicolumn{2}{r@{}}{Extra cost at $g(\tilde c_\Theta) = 0.02484$} \\
+\midrule
+Every $10\,\text{ms}$, $1\,\mu\text{s}$ noise & 0.02155 & 50.44\% & \multicolumn{2}{r@{}}{$+1.49\%$} \\
+Every $1\,\text{s}$, $2.8\,\mu\text{s}$ (wired) & 0.00431 & 27.92\% & \multicolumn{2}{r@{}}{$+36.54\%$} \\
+Every $1\,\text{s}$, $170\,\mu\text{s}$ (Wi-Fi) & 0.00055 & 17.46\% & \multicolumn{2}{r@{}}{$+22.24\%$} \\
 \bottomrule
 \end{tabular}
-\caption{Stationary per-cycle cost (discrete Lyapunov solver, $R=4$,
-$\Delta t = 10\,\text{ms}$) comparing the optimal shared star gain
-$g_{\mathrm{star}}^*$ against the uncorrelated-error gain
-$g_{\mathrm{indep}} = 0.07157$ as sender wander increases.}
+\caption{Stationary per-cycle cost $J_{\mathrm{ctrl}}(g)$ ($R=4$,
+$\Delta t = 10\,\text{ms}$) comparing the perfect-information benchmark (Part~A)
+against the coupled Kalman-filter-in-the-loop Lyapunov solver (Part~B).}
 \label{tab:lyap}
 \end{table}
 
-With an ideal sender, $g_{\mathrm{star}}^*$ matches $g_{\mathrm{indep}}$ to
-five decimal places. As sender wander grows, $g_{\mathrm{star}}^*$ shifts
-monotonically toward $\mathrm{gainForWeight}(\tilde c_\Theta) = 0.02484$,
-cutting stationary cost by $21.5\%$ at $100\times$ $h_{-2}$ and $47.3\%$ at
-$1000\times$ $h_{-2}$.
+At $0\times$ sender wander in Part~A, $g_{\mathrm{star}}^*$ matches
+$g_{\mathrm{indep}} = 0.07157$ as required by Theorem~\ref{thm:star-weight}
+(a consistency check of the solver). Under perfect information, $g_{\mathrm{star}}^*$
+stays inside $[\mathrm{gainForWeight}(\tilde c_\Theta), g_{\mathrm{indep}}]$
+and cuts cost by $22.8\%$ at $100\times$ and $48.6\%$ at $1000\times$. Once
+noisy measurements and the Kalman filter enter the loop (Part~B), every optimal
+gain falls \emph{below} $\mathrm{gainForWeight}(\tilde c_\Theta) = 0.02484$
+($0.02155$, $0.00431$, and $0.00055$), because the wandering sender raises the
+Kalman gain and admits private measurement noise into the regulator. Restricting
+$g$ to $[\mathrm{gainForWeight}(\tilde c_\Theta), g_{\mathrm{indep}}]$ incurs
+$+36.5\%$ extra cost in the wired $1\,\text{s}$ regime and $+22.2\%$ on Wi-Fi.
 
-\subsection{Star topology: baselines vs.\ star controllers}
+\subsection{Star topology: baselines, star controllers, and prior-mismatch sweep}
 \label{sec:sim-star}
 
 Table~\ref{tab:star} compares five policies over $600\,\text{s}$ runs
-($60\,\text{s}$ warm-up, $10\,\text{ms}$ cycles, $50\,\text{ms}$ playout
-margin, $0.33\,\text{ms}$ resampler lookahead, probe period $0.25\,\text{s}$,
-window $N_{\mathrm{win}} = 8$ emitting every $4$ replies): the fixed-delay baseline at
-$1000\,\text{ppm}$ and $100\,\text{ppm}$ slew, a $100\,\text{ppm}$ baseline
-given the same sliding-window minimum-RTT selector (\texttt{minRTT 100}), and
-the star Kalman controller with either empirically calibrated residual variance
-($2.8\,\mu\text{s}$ wired excess, $170\,\mu\text{s}$ Wi-Fi) or online adaptive
-variance (fixed floor $(5\,\mu\text{s})^2$). The gain is derived from
-$\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$ with
+($60\,\text{s}$ warm-up, $10\,\text{ms}$ cycles, $50\,\text{ms}$ playout margin
+plus one tight $2\,\text{ms}$ Wi-Fi comparison, $0.33\,\text{ms}$ resampler
+lookahead, probe period $0.25\,\text{s}$, window $N_{\mathrm{win}} = 8$
+emitting every $4$ replies): the fixed-delay baseline at $1000\,\text{ppm}$ and
+$100\,\text{ppm}$ slew, a $100\,\text{ppm}$ baseline given the same
+sliding-window minimum-RTT selector (\texttt{minRTT 100}), and the star Kalman
+controller with either a fixed nominal variance (\texttt{Star nom}:
+$(10\,\mu\text{s})^2$ wired, $(170\,\mu\text{s})^2$ Wi-Fi, never inspecting
+ground-truth timestamp noise) or online adaptive variance (\texttt{Star online},
+fixed floor $(5\,\mu\text{s})^2$). Every policy's playback deadline uses only
+the receiver's causally observed running $\min\mathrm{RTT}/2$ (never true
+\texttt{link.minimum}). The star gain uses
+$\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$ at
 $\tilde c_S = 2\times 10^{-6}$, $\tilde c_\Theta = 4\times 10^{-7}$
-($g \approx 0.049$ for $R = 2$, $0.052$ for $R = 5$). Asymmetric cases shift
-receiver~1's forward minimum delay by $+\alpha$ and backward by $-\alpha$, and
-receiver~2 by the opposite sign (creating opposite one-way asymmetries of
-$\pm\alpha$).
+($g = 0.0475$ for $R = 2$, $g = 0.0518$ for $R = 5$; for equal clocks, the
+perfect-information solver's optima at those weights are $0.0426$ and $0.0457$).
+Asymmetric cases shift receiver~1's forward minimum delay by $+A$ and backward
+by $-A$, and receiver~2 by the opposite sign (opposite one-way asymmetries
+$\pm A$).
 
 \begin{table}[htb]
 \centering
 \footnotesize
-\setlength{\tabcolsep}{2.8pt}
+\setlength{\tabcolsep}{2.6pt}
 \begin{tabular}{@{}ll r r r r r@{}}
 \toprule
-Scenario & Policy & Spread ($\mu\text{s}$) & RMS error ($\mu\text{s}$) & Speed RMS (ppm) & Max & Missed / clicks \\
+Scenario & Policy & Spread ($\mu\text{s}$) & RMS err.\ ($\mu\text{s}$) & Speed RMS (ppm) & Max & Missed / clicks \\
  & & med [p25, p75] & med [p25, p75] & med [p25, p75] & (ppm) & (frac / $\text{s}^{-1}$) \\
 \midrule
 2 wired (TCXO, & Base 1000  & 31.29 [30.8, 31.9] & 44.48 [43.7, 45.1] & 195.4 [193.8, 195.7] & 2000 & $0 / 0$ \\
 hw ts $2\,\mu\text{s}$) & Base 100 & 7.19 [7.07, 7.46] & 10.29 [10.0, 10.6] & 26.92 [26.88, 26.98] & 200 & $0 / 0$ \\
  & minRTT 100 & 4.00 [3.19, 5.44] & 7.17 [5.29, 9.81] & 10.27 [10.11, 10.35] & 100 & $0 / 0$ \\
- & Star calib & 0.41 [0.35, 0.46] & 0.60 [0.55, 0.66] & 0.00 [0.00, 0.00] & 0.07 & $0 / 0$ \\
+ & Star nom & 0.46 [0.35, 0.53] & 0.70 [0.62, 0.79] & 0.00 [0.00, 0.00] & 0.07 & $0 / 0$ \\
  & Star online & 0.45 [0.38, 0.51] & 0.66 [0.62, 0.71] & 0.00 [0.00, 0.01] & 0.14 & $0 / 0$ \\
 \midrule
 2 wired (quartz, & Base 1000 & 32.38 [31.7, 32.8] & 45.92 [45.0, 46.3] & 236.1 [235.8, 236.8] & 2000 & $0 / 0$ \\
 sw ts $10\,\mu\text{s}$) & Base 100 & 9.88 [9.63, 10.1] & 13.96 [13.8, 14.2] & 28.15 [28.04, 28.20] & 200 & $0 / 0$ \\
  & minRTT 100 & 9.21 [8.85, 10.5] & 14.40 [13.0, 15.3] & 10.42 [10.39, 10.45] & 100 & $0 / 0$ \\
- & Star calib & 4.01 [3.80, 4.14] & 5.91 [5.70, 6.16] & 0.09 [0.09, 0.09] & 1.15 & $0 / 0$ \\
+ & Star nom & 4.03 [3.82, 4.17] & 5.93 [5.72, 6.17] & 0.09 [0.09, 0.10] & 1.18 & $0 / 0$ \\
  & Star online & 4.52 [4.36, 4.65] & 6.53 [6.43, 6.66] & 0.13 [0.12, 0.13] & 1.69 & $0 / 0$ \\
 \midrule
 2 wired asym & Base 1000 & 59.39 [58.7, 59.9] & 67.69 [66.9, 68.4] & 236.1 [235.8, 236.8] & 2000 & $0 / 0$ \\
 $\pm 50\,\mu\text{s}$ (quartz) & Base 100 & 51.05 [50.4, 51.8] & 51.98 [51.3, 52.8] & 28.15 [28.04, 28.20] & 200 & $0 / 0$ \\
  & minRTT 100 & 51.95 [48.5, 54.9] & 53.28 [50.0, 55.9] & 10.42 [10.39, 10.45] & 100 & $0 / 0$ \\
- & Star calib & 50.08 [49.8, 50.4] & 50.28 [50.0, 50.6] & 0.09 [0.09, 0.09] & 1.15 & $0 / 0$ \\
+ & Star nom & 50.08 [49.8, 50.4] & 50.29 [50.0, 50.6] & 0.09 [0.09, 0.10] & 1.18 & $0 / 0$ \\
  & Star online & 50.03 [49.8, 50.5] & 50.26 [50.1, 50.8] & 0.13 [0.12, 0.13] & 1.69 & $0 / 0$ \\
 \midrule
 2 wireless (quartz, & Base 1000 & 240.8 [236, 244] & 337.8 [337, 342] & 283.8 [281.8, 284.4] & 2000 & $2.02{\times}10^{-2} / 1.96$ \\
-2\% UDP drop) & Base 100 & 62.21 [58.8, 68.7] & 89.44 [84.1, 98.8] & 27.72 [27.65, 27.98] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
+2\% drop, $50\,\text{ms}$) & Base 100 & 62.21 [58.8, 68.7] & 89.44 [84.1, 98.8] & 27.72 [27.65, 27.98] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
  & minRTT 100 & 57.91 [56.6, 59.4] & 81.73 [81.2, 84.9] & 11.25 [11.15, 11.39] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
- & Star calib & 25.50 [24.0, 30.4] & 40.29 [37.4, 44.5] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
+ & Star nom & 25.50 [24.0, 30.4] & 40.29 [37.4, 44.5] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
  & Star online & 28.93 [22.5, 33.1] & 44.41 [39.4, 53.8] & 0.22 [0.22, 0.24] & 6.55 & $2.02{\times}10^{-2} / 1.96$ \\
 \midrule
+2 wireless (quartz, & Base 1000 & 240.8 [236, 244] & 337.8 [337, 342] & 283.8 [281.8, 284.4] & 2000 & $3.14{\times}10^{-1} / 20.88$ \\
+2\% drop, $2\,\text{ms}$) & Base 100 & 62.21 [58.8, 68.7] & 89.44 [84.1, 98.8] & 27.72 [27.65, 27.98] & 200 & $3.11{\times}10^{-1} / 20.88$ \\
+ & minRTT 100 & 57.91 [56.6, 59.4] & 81.73 [81.2, 84.9] & 11.25 [11.15, 11.39] & 200 & $3.10{\times}10^{-1} / 20.87$ \\
+ & Star online & 28.93 [22.5, 33.1] & 44.41 [39.4, 53.8] & 0.22 [0.22, 0.24] & 6.55 & $3.11{\times}10^{-1} / 20.89$ \\
+\midrule
 2 wireless asym & minRTT 100 & 210.3 [204, 214] & 218.3 [212, 222] & 11.26 [11.15, 11.39] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
-$\pm 200\,\mu\text{s}$ (2\% drop) & Star calib & 199.8 [194, 206] & 203.0 [196, 208] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
- & Star online & 202.3 [189, 210] & 209.0 [194, 213] & 0.22 [0.21, 0.24] & 6.55 & $2.02{\times}10^{-2} / 1.96$ \\
+$\pm 200\,\mu\text{s}$ (2\% drop) & Star nom & 199.8 [194, 206] & 203.0 [196, 208] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
+ & Star online & 202.3 [189, 210] & 209.0 [194, 213] & 0.22 [0.22, 0.24] & 6.55 & $2.02{\times}10^{-2} / 1.96$ \\
 \midrule
 2 wireless asym & minRTT 100 & 505.0 [500, 509] & 508.4 [503, 512] & 11.26 [11.15, 11.39] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
-$\pm 500\,\mu\text{s}$ (2\% drop) & Star calib & 499.2 [493, 504] & 500.1 [494, 505] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
+$\pm 500\,\mu\text{s}$ (2\% drop) & Star nom & 499.2 [493, 504] & 500.1 [494, 505] & 0.31 [0.30, 0.33] & 7.47 & $2.02{\times}10^{-2} / 1.96$ \\
  & Star online & 500.7 [488, 509] & 503.8 [490, 510] & 0.22 [0.21, 0.24] & 6.55 & $2.02{\times}10^{-2} / 1.96$ \\
 \midrule
 3 wired + 2 wire- & Base 1000 & 195.3 [191, 198] & 218.2 [213, 221] & 255.9 [255.3, 256.5] & 2000 & $8.11{\times}10^{-3} / 0.79$ \\
 less (quartz, & Base 100 & 53.75 [50.3, 57.8] & 59.33 [56.0, 63.0] & 27.99 [27.94, 28.04] & 200 & $8.11{\times}10^{-3} / 0.79$ \\
 2\% drop) & minRTT 100 & 48.83 [47.3, 50.6] & 54.06 [52.7, 56.4] & 10.77 [10.72, 10.81] & 200 & $8.11{\times}10^{-3} / 0.79$ \\
- & Star calib & 23.06 [20.7, 25.9] & 25.87 [23.7, 29.5] & 0.24 [0.24, 0.26] & 9.48 & $8.11{\times}10^{-3} / 0.79$ \\
+ & Star nom & 23.07 [20.7, 25.9] & 25.87 [23.7, 29.5] & 0.25 [0.24, 0.26] & 9.48 & $8.11{\times}10^{-3} / 0.79$ \\
  & Star online & 23.79 [21.5, 28.6] & 27.80 [24.1, 34.7] & 0.20 [0.19, 0.21] & 7.97 & $8.11{\times}10^{-3} / 0.79$ \\
 \midrule
-2 wireless flicker & Base 100 & 60.57 [58.3, 68.9] & 91.24 [86.1, 96.4] & 27.76 [27.70, 28.02] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
-(TCXO prior, & minRTT 100 & 58.74 [56.2, 60.4] & 82.37 [79.8, 84.3] & 11.27 [11.10, 11.38] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
-mismatched) & Star calib & 53.91 [44.1, 74.0] & 103.3 [77.0, 142.6] & 0.18 [0.17, 0.20] & 6.07 & $2.02{\times}10^{-2} / 1.96$ \\
- & Star online & 51.55 [44.7, 73.2] & 105.8 [78.5, 149.0] & 0.18 [0.16, 0.20] & 5.37 & $2.02{\times}10^{-2} / 1.96$ \\
+2 wireless flicker & Base 100 & 63.98 [59.5, 64.9] & 90.26 [84.0, 97.7] & 27.84 [27.66, 28.12] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
+(TCXO prior, & minRTT 100 & 59.23 [56.3, 60.8] & 82.94 [79.6, 85.0] & 11.24 [11.14, 11.34] & 200 & $2.02{\times}10^{-2} / 1.96$ \\
+mismatched) & Star nom & 49.71 [40.5, 72.8] & 97.19 [75.3, 121.0] & 0.18 [0.16, 0.19] & 5.40 & $2.02{\times}10^{-2} / 1.96$ \\
+ & Star online & 49.87 [37.1, 70.8] & 90.33 [73.4, 128.5] & 0.18 [0.16, 0.19] & 5.05 & $2.02{\times}10^{-2} / 1.96$ \\
 \bottomrule
 \end{tabular}
-\caption{Star topology simulation (20-seed medians and IQR). On asymmetric
-wireless links, \texttt{Base 1000} and \texttt{Base 100} similarly sit above the
-$\alpha$ floor ($213.2$ and $507.9\,\mu\text{s}$ spread for \texttt{Base 100}).
-Missed fraction and click rate are evaluated from each policy's closed-loop
-block requests.}
+\caption{Star topology simulation (20-seed medians and IQR; true oscillator
+$(h_0, h_{-2})$ priors except the mismatched flicker row; deadlines use
+observed $\min\mathrm{RTT}/2$). On asymmetric wireless links, \texttt{Base 100}
+similarly sits above the $A$ floor ($213.2$ and $507.9\,\mu\text{s}$ spread).}
 \label{tab:star}
 \end{table}
 
-Table~\ref{tab:star} shows four concrete behaviors:
+\begin{table}[htb]
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}l rrr rrr@{}}
+\toprule
+ & \multicolumn{3}{c}{2 wired (quartz, sw ts $10\,\mu\text{s}$)} & \multicolumn{3}{c}{2 wireless (quartz, $2\%$ drop)} \\
+\cmidrule(lr){2-4} \cmidrule(lr){5-7}
+Prior scale & Spread ($\mu\text{s}$) & RMS err.\ ($\mu\text{s}$) & Rough.\ (ppm) & Spread ($\mu\text{s}$) & RMS err.\ ($\mu\text{s}$) & Rough.\ (ppm) \\
+\midrule
+\texttt{minRTT 100} & 9.21 [8.85, 10.5] & 14.40 [13.0, 15.3] & 10.42 & 57.91 [56.6, 59.4] & 81.73 [81.2, 84.9] & 11.25 \\
+\midrule
+$0.01\times$ & 5.57 [4.72, 6.00] & 9.69 [8.70, 11.2] & 0.05 & 45.67 [32.5, 59.0] & 83.92 [63.1, 111.3] & 0.17 \\
+$0.10\times$ & 3.90 [3.60, 4.15] & 6.07 [5.94, 6.66] & 0.07 & 35.78 [29.7, 49.7] & 67.52 [50.0, 83.8] & 0.18 \\
+$0.30\times$ & 4.03 [3.86, 4.26] & 6.05 [5.86, 6.28] & 0.09 & 30.82 [26.5, 42.9] & 56.85 [43.7, 64.6] & 0.20 \\
+$1.00\times$ (true) & 4.52 [4.36, 4.65] & 6.53 [6.43, 6.66] & 0.13 & 28.93 [22.5, 33.1] & 44.41 [39.4, 53.8] & 0.22 \\
+$3.00\times$ & 5.10 [4.93, 5.38] & 7.46 [7.27, 7.62] & 0.17 & 26.63 [21.4, 31.4] & 41.29 [37.1, 48.3] & 0.26 \\
+$10.0\times$ & 6.04 [5.89, 6.35] & 8.75 [8.63, 8.98] & 0.24 & 24.60 [23.0, 31.7] & 40.82 [37.8, 46.0] & 0.34 \\
+\bottomrule
+\end{tabular}
+\caption{Sensitivity of \texttt{Star online} to scaling the filter's assumed
+$(h_0, h_{-2})$ oscillator noise prior from $0.01\times$ to $10\times$ the true
+values (20-seed medians and IQR).}
+\label{tab:prior}
+\end{table}
+
+Tables~\ref{tab:star} and~\ref{tab:prior} show four concrete behaviors:
 \begin{itemize}
-\item On symmetric links with matched oscillator priors, the Kalman filter plus
+\item On symmetric links with known oscillator priors, the Kalman filter plus
   \lean{Regulation.law} reduces median spread by $2.0$--$2.3\times$ relative to
-  \texttt{minRTT 100} on consumer quartz ($9.21 \to 4.01\,\mu\text{s}$ wired,
+  \texttt{minRTT 100} on consumer quartz ($9.21 \to 4.03\,\mu\text{s}$ wired,
   $57.9 \to 25.5\,\mu\text{s}$ wireless, $48.8 \to 23.1\,\mu\text{s}$ mixed)
-  and cuts root-mean-square (RMS) playback speed changes from $10$--$11\,\text{ppm}$
-  to $0.09$--$0.31\,\text{ppm}$.
+  and cuts RMS playback speed changes from $10$--$11\,\text{ppm}$ to
+  $0.09$--$0.31\,\text{ppm}$.
 \item On asymmetric links ($\pm 50\,\mu\text{s}$ wired, $\pm 200\,\mu\text{s}$
-  and $\pm 500\,\mu\text{s}$ Wi-Fi), every star policy's spread and latency
-  error sit at the $\alpha$ asymmetry floor, matching Theorem~\ref{thm:star-peer-sep}.
-  The accuracy advantage over \texttt{minRTT 100} vanishes; only the
-  $35$--$100\times$ reduction in RMS speed change remains.
-\item When the Kalman filter underestimates clock noise (giving a TCXO prior to
-  consumer quartz clocks with $1/f$ flicker noise), median RMS error rises to
-  $103.3$--$105.8\,\mu\text{s}$—worse than both \texttt{minRTT 100}
-  ($82.4\,\mu\text{s}$) and \texttt{Base 100} ($91.2\,\mu\text{s}$). Process-noise
-  calibration matters for tracking accuracy.
-\item Missed-sample fraction and click rate are computed from each policy's
-  closed-loop playback times at $10\,\text{ms}$ block boundaries with
-  $0.33\,\text{ms}$ resampler lookahead. Because all five policies stay far
-  inside the $50\,\text{ms}$ playout margin, the $2\%$ unrecovered UDP packet
-  drops produce the same $2.02\%$ missed fraction and $1.96\,\text{clicks/s}$
-  across all policies.
+  and $\pm 500\,\mu\text{s}$ Wi-Fi), every star policy's spread and offset
+  error sit at the $A$ asymmetry floor. The lossless wired row satisfies the
+  hypotheses of Theorem~\ref{thm:star-peer-sep}, while the Wi-Fi rows exhibit
+  the same empirical $A$ floor even though their $2\%$ packet loss violates
+  Theorem~\ref{thm:star-peer-sep}'s hypothesis that every frame from $N_0$
+  onward is played. The accuracy advantage over \texttt{minRTT 100} vanishes;
+  only the $36$--$116\times$ reduction in RMS speed change remains.
+\item Table~\ref{tab:prior} quantifies sensitivity to the oscillator noise
+  prior $(h_0, h_{-2})$: overestimating the prior ($3\times$--$10\times$)
+  raises roughness slightly while keeping RMS error low on both wired and Wi-Fi
+  links, whereas severely underestimating it ($0.01\times$ on Wi-Fi, or giving
+  a TCXO prior to flicker quartz in Table~\ref{tab:star}) degrades RMS error to
+  $83.9$--$97.2\,\mu\text{s}$, worse than \texttt{minRTT 100}
+  ($81.7$--$82.9\,\mu\text{s}$). Estimating $(h_0, h_{-2})$ online from Allan
+  variance takes minutes to hours and observes only the sum of sender and
+  receiver clock noise, so conservative (slightly high) priors are safer than
+  optimistic ones.
+\item At a $50\,\text{ms}$ playout margin, all five policies stay far inside
+  the buffer, so the $2\%$ unrecovered UDP packet drops dominate identically
+  across policies ($2.02\%$ missed, $1.96\,\text{clicks/s}$). Lowering the
+  Wi-Fi margin to $2\,\text{ms}$ separates the policies in every seed
+  ($31.4\%$ missed for \texttt{Base 1000} vs.\ $31.0$--$31.1\%$ for
+  \texttt{minRTT 100} and \texttt{Star online}).
 \end{itemize}
 
 \subsection{Causal sender-disciplined schedule on heterogeneous fleets}
 \label{sec:sim-sched}
 
-Table~\ref{tab:sched} evaluates a causal sender-disciplined schedule on $3$
-wired ($4\,\mu\text{s}$) and $2$ wireless ($150\,\mu\text{s}$) receivers with
-$20\,\mu\text{s}$ shared sender network interface card (NIC) transmit jitter,
-noisy step-0 filter initialization, $1$-step ($1\,\text{s}$) uplink report
-delay, $2\%$ report drops, a causal sender filter, $1$-step downlink broadcast
-delay, and closed-loop \lean{Regulation.law} ($g = 0.15$) over $20{,}000$ steps.
-No same-step fleet average is subtracted; each receiver subtracts only its own
-causal prior residual estimate before reporting so dropped reports do not jump
-across arbitrary boot epochs.
+Three wired receivers have $4\,\mu\text{s}$ measurement noise and two wireless
+ones have $150\,\mu\text{s}$. The sender's network interface card (NIC) adds
+one jitter sample, with standard deviation $20\,\mu\text{s}$, to all
+measurements of a step. Reports reach the sender one step ($1\,\text{s}$)
+later, and $2\%$ are lost; the sender's broadcast reaches receivers one step
+later. Each receiver initializes both its own filter and its residual filter
+locally from its own step-0 measurement (no same-step cross-receiver average at
+startup) and subtracts its own predicted residual before reporting, so that a
+lost report does not shift the sender's average by that receiver's clock
+offset. Both independent (\texttt{Own}) and scheduled (\texttt{Sched})
+estimates drive \lean{Regulation.law} ($g = 0.15$) over $20{,}000$ steps
+(Table~\ref{tab:sched}).
 
 \begin{table}[htb]
 \centering
@@ -1138,116 +1355,147 @@ Sender oscillator & Policy & All ($\mu\text{s}$) & Wired ($\mu\text{s}$) & Mixed
 Consumer quartz & Own   & 22.89 [22.2, 24.3] & 18.53 [14.8, 23.6] & 39.53 [38.6, 42.0] & 29.86 [28.1, 32.7] & 0.14 [0.14, 0.14] \\
                 & Sched & 22.48 [21.8, 23.8] & 19.31 [15.9, 24.2] & 38.25 [37.7, 40.6] & 28.91 [27.0, 32.0] & 0.15 [0.15, 0.15] \\
 \midrule
-Flicker quartz  & Own   & 22.95 [22.5, 24.3] & 18.23 [14.5, 22.2] & 40.75 [39.7, 42.3] & 29.09 [28.1, 31.0] & 0.14 [0.14, 0.14] \\
-                & Sched & 22.46 [22.1, 24.2] & 19.23 [15.7, 22.9] & 39.70 [38.1, 41.0] & 28.47 [27.1, 30.2] & 0.15 [0.15, 0.15] \\
+Flicker quartz  & Own   & 23.18 [22.0, 24.5] & 17.22 [14.2, 23.6] & 40.12 [38.4, 42.3] & 29.53 [28.8, 30.3] & 0.14 [0.14, 0.14] \\
+                & Sched & 23.00 [21.8, 24.2] & 18.16 [15.5, 24.2] & 39.30 [37.5, 41.3] & 28.86 [27.9, 29.6] & 0.15 [0.15, 0.15] \\
 \midrule
 $100\times$ larger $h_{-2}$ & Own & 35.48 [34.9, 36.3] & 16.91 [12.5, 22.6] & 66.08 [64.8, 67.1] & 100.5 [74.2, 156.7] & 0.58 [0.57, 0.58] \\
                 & Sched & 24.23 [23.7, 25.9] & 19.54 [16.2, 24.4] & 42.90 [41.8, 45.5] & 95.78 [66.9, 154.6] & 0.47 [0.47, 0.47] \\
 \bottomrule
 \end{tabular}
 \caption{Independent star filters (\texttt{Own}) vs.\ causal sender-disciplined
-schedule (\texttt{Sched}) under 1-step uplink/downlink delay, $2\%$ report loss,
-and $20\,\mu\text{s}$ shared transmit jitter (20-seed medians and IQR).}
+schedule (\texttt{Sched}) with strictly local step-0 initialization, 1-step
+uplink/downlink delay, $2\%$ report loss, and $20\,\mu\text{s}$ shared transmit
+jitter (20-seed medians and IQR).}
 \label{tab:sched}
 \end{table}
 
 On normal and flicker consumer quartz, the causal schedule changes mixed-pair
-spread by only $2.6$--$3.2\%$ ($39.5 \to 38.3\,\mu\text{s}$ and
-$40.8 \to 39.7\,\mu\text{s}$) while raising wired-pair spread slightly
-($18.5 \to 19.3\,\mu\text{s}$) due to feedback through the sender estimate. For
-a sender whose random-walk frequency coefficient $h_{-2}$ is $100$ times larger,
-it cuts mixed-pair spread from $66.1$ to $42.9\,\mu\text{s}$ ($-35\%$),
+spread by only $2.0$--$3.2\%$ ($39.5 \to 38.3\,\mu\text{s}$ and
+$40.1 \to 39.3\,\mu\text{s}$) while raising wired-pair spread slightly
+($18.5 \to 19.3\,\mu\text{s}$) due to feedback through the sender estimate. The
+large reduction appears only in the $100\times$ wandering-sender stress case,
+where it cuts mixed-pair spread from $66.1$ to $42.9\,\mu\text{s}$ ($-35\%$),
 all-pair spread from $35.5$ to $24.2\,\mu\text{s}$, and RMS roughness from
 $0.58$ to $0.47\,\text{ppm}$.
 
-\subsection{Star vs.\ peer Graph-Laplacian BLUE and modal control}
+\subsection{Star vs.\ centralized and decentralized peer Graph-Laplacian BLUE}
 \label{sec:sim-peer}
 
-Table~\ref{tab:peer} compares independent star control against peer
-Graph-Laplacian BLUE paired with three common-mode settings over $10{,}000$
-steps ($\Delta t = 0.5\,\text{s}$, noisy step-0 initialization,
-$g_{\mathrm{diff}} = 0.15$): lip-sync ($g_{\mathrm{com}} = 0.05$, or $0.10$ in
-the wandering-sender case), bounded low-latency ($g_{\mathrm{com,low}} = 0.005$),
-and unbounded consensus ($g_{\mathrm{com}} = 0$). The common-mode Kalman filter
-uses the correlated mean variance
-$\frac{1}{R^2}\mathbf{1}^\top L_{\mathrm{red}}^{-1}\mathbf{1}$. Both opposite-sign
-($+750 / {-}750\,\mu\text{s}$) and same-sign ($+750 / {+}750\,\mu\text{s}$)
-sender-link asymmetries are included alongside a symmetric $5\,\mu\text{s}$
-wired peer link.
+Table~\ref{tab:peer} compares independent star control against both the
+\textbf{centralized peer benchmark} (\texttt{Cent}: one global BLUE solve on
+same-step data with shared common-mode filter and regulator) and the
+\textbf{decentralized receiver-local peer controller} (\texttt{Dec}: each
+receiver observes only its own incident edges immediately, receives
+non-incident edges $1$ step ($0.5\,\text{s}$) later with $2\%$ independent
+packet loss, extrapolates relayed edges using local per-edge frequency
+estimates, and runs its own BLUE solve, common/differential filters, and
+regulators). All runs span $10{,}000$ steps ($\Delta t = 0.5\,\text{s}$,
+$g_{\mathrm{diff}} = 0.15$, lip-sync $g_{\mathrm{com}} = 0.05$ or $0.10$ in the
+wandering-sender case, bounded low-latency $g_{\mathrm{com,low}} = 0.005$, and
+unbounded consensus $g_{\mathrm{com}} = 0$). In the wandering-sender $K_5$
+case, we include both the default star gain ($g = 0.15$) and a lower star gain
+($g = 0.03$) for a fair roughness comparison.
 
 \begin{table}[htb]
 \centering
-\footnotesize
-\setlength{\tabcolsep}{3.5pt}
-\begin{tabular}{@{}ll r r r@{}}
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}ll r r r r@{}}
 \toprule
-Topology (theory pair $\sigma$; BLUE bias) & Policy & Spread ($\mu\text{s}$) & RMS error ($\mu\text{s}$) & Rough. (ppm) \\
- & & med [p25, p75] & med [p25, p75] & med [p25, p75] \\
+Topology (pair $\sigma$; BLUE bias) & Policy & Spread ($\mu\text{s}$) & RMS err.\ ($\mu\text{s}$) & Rough.\ (ppm) & Worst sp. \\
+ & & med [p25, p75] & med [p25, p75] & med [p25, p75] & ($\mu\text{s}$) \\
 \midrule
-$K_5$ symmetric ($R{=}4$, $150\,\mu\text{s}$) & Star & 21.40 [20.9, 22.0] & 27.13 [26.5, 27.8] & 0.21 [0.21, 0.21] \\
-($212.1 \to 94.9\,\mu\text{s}$; bias $0.00\,\mu\text{s}$) & Peer lip & 12.21 [12.0, 12.8] & 24.19 [23.2, 25.6] & 0.12 [0.12, 0.12] \\
- & Peer low & 12.21 [12.0, 12.8] & 151.0 [133, 167] & 0.11 [0.11, 0.11] \\
- & $g_{\mathrm{com}} = 0$ & 12.21 [12.0, 12.8] & 16694 [10004, 20612] & 0.11 [0.11, 0.11] \\
+$K_5$ symmetric ($R{=}4$, $150\,\mu\text{s}$) & Star ($0.15$) & 21.09 [20.3, 21.5] & 26.68 [26.2, 27.4] & 0.21 [0.21, 0.21] & 22.63 \\
+($212.1 \to 94.9\,\mu\text{s}$; bias $0.00\,\mu\text{s}$) & Cent lip & 12.35 [11.8, 12.5] & 24.15 [22.9, 24.9] & 0.12 [0.12, 0.12] & 13.26 \\
+ & Dec lip  & 12.47 [11.9, 12.6] & 24.41 [23.1, 25.2] & 0.12 [0.12, 0.12] & 13.37 \\
+ & Cent low & 12.35 [11.8, 12.5] & 133.4 [114, 161] & 0.11 [0.11, 0.11] & 13.26 \\
+ & Dec low  & 12.35 [11.9, 12.5] & 133.5 [114, 162] & 0.11 [0.11, 0.11] & 13.26 \\
+ & Cent $g_0$ & 12.35 [11.8, 12.5] & 13540 [7298, 19177] & 0.11 [0.11, 0.11] & 13.26 \\
+ & Dec $g_0$  & 46.84 [33.2, 59.1] & 13527 [7275, 19190] & 0.11 [0.11, 0.11] & 84.27 \\
 \midrule
-Wi-Fi + wired, opp.\ asym.\ ($\pm 750\,\mu\text{s}$) & Star & 750.2 [749, 752] & 750.5 [749, 752] & 0.21 [0.21, 0.21] \\
-($212.1 \to 5.0\,\mu\text{s}$; bias $0.83\,\mu\text{s}$) & Peer lip & 2.20 [1.89, 3.56] & 25.94 [25.0, 26.9] & 0.05 [0.05, 0.06] \\
- & Peer low & 2.20 [1.89, 3.56] & 161.0 [150, 175] & 0.04 [0.04, 0.04] \\
- & $g_{\mathrm{com}} = 0$ & 2.20 [1.89, 3.56] & 16319 [9317, 24352] & 0.04 [0.04, 0.04] \\
+Wi-Fi + wired, opp.\ asym. & Star ($0.15$) & 748.8 [748, 751] & 749.1 [748, 751] & 0.21 [0.20, 0.21] & 755.3 \\
+($\pm 750\,\mu\text{s}$; $212.1 \to 5.0\,\mu\text{s}$) & Cent lip & 2.68 [1.82, 3.17] & 26.31 [24.2, 29.1] & 0.05 [0.05, 0.06] & 5.57 \\
+(BLUE bias $0.83\,\mu\text{s}$) & Dec lip  & 3.17 [2.49, 3.62] & 26.58 [24.6, 29.4] & 0.06 [0.05, 0.06] & 6.05 \\
+ & Cent low & 2.68 [1.82, 3.17] & 155.8 [145, 180] & 0.04 [0.04, 0.04] & 5.57 \\
+ & Dec low  & 2.83 [1.92, 3.30] & 155.9 [145, 180] & 0.04 [0.04, 0.04] & 5.73 \\
+ & Cent $g_0$ & 2.68 [1.82, 3.17] & 9959 [5134, 21565] & 0.04 [0.04, 0.04] & 5.57 \\
+ & Dec $g_0$  & 69.38 [27.2, 100.3] & 10141 [5073, 21633] & 0.04 [0.04, 0.04] & 489.1 \\
 \midrule
-Wi-Fi + wired, same asym.\ ($+750/{+}750\,\mu\text{s}$) & Star & 17.67 [16.6, 18.4] & 750.9 [748, 754] & 0.21 [0.21, 0.21] \\
-($212.1 \to 5.0\,\mu\text{s}$; bias $0.00\,\mu\text{s}$) & Peer lip & 2.20 [1.77, 3.35] & 750.9 [748, 754] & 0.05 [0.05, 0.06] \\
- & Peer low & 2.20 [1.77, 3.35] & 783.1 [750, 813] & 0.04 [0.04, 0.04] \\
- & $g_{\mathrm{com}} = 0$ & 2.20 [1.77, 3.35] & 16340 [9617, 24208] & 0.04 [0.04, 0.04] \\
+Wi-Fi + wired, same asym. & Star ($0.15$) & 17.73 [16.7, 18.6] & 750.2 [749, 753] & 0.21 [0.20, 0.21] & 20.69 \\
+($+750/{+}750\,\mu\text{s}$; $212.1 \to 5.0\,\mu\text{s}$) & Cent lip & 2.53 [2.03, 3.35] & 750.5 [749, 753] & 0.05 [0.05, 0.06] & 5.96 \\
+(BLUE bias $0.00\,\mu\text{s}$) & Dec lip  & 3.05 [2.58, 3.88] & 750.5 [749, 753] & 0.06 [0.05, 0.06] & 6.43 \\
+ & Cent low & 2.53 [2.03, 3.35] & 752.3 [718, 802] & 0.04 [0.04, 0.04] & 5.96 \\
+ & Dec low  & 2.70 [2.10, 3.47] & 752.5 [718, 802] & 0.04 [0.04, 0.04] & 6.12 \\
+ & Cent $g_0$ & 2.53 [2.03, 3.35] & 9249 [5674, 22032] & 0.04 [0.04, 0.04] & 5.96 \\
+ & Dec $g_0$  & 66.67 [28.0, 94.4] & 9247 [5540, 22123] & 0.04 [0.04, 0.04] & 164.6 \\
 \midrule
-$K_5$ wandering sender ($R{=}4$, $50\,\mu\text{s}$) & Star & 13.60 [13.4, 14.0] & 37.08 [32.4, 41.5] & 0.49 [0.49, 0.49] \\
-($70.7 \to 31.6\,\mu\text{s}$; bias $0.00\,\mu\text{s}$) & Peer lip & 6.57 [6.22, 6.93] & 36.16 [31.5, 40.6] & 0.29 [0.29, 0.30] \\
- & Peer low & 6.57 [6.22, 6.93] & 1044 [960, 1151] & 0.09 [0.08, 0.09] \\
- & $g_{\mathrm{com}} = 0$ & 6.57 [6.22, 6.93] & 103703 [59282, 150838] & 0.07 [0.07, 0.07] \\
+$K_5$ wandering sender ($R{=}4$, $50\,\mu\text{s}$) & Star ($0.15$) & 13.35 [13.2, 13.6] & 33.11 [29.8, 43.9] & 0.49 [0.49, 0.49] & 14.14 \\
+($70.7 \to 31.6\,\mu\text{s}$; bias $0.00\,\mu\text{s}$) & Star ($0.03$) & 11.58 [11.2, 12.0] & 101.5 [96.3, 108.5] & 0.12 [0.12, 0.13] & 12.44 \\
+ & Cent lip & 6.41 [6.19, 6.64] & 32.27 [28.8, 43.2] & 0.29 [0.29, 0.30] & 7.49 \\
+ & Dec lip  & 6.42 [6.22, 6.69] & 32.98 [29.7, 43.8] & 0.30 [0.30, 0.31] & 7.55 \\
+ & Cent low & 6.41 [6.19, 6.64] & 983.5 [779, 1144] & 0.09 [0.08, 0.09] & 7.49 \\
+ & Dec low  & 6.42 [6.19, 6.67] & 983.7 [779, 1144] & 0.09 [0.08, 0.09] & 7.49 \\
+ & Cent $g_0$ & 6.41 [6.19, 6.64] & 68922 [42763, 128832] & 0.07 [0.07, 0.07] & 7.49 \\
+ & Dec $g_0$  & 15.79 [11.8, 20.7] & 68916 [42771, 128841] & 0.07 [0.07, 0.08] & 30.64 \\
 \bottomrule
 \end{tabular}
-\caption{Star vs.\ peer Graph-Laplacian BLUE with lip-sync (\texttt{Peer lip}),
-bounded low-latency (\texttt{Peer low}, $g_{\mathrm{com,low}} = 0.005$), and
-unbounded consensus ($g_{\mathrm{com}} = 0$) controllers (20-seed medians and
-IQR over $5000\,\text{s}$). Equal spreads across the three peer rows reflect
-their shared differential estimator and gain.}
+\caption{Star vs.\ centralized benchmark (\texttt{Cent}) and decentralized
+receiver-local (\texttt{Dec}, 1-step delay, $2\%$ relay loss) peer
+Graph-Laplacian BLUE with lip-sync (\texttt{lip}), bounded low-latency
+(\texttt{low}, $g_{\mathrm{com,low}} = 0.005$), and unbounded consensus
+(\texttt{$g_0$}, $g_{\mathrm{com}} = 0$) controllers (20-seed medians, IQR, and
+worst-of-20-seed spread over $5000\,\text{s}$).}
 \label{tab:peer}
 \end{table}
 
-Table~\ref{tab:peer} highlights three points:
+Table~\ref{tab:peer} highlights four points:
 \begin{enumerate}
-\item On symmetric $K_5$, peer BLUE cuts median spread from $21.4$ to
-  $12.2\,\mu\text{s}$ ($1.75\times$) and lip-sync roughness from $0.21$ to
-  $0.12\,\text{ppm}$.
+\item With a positive common-mode gain (\texttt{lip} or \texttt{low}), the
+  decentralized receiver-local peer controller closely tracks the centralized
+  benchmark across all four topologies: $12.47$ vs.\ $12.35\,\mu\text{s}$ on
+  $K_5$ ($1.69\times$ below Star), $3.17$ vs.\ $2.68\,\mu\text{s}$ on the
+  $\pm 750\,\mu\text{s}$ triangle, and $6.42$ vs.\ $6.41\,\mu\text{s}$ on
+  wandering-sender $K_5$.
 \item On the Wi-Fi sender plus wired peer triangle, opposite-sign asymmetries
-  ($\pm 750\,\mu\text{s}$) pin Star at $750.2\,\mu\text{s}$ spread while peer
-  BLUE achieves $2.20\,\mu\text{s}$ (with theoretical BLUE pair bias
-  $0.83\,\mu\text{s}$). With same-sign asymmetries ($+750 / {+}750\,\mu\text{s}$),
-  Star spread is already $17.7\,\mu\text{s}$ (an $8.0\times$ peer spread
-  reduction), and both Star and Peer lip-sync retain the shared $750.9\,\mu\text{s}$
-  tracking bias.
-\item Setting $g_{\mathrm{com}} = 0$ lets RMS latency error drift to
-  $16.3$--$103.7\,\text{ms}$ over $5000\,\text{s}$ (confirming
-  Remark~\ref{rem:drift}). Replacing $0$ with a small common-mode gain
-  $g_{\mathrm{com,low}} = 0.005$ bounds latency error to $0.15$--$1.04\,\text{ms}$
-  while still cutting RMS roughness on the wandering-sender $K_5$ case from
-  $0.29$ to $0.09\,\text{ppm}$ ($3.2\times$ below lip-sync, $5.4\times$ below
-  Star).
+  ($\pm 750\,\mu\text{s}$) pin Star at $748.8\,\mu\text{s}$ spread while
+  decentralized peer BLUE reaches $3.17\,\mu\text{s}$ (theoretical BLUE pair
+  bias $0.83\,\mu\text{s}$). With same-sign asymmetries ($+750 / {+}750\,\mu\text{s}$),
+  Star spread is $17.7\,\mu\text{s}$ ($5.8\times$ above \texttt{Dec lip}), and
+  both Star and Peer lip-sync retain the shared $750\,\mu\text{s}$ offset bias.
+\item Setting $g_{\mathrm{com}} = 0$ fails on \emph{both} offset error and
+  decentralized spread: RMS offset error drifts to $9.2$--$68.9\,\text{ms}$
+  over $5000\,\text{s}$, and in \texttt{Dec $g_0$} the receivers that initialize
+  from different relayed link observations keep permanently different
+  common-mode baselines (median spread $46.8$--$69.4\,\mu\text{s}$, worst seed
+  $84.3\,\mu\text{s}$ on $K_5$ and $489.1\,\mu\text{s}$ on the $\pm 750\,\mu\text{s}$
+  triangle). Replacing $0$ with $g_{\mathrm{com,low}} = 0.005$ (\texttt{Dec low})
+  eliminates that startup spread divergence ($2.83\,\mu\text{s}$ median,
+  $5.73\,\mu\text{s}$ worst) and bounds RMS offset error to
+  $0.13$--$0.98\,\text{ms}$.
+\item On the wandering-sender $K_5$ stress case, lowering the Star gain from
+  $0.15$ to $0.03$ cuts Star roughness from $0.49$ to $0.12\,\text{ppm}$ while
+  also lowering spread from $13.35$ to $11.58\,\mu\text{s}$ at $101.5\,\mu\text{s}$
+  RMS error. Compared against this tuned Star, \texttt{Dec low} ($0.09\,\text{ppm}$)
+  is $1.4\times$ smoother (not $5.4\times$) at the cost of $9.7\times$ larger
+  RMS offset error ($983.7\,\mu\text{s}$).
 \end{enumerate}
 
 \subsection{Playout margin under exponential pauses with discontinuity pricing}
 \label{sec:sim-margin}
 
 Table~\ref{tab:margin} compares the continuous-time Campbell formula
-(Theorem~\ref{thm:level}, part~3) against a $25{,}000{,}000\,\text{s}$
-block-request pause simulation ($10\,\text{ms}$ blocks, $0.33\,\text{ms}$
-resampler lookahead, $30\,\text{ms}$ mean exponential pauses every $20\,\text{s}$,
-$0\%$ drops) and a $200{,}000\,\text{s}$ full-link cross-check with background
-Wi-Fi queueing jitter.
+(Theorem~\ref{thm:level}, part~3, using true pause parameters $\lambda$ and
+$\bar d$) against a block-request pause simulation pooled across all $20$ seeds
+($25{,}000{,}000\,\text{s}$ per seed, $500{,}000{,}000\,\text{s}$ total;
+$10\,\text{ms}$ blocks, $0.33\,\text{ms}$ resampler lookahead, $30\,\text{ms}$
+mean exponential pauses every $20\,\text{s}$, $0\%$ drops) and a $20$-seed
+pooled full-link cross-check ($10{,}000\,\text{s}$ per seed, $200{,}000\,\text{s}$
+total) with background Wi-Fi queueing jitter.
 
 \begin{table}[htb]
 \centering
 \footnotesize
-\setlength{\tabcolsep}{4pt}
+\setlength{\tabcolsep}{3.5pt}
 \begin{tabular}{@{}rrr rr rr r r@{}}
 \toprule
  & & & \multicolumn{2}{c}{Missed fraction}
@@ -1255,30 +1503,31 @@ Wi-Fi queueing jitter.
 \cmidrule(lr){4-5} \cmidrule(lr){6-7}
 $c_\Lambda / \tilde c_M$ & $c_D / \tilde c_M$ (s) & $m^*$ (ms) & Theory & Sim. & Theory & Sim. & Events & missed / clicks \\
 \midrule
-$10^{-2}$ & 0.00 &  48.3 & $3.00{\times}10^{-4}$ & $3.04{\times}10^{-4}$ & $1.00{\times}10^{-2}$ & $8.59{\times}10^{-3}$ & 214658 & $2.94{\times}10^{-4} / 8.26{\times}10^{-3}$ \\
-$10^{-3}$ & 0.00 & 117.4 & $3.00{\times}10^{-5}$ & $3.09{\times}10^{-5}$ & $1.00{\times}10^{-3}$ & $8.65{\times}10^{-4}$ &  21618 & $3.05{\times}10^{-5} / 8.25{\times}10^{-4}$ \\
-$10^{-3}$ & 0.05 & 146.8 & $1.12{\times}10^{-5}$ & $1.18{\times}10^{-5}$ & $3.75{\times}10^{-4}$ & $3.28{\times}10^{-4}$ &   8205 & $1.20{\times}10^{-5} / 3.30{\times}10^{-4}$ \\
-$10^{-3}$ & 0.25 & 184.4 & $3.21{\times}10^{-6}$ & $3.42{\times}10^{-6}$ & $1.07{\times}10^{-4}$ & $9.73{\times}10^{-5}$ &   2433 & $3.60{\times}10^{-6} / 1.20{\times}10^{-4}$ \\
-$10^{-4}$ & 0.00 & 186.4 & $3.00{\times}10^{-6}$ & $3.20{\times}10^{-6}$ & $1.00{\times}10^{-4}$ & $9.10{\times}10^{-5}$ &   2274 & $3.30{\times}10^{-6} / 1.10{\times}10^{-4}$ \\
-$10^{-4}$ & 0.25 & 253.4 & $3.21{\times}10^{-7}$ & $3.65{\times}10^{-7}$ & $1.07{\times}10^{-5}$ & $9.76{\times}10^{-6}$ &    244 & $2.50{\times}10^{-7} / 1.00{\times}10^{-5}$ \\
+$10^{-2}$ & 0.00 &  48.3 & $3.00{\times}10^{-4}$ & $3.03{\times}10^{-4}$ & $1.00{\times}10^{-2}$ & $8.59{\times}10^{-3}$ & 4296240 & $3.00{\times}10^{-4} / 8.48{\times}10^{-3}$ \\
+$10^{-3}$ & 0.00 & 117.4 & $3.00{\times}10^{-5}$ & $3.03{\times}10^{-5}$ & $1.00{\times}10^{-3}$ & $8.59{\times}10^{-4}$ &  429563 & $2.87{\times}10^{-5} / 8.69{\times}10^{-4}$ \\
+$10^{-3}$ & 0.05 & 146.8 & $1.12{\times}10^{-5}$ & $1.14{\times}10^{-5}$ & $3.75{\times}10^{-4}$ & $3.23{\times}10^{-4}$ &  161295 & $1.04{\times}10^{-5} / 3.48{\times}10^{-4}$ \\
+$10^{-3}$ & 0.25 & 184.4 & $3.21{\times}10^{-6}$ & $3.25{\times}10^{-6}$ & $1.07{\times}10^{-4}$ & $9.21{\times}10^{-5}$ &   46052 & $2.47{\times}10^{-6} / 7.07{\times}10^{-5}$ \\
+$10^{-4}$ & 0.00 & 186.4 & $3.00{\times}10^{-6}$ & $3.03{\times}10^{-6}$ & $1.00{\times}10^{-4}$ & $8.58{\times}10^{-5}$ &   42897 & $2.27{\times}10^{-6} / 5.56{\times}10^{-5}$ \\
+$10^{-4}$ & 0.25 & 253.4 & $3.21{\times}10^{-7}$ & $3.17{\times}10^{-7}$ & $1.07{\times}10^{-5}$ & $9.03{\times}10^{-6}$ &    4517 & $5.56{\times}10^{-7} / 1.01{\times}10^{-5}$ \\
 \bottomrule
 \end{tabular}
-\caption{Continuous-time exponential margin formula vs.\ $25{,}000{,}000\,\text{s}$
-block-request pause simulation ($10\,\text{ms}$ blocks, $0.33\,\text{ms}$
-lookahead) and $200{,}000\,\text{s}$ full-link cross-check.}
+\caption{Continuous-time exponential margin formula vs.\ 20-seed pooled
+$500{,}000{,}000\,\text{s}$ block-request pause simulation ($10\,\text{ms}$
+blocks, $0.33\,\text{ms}$ lookahead) and 20-seed pooled $200{,}000\,\text{s}$
+full-link cross-check.}
 \label{tab:margin}
 \end{table}
 
-Because the excess of an exponential pause above $m^*$ has the same exponential
-distribution at every margin (memoryless property), discrete $10\,\text{ms}$
-block requests miss a pause whenever it ends before the next block request
-boundary, scaling the simulated click rate by the nearly constant factor
-$\frac{1 - e^{-\Delta t / \bar d}}{\Delta t / \bar d}\,e^{\mathrm{lookahead}/\bar d} \approx 0.86$
-across all six rows ($244$ to $214{,}658$ events). At
+A pause causes no missed block if it ends before the next block request. The
+excess of an exponential pause over the margin has the same distribution at
+every margin, so the expected click rate is
+$\frac{1 - e^{-\Delta t / \bar d}}{\Delta t / \bar d}\,e^{\mathrm{lookahead}/\bar d} \approx 0.860$
+times the continuous-time rate (observed ratio $0.843$--$0.860$ across all six
+rows, with $0.858$--$0.860$ on the five rows exceeding $40{,}000$ events). At
 $c_\Lambda / \tilde c_M = 10^{-3}$, pricing one discontinuity as $250\,\text{ms}$
 of missed audio raises $m^*$ from $117.4$ to $184.4\,\text{ms}$ and lowers the
-click rate by $8.9\times$ (from $8.65{\times}10^{-4}$ to
-$9.73{\times}10^{-5}\,\text{s}^{-1}$).
+click rate by $9.3\times$ (from $8.59{\times}10^{-4}$ to
+$9.21{\times}10^{-5}\,\text{s}^{-1}$).
 
 \section{Open gaps and future work}
 
@@ -1289,13 +1538,17 @@ $9.73{\times}10^{-5}\,\text{s}^{-1}$).
   \lean{Solution} remains open.
 \item \emph{Satisfiability of \lean{SecondOrderModel} with nonzero clock noise.}
   \lean{SecondOrderModel.example\_holds} currently gives zero noise to clocks,
-  devices, and timestamps; constructing a random strictly increasing \lean{Clock}
-  with nonzero \lean{ClockNoise} and proving theorems from \lean{SecondOrderModel}
-  remains open.
-\item \emph{Decentralized team optimality and correlated media.} Characterizing
-  the optimal decentralized policy for general non-symmetric star and peer
-  networks with delayed, lossy messages—and extending Graph-Laplacian BLUE to
-  correlated shared-medium Wi-Fi jitter and untrusted asymmetric peer links—are
+  devices, and timestamps. Band-limiting ensures second-moment compatibility
+  with bounded clock rates (\lean{secondDifferenceCovariance\_diag\_le}), but
+  constructing a random strictly increasing \lean{Clock} with nonzero
+  \lean{ClockNoise} and proving theorems from \lean{SecondOrderModel} remain
+  open.
+\item \emph{Online noise identification and decentralized team optimality.}
+  Estimating oscillator noise $(h_0, h_{-2})$ and pause parameters
+  $(\lambda, \bar d)$ online within practical startup windows, characterizing
+  optimal decentralized control for general non-symmetric star and peer
+  networks with delayed, lossy messages, and extending Graph-Laplacian BLUE to
+  correlated shared-medium Wi-Fi jitter and untrusted asymmetric peer links are
   open problems.
 \item \emph{Fixed-point real-time core implementation.} Translating the
   deduplicated minimum-RTT selector, Joseph-form Kalman filter, Graph-Laplacian
@@ -1304,6 +1557,12 @@ $9.73{\times}10^{-5}\,\text{s}^{-1}$).
 \end{itemize}
 
 \begin{thebibliography}{9}
+
+\bibitem{barnes1971}
+J.~A. Barnes and S.~Jarvis, Jr.,
+\emph{Efficient Numerical and Analog Modeling of Flicker Noise Processes},
+NBS Technical Note~604.
+Washington, DC: U.S.\ National Bureau of Standards, 1971.
 
 \bibitem{barooah2007}
 P.~Barooah and J.~P. Hespanha,
@@ -1332,12 +1591,6 @@ IEEE Std 1139-2008,
 \emph{IEEE Standard Definitions of Physical Quantities for Fundamental
 Frequency and Time Metrology---Random Instabilities}.
 IEEE, 2009.
-
-\bibitem{kasdin1995}
-N.~J. Kasdin,
-``Discrete simulation of colored noise and stochastic processes and
-$1/f^\alpha$ power law noise generation,''
-\emph{Proceedings of the IEEE}, vol.~83, no.~5, pp.~802--827, 1995.
 
 \bibitem{kingman1993}
 J.~F.~C. Kingman,

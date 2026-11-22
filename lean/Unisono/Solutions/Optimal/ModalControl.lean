@@ -85,25 +85,25 @@ orthogonally into two decoupled control problems:
   Splitting receiver errors and pace changes into a shared common component
   (e.g., sender-clock wander through a shared filter) and pairwise uncorrelated
   private components shows that the common component carries weight `cΘ` while
-  the private components carry weight `((R - 1) / R) * cS + cΘ`. Thus
-  `((R - 1) / R) * cS + cΘ` is the optimal per-receiver decentralized weight
-  only when cross-receiver errors are uncorrelated (zero common-mode error);
-  under a wandering sender, the best shared scalar star gain shifts toward
-  `cΘ`.
-* **One-hot disturbance split (`consensus_roughness_savings`).** Projecting a
-  single-speaker step `Δ` onto the zero-mean subspace reduces its squared norm
-  from `Δ²` to `((R - 1) / R) * Δ²`, while leaving the group mean shifted by
-  `Δ / R`.
+  the private components carry weight `((R - 1) / R) * cS + cΘ`. This is a
+  cost identity, not a minimization: `decentralized_star_uncorrelated_optimal`
+  proves optimality of `gainForWeight (((R - 1) / R) * cS + cΘ)` only when
+  cross-receiver errors remain pairwise uncorrelated (zero common-mode error).
+  With noisy measurements and a Kalman filter in the loop, the optimal shared
+  star gain can fall below `gainForWeight cΘ`.
+* **One-hot disturbance variance (`consensus_one_hot_var`).** Projecting a
+  single-speaker step `Δ` onto the zero-mean subspace yields squared norm
+  `((R - 1) / R) * Δ²`, while leaving the group mean shifted by `Δ / R`.
 
 ## Scope and modeling assumptions
 
 These theorems assume:
 1. A fixed filtration `ℱ` (optimality is relative to what `ℱ` observes, not
    over probing schedules or lossy front ends that shrink `ℱ`).
-2. Unconstrained real-valued `read r k` in frames per cycle; continuity
-   (`0 < speed < 2` frames per output sample, i.e., `0 < read < 2 M` for a
-   cycle of `M` output samples), speed bounds, and data availability are
-   omitted here.
+2. Unconstrained real-valued `read r k` in frames per cycle; per-sample
+   continuity (`0 < speed < 2` frames per output sample, which implies—though
+   is not equivalent to—`0 < read < 2 M` for a cycle of `M` output samples),
+   speed bounds, and data availability are omitted here.
 3. Uniform cycle length `Δt` aligned across speakers, with linear speed ramps
    within cycles so `(Δn)²` matches per-sample roughness up to `1 / (ρ² Δt³)`.
 4. Martingale expected increments, which are assumed rather than derived from
@@ -2152,10 +2152,11 @@ cleanly into:
 * a **private-mode term** `(((R - 1) / R) * cS + cΘ) · mean_r E[(ePriv r)²]
   + mean_r E[(wPriv r)²]`.
 
-Consequently, `((R - 1) / R) * cS + cΘ` is optimal for a shared star gain only
-when `eCom = 0` (no sender wander); whenever the sender clock wanders, the
-optimal shared star gain lies between the gains for `cΘ` and
-`((R - 1) / R) * cS + cΘ`. -/
+This is a cost identity, not a minimization. Under a wandering sender with
+noisy measurements and a Kalman filter in the loop, increasing sender wander
+raises each receiver's Kalman gain and injects more private measurement noise
+(charged at `((R - 1) / R) * cS + cΘ`), which can push the optimal shared
+scalar gain below `gainForWeight cΘ`. -/
 theorem symmetric_star_cost_split (hR : 0 < R) (cS cΘ : ℝ)
     {eCom wCom : Ω → ℝ} {ePriv wPriv : Fin R → Ω → ℝ}
     (heC : MemLp eCom 2 μ) (heP : ∀ r, MemLp (ePriv r) 2 μ)
@@ -2333,7 +2334,7 @@ Note that this leaves the group mean shifted by `Δ / R`: in lip-sync mode,
 removing that mean shift later costs `R * (Δ / R)² = Δ² / R` (restoring the
 total `Δ²`), whereas without a common-mode loop the mean latency stays shifted
 by `Δ / R`. -/
-theorem consensus_roughness_savings (hR : 0 < R) (r₀ : Fin R) (Δ : ℝ) :
+theorem consensus_one_hot_var (hR : 0 < R) (r₀ : Fin R) (Δ : ℝ) :
     let d : Fin R → ℝ := fun r => if r = r₀ then Δ else 0
     ∑ r : Fin R, (d r - meanFin d) ^ 2 = ((R : ℝ) - 1) / R * Δ ^ 2 := by
   intro d

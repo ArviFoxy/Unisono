@@ -23,42 +23,45 @@ expectations and cross-moments are well-defined finite integrals.
 
 In `Unisono.Spec.Objectives`, synchronization (`syncCost`) and target tracking
 (`trackingCost`) are quadratic in timing errors, and mean latency
-(`latencyCost`) is linear. First and second moments therefore determine the
-steady-state performance of linear estimators and linear playback control laws
-for those objectives (and for per-cycle quadratic roughness approximations),
+(`latencyCost`) is linear. For linear time-invariant estimators and linear
+control loops with measurements at fixed times, first and second moments
+determine steady-state performance on those objectives (and on per-cycle
+quadratic roughness approximations); packet loss, minimum-RTT selection, speed
+clamps, and random device request times introduce higher-moment dependence,
 while missed samples (`missedAt`) and discontinuities (`discontinuityAt`)
 depend on how long link pauses and outages last and how often packets are
 dropped (`Unisono.Spec.Models.Delays`).
 
-* **Clocks (`ClockNoise`, `FollowsNoise`).** Host `i`'s clock reads
-  `t + φ_i(t)` at true time `t`. Its fractional frequency `y_i = φ_i'` has the
-  IEEE 1139 one-sided power spectral density
-  `S_y(f) = white + flicker / f + walk / f²` for `f > 0` (white, flicker, and
-  random-walk frequency noise). Because random-walk frequency noise has
-  non-stationary first differences, the model specifies the zero means and
-  covariances of second differences
-  `Δ²_τ φ(t) = φ(t + 2τ) - 2 φ(t + τ) + φ(t)`. The spectral integral defining
-  this covariance converges for every `ClockNoise`
-  (`secondDifferenceCovariance_integrableOn`). For the white and random-walk
-  components, the corresponding continuous-time phase and frequency diffusion
+* **Band-limited power-law clocks (`ClockNoise`, `FollowsNoise`).** Host `i`'s
+  clock reads `t + φ_i(t)` at true time `t`. Its fractional frequency `y_i = φ_i'`
+  has the IEEE Std 1139-2008 one-sided power spectral density
+  `S_y(f) = white + flicker / f + walk / f²` over a finite frequency band
+  `[lowFreq, highFreq]` with `0 < lowFreq ≤ highFreq` (and `0` outside that
+  band). Band-limiting avoids both the small-lag white-noise divergence and the
+  large-lag random-walk/flicker divergence that would otherwise conflict with
+  any uniform bound on clock rate error (`Clock.RateWithin ε`):
+  `secondDifferenceCovariance_diag_le` shows
+  `E[(Δ²_τ φ)²] ≤ 4 τ² ∫ S_y(f) df` for every lag `τ`. For the in-band white
+  and random-walk components, the state-space phase and frequency diffusion
   variance rates are `white / 2` and `2 π² * walk`.
 * **Link jitter (`JitterNoise`, `HasMoments`).** Each directed link `(i, j)`
   splits its jitter into three stationary components: sender-side shared jitter
   `tx i` (common to links leaving host `i`), receiver-side shared jitter `rx j`
   (common to links arriving at host `j`), and link-specific jitter `own i j`.
-  Link-specific components are mutually uncorrelated across links and with
-  `tx`/`rx`, while `tx i` and `rx i` on the same host (uplink–downlink
-  correlation on a wireless interface) and `rx j`, `rx j'` across hosts
-  (shared wireless access-point contention) are allowed to correlate.
+  Link-specific components `own` are mutually uncorrelated across distinct
+  links and with `tx`/`rx`, while correlations among `tx` and `rx` (same-host
+  uplink–downlink coupling and cross-station shared wireless access-point
+  contention) are left unconstrained.
 * **Audio devices (`devicePhase`, `FollowsNoiseOnGrid`, `WhiteErrors`).** The
-  capture device and each playback device are modeled as running on their own
-  oscillators (for example, USB or dedicated audio clocks): their phases
-  `times k - k / rate` relative to true time follow power-law frequency noise
-  on the nominal sample grid `k / rate` and are uncorrelated with host clocks
-  and with one another. Device timestamp errors are zero-mean and white across
-  blocks, with per-device variances. All four source families (host clocks,
-  audio device oscillators, link jitter, and timestamp errors) are mutually
-  uncorrelated.
+  capture device and each playback device have phase `times k - k / rate`
+  relative to true time following band-limited power-law frequency noise on the
+  nominal sample grid `k / rate`. Each device is required to be uncorrelated
+  with clocks and devices on *other* hosts, while remaining free to correlate
+  with its own host's clock and with co-located devices on the same host (thus
+  admitting both host-clocked hardware / multichannel interfaces and
+  independent USB audio crystals). Device timestamp errors are zero-mean and
+  white across blocks, with per-device variances, and are uncorrelated across
+  devices and with clocks, devices, and jitter.
 -/
 
 @[expose] public noncomputable section
@@ -67,26 +70,37 @@ namespace Unisono.Spec
 
 open MeasureTheory
 
-/-- Power-law frequency noise of a clock or audio device: the IEEE 1139
-one-sided power spectral density of its fractional frequency at `f > 0` Hz is
-`white + flicker / f + walk / f²`. -/
+/-- Band-limited power-law frequency noise of a clock or audio device: the
+IEEE Std 1139-2008 one-sided power spectral density of its fractional frequency
+is `white + flicker / f + walk / f²` for `f ∈ [lowFreq, highFreq]` (`0 < lowFreq
+≤ highFreq`) and `0` outside that band. -/
 structure ClockNoise where
   /-- White frequency noise coefficient `h₀`, in `Hz⁻¹`. The corresponding
-  phase diffusion variance rate is `white / 2` (`s² / s`). -/
+  in-band phase diffusion variance rate is `white / 2` (`s² / s`). -/
   white : ℝ
   white_nonneg : 0 ≤ white
   /-- Flicker frequency noise coefficient `h₋₁`, dimensionless. -/
   flicker : ℝ
   flicker_nonneg : 0 ≤ flicker
   /-- Random-walk frequency noise coefficient `h₋₂`, in `Hz`. The
-  corresponding fractional-frequency Brownian-motion variance rate is
+  corresponding in-band fractional-frequency Brownian-motion variance rate is
   `2 π² * walk` (`s⁻¹`). -/
   walk : ℝ
   walk_nonneg : 0 ≤ walk
+  /-- Lower cutoff frequency `f_lo > 0` in Hz (cuts off infrared drift). -/
+  lowFreq : ℝ
+  /-- Upper cutoff frequency `f_hi ≥ f_lo` in Hz (cuts off ultraviolet noise). -/
+  highFreq : ℝ
+  lowFreq_pos : 0 < lowFreq
+  lowFreq_le_highFreq : lowFreq ≤ highFreq
 
-/-- The one-sided fractional-frequency power spectral density at `f > 0` Hz. -/
+/-- The band-limited one-sided fractional-frequency power spectral density at
+`f` Hz: `white + flicker / f + walk / f²` on `[lowFreq, highFreq]` and `0`
+elsewhere. -/
 def ClockNoise.density (n : ClockNoise) (f : ℝ) : ℝ :=
-  n.white + n.flicker / f + n.walk / f ^ 2
+  if n.lowFreq ≤ f ∧ f ≤ n.highFreq then
+    n.white + n.flicker / f + n.walk / f ^ 2
+  else 0
 
 /-- Phase diffusion variance rate (in `s`) corresponding to white frequency
 noise `h₀`: `Var(φ(t + τ) - φ(t)) = (h₀ / 2) * τ`. -/
@@ -101,14 +115,27 @@ def ClockNoise.walkVarianceRate (n : ClockNoise) : ℝ :=
 
 /-- Zero frequency noise. -/
 def ClockNoise.zero : ClockNoise :=
-  ⟨0, le_rfl, 0, le_rfl, 0, le_rfl⟩
+  ⟨0, le_rfl, 0, le_rfl, 0, le_rfl, 1, 1, one_pos, le_rfl⟩
 
 theorem ClockNoise.density_nonneg (n : ClockNoise) {f : ℝ} (hf : 0 < f) :
     0 ≤ n.density f := by
   unfold density
-  have h1 : 0 ≤ n.flicker / f := div_nonneg n.flicker_nonneg hf.le
-  have h2 : 0 ≤ n.walk / f ^ 2 := div_nonneg n.walk_nonneg (sq_nonneg f)
-  linarith [n.white_nonneg]
+  split_ifs with hband
+  · have h1 : 0 ≤ n.flicker / f := div_nonneg n.flicker_nonneg hf.le
+    have h2 : 0 ≤ n.walk / f ^ 2 := div_nonneg n.walk_nonneg (sq_nonneg f)
+    linarith [n.white_nonneg]
+  · exact le_rfl
+
+theorem ClockNoise.density_integrableOn (n : ClockNoise) :
+    IntegrableOn n.density (Set.Icc n.lowFreq n.highFreq) volume := by
+  have hcont : ContinuousOn (fun f => n.white + n.flicker / f + n.walk / f ^ 2)
+      (Set.Icc n.lowFreq n.highFreq) := by
+    have hne : ∀ f ∈ Set.Icc n.lowFreq n.highFreq, f ≠ 0 := fun f hf =>
+      ne_of_gt (lt_of_lt_of_le n.lowFreq_pos hf.1)
+    refine (continuousOn_const.add (continuousOn_const.div continuousOn_id hne)).add
+      (continuousOn_const.div (continuousOn_id.pow 2) (fun f hf => pow_ne_zero 2 (hne f hf)))
+  refine (hcont.integrableOn_Icc).congr_fun (fun f hf => ?_) measurableSet_Icc
+  simp [ClockNoise.density, hf.1, hf.2]
 
 theorem ClockNoise.whiteVarianceRate_nonneg (n : ClockNoise) : 0 ≤ n.whiteVarianceRate := by
   unfold whiteVarianceRate
@@ -169,22 +196,24 @@ private theorem norm_cexp_mul_I_sub_one_le_two (x : ℝ) :
       ≤ ‖Complex.exp ((x : ℂ) * Complex.I)‖ + ‖(1 : ℂ)‖ := norm_sub_le _ _
     _ = 2 := by rw [Complex.norm_exp_ofReal_mul_I, norm_one]; norm_num
 
-/-- **Spectral convergence.** For every `ClockNoise` (white, flicker, and
-random-walk frequency noise), the improper integral defining
-`secondDifferenceCovariance` converges absolutely on `(0, ∞)`. -/
+/-- **Spectral convergence.** For every band-limited `ClockNoise`, the integral
+defining `secondDifferenceCovariance` converges absolutely on `(0, ∞)` (it is
+supported on the compact band `[n.lowFreq, n.highFreq]`). -/
 theorem secondDifferenceCovariance_integrableOn (n : ClockNoise) (t₁ τ₁ t₂ τ₂ : ℝ) :
     IntegrableOn (secondDifferenceIntegrand n.density t₁ τ₁ t₂ τ₂) (Set.Ioi 0) volume := by
-  have htot : 0 ≤ n.white + n.flicker + n.walk := by
-    linarith [n.white_nonneg, n.flicker_nonneg, n.walk_nonneg]
-  have hcont : ContinuousOn (secondDifferenceIntegrand n.density t₁ τ₁ t₂ τ₂) (Set.Ioi 0) := by
-    unfold secondDifferenceIntegrand ClockNoise.density
+  let g : ℝ → ℝ := fun f =>
+    (n.white + n.flicker / f + n.walk / f ^ 2) / (2 * Real.pi * f) ^ 2 *
+      (Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
+        * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
+        * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re
+  have hcont : ContinuousOn g (Set.Icc n.lowFreq n.highFreq) := by
+    have hne : ∀ f ∈ Set.Icc n.lowFreq n.highFreq, f ≠ 0 := fun f hf =>
+      ne_of_gt (lt_of_lt_of_le n.lowFreq_pos hf.1)
     refine ContinuousOn.mul ?_ ?_
-    · refine ContinuousOn.div ?_ ?_ (fun f hf => ?_)
-      · refine ((continuousOn_const.add (continuousOn_const.div continuousOn_id
-          (fun f hf => ne_of_gt hf))).add (continuousOn_const.div
-          (continuousOn_id.pow 2) (fun f hf => pow_ne_zero 2 (ne_of_gt hf))))
-      · exact (continuousOn_const.mul continuousOn_id).pow 2
-      · exact pow_ne_zero 2 (mul_ne_zero (by positivity) (ne_of_gt hf))
+    · refine ContinuousOn.div ?_ ((continuousOn_const.mul continuousOn_id).pow 2)
+        (fun f hf => pow_ne_zero 2 (mul_ne_zero (by positivity) (hne f hf)))
+      exact (continuousOn_const.add (continuousOn_const.div continuousOn_id hne)).add
+        (continuousOn_const.div (continuousOn_id.pow 2) (fun f hf => pow_ne_zero 2 (hne f hf)))
     · refine Complex.continuous_re.comp_continuousOn ?_
       have hc : Continuous (fun f : ℝ =>
           Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
@@ -192,129 +221,88 @@ theorem secondDifferenceCovariance_integrableOn (n : ClockNoise) (t₁ τ₁ t�
             * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)) := by
         fun_prop
       exact hc.continuousOn
-  have hsplit : Set.Ioi (0 : ℝ) = Set.Ioc 0 1 ∪ Set.Ioi 1 := (Set.Ioc_union_Ioi_eq_Ioi zero_le_one).symm
-  rw [hsplit]
-  refine IntegrableOn.union ?_ ?_
-  · -- Near `f = 0⁺`, `|e^{2πifτ} - 1|² ≤ (2π|τ|f)²`, so the integrand is bounded by a constant.
-    set C : ℝ := (n.white + n.flicker + n.walk) * (2 * Real.pi) ^ 2 * τ₁ ^ 2 * τ₂ ^ 2
-    have hC_int : IntegrableOn (fun _ : ℝ => C) (Set.Ioc (0 : ℝ) 1) volume :=
-      integrableOn_const (by simp)
-    refine hC_int.mono'
-      ((hcont.mono Set.Ioc_subset_Ioi_self).aestronglyMeasurable measurableSet_Ioc) ?_
-    filter_upwards [ae_restrict_mem measurableSet_Ioc] with f ⟨hf0, hf1⟩
-    rw [Real.norm_eq_abs]
-    unfold secondDifferenceIntegrand
-    have hden_nn : 0 ≤ n.density f / (2 * Real.pi * f) ^ 2 :=
-      div_nonneg (n.density_nonneg hf0) (sq_nonneg _)
-    have hden_le : n.density f ≤ (n.white + n.flicker + n.walk) / f ^ 2 := by
-      unfold ClockNoise.density
-      have hfsq : f ^ 2 ≤ 1 := by nlinarith
-      have hfsq' : f ^ 2 ≤ f := by nlinarith
-      have h1 : n.white ≤ n.white / f ^ 2 := by
-        rw [le_div_iff₀ (sq_pos_of_pos hf0)]
-        nlinarith [n.white_nonneg]
-      have h2 : n.flicker / f ≤ n.flicker / f ^ 2 := by
-        rw [div_le_div_iff₀ hf0 (sq_pos_of_pos hf0)]
-        nlinarith [n.flicker_nonneg]
-      linarith [show (n.white + n.flicker + n.walk) / f ^ 2
-        = n.white / f ^ 2 + n.flicker / f ^ 2 + n.walk / f ^ 2 by ring]
-    have hre : |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-        * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-        * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re|
-        ≤ (2 * Real.pi * f) ^ 4 * τ₁ ^ 2 * τ₂ ^ 2 := by
-      calc |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re|
-          ≤ ‖Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)‖ :=
-            Complex.abs_re_le_norm _
-        _ = ‖Complex.exp (((2 * Real.pi * f * (t₁ - t₂) : ℝ) : ℂ) * Complex.I)‖
-            * ‖Complex.exp (((2 * Real.pi * f * τ₁ : ℝ) : ℂ) * Complex.I) - 1‖ ^ 2
-            * ‖Complex.exp (((2 * Real.pi * f * τ₂ : ℝ) : ℂ) * Complex.I) - 1‖ ^ 2 := by
-            simp only [norm_mul, norm_pow, Complex.norm_conj, Complex.ofReal_mul,
-              Complex.ofReal_sub, Complex.ofReal_ofNat]
-        _ ≤ 1 * |2 * Real.pi * f * τ₁| ^ 2 * |2 * Real.pi * f * τ₂| ^ 2 := by
-            rw [Complex.norm_exp_ofReal_mul_I]
-            gcongr
-            · exact norm_cexp_mul_I_sub_one_le _
-            · exact norm_cexp_mul_I_sub_one_le _
-        _ = (2 * Real.pi * f) ^ 4 * τ₁ ^ 2 * τ₂ ^ 2 := by
-            rw [sq_abs, sq_abs]; ring
-    rw [abs_mul, abs_of_nonneg hden_nn]
-    have hbound_nn : 0 ≤ (n.white + n.flicker + n.walk) / f ^ 2 / (2 * Real.pi * f) ^ 2 := by
-      positivity
-    calc n.density f / (2 * Real.pi * f) ^ 2
-          * |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re|
-        ≤ ((n.white + n.flicker + n.walk) / f ^ 2 / (2 * Real.pi * f) ^ 2)
-          * ((2 * Real.pi * f) ^ 4 * τ₁ ^ 2 * τ₂ ^ 2) := by
-          gcongr
-      _ = C := by
-          have hf_ne : f ≠ 0 := ne_of_gt hf0
-          have hpi_ne : (2 * Real.pi) ≠ 0 := by positivity
-          dsimp only [C]
-          field_simp
-  · -- For `f > 1`, `n.density f` is bounded and the response is `≤ 16`, so `|integrand| ≤ C₂ * f⁻²`.
-    set C₂ : ℝ := 16 * (n.white + n.flicker + n.walk) / (2 * Real.pi) ^ 2
-    have hpow : IntegrableOn (fun f : ℝ => f ^ (-2 : ℝ)) (Set.Ioi 1) volume :=
-      integrableOn_Ioi_rpow_of_lt (by norm_num) zero_lt_one
-    have hdom : IntegrableOn (fun f : ℝ => C₂ * f ^ (-2 : ℝ)) (Set.Ioi 1) volume :=
-      hpow.const_mul C₂
-    refine hdom.mono'
-      ((hcont.mono (Set.Ioi_subset_Ioi zero_le_one)).aestronglyMeasurable measurableSet_Ioi) ?_
-    filter_upwards [ae_restrict_mem measurableSet_Ioi] with f hf1
-    have hf1' : (1 : ℝ) < f := hf1
-    have hf0 : (0 : ℝ) < f := lt_trans zero_lt_one hf1'
-    rw [Real.norm_eq_abs]
-    unfold secondDifferenceIntegrand
-    have hden_nn : 0 ≤ n.density f / (2 * Real.pi * f) ^ 2 :=
-      div_nonneg (n.density_nonneg hf0) (sq_nonneg _)
-    have hden_le : n.density f ≤ n.white + n.flicker + n.walk := by
-      unfold ClockNoise.density
-      have h1 : n.flicker / f ≤ n.flicker :=
-        div_le_self n.flicker_nonneg hf1'.le
-      have h2 : n.walk / f ^ 2 ≤ n.walk :=
-        div_le_self n.walk_nonneg (by nlinarith)
-      linarith
-    have hre : |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-        * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-        * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re| ≤ 16 := by
-      calc |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re|
-          ≤ ‖Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)‖ :=
-            Complex.abs_re_le_norm _
-        _ = ‖Complex.exp (((2 * Real.pi * f * (t₁ - t₂) : ℝ) : ℂ) * Complex.I)‖
-            * ‖Complex.exp (((2 * Real.pi * f * τ₁ : ℝ) : ℂ) * Complex.I) - 1‖ ^ 2
-            * ‖Complex.exp (((2 * Real.pi * f * τ₂ : ℝ) : ℂ) * Complex.I) - 1‖ ^ 2 := by
-            simp only [norm_mul, norm_pow, Complex.norm_conj, Complex.ofReal_mul,
-              Complex.ofReal_sub, Complex.ofReal_ofNat]
-        _ ≤ 1 * 2 ^ 2 * 2 ^ 2 := by
-            rw [Complex.norm_exp_ofReal_mul_I]
-            gcongr
-            · exact norm_cexp_mul_I_sub_one_le_two _
-            · exact norm_cexp_mul_I_sub_one_le_two _
-        _ = 16 := by norm_num
-    rw [abs_mul, abs_of_nonneg hden_nn]
-    have hrpow : f ^ (-2 : ℝ) = (f ^ 2)⁻¹ := by
-      rw [show (-2 : ℝ) = -((2 : ℕ) : ℝ) by norm_num, Real.rpow_neg hf0.le, Real.rpow_natCast]
-    have hbound_nn : 0 ≤ (n.white + n.flicker + n.walk) / (2 * Real.pi * f) ^ 2 := by
-      positivity
-    calc n.density f / (2 * Real.pi * f) ^ 2
-          * |(Complex.exp (2 * Real.pi * f * (t₁ - t₂) * Complex.I)
-            * (Complex.exp (2 * Real.pi * f * τ₁ * Complex.I) - 1) ^ 2
-            * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ₂ * Complex.I) - 1) ^ 2)).re|
-        ≤ ((n.white + n.flicker + n.walk) / (2 * Real.pi * f) ^ 2) * 16 := by gcongr
-      _ = C₂ * f ^ (-2 : ℝ) := by
-          rw [hrpow]
-          have hf_ne : f ≠ 0 := ne_of_gt hf0
-          have hpi_ne : (2 * Real.pi) ≠ 0 := by positivity
-          dsimp only [C₂]
-          field_simp
+  have hint_band : IntegrableOn (secondDifferenceIntegrand n.density t₁ τ₁ t₂ τ₂)
+      (Set.Icc n.lowFreq n.highFreq) volume := by
+    refine (hcont.integrableOn_Icc).congr_fun (fun f hf => ?_) measurableSet_Icc
+    simp only [secondDifferenceIntegrand, ClockNoise.density, hf.1, hf.2, and_self, ↓reduceIte, g]
+  have hsub : Set.Icc n.lowFreq n.highFreq ⊆ Set.Ioi 0 :=
+    fun f hf => lt_of_lt_of_le n.lowFreq_pos hf.1
+  rw [← Set.union_sdiff_cancel hsub]
+  refine hint_band.union ?_
+  refine (integrableOn_zero : IntegrableOn (fun _ : ℝ => (0 : ℝ))
+      (Set.Ioi 0 \ Set.Icc n.lowFreq n.highFreq) volume).congr_fun (fun f hf => ?_)
+      (measurableSet_Ioi.diff measurableSet_Icc)
+  have hnot : ¬ (n.lowFreq ≤ f ∧ f ≤ n.highFreq) := hf.2
+  simp [secondDifferenceIntegrand, ClockNoise.density, hnot]
+
+/-- **Compatibility with uniform rate bounds.** Because `n` is band-limited to
+`[n.lowFreq, n.highFreq]` with `0 < n.lowFreq`, its second-difference variance
+satisfies `secondDifferenceCovariance n.density t τ t τ ≤ 4 τ² ∫ S(f) df` for
+every `t` and every lag `τ`. Whenever the integrated fractional-frequency
+variance `∫ S(f) df ≤ ε²`, this stays within the `(2 ε τ)²` ceiling implied by
+`Clock.RateWithin ε` at all lags (both `τ → 0` and `τ → ∞`). -/
+theorem secondDifferenceCovariance_diag_le (n : ClockNoise) (t τ : ℝ) :
+    secondDifferenceCovariance n.density t τ t τ
+      ≤ 4 * τ ^ 2 * ∫ f in Set.Icc n.lowFreq n.highFreq, n.density f := by
+  have hsub : Set.Icc n.lowFreq n.highFreq ⊆ Set.Ioi 0 :=
+    fun f hf => lt_of_lt_of_le n.lowFreq_pos hf.1
+  have hint_all := secondDifferenceCovariance_integrableOn n t τ t τ
+  have heq_band : secondDifferenceCovariance n.density t τ t τ
+      = ∫ f in Set.Icc n.lowFreq n.highFreq, secondDifferenceIntegrand n.density t τ t τ f := by
+    unfold secondDifferenceCovariance
+    rw [← Set.union_sdiff_cancel hsub,
+      setIntegral_union disjoint_sdiff_self_right (measurableSet_Ioi.diff measurableSet_Icc)
+        (hint_all.mono_set hsub) (hint_all.mono_set Set.sdiff_subset)]
+    have hzero : ∫ f in Set.Ioi 0 \ Set.Icc n.lowFreq n.highFreq,
+        secondDifferenceIntegrand n.density t τ t τ f = 0 := by
+      refine setIntegral_eq_zero_of_forall_eq_zero fun f hf => ?_
+      have hnot : ¬ (n.lowFreq ≤ f ∧ f ≤ n.highFreq) := hf.2
+      simp [secondDifferenceIntegrand, ClockNoise.density, hnot]
+    rw [hzero, add_zero]
+  rw [heq_band, ← integral_const_mul]
+  refine setIntegral_mono_on (hint_all.mono_set hsub) (n.density_integrableOn.const_mul _)
+    measurableSet_Icc fun f hf => ?_
+  have hf0 : 0 < f := lt_of_lt_of_le n.lowFreq_pos hf.1
+  have hden_nn : 0 ≤ n.density f := n.density_nonneg hf0
+  have h2pf_pos : 0 < 2 * Real.pi * f := by positivity
+  unfold secondDifferenceIntegrand
+  have hexp0 : Complex.exp (2 * Real.pi * f * (t - t) * Complex.I) = 1 := by simp
+  rw [hexp0, one_mul]
+  set z : ℂ := Complex.exp (((2 * Real.pi * f * τ : ℝ) : ℂ) * Complex.I) - 1
+  have hre : (z ^ 2 * (starRingEnd ℂ) (z ^ 2)).re = ‖z‖ ^ 4 := by
+    have hmul : z ^ 2 * (starRingEnd ℂ) (z ^ 2) = ((Complex.normSq (z ^ 2) : ℝ) : ℂ) :=
+      Complex.mul_conj (z ^ 2)
+    rw [hmul, Complex.ofReal_re, Complex.normSq_eq_norm_sq, norm_pow]
+    ring
+  have hre' : ((Complex.exp (2 * Real.pi * f * τ * Complex.I) - 1) ^ 2
+      * (starRingEnd ℂ) ((Complex.exp (2 * Real.pi * f * τ * Complex.I) - 1) ^ 2)).re
+      = ‖z‖ ^ 4 := by
+    have hz_eq : Complex.exp (2 * Real.pi * f * τ * Complex.I) - 1 = z := by
+      simp [z, Complex.ofReal_mul, Complex.ofReal_ofNat]
+    rw [hz_eq]
+    exact hre
+  rw [hre']
+  have hz1 : ‖z‖ ≤ |2 * Real.pi * f * τ| := norm_cexp_mul_I_sub_one_le _
+  have hz2 : ‖z‖ ≤ 2 := norm_cexp_mul_I_sub_one_le_two _
+  have hz4 : ‖z‖ ^ 4 ≤ 4 * (2 * Real.pi * f) ^ 2 * τ ^ 2 := by
+    have hsq1 : ‖z‖ ^ 2 ≤ (2 * Real.pi * f * τ) ^ 2 := by
+      calc ‖z‖ ^ 2 ≤ |2 * Real.pi * f * τ| ^ 2 := pow_le_pow_left₀ (norm_nonneg _) hz1 2
+        _ = (2 * Real.pi * f * τ) ^ 2 := sq_abs _
+    have hsq2 : ‖z‖ ^ 2 ≤ 4 := by
+      calc ‖z‖ ^ 2 ≤ 2 ^ 2 := pow_le_pow_left₀ (norm_nonneg _) hz2 2
+        _ = 4 := by norm_num
+    calc ‖z‖ ^ 4 = ‖z‖ ^ 2 * ‖z‖ ^ 2 := by ring
+      _ ≤ 4 * (2 * Real.pi * f * τ) ^ 2 :=
+          mul_le_mul hsq2 hsq1 (sq_nonneg _) (by norm_num)
+      _ = 4 * (2 * Real.pi * f) ^ 2 * τ ^ 2 := by ring
+  have hdiv : n.density f / (2 * Real.pi * f) ^ 2 * ‖z‖ ^ 4
+      ≤ n.density f / (2 * Real.pi * f) ^ 2 * (4 * (2 * Real.pi * f) ^ 2 * τ ^ 2) :=
+    mul_le_mul_of_nonneg_left hz4 (div_nonneg hden_nn (sq_nonneg _))
+  have hsimp : n.density f / (2 * Real.pi * f) ^ 2 * (4 * (2 * Real.pi * f) ^ 2 * τ ^ 2)
+      = 4 * τ ^ 2 * n.density f := by
+    have hne : (2 * Real.pi * f) ^ 2 ≠ 0 := pow_ne_zero 2 h2pf_pos.ne'
+    field_simp
+  linarith
 
 variable {Ω : Type} [MeasurableSpace Ω]
 
@@ -429,6 +417,10 @@ structure SecondOrderModel (H : Type) (R : ℕ) where
   /-- Common nominal sample rate of all realizations, in frames per second. -/
   rate : ℝ
   rate_pos : 0 < rate
+  /-- Fixed sender host across all realizations. -/
+  sender : H
+  /-- Fixed host carrying each speaker across all realizations. -/
+  host : Fin R → H
   /-- Frequency noise of each host's clock relative to true time. -/
   clock : H → ClockNoise
   /-- Shared outgoing jitter for all links leaving host `i`. -/
@@ -454,22 +446,20 @@ satisfies the second-order noise model `m`:
 
 * `P` is a probability measure and every modeled second difference, jitter
   sample, and timestamp error is square-integrable (`MemLp · 2 P`).
-* Every host clock follows `m.clock i`, and distinct host clocks have
-  uncorrelated second differences.
+* Every host clock follows `m.clock i` (band-limited to `[lowFreq, highFreq]`),
+  and distinct host clocks have uncorrelated second differences.
 * Every link's jitter decomposes into `tx i + rx j + own i j` with the
   specified stationary means and covariances. Link-specific components `own`
-  are uncorrelated across links and with `tx`/`rx`, and `tx i` is uncorrelated
-  with `tx i'` (`i ≠ i'`) and `rx j` (`j ≠ i`). Same-host `tx i` and `rx i`
-  (uplink–downlink correlation) and distinct-host `rx j`, `rx j'` (shared
-  wireless access point contention) are left unconstrained.
-* The capture and playback devices share a deterministic nominal rate `rate`,
-  follow their grid noise spectra relative to true time (modeling independent
-  device oscillators), and are uncorrelated with host clocks and with one
-  another.
+  are uncorrelated across distinct links and with `tx`/`rx`; correlations among
+  `tx` and `rx` (same-host uplink–downlink coupling and cross-station wireless
+  access-point contention) are left unconstrained.
+* The capture and playback devices share a deterministic nominal rate `rate`
+  and follow their grid noise spectra relative to true time. Each device is
+  uncorrelated with clocks and devices on *other* hosts, while remaining free
+  to correlate with its own host's clock and with co-located devices on the
+  same host (covering both host-clocked hardware and independent crystals).
 * Capture and playback timestamp errors are white with their per-device
-  variances and uncorrelated across devices.
-* All four source families (host clocks, device oscillators, link jitter, and
-  timestamp errors) are mutually uncorrelated.
+  variances and uncorrelated across devices, clocks, devices, and jitter.
 
 Network pauses, outages, and packet drops are not constrained here; combine
 this structure with `DelayModel.Holds` when modeling losses and pauses. -/
@@ -481,23 +471,27 @@ structure SecondOrderModel.Holds {H : Type} {R : ℕ} (m : SecondOrderModel H R)
   network : ∀ ω, (world ω).HasDelays (d ω)
   /-- All realizations share the model's nominal sample rate `m.rate`. -/
   rate_eq : ∀ ω, (world ω).rate = m.rate
-  /-- Every host clock follows its power-law noise spectrum. -/
+  /-- All realizations share the model's sender host `m.sender`. -/
+  sender_eq : ∀ ω, (world ω).sender = m.sender
+  /-- All realizations share each speaker's host `m.host r`. -/
+  host_eq : ∀ ω r, (world ω).host r = m.host r
+  /-- Every host clock follows its band-limited power-law noise spectrum. -/
   clocks : ∀ i, FollowsNoise P (fun ω t => ((world ω).clock i).read t - t) (m.clock i)
   /-- Distinct hosts have uncorrelated clock phases. -/
   clocks_uncorrelated : ∀ i j, i ≠ j →
     Uncorrelated P (fun ω t => ((world ω).clock i).read t - t)
       (fun ω t => ((world ω).clock j).read t - t)
   /-- Link jitter splits into sender-common, receiver-common, and link-specific
-  stationary components, uncorrelated with clocks, device oscillators, and
-  timestamp errors. -/
+  stationary components. Link-specific jitter `own` is uncorrelated across
+  distinct links and with `tx`/`rx`, while correlations among `tx` and `rx` are
+  left unconstrained for shared wireless media. All jitter components are
+  uncorrelated with clocks, device oscillators, and timestamp errors. -/
   jitter : ∃ tx : Ω → H → Time → ℝ, ∃ rx : Ω → H → Time → ℝ,
       ∃ own : Ω → H → H → Time → ℝ,
     (∀ ω i j u, (d ω i j).jitter u = tx ω i u + rx ω j u + own ω i j u)
       ∧ (∀ i, HasMoments P (fun ω => tx ω i) (m.txJitter i))
       ∧ (∀ j, HasMoments P (fun ω => rx ω j) (m.rxJitter j))
       ∧ (∀ i j, HasMoments P (fun ω => own ω i j) (m.ownJitter i j))
-      ∧ (∀ i i', i ≠ i' → UncorrelatedJitter P (fun ω => tx ω i) (fun ω => tx ω i'))
-      ∧ (∀ i j, i ≠ j → UncorrelatedJitter P (fun ω => tx ω i) (fun ω => rx ω j))
       ∧ (∀ i j i', UncorrelatedJitter P (fun ω => own ω i j) (fun ω => tx ω i'))
       ∧ (∀ i j j', UncorrelatedJitter P (fun ω => own ω i j) (fun ω => rx ω j'))
       ∧ (∀ i j i' j', (i, j) ≠ (i', j') →
@@ -535,18 +529,20 @@ structure SecondOrderModel.Holds {H : Type} {R : ℕ} (m : SecondOrderModel H R)
   playback : ∀ r, FollowsNoiseOnGrid P
     (fun ω => devicePhase ((world ω).speaker r).out m.rate)
     m.rate (m.playback r)
-  /-- Device oscillators are uncorrelated with host clocks and with one another. -/
-  capture_clock_uncorrelated : ∀ i,
+  /-- Each device oscillator is uncorrelated with clocks and devices on *other*
+  hosts, while remaining free to correlate with its own host's clock and with
+  co-located devices on the same host. -/
+  capture_clock_uncorrelated : ∀ i, i ≠ m.sender →
     UncorrelatedGrid P (fun ω t => ((world ω).clock i).read t - t)
       (fun ω => devicePhase (world ω).source.capture m.rate)
-  playback_clock_uncorrelated : ∀ i r,
+  playback_clock_uncorrelated : ∀ i r, i ≠ m.host r →
     UncorrelatedGrid P (fun ω t => ((world ω).clock i).read t - t)
       (fun ω => devicePhase ((world ω).speaker r).out m.rate)
-  capture_playback_uncorrelated : ∀ r,
+  capture_playback_uncorrelated : ∀ r, m.sender ≠ m.host r →
     UncorrelatedGrids P
       (fun ω => devicePhase (world ω).source.capture m.rate)
       (fun ω => devicePhase ((world ω).speaker r).out m.rate)
-  playback_uncorrelated : ∀ r r', r ≠ r' →
+  playback_uncorrelated : ∀ r r', m.host r ≠ m.host r' →
     UncorrelatedGrids P
       (fun ω => devicePhase ((world ω).speaker r).out m.rate)
       (fun ω => devicePhase ((world ω).speaker r').out m.rate)

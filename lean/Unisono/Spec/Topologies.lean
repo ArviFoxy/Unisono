@@ -2189,9 +2189,12 @@ private theorem list_prefix_eq_of_not_mem {α : Type} {l₁ l₂ l₁' l₂' : L
         (fun hm => h1' (List.mem_cons_of_mem _ hm)) hrest
 
 /-- No two in-flight messages from distinct origins in `σ`'s run on `w` arrive at
-the same host at the exact same true time. This prevents arrival-tie reordering
-when host timelines are shifted; it holds almost surely under any continuous
-delay distribution. -/
+the same host at the same true time. Because `Unisono.Spec.Solution.State.step`
+breaks exact arrival-time ties by global send order, this hypothesis excludes
+cross-origin simultaneous arrivals whose relative send order could otherwise
+leak host shifts. (Note: in `DelayModel`, two links into the same host that
+share a pause release simultaneous arrivals with positive probability, so this
+is a genuine structural restriction rather than an almost-sure property.) -/
 def Solution.NoCrossOriginCollision [DecidableEq H] (σ : Solution H R Msg) (w : World H R)
     (lookahead : ℕ+) : Prop :=
   ∀ n (m₁ m₂ : InFlight H Msg),

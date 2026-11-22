@@ -1283,6 +1283,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.secondDifferenceCovariance_integrableOn
 
+/-- info: 'Unisono.Spec.secondDifferenceCovariance_diag_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.secondDifferenceCovariance_diag_le
+
 /-- info: 'Unisono.Spec.SecondOrderModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.SecondOrderModel.example_holds
@@ -1393,9 +1397,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Optimal.decentralized_star_uncorrelated_optimal
 
-/-- info: 'Unisono.Solutions.Optimal.consensus_roughness_savings' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Optimal.consensus_one_hot_var' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.consensus_roughness_savings
+#print axioms Unisono.Solutions.Optimal.consensus_one_hot_var
 
 /-- info: 'Unisono.Solutions.Optimal.weight_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1586,3 +1590,33 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Optimal.peer_beats_star_asymmetry_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Optimal.peer_beats_star_asymmetry_bound
+
+/-- info: 'Unisono.Solutions.Optimal.FixedDelay.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.FixedDelay.noCrossOriginCollision_sepBaseWorld
+
+/-- info: 'Unisono.Solutions.Optimal.StarProtocol.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.StarProtocol.noCrossOriginCollision_sepBaseWorld
+
+/-- info: 'Unisono.Solutions.Optimal.ForwardStar.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.ForwardStar.isStar
+
+/-- info: 'Unisono.Solutions.Optimal.ForwardStar.noCrossOriginCollision' depends on axioms: [propext,
+ Classical.choice,
+ Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.ForwardStar.noCrossOriginCollision
+
+/-- info: 'Unisono.Solutions.Optimal.ForwardStar.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.ForwardStar.progress
+
+/-- info: 'Unisono.Solutions.Optimal.ForwardStar.sync_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Optimal.ForwardStar.sync_eq
