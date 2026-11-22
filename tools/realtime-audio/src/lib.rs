@@ -8,6 +8,9 @@
 //! and the sender's capture cycle, which hands frames to the network thread.
 //! The sizes are those of the program.
 
+// The entry points are named for the inspection, not for a caller in C.
+#![allow(improper_ctypes_definitions)]
+
 use unisono_runtime::audio::{Capture, Playback};
 use unisono_runtime::receive::ReceiverAudio;
 use unisono_runtime::send::CaptureEnd;
@@ -15,22 +18,22 @@ use unisono_runtime::send::CaptureEnd;
 /// A receiver's audio thread as the program makes it.
 pub type Audio = ReceiverAudio<256, 64, 8, 64>;
 
-/// One cycle of 256 stereo frames of a receiver's playback.
+/// One cycle of a receiver's playback with a runtime-sized output slice.
 #[unsafe(no_mangle)]
 pub extern "C" fn realtime_playback_cycle(
     audio: &mut Audio,
-    frames: &mut [f32; 512],
+    frames: &mut [f32],
     position: u64,
     time: i64,
 ) {
     audio.cycle(frames, position, time);
 }
 
-/// One cycle of 256 stereo frames of a sender's capture.
+/// One cycle of a sender's capture with a runtime-sized input slice.
 #[unsafe(no_mangle)]
 pub extern "C" fn realtime_capture_cycle(
     end: &mut CaptureEnd,
-    frames: &[f32; 512],
+    frames: &[f32],
     position: u64,
     time: i64,
 ) {

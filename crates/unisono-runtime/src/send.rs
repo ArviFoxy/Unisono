@@ -40,15 +40,26 @@ use unisono_core::packet::{
 use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::format::{to_signed16, to_signed24};
 
+use crate::InvalidSettings;
 use crate::audio::Capture;
 use crate::level::{Checks, Choice, Chooser};
+use crate::network_thread::NetworkLoop;
 use crate::ring::{Consumer, Producer, ring};
-use crate::socket::Socket;
+use crate::socket::{Socket, canonical_addr, is_restricted_send_error, is_transient_send_error};
 
 /// The most frames that are sent as silence in place of dropped cycles. A
 /// longer gap starts a timeline anew: 2^20 frames, about 22 seconds at
 /// 48,000 frames a second.
 pub const LONGEST_GAP: u64 = 1_048_576;
+
+/// Maximum datagram size accepted for audio packets and allocated for receiver
+/// datagram buffers, in bytes. Sharing one cap between sender validation and
+/// receiver buffers ensures valid sender packets are never truncated on receipt.
+pub const MAX_DATAGRAM: usize = 9_000;
+
+/// Maximum incoming datagrams processed during one network turn so a burst
+/// cannot starve audio packet emission.
+const MAX_INCOMING_PER_TURN: usize = 256;
 
 /// The cycle of a capture device, in a buffer that goes round.
 pub struct Captured {
@@ -181,6 +192,61 @@ pub struct Settings {
     pub kept: usize,
 }
 
+impl Settings {
+    /// Validates that the stream, packet size, level, retransmission cache,
+    /// and adaptive level choice settings satisfy runtime invariants.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any parameter is out of range or
+    /// would overflow packet/cache sizing.
+    pub fn validate(&self) -> Result<(), InvalidSettings> {
+        if self.stream.rate == 0 {
+            return Err(InvalidSettings::new("sample rate must be positive"));
+        }
+        if self.stream.channels == 0 {
+            return Err(InvalidSettings::new("channel count must be positive"));
+        }
+        if self.stream.span == 0 {
+            return Err(InvalidSettings::new(
+                "clock estimator span must be positive",
+            ));
+        }
+        if self.stream.window == 0 {
+            return Err(InvalidSettings::new(
+                "clock estimator window must be positive",
+            ));
+        }
+        if self.packet == 0 {
+            return Err(InvalidSettings::new("packet frame count must be positive"));
+        }
+        if self.level < 0 {
+            return Err(InvalidSettings::new("initial level must be non-negative"));
+        }
+        let samples = usize::from(self.packet)
+            .checked_mul(usize::from(self.stream.channels))
+            .ok_or(InvalidSettings::new("packet sample count overflow"))?;
+        let payload = samples
+            .checked_mul(self.stream.format.bytes())
+            .ok_or(InvalidSettings::new("packet payload size overflow"))?;
+        let packet_bytes = packet::HEADER
+            .checked_add(payload)
+            .ok_or(InvalidSettings::new("packet size overflow"))?;
+        if packet_bytes > MAX_DATAGRAM {
+            return Err(InvalidSettings::new(
+                "packet size exceeds maximum datagram size (9000 bytes)",
+            ));
+        }
+        if self.kept.checked_mul(packet_bytes).is_none() {
+            return Err(InvalidSettings::new("kept packet buffer size overflow"));
+        }
+        if let Some(choice) = self.choice {
+            choice.validate()?;
+        }
+        Ok(())
+    }
+}
+
 /// What the network thread of a sender has done so far.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SenderCounts {
@@ -192,12 +258,29 @@ pub struct SenderCounts {
     pub restarts: u64,
     /// Reports answered.
     pub answers: u64,
-    /// Datagrams that could not be sent.
+    /// Incoming datagrams ignored because their source address was not in the
+    /// configured receiver list.
+    pub ignored: u64,
+    /// Datagrams that could not be sent due to a transient error.
     pub unsent: u64,
+    /// Subset of `unsent` caused by per-destination policy (`EPERM`) or
+    /// address availability (`EADDRNOTAVAIL`).
+    pub blocked: u64,
     /// Moves of the level that were begun.
     pub moves: u64,
     /// Packets sent again to a receiver that asked for their frames.
     pub again: u64,
+}
+
+impl SenderCounts {
+    /// Counts a transient send error, breaking out per-destination policy or
+    /// address-availability failures (`EPERM`, `EADDRNOTAVAIL`) into `blocked`.
+    fn record_unsent(&mut self, error: &io::Error) {
+        self.unsent += 1;
+        if is_restricted_send_error(error) {
+            self.blocked += 1;
+        }
+    }
 }
 
 /// A packet that is kept to be sent again.
@@ -211,7 +294,14 @@ struct Kept {
     length: usize,
 }
 
-/// The most packets that are sent again for one request: a second of the
+/// An active ramp of the sender's latency level toward `target`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Ramp {
+    target: i64,
+    rising: bool,
+}
+
+/// The most packets that are sent again during one turn: a second of the
 /// stream at five milliseconds a packet.
 const MOST_AGAIN: usize = 200;
 
@@ -223,19 +313,22 @@ pub struct SenderNetwork {
     /// The line through the capture device's reports.
     device: Device<64>,
     settings: Settings,
+    /// Canonicalized receiver peer addresses for ingress filtering.
+    allowed_receivers: Box<[SocketAddr]>,
     /// The device's count at the start of the timeline.
     origin: Option<u64>,
-    /// Frames captured and not yet sent, interleaved, from the frame with
-    /// index `sender.next()` on.
-    waiting: Vec<f32>,
+    /// Fixed-capacity buffer holding `< packet` leftover interleaved frames
+    /// between capture cycles so sending never allocates even on huge gaps.
+    pending: Box<[f32]>,
+    pending_frames: usize,
     /// Where a packet is written.
     bytes: Box<[u8]>,
     /// Where datagrams are received.
     incoming: Box<[u8]>,
     /// What chooses the level, if it is chosen.
     chooser: Option<Chooser>,
-    /// The level that the level moves to, while it moves.
-    target: Option<i64>,
+    /// The active level ramp, while the level is moving.
+    ramp: Option<Ramp>,
     /// The index of the next frame when the level was last chosen.
     chosen: u64,
     /// The last packets sent, each in as many bytes as a packet has at
@@ -252,33 +345,39 @@ pub struct SenderNetwork {
 /// before is told apart.
 const INDEX_BITS: u32 = 48;
 
-/// The tag of the departures of answers and of packets sent again, which
-/// are not taken in: a packet's departure is that of its first sending.
-const ANSWER: u64 = u64::MAX;
-
 impl SenderNetwork {
     /// The network thread of a sender as `settings` say, that sends from
     /// `socket` the frames handed over at `end`.
     #[must_use]
     pub fn new(socket: Socket, end: SenderEnd, settings: Settings) -> SenderNetwork {
         let stream = settings.stream;
-        let samples = usize::from(settings.packet) * usize::from(stream.channels);
+        let samples = usize::from(settings.packet).saturating_mul(usize::from(stream.channels));
+        let packet_bytes =
+            packet::HEADER.saturating_add(samples.saturating_mul(stream.format.bytes()));
+        let allowed_receivers = settings
+            .receivers
+            .iter()
+            .copied()
+            .map(canonical_addr)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         SenderNetwork {
             socket,
             end,
             sender: Sender::new(stream, settings.timeline, settings.level),
             device: Device::new(stream.rate),
+            allowed_receivers,
             origin: None,
-            waiting: Vec::with_capacity(samples * 4),
-            bytes: vec![0u8; packet::HEADER + samples * stream.format.bytes()].into_boxed_slice(),
+            pending: vec![0.0f32; samples].into_boxed_slice(),
+            pending_frames: 0,
+            bytes: vec![0u8; packet_bytes].into_boxed_slice(),
             incoming: vec![0u8; 2_048].into_boxed_slice(),
             chooser: settings
                 .choice
                 .map(|choice| Chooser::new(choice, stream.window, stream.rate)),
-            target: None,
+            ramp: None,
             chosen: 0,
-            kept: vec![0u8; settings.kept * (packet::HEADER + samples * stream.format.bytes())]
-                .into_boxed_slice(),
+            kept: vec![0u8; settings.kept.saturating_mul(packet_bytes)].into_boxed_slice(),
             places: vec![Kept::default(); settings.kept].into_boxed_slice(),
             place: 0,
             settings,
@@ -305,34 +404,49 @@ impl SenderNetwork {
         &self.sender
     }
 
-    /// Waits up to `milliseconds` for something to do on the socket, then
-    /// does all there is: sends the packets that the captured frames make,
-    /// takes in departures, and answers reports.
+    /// Waits up to `milliseconds` for something to do on the socket (unless
+    /// captured audio is already queued), then does all there is: sends the
+    /// packets that the captured frames make, takes in departures, and answers
+    /// reports.
     ///
     /// # Errors
     ///
-    /// An error of the socket other than that nothing is waiting.
+    /// A fatal error of the socket.
     pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
-        self.socket.wait(milliseconds)?;
+        let wait_ms = if self.end.full.waiting() > 0 {
+            0
+        } else {
+            milliseconds
+        };
+        self.socket.wait(wait_ms)?;
         while let Some(captured) = self.end.full.take() {
-            self.take_in(&captured);
+            let result = self.take_in_and_send(&captured);
             // The ring holds every buffer there is, so it has room for this.
             let _ = self.end.spare.put(captured.buffer);
-            self.send_packets()?;
+            result?;
         }
         self.departures()?;
         self.answer()?;
         Ok(())
     }
 
-    /// Takes in a cycle of the capture device.
-    fn take_in(&mut self, captured: &Captured) {
-        if captured.frames == 0 {
-            return;
-        }
+    /// Takes in a cycle of the capture device and emits every full packet
+    /// without allocating.
+    fn take_in_and_send(&mut self, captured: &Captured) -> io::Result<()> {
+        let packet_frames = usize::from(self.settings.packet);
         let channels = usize::from(self.settings.stream.channels);
-        let Some(frames) = captured.buffer.get(..captured.frames * channels) else {
-            return;
+        if captured.frames == 0
+            || packet_frames == 0
+            || channels == 0
+            || self.settings.stream.rate == 0
+        {
+            return Ok(());
+        }
+        let Some(total_samples) = captured.frames.checked_mul(channels) else {
+            return Ok(());
+        };
+        let Some(frames) = captured.buffer.get(..total_samples) else {
+            return Ok(());
         };
         self.device.observe(captured.position, captured.time);
         let origin = *self.origin.get_or_insert(captured.position);
@@ -340,23 +454,73 @@ impl SenderNetwork {
         // the next frame to be sent is.
         let expected = origin
             .saturating_add(self.sender.next())
-            .saturating_add((self.waiting.len() / channels.max(1)) as u64);
+            .saturating_add(self.pending_frames as u64);
         if captured.position < expected || captured.position - expected > LONGEST_GAP {
             self.restart(captured.position);
         } else if captured.position > expected {
-            let missing = captured.position - expected;
-            let samples = usize::try_from(missing).unwrap_or(0) * channels;
-            self.waiting.resize(self.waiting.len() + samples, 0.0);
+            let mut missing = captured.position - expected;
             self.counts.filled += missing;
+            while missing > 0 {
+                let room = packet_frames - self.pending_frames;
+                let take = usize::try_from(missing).unwrap_or(usize::MAX).min(room);
+                let start = self.pending_frames * channels;
+                if let Some(slot) = self.pending.get_mut(start..start + take * channels) {
+                    slot.fill(0.0);
+                }
+                self.pending_frames += take;
+                missing -= take as u64;
+                if self.pending_frames == packet_frames {
+                    self.pending_frames = 0;
+                    self.emit_packet(None)?;
+                }
+            }
         }
-        self.waiting.extend_from_slice(frames);
+        let mut offset = 0usize;
+        if self.pending_frames > 0 {
+            let take = (packet_frames - self.pending_frames).min(captured.frames);
+            let dst_start = self.pending_frames * channels;
+            if let (Some(dst), Some(src)) = (
+                self.pending.get_mut(dst_start..dst_start + take * channels),
+                frames.get(..take * channels),
+            ) {
+                dst.copy_from_slice(src);
+            }
+            self.pending_frames += take;
+            offset += take;
+            if self.pending_frames == packet_frames {
+                self.pending_frames = 0;
+                self.emit_packet(None)?;
+            }
+        }
+        while captured.frames - offset >= packet_frames {
+            let start = offset * channels;
+            if let Some(chunk) = frames.get(start..start + packet_frames * channels) {
+                self.emit_packet(Some(chunk))?;
+            }
+            offset += packet_frames;
+        }
+        let leftover = captured.frames - offset;
+        if leftover > 0 {
+            if let (Some(dst), Some(src)) = (
+                self.pending.get_mut(..leftover * channels),
+                frames.get(offset * channels..captured.frames * channels),
+            ) {
+                dst.copy_from_slice(src);
+            }
+            self.pending_frames = leftover;
+        }
+        Ok(())
     }
 
     /// Starts a timeline anew at the device's count `position`.
     fn restart(&mut self, position: u64) {
-        self.waiting.clear();
+        self.pending_frames = 0;
         self.origin = Some(position);
         self.sender.restart(first_timeline());
+        // Stop any in-progress ramp cleanly on timeline restart.
+        let level = self.sender.current_level();
+        self.sender.level(level, 0);
+        self.ramp = None;
         self.chosen = 0;
         self.counts.restarts += 1;
     }
@@ -379,64 +543,79 @@ impl SenderNetwork {
         i32::try_from((nominal - measured) * 1_000_000_000 / measured).unwrap_or(0)
     }
 
-    /// Sends the packets that the waiting frames make.
-    fn send_packets(&mut self) -> io::Result<()> {
-        let channels = usize::from(self.settings.stream.channels);
-        let frames = usize::from(self.settings.packet);
-        let samples = frames * channels;
-        while self.waiting.len() >= samples && samples > 0 {
-            let Some(origin) = self.origin else {
-                return Ok(());
+    /// Encodes and transmits one packet from `external` (or `self.pending`
+    /// when `external` is `None`). Only the first successful receiver send is
+    /// tagged for departure timestamping so multiple receivers do not
+    /// overwrite `stamped_departure`.
+    fn emit_packet(&mut self, external: Option<&[f32]>) -> io::Result<()> {
+        let Some(origin) = self.origin else {
+            return Ok(());
+        };
+        let first = self.sender.next();
+        let position = origin.saturating_add(first);
+        let Some(capture) = self.device.when(position) else {
+            return Ok(());
+        };
+        self.steer();
+        let drift = self.drift(position);
+        let mut header = self.sender.packet(self.settings.packet, capture, drift);
+        if !self.places.is_empty() {
+            header.protection = PROTECTION_ON_REQUEST;
+        }
+        let length = self.write(&header, external);
+        self.counts.packets += 1;
+        let Some(length) = length else {
+            return Ok(());
+        };
+        self.remember(&header, length);
+        let packet_tag = tag(header.timeline, header.index);
+        let mut tagged = false;
+        for &to in &self.settings.receivers {
+            let bytes = self.bytes.get(..length).unwrap_or(&[]);
+            let sent = if tagged {
+                self.socket.send_untagged(bytes, to)
+            } else {
+                self.socket.send_to(bytes, to, packet_tag)
             };
-            let first = self.sender.next();
-            let position = origin.saturating_add(first);
-            let Some(capture) = self.device.when(position) else {
-                return Ok(());
-            };
-            self.steer();
-            let drift = self.drift(position);
-            let mut header = self.sender.packet(self.settings.packet, capture, drift);
-            if !self.places.is_empty() {
-                header.protection = PROTECTION_ON_REQUEST;
-            }
-            let length = self.write(&header, samples);
-            self.waiting.drain(..samples);
-            self.counts.packets += 1;
-            let Some(length) = length else {
-                continue;
-            };
-            self.remember(&header, length);
-            let tag = tag(header.timeline, header.index);
-            for &to in &self.settings.receivers {
-                let bytes = self.bytes.get(..length).unwrap_or(&[]);
-                match self.socket.send_to(bytes, to, tag) {
-                    Ok(_) => {}
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        self.counts.unsent += 1;
-                    }
-                    Err(error) => return Err(error),
+            match sent {
+                Ok(_) => tagged = true,
+                Err(error) if is_transient_send_error(&error) => {
+                    self.counts.record_unsent(&error);
                 }
+                Err(error) => return Err(error),
             }
         }
         Ok(())
     }
 
-    /// Ends a move of the level that has arrived, and chooses the level once
-    /// for each second of stream: a move begins when the chooser finds one
-    /// worth its cost.
+    /// Ends a move of the level that has arrived or crossed its target, and
+    /// chooses the level once for each second of stream: a move begins when
+    /// the chooser finds one worth its cost.
     fn steer(&mut self) {
         let Some(chooser) = self.chooser.as_mut() else {
             return;
         };
-        let rate = self.settings.stream.rate;
-        let level = self.sender.current_level();
-        if let Some(target) = self.target {
+        let slope = chooser.slope();
+        if slope <= 0 {
+            return;
+        }
+        let rate = self.settings.stream.rate.max(1);
+        let mut level = self.sender.current_level();
+        if let Some(ramp) = self.ramp {
             // How far the level moves in one packet.
-            let reach = i64::from(chooser.slope()).abs() * i64::from(self.settings.packet)
-                / i64::from(rate.max(1));
-            if (level - target).abs() <= reach {
-                self.sender.level(target, 0);
-                self.target = None;
+            let reach = u64::try_from(
+                i128::from(slope) * i128::from(self.settings.packet) / i128::from(rate),
+            )
+            .unwrap_or(u64::MAX);
+            let crossed = if ramp.rising {
+                level >= ramp.target
+            } else {
+                level <= ramp.target
+            };
+            if crossed || level.abs_diff(ramp.target) <= reach {
+                self.sender.level(ramp.target, 0);
+                self.ramp = None;
+                level = ramp.target;
             }
         }
         let next = self.sender.next();
@@ -445,23 +624,28 @@ impl SenderNetwork {
         }
         self.chosen = next;
         if let Some(target) = chooser.choose(level) {
-            let slope = if target > level {
-                chooser.slope()
-            } else {
-                -chooser.slope()
-            };
-            self.sender.level(level, slope);
-            self.target = Some(target);
+            if target == level || self.ramp.is_some_and(|ramp| ramp.target == target) {
+                return;
+            }
+            let rising = target > level;
+            let signed_slope = if rising { slope } else { -slope };
+            self.sender.level(level, signed_slope);
+            self.ramp = Some(Ramp { target, rising });
             self.counts.moves += 1;
         }
     }
 
-    /// Writes the packet with `header` and the first `samples` waiting
-    /// samples, and returns its length.
-    fn write(&mut self, header: &Audio, samples: usize) -> Option<usize> {
+    /// Writes the packet with `header` and either `external` or the samples in
+    /// `self.pending`, and returns its length.
+    fn write(&mut self, header: &Audio, external: Option<&[f32]>) -> Option<usize> {
+        let samples = usize::from(self.settings.packet)
+            .checked_mul(usize::from(self.settings.stream.channels))?;
         let length = write_audio(header, &mut self.bytes)?;
         let payload = self.bytes.get_mut(packet::HEADER..length)?;
-        let frames = self.waiting.get(..samples)?;
+        let frames = match external {
+            Some(slice) => slice.get(..samples)?,
+            None => self.pending.get(..samples)?,
+        };
         match header.format {
             Format::Signed16 => to_signed16(frames, payload),
             Format::Signed24 => to_signed24(frames, payload),
@@ -472,9 +656,6 @@ impl SenderNetwork {
     /// Takes in when packets left.
     fn departures(&mut self) -> io::Result<()> {
         while let Some(departure) = self.socket.departure()? {
-            if departure.tag == ANSWER {
-                continue;
-            }
             let timeline = self.sender.timeline();
             if departure.tag >> INDEX_BITS != timeline & ((1 << (64 - INDEX_BITS)) - 1) {
                 continue;
@@ -509,15 +690,22 @@ impl SenderNetwork {
     }
 
     /// Sends the kept packets with frames that `request` names again to the
-    /// receiver at `to`, oldest first, if it is a receiver of the stream.
-    fn again(&mut self, request: &Request, to: SocketAddr) -> io::Result<()> {
-        if request.stream != self.settings.stream.stream || !self.settings.receivers.contains(&to) {
+    /// receiver at `to`, oldest first, up to the per-turn retransmission cap.
+    fn again(
+        &mut self,
+        request: &Request,
+        to: SocketAddr,
+        sent_total: &mut usize,
+    ) -> io::Result<()> {
+        if request.stream != self.settings.stream.stream || *sent_total >= MOST_AGAIN {
             return Ok(());
         }
         let room = self.bytes.len();
         let end = request.first.saturating_add(request.frames);
-        let mut sent = 0;
         for step in 0..self.places.len() {
+            if *sent_total >= MOST_AGAIN {
+                break;
+            }
             let place = (self.place + step) % self.places.len();
             let Some(kept) = self.places.get(place).copied() else {
                 continue;
@@ -533,32 +721,38 @@ impl SenderNetwork {
                 .kept
                 .get(place * room..place * room + kept.length)
                 .unwrap_or(&[]);
-            match self.socket.send_to(bytes, to, ANSWER) {
+            match self.socket.send_untagged(bytes, to) {
                 Ok(_) => self.counts.again += 1,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    self.counts.unsent += 1;
+                Err(error) if is_transient_send_error(&error) => {
+                    self.counts.record_unsent(&error);
                 }
                 Err(error) => return Err(error),
             }
-            sent += 1;
-            if sent >= MOST_AGAIN {
-                break;
-            }
+            *sent_total += 1;
         }
         Ok(())
     }
 
-    /// Answers the reports that arrived, and sends again what receivers ask
-    /// for.
+    /// Answers the reports that arrived from configured receivers on this
+    /// stream, and sends again what those receivers ask for.
     fn answer(&mut self) -> io::Result<()> {
         let mut out = [0u8; packet::ECHO];
-        while let Some(received) = self.socket.receive(&mut self.incoming)? {
+        let mut turn_again = 0usize;
+        for _ in 0..MAX_INCOMING_PER_TURN {
+            let Some(received) = self.socket.receive(&mut self.incoming)? else {
+                break;
+            };
+            let peer = canonical_addr(received.from);
+            if !self.allowed_receivers.contains(&peer) {
+                self.counts.ignored += 1;
+                continue;
+            }
             let Some(bytes) = self.incoming.get(..received.length) else {
                 continue;
             };
             if packet::kind(bytes) == Ok(KIND_REQUEST) {
                 if let Ok(request) = parse_request(bytes) {
-                    self.again(&request, received.from)?;
+                    self.again(&request, received.from, &mut turn_again)?;
                 }
                 continue;
             }
@@ -568,10 +762,16 @@ impl SenderNetwork {
             let Ok(report) = parse_report(bytes) else {
                 continue;
             };
+            if report.stream != self.settings.stream.stream {
+                continue;
+            }
             if report.timeline == self.sender.timeline()
+                && self.sender.next() > 0
                 && let Some(chooser) = self.chooser.as_mut()
             {
-                chooser.observe(report.timeline, &parse_needs(bytes));
+                let max_stretch =
+                    (self.sender.next() - 1) / u64::from(self.settings.stream.window.max(1));
+                chooser.observe_up_to(report.timeline, &parse_needs(bytes), max_stretch);
             }
             let Some(echo) = self.sender.answer(&report, received.arrival.time) else {
                 continue;
@@ -579,15 +779,21 @@ impl SenderNetwork {
             let Some(length) = write_echo(&echo, &mut out) else {
                 continue;
             };
-            match self.socket.send_to(&out[..length], received.from, ANSWER) {
+            match self.socket.send_untagged(&out[..length], received.from) {
                 Ok(_) => self.counts.answers += 1,
-                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                    self.counts.unsent += 1;
+                Err(error) if is_transient_send_error(&error) => {
+                    self.counts.record_unsent(&error);
                 }
                 Err(error) => return Err(error),
             }
         }
         Ok(())
+    }
+}
+
+impl NetworkLoop for SenderNetwork {
+    fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
+        SenderNetwork::turn(self, milliseconds)
     }
 }
 
@@ -632,4 +838,230 @@ pub fn clock_identity() -> u32 {
     #[allow(clippy::cast_possible_truncation)]
     let folded = (hash ^ (hash >> 32)) as u32;
     folded
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{SocketAddr, UdpSocket};
+    use std::time::Duration;
+
+    use unisono_core::packet::{self, Format, Recent, Report, write_needs, write_report};
+    use unisono_core::sender::Settings as StreamSettings;
+
+    use super::{Ramp, SenderNetwork, Settings, link};
+    use crate::audio::Capture;
+    use crate::level::{Choice, Weights};
+    use crate::socket::Socket;
+
+    fn base_settings(receivers: Vec<SocketAddr>, choice: Option<Choice>) -> Settings {
+        Settings {
+            stream: StreamSettings {
+                stream: 7,
+                rate: 48_000,
+                channels: 2,
+                format: Format::Signed24,
+                span: 2_000,
+                window: 2_400,
+                clock: 1,
+            },
+            packet: 240,
+            level: 30_000_000,
+            choice,
+            timeline: 10,
+            receivers,
+            kept: 8,
+        }
+    }
+
+    #[test]
+    fn settings_validation_rejects_invalid_stream_packet_and_choice() {
+        let valid = base_settings(Vec::new(), None);
+        assert!(valid.validate().is_ok());
+
+        let mut bad = valid.clone();
+        bad.stream.rate = 0;
+        assert!(bad.validate().is_err());
+
+        let mut bad = valid.clone();
+        bad.packet = 0;
+        assert!(bad.validate().is_err());
+
+        let mut bad = valid.clone();
+        bad.level = -1;
+        assert!(bad.validate().is_err());
+
+        let mut bad = valid.clone();
+        bad.packet = 1_500; // 88 + 1500 * 2 * 3 = 9088 > MAX_DATAGRAM (9000)
+        assert!(bad.validate().is_err());
+
+        let mut at_cap = valid;
+        at_cap.packet = 1_485; // 88 + 1485 * 2 * 3 = 8998 <= MAX_DATAGRAM (9000)
+        assert!(at_cap.validate().is_ok());
+    }
+
+    #[test]
+    fn unknown_peer_and_wrong_stream_reports_are_ignored_before_chooser_and_echo() {
+        let loopback: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let receiver = UdpSocket::bind(loopback).expect("receiver");
+        receiver
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("timeout");
+        let stranger = UdpSocket::bind(loopback).expect("stranger");
+        stranger
+            .set_read_timeout(Some(Duration::from_millis(50)))
+            .expect("timeout");
+
+        let sender_socket = Socket::bind(loopback).expect("sender socket");
+        let sender_addr = sender_socket.address().expect("addr");
+        let (mut capture_end, sender_end) = link(4, 240, 2);
+        let choice = Choice {
+            weights: Weights {
+                latency: 1_000.0,
+                target: 0,
+                off_target: 0.0,
+                gap: 600.0,
+                missed: 60_000.0,
+                moving: 60.0,
+            },
+            history: 64,
+            slope: 1_000_000,
+        };
+        let mut sender = SenderNetwork::new(
+            sender_socket,
+            sender_end,
+            base_settings(vec![receiver.local_addr().expect("addr")], Some(choice)),
+        );
+        // Emit one packet so sender.next() > 0.
+        capture_end.cycle(&[0.0f32; 480], 0, 1_000_000);
+        sender.turn(0).expect("turn");
+
+        let mut buf = [0u8; 128];
+        let mut recent = Recent::NONE;
+        recent.count = 1;
+        recent.newest = 0;
+        recent.needs[0] = 5_000;
+
+        // 1. Report from an unknown peer on the right stream -> ignored.
+        let report = Report {
+            stream: 7,
+            timeline: 10,
+            receiver: 1,
+            sequence: 1,
+        };
+        let len = write_report(&report, &mut buf, 128).expect("report");
+        assert!(write_needs(&recent, &mut buf[..len]));
+        stranger.send_to(&buf[..len], sender_addr).expect("send");
+        sender.turn(0).expect("turn");
+        assert_eq!(sender.counts().answers, 0);
+        assert_eq!(sender.counts().ignored, 1);
+
+        // 2. Report from the known receiver on a wrong stream -> ignored.
+        let wrong_stream = Report {
+            stream: 99,
+            ..report
+        };
+        let len = write_report(&wrong_stream, &mut buf, 128).expect("report");
+        assert!(write_needs(&recent, &mut buf[..len]));
+        receiver.send_to(&buf[..len], sender_addr).expect("send");
+        sender.turn(0).expect("turn");
+        assert_eq!(sender.counts().answers, 0);
+
+        // 3. Report from the known receiver on the right stream -> answered.
+        let len = write_report(&report, &mut buf, 128).expect("report");
+        assert!(write_needs(&recent, &mut buf[..len]));
+        receiver.send_to(&buf[..len], sender_addr).expect("send");
+        sender.turn(0).expect("turn");
+        assert_eq!(sender.counts().answers, 1);
+    }
+
+    #[test]
+    fn steer_snaps_when_crossing_target_even_with_zero_per_packet_reach() {
+        let loopback: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let sender_socket = Socket::bind(loopback).expect("sender socket");
+        let (mut capture_end, sender_end) = link(4, 240, 2);
+        // slope * packet / rate = 100 * 240 / 48000 = 0 (integer division).
+        let choice = Choice {
+            weights: Weights {
+                latency: 1_000.0,
+                target: 0,
+                off_target: 0.0,
+                gap: 600.0,
+                missed: 60_000.0,
+                moving: 60.0,
+            },
+            history: 64,
+            slope: 100,
+        };
+        let mut sender = SenderNetwork::new(
+            sender_socket,
+            sender_end,
+            base_settings(Vec::new(), Some(choice)),
+        );
+        // Simulate a rising ramp that has crossed its target by 1 ns.
+        sender.sender.level(30_000_001, 100);
+        sender.ramp = Some(Ramp {
+            target: 30_000_000,
+            rising: true,
+        });
+        capture_end.cycle(&[0.0f32; 480], 0, 1_000_000);
+        sender.turn(0).expect("turn");
+        assert_eq!(sender.ramp, None);
+        assert_eq!(sender.sender().current_level(), 30_000_000);
+    }
+
+    #[test]
+    fn capture_gap_fills_silence_without_resizing_and_keeps_index_aligned() {
+        let loopback: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let receiver = UdpSocket::bind(loopback).expect("receiver");
+        let sender_socket = Socket::bind(loopback).expect("sender socket");
+        let (mut capture_end, sender_end) = link(4, 256, 2);
+        let mut sender = SenderNetwork::new(
+            sender_socket,
+            sender_end,
+            base_settings(vec![receiver.local_addr().expect("addr")], None),
+        );
+        // First cycle: 256 frames (1 packet of 240 + 16 pending).
+        capture_end.cycle(&[0.25f32; 512], 0, 1_000_000);
+        sender.turn(0).expect("turn 1");
+        assert_eq!(sender.counts().packets, 1);
+        assert_eq!(sender.pending_frames, 16);
+
+        // Next cycle jumps ahead by 720 dropped frames (position 976 = 256 + 720).
+        capture_end.cycle(&[0.5f32; 512], 976, 21_333_333);
+        sender.turn(0).expect("turn 2");
+        assert_eq!(sender.counts().filled, 720);
+        assert_eq!(sender.counts().restarts, 0);
+        // Total frames covered = 976 + 256 = 1232 => 5 full packets (1200) + 32 pending.
+        assert_eq!(sender.counts().packets, 5);
+        assert_eq!(sender.pending_frames, 32);
+    }
+
+    #[test]
+    fn multi_receiver_send_produces_one_packet_per_receiver_with_single_departure_tag() {
+        let loopback: SocketAddr = "127.0.0.1:0".parse().expect("loopback");
+        let r1 = UdpSocket::bind(loopback).expect("r1");
+        let r2 = UdpSocket::bind(loopback).expect("r2");
+        r1.set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("timeout");
+        r2.set_read_timeout(Some(Duration::from_secs(1)))
+            .expect("timeout");
+        let sender_socket = Socket::bind(loopback).expect("sender socket");
+        let (mut capture_end, sender_end) = link(4, 240, 2);
+        let mut sender = SenderNetwork::new(
+            sender_socket,
+            sender_end,
+            base_settings(
+                vec![r1.local_addr().expect("r1"), r2.local_addr().expect("r2")],
+                None,
+            ),
+        );
+        capture_end.cycle(&[0.1f32; 480], 0, 1_000_000);
+        sender.turn(0).expect("turn");
+        let mut b1 = [0u8; 2048];
+        let mut b2 = [0u8; 2048];
+        let (l1, _) = r1.recv_from(&mut b1).expect("r1 recv");
+        let (l2, _) = r2.recv_from(&mut b2).expect("r2 recv");
+        assert_eq!(l1, l2);
+        assert!(packet::parse_audio(&b1[..l1]).is_ok());
+    }
 }

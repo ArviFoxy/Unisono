@@ -7,7 +7,8 @@ module
 public import UnisonoCore
 public import Unisono.Scalar
 public import Unisono.Fixed
-public import Unisono.Relation
+public import Unisono.Model.Stream
+public import Mathlib.Algebra.Order.Archimedean.Real.Basic
 public import Mathlib.Tactic.Linarith
 
 /-!
@@ -60,7 +61,13 @@ private theorem shl_32_val (x : Std.U64) (h : x.val < 2 ^ 32) :
 private theorem u64_bounds (x : Std.U64) : (0 : ℤ) ≤ x.val ∧ (x.val : ℤ) < 2 ^ 64 := by
   scalar_tac
 
+private theorem lt_zero_of_lt (x : Std.I128) (h : x < 0#i128) : x.val < 0 := by
+  scalar_tac
+
 private theorem nonneg_of_not_lt (x : Std.I128) (h : ¬ x < 0#i128) : 0 ≤ x.val := by
+  scalar_tac
+
+private theorem gt_of_gt (x y : Std.I128) (h : x > y) : y.val < x.val := by
   scalar_tac
 
 private theorem le_of_not_gt (x y : Std.I128) (h : ¬ x > y) : x.val ≤ y.val := by
@@ -81,13 +88,18 @@ def dueUnits (s : timing.Schedule) (time : ℤ) : ℤ :=
     / (10 ^ 9 * (10 ^ 9 + s.level_slope.val))
 
 /-- **The position that the code takes to be due is the one that the
-schedule says, rounded down to `2⁻³²` frame.** A schedule whose pace or
-whose level's pace is not positive gives none. Otherwise a position that is
-returned has the frame `index + whole` and the fraction `part / 2³²`, where
-`whole · 2³² + part` is `dueUnits`. -/
+schedule says, rounded down to `2⁻³²` frame.** A schedule whose rate, pace, or
+level's pace is not positive gives none, as does a result outside `[0, 2⁶⁴)`.
+In every other case a position is returned, with the frame `index + whole` and
+the fraction `part / 2³²`, where `whole · 2³² + part` is `dueUnits`. -/
 theorem due_spec (s : timing.Schedule) (time : Std.I64) :
     timing.due s time ⦃ r =>
-      ((10 ^ 9 + s.drift.val ≤ 0 ∨ 10 ^ 9 + s.level_slope.val ≤ 0) → r = none)
+      (r = none ↔
+          s.rate.val = 0
+          ∨ 10 ^ 9 + s.drift.val ≤ 0
+          ∨ 10 ^ 9 + s.level_slope.val ≤ 0
+          ∨ (s.index.val : ℤ) + dueUnits s time.val / 2 ^ 32 < 0
+          ∨ 2 ^ 64 ≤ (s.index.val : ℤ) + dueUnits s time.val / 2 ^ 32)
       ∧ ∀ p, r = some p →
           ∃ whole part : ℤ, 0 ≤ part ∧ part < 2 ^ 32
             ∧ (p.frame.val : ℤ) = s.index.val + whole
@@ -113,17 +125,24 @@ theorem due_spec (s : timing.Schedule) (time : Std.I64) :
     rw [hstretch, I128.wrapping_add_val _ _ (by rw [hi2v, hi3v]; constructor <;> linarith),
       hi2v, hi3v]
   split
-  · rename_i hle
-    have : pace.val ≤ 0 := by scalar_tac
+  · rename_i hrate0
+    have hr0 : s.rate.val = 0 := by scalar_tac
     rw [WP.spec_ok]
-    exact ⟨fun _ => rfl, fun p hp => by cases hp⟩
+    exact ⟨by simp [hr0], fun p hp => by cases hp⟩
+  rename_i hrate_ne
+  have hrate_pos : 0 < s.rate.val := by scalar_tac
+  split
+  · rename_i hle
+    have hp : 10 ^ 9 + s.drift.val ≤ 0 := by rw [← hpacev]; scalar_tac
+    rw [WP.spec_ok]
+    exact ⟨⟨fun _ => Or.inr (Or.inl hp), fun _ => rfl⟩, fun p h => by cases h⟩
   rename_i hpos
   have hpace0 : 0 < pace.val := by scalar_tac
   split
   · rename_i hle
-    have : stretch.val ≤ 0 := by scalar_tac
+    have hs : 10 ^ 9 + s.level_slope.val ≤ 0 := by rw [← hstretchv]; scalar_tac
     rw [WP.spec_ok]
-    exact ⟨fun _ => rfl, fun p hp => by cases hp⟩
+    exact ⟨⟨fun _ => Or.inr (Or.inr (Or.inl hs)), fun _ => rfl⟩, fun p h => by cases h⟩
   rename_i hpos2
   have hstretch0 : 0 < stretch.val := by scalar_tac
   -- the time that has passed
@@ -253,9 +272,17 @@ theorem due_spec (s : timing.Schedule) (time : Std.I64) :
     unfold dueUnits
     rw [← helapsed, ← hpacev, ← hstretchv, ← hdiv, ← hproductv, hquot, hfractionv]
     ring
+  have hwhole_due : dueUnits s time.val / 2 ^ 32 = whole.val := by
+    rw [← hunits]
+    have hcomm : whole.val * 2 ^ 32 + fraction.val = fraction.val + whole.val * 2 ^ 32 := by ring
+    rw [hcomm, Int.add_mul_ediv_right _ _ (by norm_num), Int.ediv_eq_zero_of_lt hfrac0 hfrac1]
+    omega
   split
-  · rw [WP.spec_ok]
-    exact ⟨fun h => by rcases h with h | h <;> linarith, fun p hp => by cases hp⟩
+  · rename_i hlt0
+    have hfr_neg : frame.val < 0 := lt_zero_of_lt frame hlt0
+    rw [WP.spec_ok]
+    exact ⟨⟨fun _ => Or.inr (Or.inr (Or.inr (Or.inl (by rw [hwhole_due, ← hframev]; exact hfr_neg)))),
+      fun _ => rfl⟩, fun p hp => by cases hp⟩
   rename_i hneg
   have hframe0 : 0 ≤ frame.val := nonneg_of_not_lt frame hneg
   step as ⟨i17, hi17⟩
@@ -263,8 +290,13 @@ theorem due_spec (s : timing.Schedule) (time : Std.I64) :
     rw [hi17, U64.hcast_I128_val]
     rfl
   split
-  · rw [WP.spec_ok]
-    exact ⟨fun h => by rcases h with h | h <;> linarith, fun p hp => by cases hp⟩
+  · rename_i hgt
+    have hfr_big : 2 ^ 64 ≤ frame.val := by
+      have : i17.val < frame.val := gt_of_gt frame i17 hgt
+      linarith
+    rw [WP.spec_ok]
+    exact ⟨⟨fun _ => Or.inr (Or.inr (Or.inr (Or.inr (by rw [hwhole_due, ← hframev]; exact hfr_big)))),
+      fun _ => rfl⟩, fun p hp => by cases hp⟩
   rename_i hbig
   have hframe1 : frame.val < 2 ^ 64 := by
     have : frame.val ≤ i17.val := le_of_not_gt frame i17 hbig
@@ -282,8 +314,54 @@ theorem due_spec (s : timing.Schedule) (time : Std.I64) :
     rw [hi20, shl_32_val i19 hi19lt]
     push_cast
     rw [hi19v]
-  refine ⟨fun h => by rcases h with h | h <;> linarith, fun p hp => ?_⟩
-  cases hp
-  exact ⟨whole.val, fraction.val, hfrac0, hfrac1, by rw [hi18v, hframev], hi20v, hunits⟩
+  refine ⟨⟨fun h => (by cases h), fun h => ?_⟩, fun p hp => ?_⟩
+  · exfalso
+    rw [hwhole_due, ← hframev] at h
+    rcases h with h | h | h | h | h <;> omega
+  · cases hp
+    exact ⟨whole.val, fraction.val, hfrac0, hfrac1, by rw [hi18v, hframev], hi20v, hunits⟩
+
+/-- When the elapsed time fits in 64 bits and rate, pace, and stretch are
+positive, `dueUnits` is the integer floor of `2³²` times the exact real
+position whose `Model.Stream.dueTime` equals `time`. -/
+theorem dueUnits_eq_floor (s : timing.Schedule) (time : ℤ)
+    (hrate : 0 < s.rate.val) (hpace : 0 < 10 ^ 9 + s.drift.val)
+    (hstretch : 0 < 10 ^ 9 + s.level_slope.val)
+    (helapsed : -2 ^ 63 ≤ time - s.capture.val - s.level.val
+      ∧ time - s.capture.val - s.level.val ≤ 2 ^ 63 - 1) :
+    let x : ℝ :=
+      ((time : ℝ) - s.capture.val - s.level.val)
+        * ((s.rate.val : ℝ) * (10 ^ 9 + s.drift.val))
+        / (10 ^ 9 * (10 ^ 9 + s.level_slope.val))
+    dueUnits s time = ⌊x * 2 ^ 32⌋
+      ∧ Unisono.Model.Stream.dueTime s.capture.val s.level.val s.rate.val
+          (10 ^ 9 + s.drift.val) (10 ^ 9 + s.level_slope.val) x = time := by
+  intro x
+  have hclamp : Unisono.Fixed.clamp64 (time - s.capture.val - s.level.val)
+      = time - s.capture.val - s.level.val := by
+    simp only [Unisono.Fixed.clamp64]
+    omega
+  have hdenZ : (0 : ℤ) < 10 ^ 9 * (10 ^ 9 + s.level_slope.val) := by nlinarith
+  have hdenR : (0 : ℝ) < ((10 ^ 9 * (10 ^ 9 + s.level_slope.val) : ℤ) : ℝ) := by
+    exact_mod_cast hdenZ
+  constructor
+  · unfold dueUnits
+    rw [hclamp]
+    symm
+    rw [Int.floor_eq_iff]
+    set num : ℤ := (time - s.capture.val - s.level.val) * (s.rate.val * (10 ^ 9 + s.drift.val)) * 2 ^ 32
+    set den : ℤ := 10 ^ 9 * (10 ^ 9 + s.level_slope.val)
+    have hxmul : x * 2 ^ 32 = (num : ℝ) / (den : ℝ) := by
+      simp only [x, num, den]
+      push_cast
+      ring
+    rw [hxmul]
+    have h1 : (num / den) * den ≤ num := (Int.le_ediv_iff_mul_le hdenZ).mp le_rfl
+    have h2 : num < (num / den + 1) * den := (Int.ediv_lt_iff_lt_mul hdenZ).mp (by omega)
+    constructor
+    · rw [le_div_iff₀ hdenR]; exact_mod_cast h1
+    · rw [div_lt_iff₀ hdenR]; exact_mod_cast h2
+  · exact Unisono.Model.Stream.dueTime_position (time : ℝ)
+      (by exact_mod_cast hrate) (by exact_mod_cast hpace) (by exact_mod_cast hstretch)
 
 end Unisono.Due

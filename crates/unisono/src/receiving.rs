@@ -2,18 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono receive`: a receiver that plays a stream on a software playback
-//! device, and can keep what it played in a file.
+//! `unisono receive`: a receiver that plays a stream on a playback device,
+//! and can keep what it played in a file.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use unisono_core::player::Regulation;
 use unisono_dsp::Parameters;
+use unisono_metrics::{Counter, FloatGauge};
 use unisono_runtime::audio::Playback as AudioPlayback;
+use unisono_runtime::network_thread::NetworkThread;
 use unisono_runtime::pump::{ReceiverPlayback, Settings};
 use unisono_runtime::receive::{
     self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
@@ -22,10 +22,9 @@ use unisono_runtime::socket::Socket;
 use unisono_runtime::software::{Device, Output};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Tally};
+use crate::exported::{Metrics, Server, Tally};
 use crate::options::{Options, Wrong};
-use crate::{System, sleep_until};
-use unisono_metrics::{Counter, FloatGauge};
+use crate::{MAX_CYCLE, System, sleep_until, validate_drift};
 
 /// The receiver: room for 16,384 frames, 64 samples of the sender's clock,
 /// the arrivals of 8 packets, and 64 reports of its device.
@@ -91,114 +90,244 @@ Receives a stream and plays it on a software device.
                       move this process's clock (for tests on one host)
 ";
 
-/// Runs `unisono receive`.
-pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
-    let listen: SocketAddr = options.need("listen")?;
-    let stream: u16 = options.get("stream", 1)?;
-    let rate: u32 = options.get("rate", 48_000)?;
-    let channels: u8 = options.get("channels", 2)?;
-    let cycle: usize = options.get("cycle", 256)?;
-    let drift: i32 = options.get("drift", 0)?;
-    let lead: i64 = options.get("lead", 4)?;
-    let seconds: i64 = options.get("seconds", 0)?;
-    let record: Option<String> = options.all("record").first().cloned();
-    let system = System::from_options(options)?;
-    if record.is_some() && system != System::Software {
-        return Err(Wrong("`--record` needs the software device".into()));
-    }
-    if rate == 0 || channels == 0 || cycle == 0 {
-        return Err(Wrong("the rate, channels and cycle are not zero".into()));
-    }
-    if record.is_some() && seconds == 0 {
-        return Err(Wrong("`--record` needs `--seconds`".into()));
+/// What plays the frames.
+enum Playing {
+    /// The software output device, driven on the main thread.
+    Software(Box<Counted>),
+    /// A PipeWire stream.
+    #[cfg(feature = "pipewire")]
+    PipeWire(unisono_pipewire::Running),
+    /// An ALSA device.
+    #[cfg(feature = "alsa")]
+    Alsa(unisono_alsa::Running),
+}
+
+impl Playing {
+    /// Whether an active audio backend has already stopped.
+    #[cfg_attr(not(any(feature = "pipewire", feature = "alsa")), allow(dead_code))]
+    fn is_finished(&self) -> bool {
+        match self {
+            Playing::Software(_) => false,
+            #[cfg(feature = "pipewire")]
+            Playing::PipeWire(running) => running.is_finished(),
+            #[cfg(feature = "alsa")]
+            Playing::Alsa(running) => running.is_finished(),
+        }
     }
 
-    let socket =
-        Socket::bind(listen).map_err(|error| Wrong(format!("binding {listen}: {error}")))?;
+    /// Stops the playback backend and returns any fatal audio-device error.
+    #[cfg_attr(
+        not(any(feature = "pipewire", feature = "alsa")),
+        allow(clippy::unnecessary_wraps)
+    )]
+    fn finish(self) -> Result<(), Wrong> {
+        match self {
+            Playing::Software(_) => Ok(()),
+            #[cfg(feature = "pipewire")]
+            Playing::PipeWire(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("playing with PipeWire: {error}"))),
+            #[cfg(feature = "alsa")]
+            Playing::Alsa(running) => running
+                .stop()
+                .map_err(|error| Wrong(format!("playing with ALSA: {error}"))),
+        }
+    }
+}
+
+/// Validated configuration parsed from `unisono receive` CLI options.
+struct Config {
+    listen: SocketAddr,
+    stream: u16,
+    rate: u32,
+    channels: u8,
+    cycle: usize,
+    drift: i32,
+    lead: i64,
+    report_at_start: i64,
+    report_after: i64,
+    seconds: i64,
+    record: Option<String>,
+    kept: usize,
+    system: System,
+}
+
+impl Config {
+    fn from_options(options: &Options) -> Result<Config, Wrong> {
+        let listen: SocketAddr = options.need("listen")?;
+        let stream: u16 = options.get("stream", 1)?;
+        let rate: u32 = options.get("rate", 48_000)?;
+        let channels: u8 = options.get("channels", 2)?;
+        let cycle: usize = options.get("cycle", 256)?;
+        let drift: i32 = options.get("drift", 0)?;
+        let lead = options
+            .get::<i64>("lead", 4)?
+            .checked_mul(1_000_000)
+            .filter(|ns| *ns >= 0)
+            .ok_or_else(|| {
+                Wrong("`--lead` must be a non-negative number of milliseconds".into())
+            })?;
+        let report_at_start = options
+            .get::<i64>("report-period-at-start", 50)?
+            .checked_mul(1_000_000)
+            .filter(|ns| *ns > 0)
+            .ok_or_else(|| {
+                Wrong("`--report-period-at-start` must be a positive number of milliseconds".into())
+            })?;
+        let report_after = options
+            .get::<i64>("report-period", 200)?
+            .checked_mul(1_000_000)
+            .filter(|ns| *ns > 0)
+            .ok_or_else(|| {
+                Wrong("`--report-period` must be a positive number of milliseconds".into())
+            })?;
+        let seconds: i64 = options.get("seconds", 0)?;
+        let record: Option<String> = options.one("record")?;
+        let system = System::from_options(options)?;
+        if record.is_some() && system != System::Software {
+            return Err(Wrong("`--record` needs the software device".into()));
+        }
+        if cycle == 0 || cycle > MAX_CYCLE {
+            return Err(Wrong(format!("`--cycle` must be in 1..={MAX_CYCLE}")));
+        }
+        if seconds < 0 {
+            return Err(Wrong("`--seconds` must not be negative".into()));
+        }
+        if record.is_some() && seconds == 0 {
+            return Err(Wrong("`--record` needs `--seconds`".into()));
+        }
+        validate_drift(drift)?;
+        let kept = if record.is_some() {
+            let frames = usize::try_from(seconds)
+                .ok()
+                .and_then(|s| s.checked_mul(usize::try_from(rate).ok()?));
+            let bytes = frames
+                .and_then(|f| f.checked_mul(usize::from(channels)))
+                .and_then(|samples| samples.checked_mul(size_of::<f32>()));
+            if bytes.is_none_or(|b| b > isize::MAX.unsigned_abs()) {
+                return Err(Wrong("`--record` size exceeds memory limits".into()));
+            }
+            frames.unwrap_or(0)
+        } else {
+            0
+        };
+        Ok(Config {
+            listen,
+            stream,
+            rate,
+            channels,
+            cycle,
+            drift,
+            lead,
+            report_at_start,
+            report_after,
+            seconds,
+            record,
+            kept,
+            system,
+        })
+    }
+}
+
+/// Runs `unisono receive`.
+pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
+    let config = Config::from_options(options)?;
+    let playback = playback(options, config.stream, config.rate, config.channels)?;
+    let (counters, _metrics_server) = Counters::served(options)?;
+
+    let socket = Socket::bind(config.listen)
+        .map_err(|error| Wrong(format!("binding {}: {error}", config.listen)))?;
     // With port 0 the system chooses the port: say which, before anything
     // else, so that whoever started the program can send to it.
     let listening = socket
         .address()
         .map_err(|error| Wrong(format!("the address of the socket: {error}")))?;
     println!("listening {listening}");
-    let playback = playback(options, stream, rate, channels)?;
+
     let sizes = Sizes {
         buffers: 64,
-        datagram: 9_000,
+        datagram: unisono_runtime::send::MAX_DATAGRAM,
         messages: 64,
     };
     let (network_end, audio_end) = receive::link(sizes);
-    let mut network = ReceiverNetwork::new(socket, network_end, stream, sizes);
+    let network = ReceiverNetwork::new(socket, network_end, config.stream, sizes);
     // Reports carry what the frames needed, for the sender's choice of the
     // level, whether or not the delay of the path is measured from them.
     let reports = Some(Reporting {
-        at_start: options
-            .get("report-period-at-start", 50i64)?
-            .saturating_mul(1_000_000),
-        after: options
-            .get("report-period", 200i64)?
-            .saturating_mul(1_000_000),
+        at_start: config.report_at_start,
+        after: config.report_after,
         ..Reporting::USUAL
     });
     let audio: Audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
     let start = clock::raw();
     let device = Device {
-        rate,
-        channels: usize::from(channels),
-        cycle,
-        drift,
+        rate: config.rate,
+        channels: usize::from(config.channels),
+        cycle: config.cycle,
+        drift: config.drift,
         start,
-        lead: lead.saturating_mul(1_000_000),
+        lead: config.lead,
         hidden: 0,
     };
-    let kept = if record.is_some() {
-        usize::try_from(seconds.saturating_mul(i64::from(rate))).unwrap_or(0)
-    } else {
-        0
-    };
-    let mut output = Output::new(device, kept);
+    let mut output = Output::new(device, config.kept);
 
-    let counters = Counters::served(options)?;
-
-    let stop = Arc::new(AtomicBool::new(false));
-    let stopping = Arc::clone(&stop);
-    let networking = std::thread::Builder::new()
-        .name("unisono-network".into())
-        .stack_size(crate::STACK)
-        .spawn(move || {
-            crate::restrict_network_thread();
-            while !stopping.load(Ordering::Relaxed) {
-                if let Err(error) = network.turn(2) {
-                    eprintln!("receiving: {error}");
-                    break;
-                }
-            }
-            network.counts()
-        })
+    let networking = NetworkThread::spawn("unisono-network", network, 2)
         .map_err(|error| Wrong(format!("starting the network thread: {error}")))?;
-    // Everything the threads use is made, and they are running.
-    if let Err(error) = memory::lock() {
-        eprintln!("unisono: memory is not locked: {error}");
+    if !networking.restricted() {
+        eprintln!("unisono: the network thread's system calls are not restricted");
     }
 
     let seen = Seen::of(&counters);
     let counted = Counted { audio, counters };
-    let end = (seconds > 0).then(|| start.saturating_add(seconds.saturating_mul(1_000_000_000)));
     let shape = Shape {
-        rate,
-        channels,
-        cycle,
+        rate: config.rate,
+        channels: config.channels,
+        cycle: config.cycle,
     };
-    play(system, counted, &mut output, shape, end)?;
-    stop.store(true, Ordering::Relaxed);
-    let counts = networking
-        .join()
+    let mut playing = start_playback(config.system, counted, shape)?;
+
+    // Lock memory only after both network and audio threads/buffers are up so
+    // PipeWire/ALSA initialization is not constrained by `MCL_FUTURE`.
+    if let Err(error) = memory::lock() {
+        eprintln!("unisono: memory is not locked: {error}");
+    }
+
+    let end = (config.seconds > 0)
+        .then(|| start.saturating_add(config.seconds.saturating_mul(1_000_000_000)));
+    match &mut playing {
+        Playing::Software(counted) => {
+            while end.is_none_or(|end| clock::raw() < end)
+                && !crate::interrupted()
+                && !networking.is_finished()
+            {
+                output.run(clock::raw(), counted.as_mut());
+                sleep_until(output.due());
+            }
+        }
+        #[cfg(any(feature = "pipewire", feature = "alsa"))]
+        _ => {
+            while end.is_none_or(|end| clock::raw() < end)
+                && !crate::interrupted()
+                && !networking.is_finished()
+                && !playing.is_finished()
+            {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+    }
+
+    let audio_result = playing.finish();
+    let stopped = networking
+        .stop()
         .map_err(|_| Wrong("the network thread failed".into()))?;
-    summarize(&counts, &seen);
-    if let Some(path) = record {
+    summarize(&stopped.network.counts(), &seen);
+    if let Some(path) = config.record {
         write_record(&path, &output).map_err(|error| Wrong(format!("writing {path}: {error}")))?;
     }
-    Ok(())
+    if let Some(error) = stopped.error {
+        return Err(Wrong(format!("receiving: {error}")));
+    }
+    audio_result
 }
 
 /// What a device of the stream is like, which an audio system is told.
@@ -210,9 +339,7 @@ struct Shape {
     cycle: usize,
 }
 
-/// Plays on the device of `system` until the raw clock reads `end`, or for
-/// ever.
-// The software device alone needs neither the shape nor a way to fail.
+/// Starts the playback backend for `system`.
 #[cfg_attr(
     not(any(feature = "pipewire", feature = "alsa")),
     allow(
@@ -221,21 +348,9 @@ struct Shape {
         clippy::unnecessary_wraps
     )
 )]
-fn play(
-    system: System,
-    mut counted: Counted,
-    output: &mut Output,
-    shape: Shape,
-    end: Option<i64>,
-) -> Result<(), Wrong> {
-    let going = || end.is_none_or(|end| clock::raw() < end);
+fn start_playback(system: System, counted: Counted, shape: Shape) -> Result<Playing, Wrong> {
     match system {
-        System::Software => {
-            while going() {
-                output.run(clock::raw(), &mut counted);
-                sleep_until(output.due());
-            }
-        }
+        System::Software => Ok(Playing::Software(Box::new(counted))),
         #[cfg(feature = "pipewire")]
         System::PipeWire(target) => {
             let settings = unisono_pipewire::Settings {
@@ -244,15 +359,13 @@ fn play(
                 channels: u32::from(shape.channels),
                 target,
                 monitor: false,
-                largest_cycle: 8_192,
-                cycle: u32::try_from(shape.cycle).unwrap_or(256),
+                largest_cycle: shape.cycle.max(8_192),
+                cycle: u32::try_from(shape.cycle)
+                    .map_err(|_| Wrong("`--cycle` exceeds PipeWire limit".into()))?,
             };
             let running = unisono_pipewire::play(counted, settings)
                 .map_err(|error| Wrong(format!("playing with PipeWire: {error}")))?;
-            while going() {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            running.stop();
+            Ok(Playing::PipeWire(running))
         }
         #[cfg(feature = "alsa")]
         System::Alsa(device) => {
@@ -260,7 +373,8 @@ fn play(
                 device,
                 rate: shape.rate,
                 channels: u32::from(shape.channels),
-                cycle: u32::try_from(shape.cycle).unwrap_or(256),
+                cycle: u32::try_from(shape.cycle)
+                    .map_err(|_| Wrong("`--cycle` exceeds ALSA limit".into()))?,
                 cycles: 4,
             };
             let running = unisono_alsa::play(counted, &settings)
@@ -268,13 +382,9 @@ fn play(
             if !running.realtime() {
                 eprintln!("unisono: the device's thread is not scheduled ahead of others");
             }
-            while going() {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            running.stop();
+            Ok(Playing::Alsa(running))
         }
     }
-    Ok(())
 }
 
 /// Writes what `output` played: a line that says what the device was like,
@@ -295,7 +405,7 @@ fn write_record(path: &str, output: &Output) -> std::io::Result<()> {
 
 /// The receiver's playback as `options` set it up.
 fn playback(options: &Options, stream: u16, rate: u32, channels: u8) -> Result<Playback, Wrong> {
-    let mut playback = Playback::new(&Settings {
+    let settings = Settings {
         stream,
         rate,
         channels,
@@ -305,16 +415,17 @@ fn playback(options: &Options, stream: u16, rate: u32, channels: u8) -> Result<P
         regulation: Regulation {
             gain: 4 << 16,
             limit: 1_000_000,
-            jump: rate / 200,
+            jump: (rate / 200).max(1),
         },
         concealment: Parameters::for_rate(rate),
         block: 256,
         device_range: 10_000_000,
-    });
-    if let Some(path) = options.all("path").first() {
-        let path: i64 = path
-            .parse()
-            .map_err(|_| Wrong(format!("`--path {path}` is not a number of nanoseconds")))?;
+    };
+    settings
+        .validate()
+        .map_err(|error| Wrong(error.to_string()))?;
+    let mut playback = Playback::new(&settings);
+    if let Some(path) = options.one::<i64>("path")? {
         playback.path(path);
     }
     Ok(playback)
@@ -333,15 +444,18 @@ struct Counters {
 
 impl Counters {
     /// The counters, among metrics that are served where `--metrics` says.
-    fn served(options: &Options) -> Result<Counters, Wrong> {
+    fn served(options: &Options) -> Result<(Counters, Option<Server>), Wrong> {
         let mut metrics = Metrics::new();
         let counters = Counters::new(&mut metrics)?;
-        if let Some(address) = options.addresses("metrics")?.first() {
-            metrics
-                .serve(*address)
-                .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?;
-        }
-        Ok(counters)
+        let server = match options.one::<SocketAddr>("metrics")? {
+            Some(address) => Some(
+                metrics
+                    .serve(address)
+                    .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?,
+            ),
+            None => None,
+        };
+        Ok((counters, server))
     }
 
     fn new(metrics: &mut Metrics) -> Result<Counters, Wrong> {
@@ -433,7 +547,7 @@ impl Seen {
 fn summarize(counts: &NetworkCounts, seen: &Seen) {
     println!(
         "received packets {} answers {} reports {} dropped {} played {} concealed {} jumps {} \
-         delay {} requests {}",
+         delay {} requests {} unsent {} blocked {}",
         counts.packets,
         counts.answers,
         counts.reports,
@@ -442,7 +556,9 @@ fn summarize(counts: &NetworkCounts, seen: &Seen) {
         seen.concealed.get(),
         seen.jumps.get(),
         (seen.delay.get() * 1e9).round(),
-        counts.requests
+        counts.requests,
+        counts.unsent,
+        counts.blocked,
     );
 }
 

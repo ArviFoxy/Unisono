@@ -476,3 +476,79 @@ fn a_poor_link() {
     );
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+#[test]
+fn invalid_and_duplicate_cli_options_are_rejected() {
+    let cases: &[&[&str]] = &[
+        &["send", "--to", "127.0.0.1:9999", "--seconds", "-1"],
+        &["send", "--to", "127.0.0.1:9999", "--level", "-5"],
+        &["send", "--to", "127.0.0.1:9999", "--packet", "60000"],
+        &["send", "--to", "127.0.0.1:9999", "--gap-cost", "NaN"],
+        &["send", "--to", "127.0.0.1:9999", "--drift", "-1000000000"],
+        &[
+            "send",
+            "--to",
+            "127.0.0.1:9999",
+            "--metrics",
+            "127.0.0.1:0",
+            "--metrics",
+            "127.0.0.1:0",
+        ],
+        &["receive", "--listen", "127.0.0.1:0", "--seconds", "-1"],
+        &["receive", "--listen", "127.0.0.1:0", "--report-period", "0"],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--path",
+            "1000",
+            "--path",
+            "2000",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--device",
+            "a",
+            "--device",
+            "b",
+        ],
+    ];
+    for args in cases {
+        let output = program().args(*args).output().expect("runs unisono");
+        assert!(
+            !output.status.success(),
+            "expected failure for {args:?}, got status {}",
+            output.status
+        );
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn sigterm_stops_receiver_cleanly_with_summary() {
+    let mut child = program()
+        .args(["receive", "--listen", "127.0.0.1:0"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("a receiver");
+    let mut line = String::new();
+    let stdout = child.stdout.take().expect("stdout");
+    let mut lines = BufReader::new(stdout);
+    lines.read_line(&mut line).expect("listening line");
+    assert!(line.starts_with("listening "), "unexpected: {line}");
+    child.stdout = Some(lines.into_inner());
+
+    let pid = i32::try_from(child.id()).expect("pid fits i32");
+    // SAFETY: sending SIGTERM to our own child process.
+    let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
+    assert_eq!(rc, 0, "kill(SIGTERM) failed");
+
+    let out = finish(child);
+    assert!(
+        out.contains("received packets "),
+        "expected summary on SIGTERM, got: {out}"
+    );
+}

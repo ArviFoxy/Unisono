@@ -13,7 +13,9 @@
 
 use std::io::{self, BufWriter, Write};
 
-use unisono_core::{device, fixed, packet, player, presence, receiver, relation, sender, timing};
+use unisono_core::{
+    answers, device, fixed, needs, packet, player, presence, receiver, relation, sender, timing,
+};
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
 /// and both sides of the powers of two that the core uses as scales.
@@ -138,6 +140,34 @@ fn div_floor_cases(out: &mut impl Write) -> io::Result<()> {
                 "div_floor_wide {a} {b} -> {}",
                 fixed::div_floor_wide(a, b)
             )?;
+        }
+    }
+    let moduli: &[usize] = &[
+        0usize,
+        1,
+        2,
+        3,
+        7,
+        8,
+        12,
+        1_000_003,
+        u32::MAX as usize,
+        #[cfg(target_pointer_width = "64")]
+        ((u32::MAX as usize) + 1),
+        #[cfg(target_pointer_width = "64")]
+        (1usize << 40),
+        #[cfg(target_pointer_width = "64")]
+        ((1usize << 63) + 17),
+        #[cfg(target_pointer_width = "64")]
+        usize::MAX,
+    ];
+    for &a in &dividends {
+        for &m in moduli {
+            let result = match fixed::rem_euclid_wide(a, m) {
+                Some(r) => format!("1 {r}"),
+                None => "0 0".to_string(),
+            };
+            writeln!(out, "rem_euclid_wide {a} {m} -> {result}")?;
         }
     }
     Ok(())
@@ -1171,6 +1201,207 @@ fn device_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Exercises `write_needs` and `parse_needs` on one `Recent` record.
+fn needs_wire_case(
+    out: &mut impl Write,
+    sequence: &mut Sequence,
+    recent: &packet::Recent,
+) -> io::Result<()> {
+    let buf_len = usize::try_from(sequence.next() % 96).unwrap_or(0);
+    let mut buffer = vec![0xa5u8; buf_len];
+    let written = packet::write_needs(recent, &mut buffer);
+    let mut args = vec![
+        i128::from(recent.count),
+        i128::from(recent.newest),
+        i128::try_from(buf_len).unwrap_or(0),
+    ];
+    args.extend(recent.needs.map(i128::from));
+    let written_num = i128::from(written);
+    if buffer.is_empty() {
+        writeln!(out, "write_needs {} -> {written_num}", join(&args))?;
+    } else {
+        writeln!(
+            out,
+            "write_needs {} -> {written_num} {}",
+            join(&args),
+            bytes_of(&buffer)
+        )?;
+    }
+
+    let mut raw = [0u8; 96];
+    if packet::write_needs(recent, &mut raw) {
+        let used = packet::REPORT + 9 + usize::from(recent.count).min(packet::RECENT) * 4;
+        let valid = &raw[..used];
+        let mut mutated = valid.to_vec();
+        if !mutated.is_empty() {
+            let pos = packet::REPORT
+                + usize::try_from(sequence.next()).unwrap_or(0) % (used - packet::REPORT);
+            mutated[pos] ^= 1 << (sequence.next() % 8);
+        }
+        for slice in [valid, &mutated[..], &valid[..used.saturating_sub(1)]] {
+            let parsed = packet::parse_needs(slice);
+            let mut out_nums = vec![i128::from(parsed.count), i128::from(parsed.newest)];
+            out_nums.extend(parsed.needs.map(i128::from));
+            if slice.is_empty() {
+                writeln!(out, "parse_needs -> {}", join(&out_nums))?;
+            } else {
+                writeln!(
+                    out,
+                    "parse_needs {} -> {}",
+                    bytes_of(slice),
+                    join(&out_nums)
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Runs of operations on `Needs<6>`, plus `write_needs` and `parse_needs`.
+fn needs_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(12);
+    for case in 0..150 {
+        let mut tracked = needs::Needs::<6>::new();
+        let operations = 1 + sequence.next() % 24;
+        write!(out, "needs {operations}")?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut base = match case % 4 {
+            0 => 0u64,
+            1 => u64::MAX - 8,
+            _ => sequence.next() % 100,
+        };
+        for _ in 0..operations {
+            match sequence.next() % 6 {
+                0 => {
+                    tracked.clear();
+                    write!(out, " 1 0 0")?;
+                    results.push(tracked.newest().map_or(-1, i128::from));
+                }
+                1 => {
+                    let stretch = base
+                        .saturating_add(sequence.next() % 16)
+                        .saturating_sub(sequence.next() % 16);
+                    write!(out, " 2 {stretch} 0")?;
+                    match tracked.get(stretch) {
+                        Some(v) => results.extend([1, i128::from(v)]),
+                        None => results.extend([0, 0]),
+                    }
+                }
+                _ => {
+                    let stretch = match sequence.next() % 8 {
+                        0 => u64::MAX.saturating_sub(sequence.next() % 10),
+                        1 => base.saturating_sub(sequence.next() % 20),
+                        _ => {
+                            base = base.saturating_add(sequence.next() % 3);
+                            base
+                        }
+                    };
+                    let need = match sequence.next() % 5 {
+                        0 => sequence.signed(),
+                        1 => i64::MIN,
+                        2 => i64::MAX,
+                        _ => sequence.signed() % 500_000_000,
+                    };
+                    tracked.observe(stretch, need);
+                    write!(out, " 0 {stretch} {need}")?;
+                    results.push(tracked.newest().map_or(-1, i128::from));
+                    match tracked.get(stretch) {
+                        Some(v) => results.extend([1, i128::from(v)]),
+                        None => results.extend([0, 0]),
+                    }
+                }
+            }
+        }
+        let recent = tracked.recent();
+        results.push(i128::from(recent.count));
+        results.push(i128::from(recent.newest));
+        results.extend(recent.needs.map(i128::from));
+        writeln!(out, " -> {}", join(&results))?;
+        needs_wire_case(out, &mut sequence, &recent)?;
+    }
+    // Exercise `write_needs` and `parse_needs` with counts above 6 (up to and
+    // past `RECENT = 11`) as well as `newest < count` (truncation at stretch 0).
+    let wide_counts = [
+        (7u8, 100u64),
+        (10, 5),
+        (11, 10),
+        (11, 3),
+        (11, u64::MAX),
+        (12, 50),
+        (255, 0),
+    ];
+    for (count, newest) in wide_counts {
+        let mut arr = packet::Recent::NONE.needs;
+        for (idx, slot) in arr.iter_mut().enumerate() {
+            *slot = if idx % 3 == 0 {
+                i32::MIN
+            } else {
+                i32::try_from((sequence.signed() % 500_000).clamp(-500_000, 500_000)).unwrap_or(0)
+            };
+        }
+        let recent = packet::Recent {
+            count,
+            newest,
+            needs: arr,
+        };
+        needs_wire_case(out, &mut sequence, &recent)?;
+    }
+    Ok(())
+}
+
+/// Runs of operations on `Answers<3>` (non-power-of-two capacity) with positive
+/// and negative departure timestamps.
+fn answers_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut sequence = Sequence(13);
+    for case in 0..150 {
+        let length = [-10, 0, 1, 1_000_000][case % 4];
+        let mut mem = answers::Answers::<3>::new(length);
+        let operations = 1 + sequence.next() % 20;
+        write!(out, "answers {length} {operations}")?;
+        let mut results: Vec<i128> = Vec::new();
+        for _ in 0..operations {
+            let line = relation::Line {
+                time: sequence.signed() % 10_000_000,
+                value: sequence.signed() % 10_000_000,
+                rise: sequence.signed() % 500_000,
+                run: match sequence.next() % 6 {
+                    0 => 0,
+                    1 => -10,
+                    _ => 1 + i64::try_from(sequence.next() % 10_000_000).unwrap_or(0),
+                },
+            };
+            if sequence.next().is_multiple_of(8) {
+                mem.clear();
+                write!(
+                    out,
+                    " 1 0 0 {} {} {} {}",
+                    line.time, line.value, line.rise, line.run
+                )?;
+            } else {
+                let departure = match sequence.next() % 6 {
+                    0 => i64::MIN,
+                    1 => i64::MAX,
+                    2 => -(sequence.signed().abs() % 20_000_000),
+                    _ => sequence.signed() % 20_000_000,
+                };
+                let arrival = departure.saturating_add(sequence.signed() % 5_000_000);
+                mem.observe(answers::Answer { departure, arrival }, &line);
+                write!(
+                    out,
+                    " 0 {departure} {arrival} {} {} {} {}",
+                    line.time, line.value, line.rise, line.run
+                )?;
+            }
+            match mem.shortest(&line) {
+                Some(v) => results.extend([1, i128::from(v)]),
+                None => results.extend([0, 0]),
+            }
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
@@ -1187,5 +1418,7 @@ fn main() -> io::Result<()> {
     player_cases(&mut out)?;
     report_cases(&mut out)?;
     device_cases(&mut out)?;
+    needs_cases(&mut out)?;
+    answers_cases(&mut out)?;
     out.flush()
 }

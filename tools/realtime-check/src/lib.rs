@@ -48,12 +48,21 @@ pub extern "C" fn realtime_panic_probe(fail: bool) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_receiver_packet(receiver: &mut Listener, header: &Audio, arrival: i64) -> Heard {
+pub extern "C" fn realtime_receiver_packet(
+    receiver: &mut Listener,
+    header: &Audio,
+    arrival: i64,
+) -> Heard {
     receiver.packet(header, arrival)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_receiver_cycle(receiver: &mut Listener, time: i64, duration: i64, frames: u32) -> Plan {
+pub extern "C" fn realtime_receiver_cycle(
+    receiver: &mut Listener,
+    time: i64,
+    duration: i64,
+    frames: u32,
+) -> Plan {
     receiver.cycle(time, duration, frames)
 }
 
@@ -79,7 +88,11 @@ pub extern "C" fn realtime_receiver_report(receiver: &mut Listener, report: &mut
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_receiver_reported(receiver: &mut Listener, sequence: u64, departure: i64) {
+pub extern "C" fn realtime_receiver_reported(
+    receiver: &mut Listener,
+    sequence: u64,
+    departure: i64,
+) {
     receiver.reported(sequence, departure);
 }
 
@@ -123,17 +136,32 @@ pub extern "C" fn realtime_device_when_cycle(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_sender_packet(sender: &mut Sender, frames: u16, capture: i64, drift: i32) -> Audio {
+pub extern "C" fn realtime_sender_packet(
+    sender: &mut Sender,
+    frames: u16,
+    capture: i64,
+    drift: i32,
+) -> Audio {
     sender.packet(frames, capture, drift)
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_sender_departed(sender: &mut Sender, timeline: u64, index: u64, departure: i64) {
+pub extern "C" fn realtime_sender_departed(
+    sender: &mut Sender,
+    timeline: u64,
+    index: u64,
+    departure: i64,
+) {
     sender.departed(timeline, index, departure);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn realtime_sender_answer(sender: &Sender, report: &Report, arrival: i64, echo: &mut Echo) -> bool {
+pub extern "C" fn realtime_sender_answer(
+    sender: &Sender,
+    report: &Report,
+    arrival: i64,
+    echo: &mut Echo,
+) -> bool {
     match sender.answer(report, arrival) {
         Some(made) => {
             *echo = made;

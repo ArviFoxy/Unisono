@@ -13,6 +13,20 @@
 # proofs as an axiom.
 set -euo pipefail
 
+mode="write"
+case "${1:-}" in
+    "") ;;
+    --check) mode="check" ;;
+    *)
+        echo "usage: $0 [--check]" >&2
+        exit 2
+        ;;
+esac
+if [ "$#" -gt 1 ]; then
+    echo "usage: $0 [--check]" >&2
+    exit 2
+fi
+
 root="$(cd "$(dirname "$0")/.." && pwd)"
 aeneas="$root/.tools/aeneas"
 generated="$root/lean/UnisonoCore"
@@ -23,8 +37,11 @@ if [ ! -x "$aeneas/bin/aeneas" ] || [ ! -x "$aeneas/charon/bin/charon" ]; then
 fi
 
 # Every function of the core is translated. Only what a type derives may
-# depend on whether the crate is being translated.
-hidden="$(grep -rn 'cfg(not(translating))' "$root/crates/unisono-core/src" | grep -v 'cfg_attr(not(translating), derive(' || true)"
+# depend on whether the crate is being translated; reject any other
+# non-comment mention of `translating` (including nested `cfg(all(...))`).
+hidden="$(grep -rn '\btranslating\b' "$root/crates/unisono-core/src" \
+    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*//' \
+    | grep -v -E '^[^:]+:[0-9]+:[[:space:]]*#\[cfg_attr\(not\(translating\), derive\([A-Za-z, ]+\)\)\][[:space:]]*$' || true)"
 if [ -n "$hidden" ]; then
     echo "the core has code that the translation would not see:" >&2
     echo "$hidden" >&2
@@ -55,12 +72,12 @@ if [ -n "$unexpected" ]; then
     echo "$unexpected" >&2
     exit 1
 fi
-if grep -n '^axiom' "$work/out/Types.lean" "$work/out/Funs.lean" >&2; then
+if grep -n -E '^[[:space:]]*((private|protected|noncomputable)[[:space:]]+)*axiom\b' "$work/out/Types.lean" "$work/out/Funs.lean" >&2; then
     echo "the translation contains the axioms above" >&2
     exit 1
 fi
 
-if [ "${1:-}" = --check ]; then
+if [ "$mode" = check ]; then
     for file in Types.lean Funs.lean; do
         if ! diff -u "$generated/$file" "$work/out/$file"; then
             echo "lean/UnisonoCore/$file is out of date; run tools/extract.sh" >&2
