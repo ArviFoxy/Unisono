@@ -11,25 +11,28 @@ public import Unisono.Spec.Models.Bounded
 /-!
 # The baseline in a bounded world: what reaches each host
 
-What reaches each host of the baseline, and from where, in every world
-within the bounds of the bounded model (`Unisono.Spec.Models.Bounded`).
+What reaches each host of the baseline, and where it comes from, in every
+world that satisfies the bounded model (`Unisono.Spec.Models.Bounded`). A
+*receiving host* is a host that drives a speaker and is not the sender's
+host.
 
-* **Copies.** For any solution, when a host sends more copies of a message
-  to another host, as consecutive messages on the link, than the link can
-  lose in a row, one copy arrives within the link's delays
-  (`Solution.copy_inFlight`).
+* **Copies.** For any solution, suppose a host sends copies of a message to
+  another host as consecutive messages on the link, more copies than the
+  link can lose in a row. Then one copy arrives within the link's delay
+  bounds (`Solution.copy_inFlight`).
 * **The stream.** When the baseline sends each message more times than a
-  link can drop in a row, a message of every block reaches every speaker's
-  host other than the sender's within the longest delay (`block_handled`),
-  which then holds the block's frames (`block_arrives`).
+  link can drop in a row, a message of every block reaches every receiving
+  host within the longest delay from the sender (`block_handled`). The host
+  then holds the block's frames (`block_arrives`).
 * **Where messages come from.** Every message of the baseline in transit
   was sent where it should have been: a block message at its block's
-  handoff, a question with its origin's reading, an answer with the
-  sender's reading when a question arrived (`origin_inFlight`).
-* **The block a host remembers.** A speaker host other than the sender's
-  remembers a block handed over before the step, and no earlier than any
-  block handed over more than the longest delay from the sender before it
-  (`block_memory`).
+  handoff, a clock query with the querying host's clock reading, and an
+  answer with the sender's clock reading at the query's arrival
+  (`origin_inFlight`).
+* **The block a host remembers.** At each step, a receiving host remembers a
+  block that was handed over before the step's event. That block is no
+  older than any block handed over more than the longest delay from the
+  sender before the step's event (`block_memory`).
 -/
 
 @[expose] public noncomputable section
@@ -38,11 +41,11 @@ namespace Unisono.Spec
 
 variable {H : Type} {R : ℕ} {Msg : Type} [DecidableEq H]
 
-/-- **One of the copies arrives.** In a world within bounds, when the host
-of step `n` sends `c` copies of a message to host `j` as consecutive
-messages on the link, and `c` exceeds the losses that a link may have in a
-row, one copy is in transit after the step and arrives within the link's
-least and longest delays. -/
+/-- **One of the copies arrives.** Consider a world that satisfies the
+bounds. Suppose the host of step `n` sends `c` copies of a message to host
+`j` as consecutive messages on the link, and `c` exceeds the number of
+consecutive messages that a link can lose. Then one copy is in transit after
+the step, and it arrives within the link's shortest and longest delays. -/
 theorem Solution.copy_inFlight (σ : Solution H R Msg) (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) (lookahead : ℕ+) {n : ℕ} {h : H} {t : Time}
     {obs : Observation H R Msg} (hn : σ.handled w lookahead n = some (h, t, obs))
@@ -72,9 +75,10 @@ open Unisono.Spec
 
 variable {H : Type} {R : ℕ}
 
-/-- In a list of sends that repeats each host's message `c` times, host by
-host, the `c` messages to a host `j` that appears once are consecutive, and
-the `k`-th of them comes after `k` earlier messages to `j`. -/
+/-- Expand a list `l` of distinct hosts into a list of sends by repeating
+each host's message `c` times. For a host `j` of `l`, the `c` entries for
+`j` are consecutive, and the `k`-th of them (counting from zero) is preceded
+by exactly `k` entries for `j`. -/
 theorem replicate_entries {α : Type} [DecidableEq H] (c : ℕ) (x : H → α) :
     ∀ (l : List H), l.Nodup → ∀ {j : H}, j ∈ l → ∃ i0, ∀ k < c,
       ∃ hi : i0 + k < (l.flatMap fun j => List.replicate c (j, x j)).length,
@@ -112,8 +116,8 @@ theorem replicate_entries {α : Type} [DecidableEq H] (c : ℕ) (x : H → α) :
 variable [DecidableEq H] (p : Params H)
 
 /-- The baseline's action when the capture device hands over block `b` at
-the sender's host: it sends the block's frames to every speaker's host other
-than its own, `c` times each. -/
+the sender's host: it sends the block's frames `c` times to each receiving
+host. -/
 theorem solution_handed_sends (w : World H R) (hsender : p.sender = w.sender)
     (l : List (Event H R Payload)) (reading : ℝ) (b : ℕ) :
     ((solution p : Solution H R Payload) w.sender
@@ -136,12 +140,11 @@ theorem solution_handed_sends (w : World H R) (hsender : p.sender = w.sender)
   simp only [solution, List.getLast?_append, List.getLast?_singleton, Option.some_or]
   simp only [act, hsender, ite_true, hhead, hset]
 
-/-- **Every block reaches every speaker's host within the longest delay.** In
-a world within bounds, when the baseline sends each message more times than
-a link can drop in a row, every speaker host `j` other than the sender's
-holds the frames of block `b` at every step of the run whose event comes
-later than the block's handoff plus the longest delay from the sender to
-`j`. -/
+/-- **Every block reaches every receiving host within the longest delay.**
+Consider a world that satisfies the bounds, and suppose the baseline sends
+each message more times than a link can drop in a row. Then every receiving
+host `j` holds the frames of block `b` at every step whose event occurs
+after the block's handoff plus the longest delay from the sender to `j`. -/
 theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
     {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
@@ -202,11 +205,12 @@ theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   -- It is handled before the event of step `k`.
   exact σ.frames_arrive w lookahead hin hnk (by simp only; linarith)
 
-/-- **Every block's message reaches every other speaker's host.** In a world
-within bounds, when the baseline sends each message more times than a link
-can drop in a row, a message of block `b` reaches every speaker host `j`
-other than the sender's within the longest delay, and is handled before
-every step whose event comes later. -/
+/-- **A message of every block reaches every receiving host.** Consider a
+world that satisfies the bounds, and suppose the baseline sends each message
+more times than a link can drop in a row. Let `T` be the handoff of block
+`b` plus the longest delay from the sender to a receiving host `j`. Then a
+message of block `b` arrives at `j` by `T`, and the step that handles it
+comes before every step whose event occurs after `T`. -/
 theorem block_handled (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
     {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
@@ -239,9 +243,9 @@ theorem block_handled (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   obtain ⟨i, -, hik, hhi⟩ := Solution.handled_before w σ lookahead hin h1 h2
   exact ⟨i, hik, arr, _, harr, hhi⟩
 
-/-- What the baseline sends, by the event it acts on: the stream at a
-handoff, at the sender; answers to questions, at the sender; questions, at
-another host's device request. -/
+/-- What the baseline sends, by the event it acts on: the sender sends the
+stream at a handoff and answers clock queries; any other host sends clock
+queries at device requests. -/
 theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payload)
     {s : H × Payload × Finset ℕ} (hs : s ∈ ((solution p : Solution H R Payload) h (l ++ [e])).sends) :
     (∃ frames stamp f t', e.observation = .handed frames stamp ∧ h = p.sender ∧
@@ -290,11 +294,14 @@ theorem block_head (w : World H R) (b : ℕ) :
   rw [hm, List.range'_succ]
   simp
 
-/-- Where a message of the baseline comes from. A block message was sent by
-the sender at the handoff of its block, with the block's frames; a question
-was sent by its origin to the sender, at the reading of its origin's clock
-that it carries; an answer was sent by the sender, at the reading of its
-clock that it carries, when a question of its destination arrived. -/
+/-- Where a message of the baseline comes from.
+* The sender sent a block message at its block's handoff, with the block's
+  frames.
+* The querying host sent a clock query to the sender when its clock showed
+  the reading that the query carries.
+* The sender sent an answer when a clock query from the answer's
+  destination arrived, and the sender's clock showed the reading that the
+  answer carries. -/
 def Origin (w : World H R) (m : InFlight H Payload) : Prop :=
   match m.contents with
   | .block f stamp => ∃ b, m.origin = w.sender ∧ f = w.source.first b ∧
@@ -307,7 +314,8 @@ def Origin (w : World H R) (m : InFlight H Payload) : Prop :=
       w.network.deliver m.destination w.sender s₁ q = some s₂ ∧
       w.network.deliver w.sender m.destination s₂ q' = some m.arrival
 
-/-- **Every message of the baseline in transit comes from where it should.** -/
+/-- **Every message of the baseline in transit was sent where it should have
+been.** -/
 theorem origin_inFlight (w : World H R) (lookahead : ℕ+) (hsender : p.sender = w.sender) :
     ∀ n, ∀ m ∈ ((solution p : Solution H R Payload).states w lookahead n).inFlight, Origin w m := by
   set σ : Solution H R Payload := solution p
@@ -363,11 +371,11 @@ theorem origin_inFlight (w : World H R) (lookahead : ℕ+) (hsender : p.sender =
         · rw [ho, ← hsender]
           exact hq
 
-/-- **The block that a speaker's host remembers.** In a world within bounds,
-at step `k` a speaker host `h` other than the sender's remembers the first
-frame and timestamp of a block `b'` handed over before the step's event, and
-no earlier than any block `b''` handed over more than the longest delay from
-the sender to `h` before it. -/
+/-- **The block that a receiving host remembers.** Consider a world that
+satisfies the bounds, and a block `b''` handed over more than the longest
+delay from the sender to a receiving host `h` before the event of step `k`.
+At step `k`, `h` remembers the first frame and timestamp of a block `b'`
+that was handed over before the step's event and is no older than `b''`. -/
 theorem block_memory (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies)
     {h : H} (hh : h ∈ p.speakers) (hhs : h ≠ w.sender) {k b'' : ℕ}

@@ -9,16 +9,17 @@ public import Unisono.Solutions.FixedDelay.Views
 /-!
 # The baseline in a bounded world: the clocks
 
-* A question for the sender's clock reaches the sender
-  (`question_inFlight`), the sender answers it or a later question of the
-  same host (`question_answered`, `answer_inFlight`), and the answer reaches
-  the asking host: at every step whose event comes later than the question
-  plus the longest delays to the sender and back, the host remembers an
-  estimate from a question as late or later (`answer_reaches`).
-* The estimate a host remembers is an NTP sample whose question and answer
-  took between the least and the longest delays (`offset_sample`), from a
-  question that left no earlier than an earlier request less one period of
-  the questions (`offset_recent`).
+* A clock query reaches the sender (`query_inFlight`). The sender answers
+  it, unless it has answered a newer query from the same host
+  (`query_answered`, `answer_inFlight`). The answer reaches the querying
+  host: at every step whose event occurs after the query's send time plus
+  the longest delays to the sender and back, the host remembers an estimate
+  from that query or a newer one (`answer_reaches`).
+* The estimate that a host remembers is an NTP sample whose query and answer
+  each took between the shortest and the longest delay of their link
+  (`offset_sample`). After a device request at true time `a'`, the query
+  behind the estimate was sent no earlier than `a'` minus one polling
+  period converted to true time (`offset_recent`).
 -/
 
 @[expose] public noncomputable section
@@ -29,8 +30,8 @@ open Unisono.Spec
 
 variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 
-/-- The `c` copies of a message in a list of `c` copies are consecutive
-messages to their destination. -/
+/-- In a list of `c` copies of a message to host `j`, the `k`-th entry
+(counting from zero) is preceded by exactly `k` messages to `j`. -/
 theorem replicate_copies {α : Type} (c : ℕ) (j : H) (x : α) : ∀ k < c,
     ∃ hk : 0 + k < (List.replicate c (j, x)).length,
       (List.replicate c (j, x))[0 + k] = (j, x) ∧
@@ -39,10 +40,10 @@ theorem replicate_copies {α : Type} (c : ℕ) (j : H) (x : α) : ∀ k < c,
   refine ⟨by simpa using hk, by simp, ?_⟩
   simp [List.take_replicate, List.countP_replicate, min_eq_left hk.le]
 
-/-- **A question reaches the sender.** When a host asks for the sender's
-clock at step `n`, at true time `s`, one copy of the question is in transit
-after the step and reaches the sender within the link's delays. -/
-theorem question_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
+/-- **A clock query reaches the sender.** When a host sends a clock query at
+step `n`, at true time `s`, one copy of the query is in transit after the
+step, and it reaches the sender within the link's delay bounds. -/
+theorem query_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
     {n : ℕ} {h : H} {s : Time} {r : Fin R} {outs : List ℕ} {st : ℝ}
     (hn : (solution p : Solution H R Payload).handled w lookahead n = some (h, s, .asked r outs st))
@@ -61,9 +62,10 @@ theorem question_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (replicate_copies p.copies w.sender _)
   exact ⟨arr, h1, h2, by simpa using hin⟩
 
-/-- **The sender answers a question.** When the sender answers a question of
-host `i` at step `n`, at true time `s₂`, one copy of the answer is in
-transit after the step and reaches `i` within the link's delays. -/
+/-- **An answer reaches the querying host.** When the sender answers a clock
+query from host `i` at step `n`, at true time `s₂`, one copy of the answer
+is in transit after the step, and it reaches `i` within the link's delay
+bounds. -/
 theorem answer_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
     {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ}
@@ -84,11 +86,11 @@ theorem answer_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (replicate_copies p.copies i _)
   exact ⟨arr, h1, h2, by simpa using hin⟩
 
-/-- **Every question that reaches the sender is answered.** When a question
-of host `i` reaches the sender at step `n`, at true time `s₂`, the sender
-answers at that step or answered, at an earlier step and time, a question of
-`i` whose reading is as late or later. -/
-theorem question_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender = w.sender)
+/-- **Every clock query that reaches the sender is answered.** When a query
+from host `i` reaches the sender at step `n`, at true time `s₂`, the sender
+answers it at that step, or it answered a query from `i` with a reading at
+least as large at an earlier step. -/
+theorem query_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender = w.sender)
     {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ}
     (hn : (solution p : Solution H R Payload).handled w lookahead n
       = some (w.sender, s₂, .received i (.ask sent) F)) :
@@ -101,7 +103,7 @@ theorem question_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender
   set σ : Solution H R Payload := solution p
   by_cases hans : answers (memoryOf p w.sender ((σ.states w lookahead n).views w.sender)) i sent = true
   · exact ⟨n, le_rfl, s₂, le_rfl, sent, F, le_rfl, hn, hans⟩
-  · -- The sender answered a question of `i` with a later reading before.
+  · -- The sender has already answered a query from `i` with a later reading.
     obtain ⟨a, ha, hle⟩ : ∃ a, (memoryOf p w.sender ((σ.states w lookahead n).views w.sender)).answered i
         = some a ∧ sent ≤ a := by
       unfold answers at hans
@@ -111,7 +113,7 @@ theorem question_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender
         exact ⟨a, ha, hans⟩
       · simp at hans
     rw [← hsender] at ha
-    obtain ⟨l₁, e, l₂, hl, ⟨F₀, he⟩, hans₀⟩ := answered_question p _ ha
+    obtain ⟨l₁, e, l₂, hl, ⟨F₀, he⟩, hans₀⟩ := answered_query p _ ha
     rw [hsender] at hl hans₀
     obtain ⟨n₀, hn₀, hv₀, t, obs, hh₀, rfl⟩ := σ.handled_of_views_eq w lookahead hl
     simp only at he
@@ -123,11 +125,11 @@ theorem question_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender
     rw [hv₀]
     exact hans₀
 
-/-- **A question's answer reaches the asking host.** In a world within
-bounds, when a host asks for the sender's clock at step `n`, at true time
-`s`, then at every step whose event comes later than `s` plus the longest
-delays to the sender and back, the host remembers a clock estimate from a
-question whose reading is as late or later. -/
+/-- **The answer to a clock query reaches the querying host.** Consider a
+world that satisfies the bounds, and a host that sends a clock query at step
+`n`, at true time `s`. At every step whose event occurs after `s` plus the
+longest delays to the sender and back, the host remembers a clock estimate
+from this query or from a query with a larger reading. -/
 theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
     {n : ℕ} {h : H} {s : Time} {r : Fin R} {outs : List ℕ} {st : ℝ}
@@ -144,7 +146,7 @@ theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     exact this.1
   have hd₁ := (B.delayLeast_pos h w.sender).trans_le (B.delayLeast_le h w.sender)
   have hd₂ := (B.delayLeast_pos w.sender h).trans_le (B.delayLeast_le w.sender h)
-  obtain ⟨arr₁, -, harr₁, hin₁⟩ := question_inFlight p w B hw lookahead hsender hcopies hn hask
+  obtain ⟨arr₁, -, harr₁, hin₁⟩ := query_inFlight p w B hw lookahead hsender hcopies hn hask
   have hnk : n + 1 ≤ k := by
     by_contra hcon
     have hmono := Solution.eventTime_mono w (solution p) lookahead (Nat.lt_succ_iff.mp (not_le.mp hcon))
@@ -154,7 +156,7 @@ theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (by simp only; linarith)
   simp only at hh₁
   obtain ⟨n₀, hn₀, s₀, hs₀, sent₀, F₀, hle, hh₀, hans₀⟩ :=
-    question_answered p w lookahead hsender hh₁
+    query_answered p w lookahead hsender hh₁
   obtain ⟨arr₂, -, harr₂, hin₂⟩ := answer_inFlight p w B hw lookahead hsender hcopies hh₀ hans₀
   have h0k : n₀ + 1 ≤ k := by omega
   have harr₂k : arr₂ < (solution p : Solution H R Payload).eventTime w lookahead k := by linarith
@@ -163,13 +165,15 @@ theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
   obtain ⟨t₁, θ, hoff, hle'⟩ := offset_latest p h hh _ hmem rfl
   exact ⟨t₁, θ, hoff, hle.trans hle'⟩
 
-/-- **The clock estimate that a host remembers is an NTP sample.** In a world
-within bounds, when a host other than the sender's remembers at step `k` the
-estimate `θ` of the question with reading `t₁`, that question left at a true
-time `s₁` with `t₁` the host's reading then, it reached the sender at `s₂`,
-and the answer reached the host at `s₄`, no later than the step's event, each
-within the link's delays; `θ` is the estimate from the sender's reading at
-`s₂` and the host's readings at `s₁` and `s₄`. -/
+/-- **The clock estimate that a host remembers is an NTP sample.** Consider
+a world that satisfies the bounds, and a host `h` other than the sender's
+host that remembers the estimate `(t₁, θ)` at step `k`. Then there are true
+times `s₁`, `s₂` and `s₄` with the following properties. The query left `h`
+at `s₁`, with reading `t₁ = C_h(s₁)`; it reached the sender at `s₂`; its
+answer reached `h` at `s₄`, no later than the event of step `k`. The query
+and the answer each took between the shortest and the longest delay of
+their link, and `θ = C_sender(s₂) - (C_h(s₁) + C_h(s₄)) / 2`, where `C_h`
+and `C_sender` are the clocks of `h` and of the sender. -/
 theorem offset_sample (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) {k : ℕ} {h : H} (hh : h ≠ w.sender) {t₁ θ : ℝ}
     (ho : (memoryOf p h (((solution p : Solution H R Payload).states w lookahead k).views h)).offset
@@ -199,12 +203,13 @@ theorem offset_sample (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   refine ⟨s₁, s₂, s₄, hs₁.symm, hj', hD₁.1, hD₁.2, hD₂.1, hD₂.2, ?_⟩
   rw [hθ, hs₁, hs₂]
 
-/-- **The clock estimate that a speaker's host remembers is recent.** In a
-world within bounds, when step `n'` handles a request of a speaker whose host
-`h` is not the sender's, at true time `a'`, then at every step whose event
-comes later than `a'` plus the longest delays to the sender and back, `h`
-remembers an estimate from a question that left at a true time `s` no
-earlier than `a'` less the period of the questions on `h`'s clock. -/
+/-- **The clock estimate that a host remembers is recent.** Consider a world
+that satisfies the bounds, and a step `n'` that handles a device request at
+a host `h` other than the sender's host, at true time `a'`. At every step
+whose event occurs after `a'` plus the longest delays to the sender and
+back, `h` remembers an estimate from a query sent no earlier than
+`a' - period / (1 - ε_C)`, where `period` is the polling period and `ε_C`
+bounds the clocks' rate error. -/
 theorem offset_recent (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
     (hperiod : 0 ≤ p.period) {n' : ℕ} {h : H} (hhs : h ≠ w.sender) {a' : Time} {r : Fin R}

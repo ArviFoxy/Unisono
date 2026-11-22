@@ -9,10 +9,17 @@ public import Unisono.Solutions.FixedDelay.Views
 /-!
 # The baseline in a bounded world: the data
 
-A frame captured early enough has reached every speaker's host other than
-the sender's (`frame_held`), so a position whose sound was captured early
-enough, also by the resampler's lookahead, is playable
-(`playable_of_captured`).
+A *receiving host* is a host that drives a speaker and is not the sender's
+host. Let `ρ` be the nominal rate, `m_B` the largest block size, `ε_D` the
+bound on the devices' rate errors, `s = (m_B - 1)(1 + ε_D) / ρ` the longest
+span of a block, `η` the handoff delay, and `d_max` the longest delay from
+the sender to a receiving host.
+
+* A frame captured more than `s + η + d_max` before a step's event has
+  reached the receiving host by that step (`frame_held`).
+* A position is therefore playable at the receiving host when its sound was
+  captured earlier still, by the time `a (1 + ε_D) / ρ` that the
+  resampler's lookahead of `a` frames spans (`playable_of_captured`).
 -/
 
 @[expose] public noncomputable section
@@ -36,10 +43,12 @@ theorem exists_block_of_frame (d : CaptureDevice) (m : ℕ) :
     rw [not_lt] at this
     exact this
 
-/-- **A frame captured early enough has reached every other speaker's host.**
-In a world within bounds, when frame `m` was captured more than the longest
-delay from the sender to `j`, the handoff delay and the span of a block
-before the event of step `k`, speaker host `j` holds it at step `k`. -/
+/-- **A frame captured early enough has reached every receiving host.**
+Consider a world that satisfies the bounds and a receiving host `j`. If
+frame `m` was captured more than `s + η + d_max` before the event of step
+`k`, then `j` holds frame `m` at step `k`. Here `s` is the longest span of a
+block, `η` the handoff delay, and `d_max` the longest delay from the sender
+to `j`. -/
 theorem frame_held (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) (lookahead : ℕ+) (hsender : p.sender = w.sender)
     (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies) {j : H} (hj : j ∈ p.speakers)
@@ -81,12 +90,14 @@ theorem frame_held (w : World H R) (B : Bounds H)
   simp only [List.mem_toFinset, CaptureDevice.block, List.mem_range'_1]
   omega
 
-/-- **An output sample plays the sound at its position when the frames
-around it arrived in time.** In a world within bounds, a position `x ≥ 0`
-whose sound was captured early enough, by the resampler's lookahead, the
-span of a block, the handoff delay and the longest delay from the sender
-before the event of step `k`, is playable at step `k` at a speaker host
-other than the sender's. -/
+/-- **A position is playable when the frames around it arrived in time.**
+Consider a world that satisfies the bounds and a receiving host `j`. A
+position `x ≥ 0` is playable at `j` at step `k` if its sound was captured
+more than `(a + m_B - 1)(1 + ε_D) / ρ + η + d_max` before the event of step
+`k`. Here `a` is the resampler's lookahead in frames, `m_B` the largest
+block size, `ρ` the nominal rate, `ε_D` the bound on the devices' rate
+errors, `η` the handoff delay, and `d_max` the longest delay from the sender
+to `j`. -/
 theorem playable_of_captured (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) (lookahead : ℕ+) (hsender : p.sender = w.sender)
     (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies) {j : H} (hj : j ∈ p.speakers)

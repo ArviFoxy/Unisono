@@ -10,7 +10,7 @@ public import Mathlib.Topology.MetricSpace.Lipschitz
 public import Mathlib.Topology.Order.IntermediateValue
 
 /-!
-# A deterministic model of the world: worlds within bounds
+# A deterministic model of the world: bounded worlds
 
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. `Unisono.Spec.World` only defines what one
@@ -18,37 +18,39 @@ world is; a statement about the problem or about a solution holds under a
 model, and the same solution can perform differently under different models. Each
 model is a file of its own in `Unisono/Spec/Models`.
 
-This model is deterministic: it bounds the clocks, the devices and the
-network, and a statement under it holds for every world within the bounds,
-the worst case. The bounds include everything an upper bound on latency or
-on missed samples needs: how many consecutive messages the network may drop,
-how late a capture device may hand over a block, how early a playback
-device may request one, and how small and how large a block may be. A random
-world can be required to be within bounds almost surely
-(`AlmostSurelyWithin`).
+This model is deterministic. It bounds the clocks, the devices and the
+network, and a statement under it holds for every world that satisfies the
+bounds, which is the worst case. The bounds include everything that an
+upper bound on latency or on missed samples needs: how many consecutive
+messages the network may drop, how late a capture device may hand over a
+block, how early a playback device may request one, and the minimum and
+maximum size of a block. A random world can be required to satisfy the
+bounds almost surely (`AlmostSurelyWithin`).
 
-The model counts losses per message, not in time: of any `m + 1`
-consecutive messages on a link one arrives, even when all of them are sent
-at the same moment. It therefore describes isolated drops and not outages,
-in which a link loses everything sent during some time, and it has no
-pauses, in which a link holds messages back; a pause enters only through
-the largest delay. The model of delays (`Unisono.Spec.Models.Delays`) has
-both.
+The model counts losses per message, not over time: of any `m + 1`
+consecutive messages on a link, one arrives, even when all of them are sent
+at the same moment. It therefore models isolated drops but not outages, in
+which a link drops everything sent during a time interval. It also does not
+model pauses, in which a link holds messages back and releases them later;
+a pause enters only through the longest delay. The model of delays
+(`Unisono.Spec.Models.Delays`) includes both.
 
-Facts about clocks and devices within bounds:
+Facts about clocks and devices in a world that satisfies the bounds:
 
 * An NTP-style estimate of the difference of two clocks errs by at most half
-  the largest difference of the two delays, plus the clocks' rate error times
-  the mean delay (`offset_error`), and the difference of two clocks drifts by
-  at most twice their rate error per second (`offset_drift`,
-  `offset_drift_abs`).
+  the largest asymmetry between the query and answer delays, plus the
+  clocks' rate error times the mean of the two longest delays
+  (`offset_error`). The difference of two clocks drifts by at most twice
+  their rate error per second (`offset_drift`, `offset_drift_abs`).
 * A device takes between `(1 - ε) / rate` and `(1 + ε) / rate` seconds per
   frame or output sample, over any number of them (`capture_sub_mem`,
-  `out_sub_mem`). The time of capture of a position changes at the same rates
-  (`captured_sub_mem`), so positions with close capture times are close
-  (`sub_le_of_captured`), and every true time is the capture time of some
-  position (`exists_captured_eq`).
-* Devices hand over and request blocks for ever (`handed_unbounded`,
+  `out_sub_mem`). The capture time of a position changes at the same rates
+  (`captured_sub_mem`). So two positions are at most `rate / (1 - ε)` times
+  the difference of their capture times apart (`sub_le_of_captured`), and
+  every true time is the capture time of some position
+  (`exists_captured_eq`).
+* Devices hand over and request blocks without end: after every true time,
+  a block is handed over and a block is requested (`handed_unbounded`,
   `asked_unbounded`).
 -/
 
@@ -58,30 +60,28 @@ namespace Unisono.Spec
 
 variable {H : Type} {R : ℕ}
 
-/-- A clock runs at true time's rate within the fraction `ε`: over any
-interval it advances by the interval's length within `ε` of it. -/
+/-- A clock's rate error is at most `ε`: over any interval, the clock
+advances by the interval's length within `ε` times that length. -/
 def Clock.RateWithin (c : Clock) (ε : ℝ) : Prop :=
   ∀ s t, s ≤ t → |c.read t - c.read s - (t - s)| ≤ ε * (t - s)
 
-/-- The capture device runs at the nominal rate `rate` within the fraction
-`ε`: the time between two frames is `1 / rate` within `ε / rate`. -/
+/-- The capture device's rate error is at most `ε`: the time between two
+consecutive frames is within `ε / rate` of `1 / rate`. -/
 def CaptureDevice.RateWithin (d : CaptureDevice) (rate ε : ℝ) : Prop :=
   ∀ n, |d.capture (n + 1) - d.capture n - 1 / rate| ≤ ε / rate
 
-/-- A playback device runs at the nominal rate `rate` within the fraction
-`ε`. -/
+/-- A playback device's rate error is at most `ε`: the time between two
+consecutive output samples is within `ε / rate` of `1 / rate`. -/
 def PlaybackDevice.RateWithin (d : PlaybackDevice) (rate ε : ℝ) : Prop :=
   ∀ k, |d.out (k + 1) - d.out k - 1 / rate| ≤ ε / rate
 
-/-- The capture device's timestamps are within `ε` seconds of its host's
-clock: for each block, of the clock's reading when the block's first frame
-is captured. -/
+/-- Each timestamp of the capture device is within `ε` seconds of its host's
+clock reading at the capture of the block's first frame. -/
 def CaptureDevice.ReportsWithin (d : CaptureDevice) (clock : Clock) (ε : ℝ) : Prop :=
   ∀ b, |d.reported b - clock.read (d.capture (d.first b))| ≤ ε
 
-/-- A playback device's timestamps are within `ε` seconds of its host's
-clock: for each block, of the clock's reading when the block's first output
-sample leaves. -/
+/-- Each timestamp of a playback device is within `ε` seconds of its host's
+clock reading when the block's first output sample leaves. -/
 def PlaybackDevice.ReportsWithin (d : PlaybackDevice) (clock : Clock) (ε : ℝ) : Prop :=
   ∀ b, |d.reported b - clock.read (d.out (d.first b))| ≤ ε
 
@@ -105,15 +105,15 @@ def CaptureDevice.BlocksWithin (d : CaptureDevice) (least most : ℕ) : Prop :=
 def PlaybackDevice.BlocksWithin (d : PlaybackDevice) (least most : ℕ) : Prop :=
   ∀ b, least ≤ d.first (b + 1) - d.first b ∧ d.first (b + 1) - d.first b ≤ most
 
-/-- The messages from host `i` to host `j` that arrive take between `least`
-and `most` seconds. -/
+/-- Every message from host `i` to host `j` that arrives takes between
+`least` and `most` seconds. -/
 def Network.DelaysWithin (net : Network H) (i j : H) (least most : ℝ) : Prop :=
   ∀ s q a, net.deliver i j s q = some a → least ≤ a - s ∧ a - s ≤ most
 
 /-- Of any `m + 1` consecutive messages from host `i` to host `j`, at least
-one arrives, whenever they are sent: `send k` is when message `q + k` is
-sent. Losses are counted per message: the bound holds even for messages
-sent at the same moment, so it rules out outages in time. -/
+one arrives, whenever they are sent; `send k` is the send time of message
+`q + k`. Losses are counted per message: the bound holds even for messages
+sent at the same moment, so it excludes outages over time. -/
 def Network.LossesWithin (net : Network H) (i j : H) (m : ℕ) : Prop :=
   ∀ (q : ℕ) (send : ℕ → Time), ∃ k ≤ m, (net.deliver i j (send k) (q + k)).isSome
 
@@ -131,23 +131,25 @@ structure Bounds (H : Type) where
   seconds. -/
   report : ℝ
   report_nonneg : 0 ≤ report
-  /-- The most time between the capture of a block's last frame and the
-  block's handoff, in seconds. -/
+  /-- The handoff delay: the longest time from the capture of a block's last
+  frame to the block's handoff, in seconds. -/
   handoff : ℝ
   handoff_nonneg : 0 ≤ handoff
-  /-- The least and the most time before a block's first output sample
-  leaves that a playback device requests the block, in seconds. -/
+  /-- The shortest and the longest request lead: how long before a block's
+  first output sample leaves a playback device requests the block, in
+  seconds. -/
   leadLeast : ℝ
   leadMost : ℝ
   leadLeast_pos : 0 < leadLeast
   leadLeast_le : leadLeast ≤ leadMost
-  /-- The fewest and the most frames, or output samples, in a block. -/
+  /-- The minimum and the maximum number of frames, or output samples, in a
+  block. -/
   blockLeast : ℕ
   blockMost : ℕ
   blockLeast_pos : 0 < blockLeast
   blockLeast_le : blockLeast ≤ blockMost
-  /-- The least and the most time that a message from one host to another
-  takes, in seconds. -/
+  /-- The shortest and the longest delay of a message from one host to
+  another, in seconds. -/
   delayLeast : H → H → ℝ
   delayMost : H → H → ℝ
   delayLeast_pos : ∀ i j, 0 < delayLeast i j
@@ -156,7 +158,7 @@ structure Bounds (H : Type) where
   arrives. -/
   lossRun : ℕ
 
-/-- A world within bounds. -/
+/-- A world that satisfies the bounds. -/
 def World.WithinBounds (w : World H R) (B : Bounds H) : Prop :=
   (∀ h, (w.clock h).RateWithin B.clockRate)
     ∧ w.source.RateWithin w.rate B.deviceRate
@@ -170,28 +172,29 @@ def World.WithinBounds (w : World H R) (B : Bounds H) : Prop :=
     ∧ (∀ i j, w.network.DelaysWithin i j (B.delayLeast i j) (B.delayMost i j))
     ∧ (∀ i j, w.network.LossesWithin i j B.lossRun)
 
-/-- A random world, `world ω` with `ω` drawn from `P`, is almost surely
-within bounds. -/
+/-- A random world, `world ω` with `ω` drawn from `P`, almost surely
+satisfies the bounds. -/
 def AlmostSurelyWithin {Ω : Type} [MeasurableSpace Ω] (P : MeasureTheory.Measure Ω)
     (world : Ω → World H R) (B : Bounds H) : Prop :=
   ∀ᵐ ω ∂P, (world ω).WithinBounds B
 
-/-- A clock that runs within `ε` of true time's rate advances over an
-interval by at least `1 - ε` and at most `1 + ε` times its length. -/
+/-- A clock whose rate error is at most `ε` advances over an interval by
+between `1 - ε` and `1 + ε` times the interval's length. -/
 theorem Clock.advance_mem {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) {s t : Time} (hst : s ≤ t) :
     (1 - ε) * (t - s) ≤ c.read t - c.read s ∧ c.read t - c.read s ≤ (1 + ε) * (t - s) := by
   have := abs_le.mp (hc s t hst)
   constructor <;> nlinarith [this.1, this.2]
 
-/-- **The error of an NTP-style clock estimate.** A host asks at true time
-`s₁` and reading `t₁ = C(s₁)`; the sender, whose clock is `S`, answers at
-`s₂` with its reading `t₂ = S(s₂)`; the answer arrives at `s₄` and reading
-`t₄ = C(s₄)`. When both clocks run within `ε` of true time's rate and the
-question and the answer take between `dmin₁` and `dmax₁`, and between
-`dmin₂` and `dmax₂` seconds, the estimate `t₂ - (t₁ + t₄) / 2` of the
-sender's clock minus the host's errs from their true difference at `s₂` by
-at most half the largest difference of the two delays, plus `ε` times the
-mean of `dmax₁` and `dmax₂`. -/
+/-- **The error of an NTP-style clock estimate.** A host with clock `C`
+sends a query at true time `s₁`, at reading `t₁ = C(s₁)`. The sender, whose
+clock is `S`, answers at `s₂` with its reading `t₂ = S(s₂)`, and the answer
+arrives at `s₄`, at reading `t₄ = C(s₄)`. Suppose both clocks have rate
+errors of at most `ε`, the query takes between `dmin₁` and `dmax₁` seconds,
+and the answer between `dmin₂` and `dmax₂` seconds. Then the estimate
+`t₂ - (t₁ + t₄) / 2` of `S - C` differs from the true difference at `s₂` by
+at most half the largest asymmetry of the two delays,
+`max (dmax₁ - dmin₂) (dmax₂ - dmin₁) / 2`, plus `ε` times the mean of `dmax₁`
+and `dmax₂`. -/
 theorem offset_error {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) {s₁ s₂ s₄ : Time}
     {dmin₁ dmax₁ dmin₂ dmax₂ : ℝ} (h₁ : dmin₁ ≤ s₂ - s₁) (h₁' : s₂ - s₁ ≤ dmax₁)
     (h₂ : dmin₂ ≤ s₄ - s₂) (h₂' : s₄ - s₂ ≤ dmax₂) (hpos₁ : 0 < dmin₁) (hpos₂ : 0 < dmin₂) :
@@ -208,9 +211,9 @@ theorem offset_error {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) {s₁ s₂ 
   rw [abs_le]
   constructor <;> nlinarith [ha.1, ha.2, hb.1, hb.2]
 
-/-- **The drift of the difference of two clocks.** When both clocks run
-within `ε` of true time's rate, their difference changes over an interval
-by at most `2 ε` times its length. -/
+/-- **The drift of the difference of two clocks.** When both clocks have
+rate errors of at most `ε`, their difference changes over an interval by at
+most `2 ε` times the interval's length. -/
 theorem offset_drift {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) (hS : S.RateWithin ε)
     {s t : Time} (hst : s ≤ t) :
     |(S.read t - C.read t) - (S.read s - C.read s)| ≤ 2 * ε * (t - s) := by
@@ -219,8 +222,8 @@ theorem offset_drift {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) (hS : S.Rat
   rw [abs_le]
   constructor <;> nlinarith [ha.1, ha.2, hb.1, hb.2]
 
-/-- A clock that runs within `ε` of true time's rate advances between any
-two times by their distance within `ε` times it. -/
+/-- For any two times `s` and `t`, a clock whose rate error is at most `ε`
+satisfies `|c.read t - c.read s - (t - s)| ≤ ε * |t - s|`. -/
 theorem Clock.read_sub_near {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) (s t : Time) :
     |c.read t - c.read s - (t - s)| ≤ ε * |t - s| := by
   rcases le_total s t with hst | hts
@@ -233,8 +236,8 @@ theorem Clock.read_sub_near {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) (s t :
     rw [e]
     linarith
 
-/-- The difference of two clocks that run within `ε` of true time's rate
-changes between any two times by at most `2 ε` times their distance. -/
+/-- For any two times `s` and `t`, the difference of two clocks whose rate
+errors are at most `ε` changes by at most `2 ε * |t - s|`. -/
 theorem offset_drift_abs {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) (hS : S.RateWithin ε)
     (s t : Time) :
     |(S.read t - C.read t) - (S.read s - C.read s)| ≤ 2 * ε * |t - s| := by
@@ -248,7 +251,7 @@ theorem offset_drift_abs {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) (hS : S
     _ ≤ ε * |t - s| + ε * |t - s| := add_le_add h2 h1
     _ = 2 * ε * |t - s| := by ring
 
-/-- A capture device that runs within `ε` of the nominal rate takes between
+/-- A capture device whose rate error is at most `ε` takes between
 `(1 - ε) / rate` and `(1 + ε) / rate` seconds per frame, over any number of
 frames. -/
 theorem CaptureDevice.capture_sub_mem {d : CaptureDevice} {rate ε : ℝ}
@@ -264,7 +267,7 @@ theorem CaptureDevice.capture_sub_mem {d : CaptureDevice} {rate ε : ℝ}
     push_cast
     constructor <;> nlinarith [ih.1, ih.2, h.1, h.2]
 
-/-- A playback device that runs within `ε` of the nominal rate takes between
+/-- A playback device whose rate error is at most `ε` takes between
 `(1 - ε) / rate` and `(1 + ε) / rate` seconds per output sample, over any
 number of output samples. -/
 theorem PlaybackDevice.out_sub_mem {d : PlaybackDevice} {rate ε : ℝ}
@@ -280,10 +283,10 @@ theorem PlaybackDevice.out_sub_mem {d : PlaybackDevice} {rate ε : ℝ}
     push_cast
     constructor <;> nlinarith [ih.1, ih.2, h.1, h.2]
 
-/-- **The time of capture of a position is bi-Lipschitz.** When the capture
-device runs within `ε` of the nominal rate, the sound between two positions
-`x ≤ y` was captured between `(1 - ε) / rate` and `(1 + ε) / rate` seconds
-apart per frame. -/
+/-- **The capture time of a position is bi-Lipschitz.** When the capture
+device's rate error is at most `ε`, the capture times of two positions
+`x ≤ y` differ by between `(1 - ε) / rate` and `(1 + ε) / rate` seconds per
+frame between them. -/
 theorem World.captured_sub_mem (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.rate ε)
     {x y : ℝ} (hxy : x ≤ y) :
     (1 - ε) / w.rate * (y - x) ≤ w.captured y - w.captured x
@@ -323,8 +326,8 @@ theorem World.captured_natCast (w : World H R) (n : ℕ) : w.captured n = w.sour
   simp [World.captured]
 
 /-- **Every true time is the capture time of some position.** When the
-capture device runs within `ε < 1` of the nominal rate, the time of capture
-of a position is continuous and unbounded both ways. -/
+capture device's rate error is at most `ε < 1`, the capture time of a
+position is continuous and unbounded in both directions. -/
 theorem World.exists_captured_eq (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.rate ε)
     (hε0 : 0 ≤ ε) (hε : ε < 1) (τ : ℝ) : ∃ x, w.captured x = τ := by
   have hrate := w.rate_pos
@@ -361,8 +364,8 @@ theorem World.exists_captured_eq (w : World H R) {ε : ℝ} (hd : w.source.RateW
     ⟨hlow, hhigh⟩
   exact ⟨x, hx⟩
 
-/-- Positions whose capture times are close are close: within the distance
-of their capture times times `rate / (1 - ε)`. -/
+/-- Two positions are at most `rate / (1 - ε)` times the difference of their
+capture times apart. -/
 theorem World.sub_le_of_captured (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.rate ε)
     (hε : ε < 1) (x y : ℝ) :
     |x - y| ≤ w.rate / (1 - ε) * |w.captured x - w.captured y| := by
@@ -390,8 +393,8 @@ theorem World.sub_le_of_captured (w : World H R) {ε : ℝ} (hd : w.source.RateW
         apply mul_le_mul_of_nonneg_left _ (div_nonneg hrate.le (by linarith))
         exact le_abs_self _
 
-/-- A capture device that runs within `ε < 1` of the nominal rate hands
-over blocks for ever: after every true time it hands one over. -/
+/-- A capture device whose rate error is at most `ε < 1` hands over blocks
+without end: for every true time `T`, it hands over a block after `T`. -/
 theorem CaptureDevice.handed_unbounded {d : CaptureDevice} {rate ε : ℝ} (hrate : 0 < rate)
     (hd : d.RateWithin rate ε) (hε : ε < 1) (T : ℝ) : ∃ b, T < d.handed b := by
   have hlo : 0 < (1 - ε) / rate := div_pos (by linarith) hrate
@@ -409,9 +412,9 @@ theorem CaptureDevice.handed_unbounded {d : CaptureDevice} {rate ε : ℝ} (hrat
   rw [mul_comm] at hcap
   linarith
 
-/-- A playback device that runs within `ε < 1` of the nominal rate and
-requests each block at most `most` seconds ahead requests blocks for ever:
-after every true time it requests one. -/
+/-- A playback device whose rate error is at most `ε < 1`, and whose request
+lead is at most `most` seconds, requests blocks without end: for every true
+time `T`, it requests a block after `T`. -/
 theorem PlaybackDevice.asked_unbounded {d : PlaybackDevice} {rate ε least most : ℝ}
     (hrate : 0 < rate) (hd : d.RateWithin rate ε) (hε : ε < 1) (hlead : d.LeadWithin least most)
     (T : ℝ) : ∃ b, T < d.asked b := by
@@ -427,7 +430,7 @@ theorem PlaybackDevice.asked_unbounded {d : PlaybackDevice} {rate ε least most 
   rw [mul_comm] at hout
   linarith
 
-/-- The time of capture of a position changes by at most `(1 + ε) / rate`
+/-- The capture time of a position changes by at most `(1 + ε) / rate`
 seconds per frame. -/
 theorem World.captured_lipschitz (w : World H R) {ε : ℝ}
     (hd : w.source.RateWithin w.rate ε) (x y : ℝ) :

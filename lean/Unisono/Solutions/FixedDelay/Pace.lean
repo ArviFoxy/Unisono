@@ -11,15 +11,22 @@ public import Unisono.Spec.Models.Bounded
 /-!
 # The baseline in a bounded world: the pace
 
-* A position corrected towards its target by at most `w` frames per output
-  sample stays within `B` frames of a trajectory when the targets do and the
-  trajectory drifts from one frame per output sample by less than `w`
-  (`advance_tracks`), and gets there from any distance
-  (`advance_converges`).
-* The trajectory whose sound was captured exactly when each output sample
-  leaves less the latency drifts so (`trajectory_step`).
-* At a request of a speaker, its host continues from the position chosen at
-  the speaker's previous request (`last_at_next_request`).
+Let `T` be a trajectory of positions, one for each output sample.
+
+* Suppose a position advances by one frame per output sample plus a
+  correction towards its target clamped to `[-w, w]`. Suppose also that the
+  targets stay within `B` frames of `T`, and that `T` advances by one frame
+  per output sample within `ν < w`. Then a position that starts within `B`
+  of `T` stays within `B` of it (`advance_tracks`), and a position at any
+  distance from `T` comes within `B` of it after finitely many output
+  samples (`advance_converges`).
+* The ideal trajectory satisfies this condition with
+  `ν = 2 ε_D / (1 - ε_D)` (`trajectory_step`). Its position for output
+  sample `k` is the one whose sound was captured at `o(k) - L`, where
+  `o(k)` is the true time at which output sample `k` leaves, `L` is the
+  latency, and `ε_D` bounds the devices' rate errors.
+* At each request of a speaker, its host continues from the position it
+  chose at the speaker's previous request (`last_at_next_request`).
 -/
 
 @[expose] public noncomputable section
@@ -30,11 +37,12 @@ open Unisono.Spec
 
 variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 
-/-- **The pace follows the target.** Let a speaker's position `x` advance by
-one frame per output sample, corrected towards the target `xs` by at most
-`w` frames, and let the target stay within `B` frames of a trajectory `T`
-that advances by one frame per output sample within `ν < w`. A position
-that starts within `B` of the trajectory stays within `B` of it. -/
+/-- **The pace follows the target.** From output sample `K` on, let a
+speaker's position `x` advance by one frame per output sample plus a
+correction towards the target `xs` clamped to `[-w, w]`. Let the target
+stay within `B` frames of a trajectory `T` that advances by one frame per
+output sample within `ν < w`. If the position is within `B` of the
+trajectory at `K`, it stays within `B` of it. -/
 theorem advance_tracks {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K : ℕ)
     (hstep : ∀ k, K ≤ k → x (k + 1) = x k + 1 + clamp w (xs (k + 1) - x k - 1))
     (hband : ∀ k, K ≤ k → |xs k - T k| ≤ B)
@@ -65,8 +73,8 @@ theorem advance_tracks {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K : 
       rw [abs_le]
       constructor <;> linarith
 
-/-- One step of the pace: the distance to the trajectory ends within `B`, or
-shrinks by at least `w - ν`. -/
+/-- One step of the pace: afterwards, the distance to the trajectory is at
+most `B`, or it has shrunk by at least `w - ν`. -/
 theorem advance_step {w ν B D e δ : ℝ} (hw : ν < w) (he : |e| ≤ B) (hδ : |δ| ≤ ν) :
     |D - δ + clamp w (e + δ - D)| ≤ max B (|D| - (w - ν)) := by
   have he' := abs_le.mp he
@@ -86,12 +94,10 @@ theorem advance_step {w ν B D e δ : ℝ} (hw : ν < w) (he : |e| ≤ B) (hδ :
   · rw [min_eq_left h1.le, max_eq_right (by linarith), abs_le]
     constructor <;> linarith
 
-/-- **The pace reaches the target's band from anywhere.** Let a position `x`
-advance by one frame per output sample, corrected towards the target `xs`
-by at most `w` frames, and let the target stay within `B` frames of a
-trajectory `T` that advances by one frame per output sample within
-`ν < w`. Whatever its distance from the trajectory at the start, the
-position is within `B` of it from some output sample on. -/
+/-- **The pace reaches the target's band from any distance.** Let the
+position, the target and the trajectory be as in `advance_tracks`, except
+that the position may start at any distance from the trajectory. Then the
+position is within `B` of the trajectory from some output sample on. -/
 theorem advance_converges {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K : ℕ)
     (hstep : ∀ k, K ≤ k → x (k + 1) = x k + 1 + clamp w (xs (k + 1) - x k - 1))
     (hband : ∀ k, K ≤ k → |xs k - T k| ≤ B)
@@ -142,9 +148,11 @@ theorem advance_converges {w ν B : ℝ} (hw : ν < w) (x xs T : ℕ → ℝ) (K
 
 omit [DecidableEq H] in
 /-- **The ideal trajectory advances by one frame per output sample within
-`2 ε / (1 - ε)`.** When the sound at `T k` was captured exactly when
-output sample `k` leaves less `L`, consecutive positions are between
-`(1 - ε) / (1 + ε)` and `(1 + ε) / (1 - ε)` frames apart. -/
+`2 ε / (1 - ε)`.** Suppose the capture device and the playback device have
+rate errors of at most `ε`, and that for every output sample `k` the sound
+at position `T k` was captured exactly at `o(k) - L`. Then consecutive
+positions are between `(1 - ε) / (1 + ε)` and `(1 + ε) / (1 - ε)` frames
+apart. -/
 theorem trajectory_step (w : World H R) {ε : ℝ} (hsrc : w.source.RateWithin w.rate ε)
     (hε0 : 0 ≤ ε) (hε : ε < 1) (d : PlaybackDevice) (hd : d.RateWithin w.rate ε) (L : ℝ)
     (T : ℕ → ℝ) (hT : ∀ k, w.captured (T k) = d.out k - L) (k : ℕ) :
@@ -189,14 +197,15 @@ theorem trajectory_step (w : World H R) {ε : ℝ} (hsrc : w.source.RateWithin w
     nlinarith
 
 omit [DecidableEq H] in
-/-- A value moved into `[-w, w]` lies there. -/
+/-- Clamping a value to `[-w, w]` gives a value in `[-w, w]`. -/
 theorem clamp_mem {w x : ℝ} (hw : 0 ≤ w) : -w ≤ clamp w x ∧ clamp w x ≤ w := by
   unfold clamp
   exact ⟨le_max_left _ _, max_le (by linarith) (min_le_left _ _)⟩
 
-/-- **A speaker continues at its next request from where it ended.** At the
-step that handles request `b + 1` of speaker `r`, its host remembers for `r`
-the output sample and position chosen last at request `b`. -/
+/-- **A speaker continues at its next request from where it ended.** At
+every step after the one that handles request `b` of speaker `r`, up to the
+one that handles request `b + 1`, the host of `r` remembers the last output
+sample of request `b` and the position chosen for it. -/
 theorem last_at_next_request (w : World H R) (lookahead : ℕ+) {n₁ n₂ : ℕ} {r : Fin R} {b : ℕ}
     (hb₁ : ((solution p : Solution H R Payload).states w lookahead n₁).askedNext r = b)
     (he₁ : earliest (((solution p : Solution H R Payload).states w lookahead n₁).key w)

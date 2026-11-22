@@ -11,11 +11,15 @@ public import Unisono.Spec.Models.Bounded
 /-!
 # The baseline in a bounded world: progress
 
-The baseline sets no timers, and what it sends at each event weighs less
-than what the event uses up, a question weighing one more than the copies
-of the answer it may draw. So in every world within bounds its run has an
-event after every true time (`progress`), and it handles every request of
-every speaker (`request_step`).
+The baseline sets no timers. Give each message a weight: one for a block
+message and for an answer, and `copies + 1` for a clock query, which is one
+more than the total weight of the `copies` answers it can trigger. Give an
+arrival the weight of its message, and give a handoff and a request a
+weight larger than anything the baseline sends at them. Then at every
+event, the messages that the baseline sends weigh less than the event. So in
+every world that satisfies the bounds, the run has an event after every
+true time (`progress`), and it handles every request of every speaker
+(`request_step`).
 -/
 
 @[expose] public noncomputable section
@@ -26,16 +30,17 @@ open Unisono.Spec
 
 variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 
-/-- The weight of a message of the baseline: what it may lead to. A question
-weighs one more than the copies of the answer it may draw. -/
+/-- The weight of a message of the baseline, which bounds what the message
+can lead to. A clock query weighs one more than the `copies` answers it can
+trigger. -/
 def weight : Payload → ℕ
   | .block _ _ => 1
   | .ask _ => 1 + p.copies
   | .answer _ _ => 1
 
 omit [DecidableEq H] in
-/-- The copies of a message of weight one to each host of a list weigh one
-per copy and host. -/
+/-- Sending `c` copies of a message of weight one to each host of `l` sends a
+total weight of `c * l.length`. -/
 theorem weight_copies (l : List H) (c : ℕ) (x : Payload × Finset ℕ) (hx : weight p x.1 = 1) :
     ((l.flatMap fun j => List.replicate c (j, x)).map fun s => weight p s.2.1).sum
       = c * l.length := by
@@ -46,10 +51,10 @@ theorem weight_copies (l : List H) (c : ℕ) (x : Payload × Finset ℕ) (hx : w
       List.sum_replicate, hx, smul_eq_mul, mul_one, List.length_cons]
     ring
 
-/-- **The baseline's run advances past every true time.** In a world within
-bounds, the baseline sets no timers, and what it sends at each event weighs
-less than what the event uses up, so it has an event after every true
-time. -/
+/-- **The baseline's run advances past every true time.** In a world that
+satisfies the bounds, the run has an event after every true time `T`. The
+reason is that the baseline sets no timers, and at every event the messages
+it sends weigh less than the event (see `weight`). -/
 theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (T : Time) : ∃ n, T < (solution p : Solution H R Payload).eventTime w lookahead n := by
   obtain ⟨-, hsrc, hspk, -, -, -, hlead, -, -, -, -⟩ := hw
@@ -83,8 +88,8 @@ theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahe
       split_ifs <;> simp [weight, List.sum_replicate]
     | answer s r => simp [act, weight]
 
-/-- **Every request is handled.** In a world within bounds, the baseline's
-run handles every request of every speaker at some step. -/
+/-- **Every request is handled.** In a world that satisfies the bounds, the
+baseline's run handles every request of every speaker at some step. -/
 theorem request_step (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (r : Fin R) (b : ℕ) :
     ∃ n, ((solution p : Solution H R Payload).states w lookahead n).askedNext r = b ∧

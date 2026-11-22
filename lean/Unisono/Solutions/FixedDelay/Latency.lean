@@ -12,22 +12,30 @@ public import Unisono.Spec.AtLatency
 /-!
 # The baseline plays at its latency
 
-The main theorem about the baseline in a bounded world. Where no speaker is
-on the sender's host, when the baseline sends each message more times than
-a link can drop in a row, its slew exceeds the devices' rate error and is
-below one, and its latency exceeds `latencyError` plus the time a frame
-takes to reach a speaker's host and be needed, its playback is at its
-latency within `latencyError` from some output sample on
-(`plays_at_latency`). So it misses no samples and has no discontinuities in
-the long run, and its latency, synchronization and tracking costs are
-bounded (`guarantees`). A world of two hosts meets every hypothesis
-(`plays_at_latency_example`), so the theorem is not vacuous.
+The main theorem about the baseline in a world that satisfies the bounded
+model (`plays_at_latency`). Suppose that
 
-The error is the target's error at the oldest estimates a host can use at
-a request (`targetError`), converted from the target to the position that
-the pace keeps within the target's band (`latencyError`). The proof puts the
-parts together for each speaker (`speaker_at_latency`). A speaker on the
-sender's host is left to a later theorem; the baseline supports it, with
+* no speaker is on the sender's host;
+* the baseline sends each message more times than a link can drop in a row;
+* its slew `w` satisfies `2 ε_D / (1 - ε_D) < w < 1`, where `ε_D` bounds the
+  devices' rate errors;
+* its latency `L` exceeds `latencyError` plus the worst-case delivery
+  margin: the spans of two blocks and of the resampler's lookahead, the
+  handoff delay, the longest delay from the sender, and the longest request
+  lead.
+
+Then, from some output sample on, every output sample `k` plays sound
+captured within `latencyError` of `o(k) - L`, where `o(k)` is the true time
+at which `k` leaves. So in the long run the baseline misses no samples and
+has no discontinuities, and its latency, synchronization and tracking costs
+are bounded (`guarantees`). A world of two hosts meets every hypothesis
+(`plays_at_latency_example`), so the hypotheses can all hold at once.
+
+The error `latencyError` is the target's error for the oldest estimates
+that a host can use at a request (`targetError`), converted from the target
+to the position that the pace keeps within the target's band. The proof
+combines the parts for each speaker (`speaker_at_latency`). Speakers on the
+sender's host are left to a later theorem; the baseline supports them with
 an exact clock estimate.
 -/
 
@@ -40,8 +48,10 @@ open Unisono.Spec
 variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 
 omit [DecidableEq H] in
-/-- In a world within bounds, a speaker requests its blocks at most
-`m_B (1 + ε_D) / ρ + λ_max` seconds apart. -/
+/-- In a world that satisfies the bounds, consecutive requests of a speaker
+are at most `m_B (1 + ε_D) / ρ + λ_max` seconds apart. Here `m_B` is the
+largest block size, `ρ` the nominal rate, `ε_D` the bound on the devices'
+rate errors, and `λ_max` the longest request lead. -/
 theorem asked_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R) (b : ℕ) :
     (w.speaker r).asked (b + 1) - (w.speaker r).asked b
       ≤ B.blockMost * (1 + B.deviceRate) / w.rate + B.leadMost := by
@@ -67,8 +77,9 @@ theorem asked_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fi
   linarith
 
 omit [DecidableEq H] in
-/-- In a world within bounds, the capture device hands over its blocks at
-most `m_B (1 + ε_D) / ρ + η` seconds apart. -/
+/-- In a world that satisfies the bounds, consecutive handoffs of the
+capture device are at most `m_B (1 + ε_D) / ρ + η` seconds apart, where `η`
+is the handoff delay. -/
 theorem handed_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (b : ℕ) :
     w.source.handed (b + 1) - w.source.handed b
       ≤ B.blockMost * (1 + B.deviceRate) / w.rate + B.handoff := by
@@ -101,9 +112,10 @@ theorem handed_gap (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (b : �
 
 
 omit [DecidableEq H] in
-/-- **The last term below a value, in a sequence with bounded steps.** In a
-sequence whose steps are at most `G` and which goes past `x - D`, when
-`a 0 + D < x`, some term has `a b₀ + D < x ≤ a b₀ + D + G`. -/
+/-- **A last term below a threshold.** Let `a` be a sequence whose
+consecutive terms differ by at most `G` and which eventually reaches
+`x - D`. If `a 0 + D < x`, then some term satisfies
+`a b₀ + D < x ≤ a b₀ + D + G`. -/
 theorem exists_last_below {a : ℕ → ℝ} {G D x : ℝ} (hgap : ∀ b, a (b + 1) - a b ≤ G)
     (h0 : a 0 + D < x) (hbig : ∃ b, x ≤ a b + D) :
     ∃ b₀, a b₀ + D < x ∧ x ≤ a b₀ + D + G := by
@@ -173,11 +185,12 @@ theorem plays_eq_chosen (w : World H R) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
   rw [hlook]
   rfl
 
-/-- The error of the baseline's target, in seconds of capture time, when its
-clock estimate errs by `ntp`, the question it answers is `a₁` seconds older
-than the request, and the block it extrapolates from was handed over `a₂`
-seconds before it: twice the timestamp error, the estimate's error, the
-clocks' drift over the estimate's age and over the block's span, the
+/-- The error of the baseline's target, in seconds of capture time. The
+arguments are the clock estimate's error `ntp`, the age `a₁` of the
+estimate's clock query at the request, and the time `a₂` from the handoff
+of the block that the host extrapolates from to the request. The error is
+the sum of twice the timestamp error, the estimate's error, the clocks'
+drift over the age of the estimate and over the age of the block, the
 playback device's rate error over a block, and the capture device's rate
 error over the time from the block to the position. -/
 noncomputable def targetError (B : Bounds H) (rate period latency ntp a₁ a₂ : ℝ) : ℝ :=
@@ -193,8 +206,8 @@ noncomputable def targetError (B : Bounds H) (rate period latency ntp a₁ a₂ 
       + B.deviceRate * (B.blockMost - 1) / rate))
 
 omit [DecidableEq H] in
-/-- A larger error of the estimate, or older estimates, give a larger
-error of the target. -/
+/-- `targetError` is monotone in the clock estimate's error and in the ages
+of the clock estimate and of the block. -/
 theorem targetError_mono (B : Bounds H) {rate period latency ntp ntp' a₁ a₁' a₂ a₂' : ℝ}
     (hntp : ntp ≤ ntp') (ha₁ : a₁ ≤ a₁') (ha₂ : a₂ ≤ a₂') :
     targetError B rate period latency ntp a₁ a₂ ≤ targetError B rate period latency ntp' a₁' a₂' := by
@@ -203,19 +216,21 @@ theorem targetError_mono (B : Bounds H) {rate period latency ntp ntp' a₁ a₁'
   unfold targetError
   gcongr
 
-/-- The error within which the baseline plays at its latency in a world
-within bounds, when `dmin` and `dmax` bound the delays between the sender
-and the speakers' hosts: the target's error for the largest error of the
-clock estimate and the oldest estimates, converted from the target to the
-position that the pace keeps within the target's band. -/
+/-- The error `E` of the baseline's fixed-latency playback in a world that
+satisfies the bounds, when `dmin` and `dmax` bound the delays between the
+sender and the speakers' hosts. It is the target's error for the largest
+error of the clock estimate and for the oldest estimates, converted from
+the target to the position that the pace keeps within the target's
+band. -/
 noncomputable def latencyError (p : Params H) (B : Bounds H) (rate dmin dmax : ℝ) : ℝ :=
   (1 + B.deviceRate) / (1 - B.deviceRate)
     * targetError B rate p.period p.latency ((dmax - dmin + B.clockRate * (2 * dmax)) / 2)
       (2 * dmax + (B.blockMost * (1 + B.deviceRate) / rate + B.leadMost))
       (dmax + (B.blockMost * (1 + B.deviceRate) / rate + B.handoff))
 
-/-- At late enough requests, every output sample has a target whose sound
-was captured within the target's error of when it should have been. -/
+/-- At every sufficiently late request, every output sample `k` of the
+block has a target whose sound was captured within the target's error of
+`o(k) - L`, where `o(k)` is the true time at which `k` leaves. -/
 theorem late_targets (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hrate : p.rate = w.rate) (hnodup : p.speakers.Nodup)
     (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period) (hL : 0 ≤ p.latency)
@@ -281,13 +296,14 @@ theorem late_targets (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (loo
   · linarith
   · linarith
 
-/-- **A speaker of the baseline plays at its latency.** In a world within
-bounds, with `dmin` and `dmax` bounding the delays between the sender and
-the speaker's host, a slew above the devices' rate error and below one, and
-a latency above `latencyError` plus the time a frame takes to reach the
-speaker's host and be needed, the speaker plays continuously from some
-output sample on, and each output sample plays sound captured within
-`latencyError` of when it leaves less the latency. -/
+/-- **A speaker of the baseline plays at its latency.** Consider a world
+that satisfies the bounds, a speaker whose host is not the sender's host,
+and bounds `dmin` and `dmax` on the delays between the sender and that
+host. Suppose the slew `w` satisfies `2 ε_D / (1 - ε_D) < w < 1`, and the
+latency `L` exceeds `latencyError` plus the worst-case delivery margin of
+`plays_at_latency`. Then, from some output sample on, the speaker plays
+continuously, and each output sample `k` plays sound captured within
+`latencyError` of `o(k) - L`. -/
 theorem speaker_at_latency (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hrate : p.rate = w.rate)
     (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period)
@@ -547,14 +563,19 @@ theorem speaker_at_latency (w : World H R) (B : Bounds H) (hw : w.WithinBounds B
   · rw [hstep]; linarith [hcl.1]
   · rw [hstep]; linarith [hcl.2]
 
-/-- **The baseline plays at its latency.** In a world within bounds where no
-speaker is on the sender's host, with `dmin` and `dmax` bounding the delays
-between the sender and the speakers' hosts, when the baseline sends each
-message more times than a link can drop in a row, its slew exceeds the
-devices' rate error and is below one, and its latency exceeds
-`latencyError` plus the time a frame takes to reach a speaker's host and be
-needed, its playback is at latency `L` within `latencyError` from some output
-sample on. -/
+/-- **The baseline plays at its latency.** Consider a world that satisfies
+the bounds, in which no speaker is on the sender's host, and let `dmin` and
+`dmax` bound the delays between the sender and the speakers' hosts. Suppose
+that
+* the baseline sends each message more times than a link can drop in a row;
+* its slew `w` satisfies `2 ε_D / (1 - ε_D) < w < 1`, where `ε_D` bounds the
+  devices' rate errors;
+* its latency `L` exceeds `latencyError` plus the worst-case delivery
+  margin: the spans of two blocks and of the resampler's lookahead, the
+  handoff delay, `dmax`, and the longest request lead.
+
+Then the baseline's playback is at latency `L` within `latencyError` from
+some output sample on. -/
 theorem plays_at_latency (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hrate : p.rate = w.rate)
     (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period)
@@ -573,12 +594,13 @@ theorem plays_at_latency (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     hslew1 hlat
   exact ⟨Finset.univ.sup K, fun r k hk => hK r k (le_trans (Finset.le_sup (Finset.mem_univ r)) hk)⟩
 
-/-- **The baseline's guarantees.** Under the hypotheses of
-`plays_at_latency`, with `E = latencyError` and `δ = (1 + ε_D) / ρ` the
-longest time between two output samples, the baseline misses no samples and
-has no discontinuities in the long run, its latency is at most `L + E + δ`,
-its synchronization cost at most `(E + δ)²`, and its tracking cost at most
-`(D + E + δ)²` when every target latency is within `D` of `L`. -/
+/-- **The baseline's guarantees.** Assume the hypotheses of
+`plays_at_latency`. Let `E = latencyError`, and let `δ = (1 + ε_D) / ρ` be
+the longest time between two output samples. Then in the long run the
+baseline misses no samples and has no discontinuities. Its latency is at
+most `L + E + δ`, and its synchronization cost is at most `(E + δ)²`. When
+every target latency is within `D` of `L`, its tracking cost is at most
+`(D + E + δ)²`. -/
 theorem guarantees (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hrate : p.rate = w.rate)
     (hnodup : p.speakers.Nodup) (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period)
@@ -618,13 +640,14 @@ theorem guarantees (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
   exact ⟨missed_eq_zero w _ hK, discontinuities_eq_zero w _ hK, meanLatency_le w _ hK hδ hc,
     sync_le w _ hK hδ hc, tracking_le w _ hK hδ hc hD⟩
 
-/-- **The main theorem is not vacuous.** A world of two hosts, the sender
-(`false`) and one speaker's host (`true`), with exact clocks and devices,
-blocks of one frame and one output sample, a lead of half a second, and a
-network that delivers every message after one second, meets every
-hypothesis of `plays_at_latency` with the baseline at a latency of three
-seconds, one copy of each message and a slew of one half. In that world the
-baseline plays at its latency within `latencyError`, which is zero there. -/
+/-- **The main theorem is not vacuous.** Consider a world of two hosts, the
+sender (`false`) and one speaker's host (`true`). Its clocks and devices are
+exact, both devices use blocks of one frame, the request lead is half a
+second, and the network delivers every message after one second. With a
+latency of three seconds, one copy of each message and a slew of one half,
+the baseline meets every hypothesis of `plays_at_latency` in this world,
+where `latencyError = 0`. In this world, the baseline therefore plays at
+its latency with zero error. -/
 theorem plays_at_latency_example :
     ∃ (w : World Bool 1) (B : Bounds Bool) (p : Params Bool) (lookahead : ℕ+),
       w.WithinBounds B ∧ latencyError p B w.rate 1 1 = 0 ∧

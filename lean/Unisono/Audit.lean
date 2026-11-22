@@ -1009,9 +1009,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.last_none
 
-/-- info: 'Unisono.Solutions.FixedDelay.answered_question' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.FixedDelay.answered_query' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.answered_question
+#print axioms Unisono.Solutions.FixedDelay.answered_query
 
 /-- info: 'Unisono.Solutions.FixedDelay.answered_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1029,17 +1029,17 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.replicate_copies
 
-/-- info: 'Unisono.Solutions.FixedDelay.question_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.FixedDelay.query_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.question_inFlight
+#print axioms Unisono.Solutions.FixedDelay.query_inFlight
 
 /-- info: 'Unisono.Solutions.FixedDelay.answer_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.answer_inFlight
 
-/-- info: 'Unisono.Solutions.FixedDelay.question_answered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.FixedDelay.query_answered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.question_answered
+#print axioms Unisono.Solutions.FixedDelay.query_answered
 
 /-- info: 'Unisono.Solutions.FixedDelay.answer_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

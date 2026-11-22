@@ -14,7 +14,7 @@ solution achieves.
 
 * Every host keeps the frames it holds (`Solution.held_mono`).
 * A message in transit that arrives before the event of a later step has
-  been handled by then: its destination holds its frames
+  been handled by that step, so its destination holds its frames
   (`Solution.frames_arrive`).
 * The messages a host sends at an event are numbered on each link in the
   order of its sends, and each one that the network delivers is in transit
@@ -71,8 +71,8 @@ theorem sendAll_inFlight_mem {h : H} {t : Time} {held : Finset ℕ}
     · exact List.mem_append_left _ hm
     · exact hm
 
-/-- A host that handles an event holds every frame it held, and the frames
-the event brings. -/
+/-- A host that handles an event keeps every frame it held and adds the
+frames that the event delivers. -/
 theorem handle_held (σ : Solution H R Msg) (lookahead : ℕ+) (h : H) (t : Time)
     (obs : Observation H R Msg) (h' : H) :
     (st.handle σ w lookahead h t obs).held h' =
@@ -115,8 +115,8 @@ theorem held_subset_step (σ : Solution H R Msg) (lookahead : ℕ+) (h' : H) :
     · exact le_rfl
   · exact le_rfl
 
-/-- A message in transit stays in transit at a step of the run, or is
-handled there, and its destination then holds its frames. -/
+/-- At each step of the run, a message in transit either stays in transit,
+or the step handles it and its destination then holds its frames. -/
 theorem step_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {m : InFlight H Msg}
     (hm : m ∈ st.inFlight) :
     m ∈ (st.step σ w lookahead).inFlight ∨ m.frames ⊆ (st.step σ w lookahead).held m.destination := by
@@ -156,9 +156,9 @@ theorem Solution.held_mono (σ : Solution H R Msg) (w : World H R) (lookahead : 
   | refl => exact le_rfl
   | step _ ih => exact ih.trans (State.held_subset_step w _ σ lookahead h)
 
-/-- **A message is handled before any later event.** A message in transit at
-step `n`, which arrives before the event of a later step `k`, has been
-handled by then: its destination holds its frames. -/
+/-- **A message is handled before any later event.** If a message in transit
+at step `n` arrives before the event of a later step `k`, it has been
+handled by step `k`, so its destination holds its frames. -/
 theorem Solution.frames_arrive (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     {n k : ℕ} {m : InFlight H Msg} (hm : m ∈ (σ.states w lookahead n).inFlight) (hnk : n ≤ k)
     (harr : m.arrival < σ.eventTime w lookahead k) :
@@ -194,11 +194,11 @@ theorem send_sentCount (st : State H R Msg) (h : H) (t : Time) (j : H) (c : Msg)
     simp
   · simp [hj]
 
-/-- **The messages a host sends at an event, as the network delivers them.**
-The `i`-th entry of `sends`, to host `j`, is the host's message to `j`
-numbered `st.sentCount h j` plus the number of earlier entries to `j`; if
-the network delivers that message, it is in transit after the event, with
-the frames it carries that the host holds. -/
+/-- **The messages a host sends at an event, and their delivery.** Let the
+`i`-th entry of `sends` go to host `j`. Its number on the link from the host
+to `j` is `st.sentCount h j` plus the number of earlier entries to `j`. If
+the network delivers the message, it is in transit after the event,
+carrying those of its frames that the host holds. -/
 theorem sendAll_delivered {h : H} {t : Time} {held : Finset ℕ} :
     ∀ (sends : List (H × Msg × Finset ℕ)) (st : State H R Msg) (i : ℕ) (hi : i < sends.length)
       {arr : Time},
@@ -242,8 +242,8 @@ theorem handle_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State
     (st.handle σ w lookahead h t obs).handedNext = st.handedNext := by
   simp only [handle, sendAll_handedNext]
 
-/-- A step of the run either leaves the next block to be handed over as it
-is, or hands it over and moves on to the next. -/
+/-- A step of the run either leaves the next block to be handed over
+unchanged, or hands that block over and moves on to the following one. -/
 theorem step_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) :
     (st.step σ w lookahead).handedNext = st.handedNext ∨
       ((st.step σ w lookahead).handedNext = st.handedNext + 1 ∧
@@ -267,8 +267,8 @@ theorem step_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H
 
 end State
 
-/-- A block handed over before the event of step `n` was handed over by
-then. -/
+/-- If block `b` is handed over before the event of step `n`, the run has
+handed it over by step `n` (`b < handedNext`). -/
 theorem Solution.lt_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) {n b : ℕ}
     (h : w.source.handed b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).handedNext := by
@@ -656,8 +656,9 @@ theorem Solution.eventTime_mono (σ : Solution H R Msg) (lookahead : ℕ+) :
     Monotone (σ.eventTime w lookahead) :=
   monotone_nat_of_le_succ (σ.eventTime_le_succ w lookahead)
 
-/-- **Each event of a view was handled at the step whose view held exactly
-the events before it.** -/
+/-- **Each event of a view was handled at an earlier step.** If a host's
+view at step `k` is `l₁ ++ e :: l₂`, then the host handled `e` at a step
+`i < k` at which its view was `l₁`. -/
 theorem Solution.handled_of_views_eq (σ : Solution H R Msg) (lookahead : ℕ+) {k : ℕ} {h : H}
     {l₁ l₂ : List (Event H R Msg)} {e : Event H R Msg}
     (hv : (σ.states w lookahead k).views h = l₁ ++ e :: l₂) :
@@ -695,12 +696,12 @@ end Views
 
 section Sent
 
-/-- **What a step sends is in transit after it, when the network delivers
-it.** At step `n`, which handles an event of host `h` at true time `t`, the
-`i`-th message that `h` sends, to host `j`, is the message on the link from
-`h` to `j` numbered by the messages sent on that link before it. When the
-network delivers that message, it is in transit after the step, with those
-of its frames that `h` holds. -/
+/-- **What a step sends is in transit after it, if the network delivers
+it.** Let step `n` handle an event of host `h` at true time `t`, and let the
+`i`-th message that `h` sends go to host `j`. Its number on the link from
+`h` to `j` is the number of messages sent on that link before it. If the
+network delivers the message, it is in transit after the step, carrying
+those of its frames that `h` holds. -/
 theorem Solution.sent_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ}
     {h : H} {t : Time} {obs : Observation H R Msg}
     (hn : σ.handled w lookahead n = some (h, t, obs)) {S : List (H × Msg × Finset ℕ)}
@@ -759,14 +760,14 @@ section Requests
 
 namespace State
 
-/-- Handling an event leaves the speakers' next requests as they are. -/
+/-- Handling an event does not change the speakers' next requests. -/
 theorem handle_askedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (h : H)
     (t : Time) (obs : Observation H R Msg) :
     (st.handle σ w lookahead h t obs).askedNext = st.askedNext := by
   simp only [handle, sendAll_askedNext]
 
-/-- A step of the run either leaves a speaker's next request as it is, or
-handles that request and moves on to the next. -/
+/-- A step of the run either leaves a speaker's next request unchanged, or
+handles that request and moves on to the following one. -/
 theorem step_askedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (r : Fin R) :
     (st.step σ w lookahead).askedNext r = st.askedNext r ∨
       ((st.step σ w lookahead).askedNext r = st.askedNext r + 1 ∧
@@ -807,7 +808,7 @@ theorem step_askedNext (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H 
 
 end State
 
-/-- A speaker's next request never goes back. -/
+/-- A speaker's next request never decreases. -/
 theorem Solution.askedNext_mono (σ : Solution H R Msg) (lookahead : ℕ+) (r : Fin R) :
     Monotone fun n => (σ.states w lookahead n).askedNext r := by
   apply monotone_nat_of_le_succ
@@ -886,7 +887,9 @@ theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) 
   rw [hearly]
   simp only [State.handle, Observation.frames, Finset.union_empty, hk, and_self, ite_true]
 
-/-- The event that a step handling request `b` of speaker `r` handles. -/
+/-- The event handled at a step whose earliest pending event is request `b`
+of speaker `r`: that request, at the speaker's host and at the request's
+true time. -/
 theorem Solution.handled_of_asked (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
     {b : ℕ} (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
       = some (.asked r b)) :
@@ -982,8 +985,8 @@ end Requests
 
 section Progress
 
-/-- The weight of the messages of a list that arrive by true time `T`, each
-message weighing `wt` of its payload. -/
+/-- The total weight of the messages in a list that arrive by true time `T`,
+where a message weighs `wt` of its payload. -/
 noncomputable def weightBy (wt : Msg → ℕ) (T : Time) (l : List (InFlight H Msg)) : ℕ :=
   (l.map fun m => if m.arrival ≤ T then wt m.contents else 0).sum
 
@@ -1026,7 +1029,7 @@ theorem handle_weight (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg → �
   simp only [handle]
   exact sendAll_weight w wt T _ h t _ _
 
-/-- A host that sets no timers leaves the timers as they are. -/
+/-- A host that sets no timers leaves the pending timers unchanged. -/
 theorem handle_timers (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg) (h : H)
     (t : Time) (obs : Observation H R Msg)
     (htimers : (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).timers = []) :
@@ -1037,7 +1040,9 @@ theorem handle_timers (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R
 end State
 
 omit [DecidableEq H] in
-/-- Taking out a message of a list takes its weight out of the list's. -/
+/-- Removing a message from a list reduces the list's weight by the
+message's weight if the message arrives by `T`, and leaves the weight
+unchanged otherwise. -/
 theorem weightBy_eraseIdx (wt : Msg → ℕ) (T : Time) (l : List (InFlight H Msg)) {p : ℕ}
     (hp : p < l.length) :
     weightBy wt T (l.eraseIdx p) + (if l[p].arrival ≤ T then wt l[p].contents else 0)
@@ -1048,12 +1053,12 @@ theorem weightBy_eraseIdx (wt : Msg → ℕ) (T : Time) (l : List (InFlight H Ms
   simp only [List.map_append, List.map_cons, List.sum_append, List.sum_cons]
   ring
 
-/-- **A run whose messages die out advances past every true time.** Let every
-payload weigh at least one, and let a solution set no timers and send at each
-event messages whose weights add up to less than what the event uses up: the
-weight `cH` at a handoff, `cQ` at a request, and the arriving message's
-weight at an arrival. In a world whose handoffs and requests go on for ever,
-the run has an event after every true time. -/
+/-- **A run whose messages die out advances past every true time.** Suppose
+a solution sets no timers, and at every event the messages it sends weigh
+less than the event: a handoff weighs `cH`, a request `cQ`, and an arrival
+the weight of the arriving message. In a world where the capture device
+hands over blocks without end and every speaker requests blocks without
+end, the run has an event after every true time. -/
 theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg → ℕ) (cH cQ : ℕ)
     (htimers : ∀ h view, (σ h view).timers = [])
     (hhanded : ∀ h view frames rep reading,

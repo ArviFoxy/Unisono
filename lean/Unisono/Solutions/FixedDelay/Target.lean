@@ -10,14 +10,21 @@ public import Unisono.Solutions.FixedDelay.Progress
 /-!
 # The baseline in a bounded world: the target
 
-* The time that the target of an output sample stands for is within an
-  explicit error of the sample's time of leaving less the latency
-  (`target_time_error`), and the sound at the target was captured within a
-  further error of that time (`captured_nominal`, `captured_target`).
-* At a request that comes after an earlier request answered in time and a
-  block arrived in time, every output sample of the block has a target, with
-  an error that grows with the ages of the clock estimate and of the block
-  (`target_band`).
+Notation: `o(k)` is the true time at which output sample `k` of a speaker
+leaves its device, `c(f)` the true time at which frame `f` was captured,
+`ρ` the nominal rate, and `ε_R`, `ε_C` and `ε_D` are the bounds on timestamp
+errors, on the clocks' rate errors and on the devices' rate errors.
+
+* The baseline's target for output sample `k` comes from an estimate of the
+  capture time `o(k) - L`. This estimate is within an explicit error of
+  `o(k) - L` (`target_time_error`), and the sound at the target was captured
+  within a further error of `o(k) - L` (`captured_nominal`,
+  `captured_target`).
+* Consider a request that occurs more than the longest round trip after an
+  earlier request of the same speaker, and more than the longest delay from
+  the sender after the handoff of some block. Then every output sample of
+  the requested block has a target, with an error that grows with the ages
+  of the clock estimate and of the block (`target_band`).
 -/
 
 @[expose] public noncomputable section
@@ -29,13 +36,13 @@ open Unisono.Spec
 variable {H : Type} {R : ℕ} [DecidableEq H] (p : Params H)
 
 omit [DecidableEq H] in
-/-- **The time that the baseline's target stands for.** Speaker `r`'s host
-`h` gives output sample `k` of block `b` the time
-`c(f) + (ô + (k - g) / ρ + θ̂ - L - ĉ)`, where `f` and `ĉ` are the first frame
-and timestamp of a block `b'` of the source, `ô` and `g` the timestamp and
-first output sample of block `b`, and `θ̂` an estimate of the sender's clock
-minus the host's within `e` of their true difference at some time `s₂`. In a
-world within bounds, that time is within
+/-- **The capture time behind the baseline's target.** Speaker `r`'s host
+estimates that the sound for output sample `k` of block `b` was captured at
+`c(f) + (ô + (k - g) / ρ + θ̂ - L - ĉ)`. Here `f` and `ĉ` are the first frame
+and timestamp of a source block `b'`, `ô` and `g` are the timestamp and
+first output sample of block `b`, and `θ̂` estimates the sender's clock
+minus the host's clock within `e` of their true difference at some true time
+`s₂`. In a world that satisfies the bounds, this estimate is within
 `2 ε_R + e + 2 ε_C |o(g) - s₂| + ε_C |o(g) - c(f)| + ε_D (k - g) / ρ` of
 `o(k) - L`. -/
 theorem target_time_error (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R)
@@ -79,9 +86,10 @@ theorem target_time_error (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
   constructor <;> linarith [hout.1, hout.2]
 
 omit [DecidableEq H] in
-/-- The sound at the position that a time stands for, counted at the nominal
-rate from frame `f`, was captured within `ε` times that time's distance from
-the capture of `f`. -/
+/-- Convert a time `τ` to a position by counting from frame `f` at the
+nominal rate: `x = f + (τ - c(f)) ρ`. When the capture device's rate error
+is at most `ε`, the sound at `x` was captured within `ε |τ - c(f)|` of
+`τ`. -/
 theorem captured_nominal (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.rate ε) (f : ℕ)
     (τ : ℝ) :
     |w.captured (f + (τ - w.source.capture f) * w.rate) - τ|
@@ -114,12 +122,12 @@ theorem captured_nominal (w : World H R) {ε : ℝ} (hd : w.source.RateWithin w.
     constructor <;> nlinarith [hm.1, hm.2]
 
 omit [DecidableEq H] in
-/-- **How far the baseline's target was captured from where it should be.**
-In a world within bounds, the sound at the target that speaker `r`'s host
-gives output sample `k` of block `b`, from block `b'` and a clock estimate
-within `e` of the true difference at `s₂`, was captured within
-`err + ε_D (|o(k) - L - c(f)| + err)` of `o(k) - L`, where `err` is the
-bound of `target_time_error`. -/
+/-- **The capture-time error of the baseline's target.** Consider a world
+that satisfies the bounds, and the target that speaker `r`'s host gives
+output sample `k` of block `b`, computed from block `b'` and from a clock
+estimate within `e` of the true difference at `s₂`. The sound at this target
+was captured within `err + ε_D (|o(k) - L - c(f)| + err)` of `o(k) - L`,
+where `err` is the bound of `target_time_error`. -/
 theorem captured_target (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (r : Fin R)
     {b b' k : ℕ} (hk : (w.speaker r).first b ≤ k) {s₂ θ L e : ℝ}
     (hθ : |θ - ((w.clock w.sender).read s₂ - (w.clock (w.host r)).read s₂)| ≤ e) :
@@ -166,14 +174,17 @@ theorem captured_target (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (
         by gcongr
     _ = err + B.deviceRate * (|(w.speaker r).out k - L - cf| + err) := by ring
 
-/-- **The baseline's target at a request.** In a world within bounds, let
-speaker `r`'s host `h`, not the sender's, handle request `b` at step `n`, and
-let an earlier request `b₀` of `r` come more than the longest delays to the
-sender and back, and a block `b''` be handed over more than the longest
-delay from the sender, before request `b`. Then every output sample `k` of
-the block has a target, and the sound at the target was captured within an
-explicit error of `o(k) - L`, which grows with the ages
-`A₁ = a(b) - a(b₀)` and `A₂ = a(b) - h(b'')`. -/
+/-- **The baseline's target at a request.** Consider a world that satisfies
+the bounds, and a step `n` at which the host of speaker `r`, other than the
+sender's host, handles request `b`. Suppose an earlier request `b₀` of `r`
+occurred more than the longest round trip between that host and the sender
+before request `b`, and a block `b''` was handed over more than the longest
+delay from the sender to that host before request `b`. Then every output
+sample `k` of the block has a target, and the sound at the target was
+captured within an explicit error of `o(k) - L`. The error grows with the
+ages `A₁ = a(b) - a(b₀)` and `A₂ = a(b) - h(b'')`, where `a(b)` is the true
+time of request `b` and `h(b'')` is the true time of the handoff of block
+`b''`. -/
 theorem target_band (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (hsender : p.sender = w.sender) (hrate : p.rate = w.rate) (hnodup : p.speakers.Nodup)
     (hcopies : B.lossRun < p.copies) (hperiod : 0 ≤ p.period) (hL : 0 ≤ p.latency)
@@ -222,7 +233,7 @@ theorem target_band (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (look
   obtain ⟨β, hblock, hββ, hβt⟩ := block_memory p w B hw lookahead hsender hnodup hcopies hh hhs
     (k := n) (by rw [htime]; exact hb'')
   rw [htime] at hβt
-  -- The clock estimate remembered, from a recent question.
+  -- The remembered clock estimate, from a recent query.
   obtain ⟨n₀, hn₀b, he₀⟩ := request_step p w B hw lookahead r b₀
   have hh₀ := Solution.handled_of_asked w (solution p) lookahead he₀
   obtain ⟨t₁, θ, s, hoff, hst₁, hs⟩ := offset_recent p w B hw lookahead hsender hcopies hperiod
@@ -267,7 +278,7 @@ theorem target_band (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (look
   have hεC1 := B.clockRate_lt_one
   have hleadb := hlead r b
   have hbefore := (w.speaker r).asked_before b
-  -- The question's span.
+  -- The age of the estimate's query at the request.
   have hspan₁ : |og - s₂| ≤ B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
       + p.period / (1 - B.clockRate) := by
     rw [abs_of_nonneg (by linarith)]

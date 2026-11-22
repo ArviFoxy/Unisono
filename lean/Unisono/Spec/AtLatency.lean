@@ -7,27 +7,28 @@ module
 public import Unisono.Spec.Checks
 
 /-!
-# Playback at a latency
+# Fixed-latency playback
 
-What the objectives come to for a playback in which, from some output sample
-on, every speaker plays continuously and each output sample plays sound
-captured within `E` seconds of a fixed latency `L` before the sample leaves
-(`World.PlaysAtLatency`). These are statements about the objectives alone,
-for any solution: a solution's guarantees follow from showing that its run
-plays at a latency.
+Bounds on the objectives for fixed-latency playback: a playback in which,
+from some output sample on, every speaker plays continuously, and each
+output sample `k` of speaker `r` plays sound whose capture time lies within
+`E` seconds of `o_r(k) - L`, where `o_r(k)` is the true time at which `k`
+leaves (`World.PlaysAtLatency`). These statements concern the objectives
+alone and hold for any solution: a solution's guarantees follow from showing
+that its run plays at a fixed latency.
 
 * Such a playback misses no samples and has no discontinuities in the long
   run (`missed_eq_zero`, `discontinuities_eq_zero`).
-* Its long-run latency is at most `L + E + δ` (`meanLatency_le`), its
-  synchronization cost at most `(E + δ)²` (`sync_le`), and its tracking
-  cost at most `(D + E + δ)²` when every target latency is within `D` of `L`
-  (`tracking_le`), where `δ` bounds the time between two output samples.
-* Playback at a latency says nothing about roughness: within `E` a speaker
+* Let `δ` bound the time between two output samples. The long-run latency is
+  at most `L + E + δ` (`meanLatency_le`), and the synchronization cost is at
+  most `(E + δ)²` (`sync_le`). When every target latency is within `D` of
+  `L`, the tracking cost is at most `(D + E + δ)²` (`tracking_le`).
+* Fixed-latency playback says nothing about roughness: within `E`, a speaker
   can change its speed as often as it likes. A bound on roughness needs a
   bound on how a solution changes its speed.
-* A cost accrued at most linearly in time has a long-run average at most its
-  slope (`longRun_le`), which turns bounds on each frame and each output
-  sample into bounds on the objectives.
+* A cost that accrues at most linearly in time has a long-run average at
+  most the slope (`longRun_le`). This turns bounds on each frame and each
+  output sample into bounds on the objectives.
 -/
 
 @[expose] public noncomputable section
@@ -39,9 +40,9 @@ open Filter Topology
 
 variable {H : Type} {R : ℕ}
 
-/-- **A cost accrued at most linearly has a bounded long-run average.** If,
-for every horizon `T` from some `T₀` on, the cost accrued is at most
-`B T + C` with `C` finite, its long-run average is at most `B`. -/
+/-- **A cost that accrues at most linearly has a bounded long-run
+average.** If, for every horizon `T ≥ T₀`, the accrued cost is at most
+`B T + C` with `C` finite, then its long-run average is at most `B`. -/
 theorem longRun_le {accrued : Time → ℝ≥0∞} {B C : ℝ≥0∞} (hC : C ≠ ⊤) (T₀ : ℝ)
     (h : ∀ T, T₀ ≤ T → accrued T ≤ B * ENNReal.ofReal T + C) : longRun accrued ≤ B := by
   unfold longRun
@@ -77,7 +78,7 @@ theorem finite_outputs_ne_top (cost : Fin R → ℕ → ℕ) (K : ℕ) :
         ENNReal.natCast_ne_top _
 
 /-- A cost of output samples that is zero after output sample `K` accrues
-at most its sum up to `K`. -/
+at most its sum over the output samples up to `K`. -/
 theorem World.accruedOutputs_le (w : World H R) (cost : Fin R → ℕ → ℝ≥0∞) (K : ℕ)
     (h : ∀ r k, K < k → cost r k = 0) (T : Time) :
     w.accruedOutputs cost T ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ∑ k ∈ Finset.range (K + 1), cost r k := by
@@ -89,15 +90,15 @@ theorem World.accruedOutputs_le (w : World H R) (cost : Fin R → ℕ → ℝ≥
     simp only [Finset.mem_range, not_lt] at hk
     simp [h r k (by omega)]
 
-/-- From output sample `K` on, every speaker plays continuously, and each
-output sample plays sound captured within `E` seconds of `L` seconds before
-the sample leaves. -/
+/-- Fixed-latency playback: from output sample `K` on, every speaker plays
+continuously, and each output sample `k` of speaker `r` plays sound whose
+capture time lies within `E` seconds of `o_r(k) - L`. -/
 def World.PlaysAtLatency (w : World H R) (plays : Fin R → ℕ → Option ℝ) (L E : ℝ) (K : ℕ) :
     Prop :=
   ∀ r k, K ≤ k → PlaysContinuously (plays r) k ∧
     ∃ x, plays r k = some x ∧ |w.captured x - ((w.speaker r).out k - L)| ≤ E
 
-/-- **A playback at a latency misses no samples in the long run.** -/
+/-- **Fixed-latency playback misses no samples in the long run.** -/
 theorem missed_eq_zero (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E : ℝ} {K : ℕ}
     (h : w.PlaysAtLatency plays L E K) : w.missed plays = 0 := by
   have hz : ∀ r k, K + 1 < k → (missedAt (plays r) k : ℝ≥0∞) = 0 := by
@@ -113,7 +114,7 @@ theorem missed_eq_zero (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L
     fun T _ => ?_
   simpa using w.accruedOutputs_le _ (K + 1) hz T
 
-/-- **A playback at a latency has no discontinuities in the long run.** -/
+/-- **Fixed-latency playback has no discontinuities in the long run.** -/
 theorem discontinuities_eq_zero (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E : ℝ}
     {K : ℕ} (h : w.PlaysAtLatency plays L E K) : w.discontinuities plays = 0 := by
   have hz : ∀ r k, K < k → (discontinuityAt (plays r) k : ℝ≥0∞) = 0 := by
@@ -124,8 +125,8 @@ theorem discontinuities_eq_zero (w : World H R) (plays : Fin R → ℕ → Optio
     fun T _ => ?_
   simpa using w.accruedOutputs_le _ K hz T
 
-/-- Frames are captured one after another: the time between two frames is
-positive. -/
+/-- Frames are captured one after another: the time between two
+consecutive frames is positive. -/
 theorem World.capture_step_pos (w : World H R) (m : ℕ) :
     0 < w.source.capture (m + 1) - w.source.capture m :=
   sub_pos.mpr (w.source.capture_strictMono (Nat.lt_succ_self m))
@@ -170,9 +171,10 @@ theorem World.capture_le_captured (w : World H R) {y : ℝ} {n : ℕ} (hy : (n :
   have h1 : w.source.capture n ≤ w.source.capture ⌊y⌋₊ := w.source.capture_strictMono.monotone hm
   nlinarith
 
-/-- **The latency of a frame at a playback at a latency.** When no output
-sample before `K` reached frame `n`, a speaker that plays it does so within
-`E` plus one output step of the latency `L`. -/
+/-- **The latency of each frame under fixed-latency playback.** Let `δ`
+bound the time between two output samples from `K` on. If no output sample
+before `K` plays frame `n`, a speaker that plays frame `n` does so with a
+latency within `E + δ` of `L`. -/
 theorem World.latency_near (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ : ℝ} {K : ℕ}
     (h : w.PlaysAtLatency plays L E K)
     (hδ : ∀ r k, K ≤ k → (w.speaker r).out (k + 1) - (w.speaker r).out k ≤ δ)
@@ -208,8 +210,8 @@ theorem World.latency_near (w : World H R) (plays : Fin R → ℕ → Option ℝ
     constructor <;> linarith [hE.1, hE.2, hE'.1, hE'.2]
   · simp at hℓ
 
-/-- There is a frame beyond every frame that the output samples before `K`
-reach. -/
+/-- Some frame index exceeds every frame that the output samples before `K`
+play. -/
 theorem exists_frame_beyond (plays : Fin R → ℕ → Option ℝ) (K : ℕ) :
     ∃ N : ℕ, ∀ r k n, k < K → N ≤ n → ¬ Covers (plays r) k n := by
   set S := ∑ r, ∑ j ∈ Finset.range (K + 1), |(plays r j).getD 0| with hS
@@ -251,9 +253,9 @@ theorem average_ne_top {a : Fin R → ℝ≥0∞} (h : ∀ r, a r ≠ ⊤) :
     simp
   · exact ENNReal.mul_ne_top (by simpa using hR.ne') (ENNReal.sum_ne_top.mpr fun r _ => h r)
 
-/-- A cost of frames that is at most `B` from frame `N` on accrues at most
-`B` per second, plus a constant, when frames are captured at most `δc`
-seconds apart. -/
+/-- Suppose frames are captured at most `δc` seconds apart. A cost of frames
+that is at most `B` for every frame from `N` on accrues at most `B` per
+second, plus a constant. -/
 theorem World.accruedFrames_le (w : World H R) (cost : ℕ → ℝ≥0∞) {B : ℝ≥0∞} {δc : ℝ} (N : ℕ)
     (hB : ∀ n, N ≤ n → cost n ≤ B)
     (hc : ∀ n, w.source.capture (n + 1) - w.source.capture n ≤ δc) (T : Time) :
@@ -345,9 +347,9 @@ theorem World.longRun_frames_le (w : World H R) (cost : ℕ → ℝ≥0∞) {B :
   exact ENNReal.add_ne_top.mpr ⟨ENNReal.sum_ne_top.mpr fun n _ =>
     ENNReal.mul_ne_top (hfin n) ENNReal.ofReal_ne_top, ENNReal.mul_ne_top hBfin ENNReal.ofReal_ne_top⟩
 
-/-- **The long-run latency of a playback at a latency** is at most `L + E + δ`,
-where `δ` bounds the time between two output samples from `K` on, and frames
-are captured at most `δc` apart. -/
+/-- **The long-run latency under fixed-latency playback** is at most
+`L + E + δ`, where `δ` bounds the time between two output samples from `K`
+on, and frames are captured at most `δc` apart. -/
 theorem meanLatency_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ δc : ℝ} {K : ℕ}
     (h : w.PlaysAtLatency plays L E K)
     (hδ : ∀ r k, K ≤ k → (w.speaker r).out (k + 1) - (w.speaker r).out k ≤ δ)
@@ -364,9 +366,9 @@ theorem meanLatency_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L
   · unfold World.latencyAt
     split <;> simp
 
-/-- A function of two speakers that is symmetric and zero when both are the
-same sums over the pairs of distinct speakers, each counted once, to half
-its sum over all ordered pairs. -/
+/-- For a symmetric function `f` of two speakers with `f r r = 0`, the sum
+over the unordered pairs of distinct speakers is half the sum over all
+ordered pairs. -/
 theorem two_mul_sum_pairs (f : Fin R → Fin R → ℝ) (hsymm : ∀ a b, f a b = f b a)
     (hdiag : ∀ a, f a a = 0) :
     2 * ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), f p.1 p.2
@@ -397,9 +399,9 @@ theorem two_mul_sum_pairs (f : Fin R → Fin R → ℝ) (hsymm : ∀ a b, f a b 
         rw [← Finset.sum_add_distrib]
         exact Finset.sum_congr rfl fun b _ => (hsplit a b).symm
 
-/-- **Popoviciu's bound for pairs.** For `R` values within `M` of zero, the
-squares of their differences, summed over the pairs, are at most `R² M²`:
-the sum is `R` times the sum of the squares less the square of the sum. -/
+/-- **Popoviciu's bound for pairs.** For `R` values `d_r` within `M` of zero,
+`∑_{r < r'} (d_r - d_{r'})² ≤ R² M²`. The proof uses the identity
+`∑_{r < r'} (d_r - d_{r'})² = R ∑_r d_r² - (∑_r d_r)²`. -/
 theorem sum_pairs_sq_sub_le (d : Fin R → ℝ) {M : ℝ} (hd : ∀ r, |d r| ≤ M) :
     ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), (d p.1 - d p.2) ^ 2
       ≤ (R : ℝ) ^ 2 * M ^ 2 := by
@@ -416,7 +418,7 @@ theorem sum_pairs_sq_sub_le (d : Fin R → ℝ) {M : ℝ} (hd : ∀ r, |d r| ≤
   have hR : (0 : ℝ) ≤ R := Nat.cast_nonneg R
   nlinarith [sq_nonneg (∑ a, d a)]
 
-/-- **The long-run synchronization cost of a playback at a latency** is at
+/-- **The long-run synchronization cost under fixed-latency playback** is at
 most `(E + δ)²`. The bound is attained when half of the speakers play every
 frame `E + δ` early and the other half `E + δ` late. -/
 theorem sync_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ δc : ℝ} {K : ℕ}
@@ -486,8 +488,8 @@ theorem sync_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ �
         rw [ENNReal.ofReal_mul (by positivity), ENNReal.ofReal_pow (Nat.cast_nonneg _),
           ENNReal.ofReal_natCast, ← mul_assoc, ENNReal.inv_mul_cancel hR0 hRt, one_mul]
 
-/-- **The long-run tracking cost of a playback at a latency** is at most
-`(D + E + δ)²`, when every target latency is within `D` of `L`. -/
+/-- **The long-run tracking cost under fixed-latency playback** is at most
+`(D + E + δ)²` when every target latency is within `D` of `L`. -/
 theorem tracking_le (w : World H R) (plays : Fin R → ℕ → Option ℝ) {L E δ δc D : ℝ} {K : ℕ}
     (h : w.PlaysAtLatency plays L E K)
     (hδ : ∀ r k, K ≤ k → (w.speaker r).out (k + 1) - (w.speaker r).out k ≤ δ)

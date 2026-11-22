@@ -18,11 +18,12 @@ public import Mathlib.Tactic.Ring
 # Checks of the definitions
 
 Statements that say, about small cases, what the definitions of the
-objectives say in words. They are not results about the problem; they are
-there so that a definition that does not mean what its description says
-fails here.
+objectives say in words. They are not results about the problem; they exist
+so that a definition that does not mean what its description says fails to
+build.
 
-* The speed is one less how fast the latency changes (`speed_eq`).
+* The speed equals one minus the rate of change of the latency
+  (`speed_eq`).
 * Missed samples: an output sample that plays anything but the source
   counts one (`missedAt_none`); continuous playback counts nothing
   (`missedAt_continues`); a jump forward over `J` frames counts `J`
@@ -59,10 +60,11 @@ variable {H : Type} {R : ℕ}
 
 /-! ## Speed -/
 
-/-- **The speed is one less how fast the latency changes.** Over a step of
-continuous playback, the speed is one less the change of the latency, the
-time an output sample leaves less the time its sound was captured,
-divided by the time between the two output samples. -/
+/-- **The speed equals one minus the rate of change of the latency.** Over a
+step of continuous playback, the speed is one minus the change of the
+latency divided by the time between the two output samples. The latency of
+an output sample is the time it leaves minus the time its sound was
+captured. -/
 theorem speed_eq (w : World H R) (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (k : ℕ)
     {x y : ℝ} (hx : plays r k = some x) (hy : plays r (k + 1) = some y) (hxy : x < y)
     (hyx : y < x + 2) :
@@ -84,9 +86,9 @@ theorem missedAt_none (plays : ℕ → Option ℝ) {k : ℕ} (h : plays k = none
     missedAt plays k = 1 := by
   simp [missedAt, h]
 
-/-- The missed samples counted at output sample `k`, which plays position `y`,
-when the last output sample before it that played the source is `j`, which
-played position `x`. -/
+/-- The missed samples counted at output sample `k`, which plays position
+`y`. Here `j` is the last earlier output sample that played the source, at
+position `x`. -/
 theorem missedAt_after (plays : ℕ → Option ℝ) {j k : ℕ} {x y : ℝ} (hjk : j < k)
     (hj : plays j = some x) (hk : plays k = some y)
     (hnone : ∀ i, j < i → i < k → plays i = none) :
@@ -150,7 +152,8 @@ theorem missedAt_repeat (plays : ℕ → Option ℝ) {k : ℕ} {x : ℝ} (J : �
   simp
 
 /-- After `g` non-source outputs, which count `g` missed samples, a position
-that continues as if they had played the source counts no more. -/
+that continues as if those outputs had played the source counts no further
+missed samples. -/
 theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
     (hy : plays (k + 1 + g) = some (x + 1 + g)) :
@@ -167,7 +170,7 @@ theorem missedAt_after_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (h
   simp
 
 /-- After `g` non-source outputs, which count `g` missed samples, a position
-that resumes where it stopped counts no more. -/
+that resumes where playback stopped counts no further missed samples. -/
 theorem missedAt_resume (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx : plays k = some x)
     (hgap : ∀ i, k < i → i < k + 1 + g → plays i = none)
     (hy : plays (k + 1 + g) = some (x + 1)) :
@@ -182,9 +185,9 @@ theorem missedAt_resume (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (hx :
 
 /-! ## Synchronization -/
 
-/-- **The pairs and the variance.** The squares of the differences between the
-times `t r` of `R` speakers, over all pairs, add up to `R` times the sum of
-the squares of their distances from the mean: divided by `R ^ 2`, the
+/-- **The pairs and the variance.** For the times `t r` of `R` speakers, the
+sum over all pairs of the squared differences equals `R` times the sum of
+the squared distances from the mean. Divided by `R ^ 2`, it is the
 variance. -/
 theorem sum_pairs_eq (t : Fin R → ℝ) :
     ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2), (t p.1 - t p.2) ^ 2
@@ -268,8 +271,8 @@ theorem earliest_ne_none {α : Type} (key : α → Time × ℕ) (a : α) (l : Li
   | none => simp
   | some b => dsimp only; split_ifs <;> simp
 
-/-- The first of a list by `earliest` is in the list, and comes no later than
-any other. -/
+/-- The element that `earliest` selects from a list belongs to the list, and
+its key is at most the key of every element. -/
 theorem earliest_spec {α : Type} (key : α → Time × ℕ) :
     ∀ (l : List α) (a : α), earliest key l = some a → a ∈ l ∧ ∀ b ∈ l, (key a).1 ≤ (key b).1
   | [], a, h => by simp [earliest] at h
@@ -514,8 +517,8 @@ theorem Solution.eventTime_le_asked (σ : Solution H R Msg) (w : World H R) (loo
     σ.eventTime w lookahead n ≤ (w.speaker r).asked ((σ.states w lookahead n).askedNext r) :=
   (σ.eventTime_dueFrom w lookahead n).2.1 r
 
-/-- A device's request that occurs before the event of step `n` has been
-handled by then. -/
+/-- A device request that occurs before the event of step `n` has been
+handled by step `n`. -/
 theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     {n : ℕ} {r : Fin R} {b : ℕ} (h : (w.speaker r).asked b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).askedNext r := by
@@ -525,8 +528,8 @@ theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead
   linarith
 
 /-- **A run that advances past every true time decides every output
-sample.** When, for every true time, the run has an event after it, every
-request of every device is handled, so each output sample plays what the
+sample.** If, for every true time, the run has a later event, then every
+request of every device is handled. Each output sample then plays what the
 solution decided at its request (`Solution.plays`). -/
 theorem Solution.decided (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     (hgo : ∀ T, ∃ n, T < σ.eventTime w lookahead n) (r : Fin R) (k : ℕ) :
@@ -566,8 +569,8 @@ theorem discontinuities_gap (plays : ℕ → Option ℝ) {k g : ℕ} {x : ℝ} (
     discontinuityAt_none plays (hgap _ (by omega) (by simp at hi; omega))]
   simpa using discontinuityAt_gap_start plays hx (hgap (k + 1) (by omega) (by omega))
 
-/-- **A jump counts one discontinuity**: forward by two frames or more, or
-back. -/
+/-- **A jump counts one discontinuity**: a jump forward by two frames or
+more, or any jump back. -/
 theorem discontinuityAt_jump (plays : ℕ → Option ℝ) {k : ℕ} {x y : ℝ} (hx : plays k = some x)
     (hy : plays (k + 1) = some y) (hjump : y ≤ x ∨ x + 2 ≤ y) :
     discontinuityAt plays k = 1 := by
@@ -627,8 +630,9 @@ theorem latencyCost_unplayed (w : World H R) (plays plays' : Fin R → ℕ → O
 
 /-- **One speaker off by `Δ`.** When every speaker but `r` plays frame `n` at
 the same time `t`, and speaker `r` plays it at `t + Δ`, the frame's
-synchronization cost is `(R - 1) Δ² / R²`, about `Δ² / R`: the variance
-dilutes a single speaker that is off. -/
+synchronization cost is `(R - 1) Δ² / R²`, about `Δ² / R`. The variance
+therefore weighs a single outlying speaker less as the number of speakers
+grows. -/
 theorem syncCost_one_off (w : World H R) (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (n : ℕ)
     {t Δ : ℝ} (hr : w.playTime plays r n = some (t + Δ))
     (hothers : ∀ r', r' ≠ r → w.playTime plays r' n = some t) :
@@ -696,9 +700,9 @@ theorem syncCost_one_off (w : World H R) (plays : Fin R → ℕ → Option ℝ) 
 
 /-! ## Neither model is empty -/
 
-/-- **The bounded model is not empty**: a world with one speaker on the
+/-- **The bounded model is not empty.** A world with one speaker on the
 sender's host, exact clocks and devices, blocks of one frame, and a network
-that delivers every message after one second, is within bounds. -/
+that delivers every message after one second satisfies the bounds. -/
 theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.WithinBounds B := by
   refine ⟨
     { rate := 1
