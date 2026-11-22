@@ -575,7 +575,7 @@ hidden global time), \path{lean/Unisono/Solutions/Optimal/SpecSolutions.lean}
 defines two concrete \lean{Unisono.Spec.Solution} instances alongside a formal
 classification of the baseline (\lean{fixedDelay\_isStar}):
 \begin{itemize}
-\item \lean{StarOptimal.solution}: embeds $(first, stamp, level, schedOffset)$
+\item \lean{StarOptimal.solution}: embeds \lean{(first, stamp, level, schedOffset)}
   in stream blocks, runs non-blocking sliding-window min-RTT clock queries with
   the sender, and regulates playback pace with clamped \lean{Regulation.law}.
   We prove \lean{StarOptimal.isStar} and non-Zeno liveness
