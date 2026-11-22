@@ -186,12 +186,16 @@ def remember (h : H) (m : Memory H R) (e : Event H R Payload) : Memory H R :=
   match e.observation with
   | .handed frames stamp =>
       if h = p.sender then
-        { m with block := (frames.head?.map Prod.fst).map fun f => (f, stamp), offset := some (0, 0) }
+        match frames.head? with
+        | some (f, _) => { m with block := some (f, stamp), offset := some (0, 0) }
+        | none => m
       else m
   | .received _ (.block f stamp) _ =>
-      match m.block with
-      | some (f', _) => if f' < f then { m with block := some (f, stamp) } else m
-      | none => { m with block := some (f, stamp) }
+      if h = p.sender then m
+      else
+        match m.block with
+        | some (f', _) => if f' < f then { m with block := some (f, stamp) } else m
+        | none => { m with block := some (f, stamp) }
   | .received i (.ask sent) _ =>
       if h = p.sender ∧ answers m i sent = true then
         { m with answered := Function.update m.answered i (some sent) }

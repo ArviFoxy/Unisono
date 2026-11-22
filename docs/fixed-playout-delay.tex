@@ -54,8 +54,9 @@ This document describes the first solution to the problem of
 compared with, and what is proved about it. Every speaker plays each frame
 of the source a fixed latency $L$ after the frame was captured, as well as it
 can tell from its host's clock. The solution is defined in
-\path{lean/Unisono/Solutions/FixedDelay.lean}; the notation of the
-specification is used throughout.
+\path{lean/Unisono/Solutions/FixedDelay.lean}, and the proofs about it are
+in the directory \path{lean/Unisono/Solutions/FixedDelay/}; the notation of
+the specification is used throughout.
 
 \section{The solution}
 
@@ -230,14 +231,35 @@ latency
     + d_{\max} + \lambda_{\max},
   \qquad E = \frac{1 + \varepsilon_D}{1 - \varepsilon_D}\, E_t
 \]
-(\lean{latencyError}). Then the baseline's playback is at latency $L$ within
-$E$ from some output sample on (\lean{plays\_at\_latency}).
+(\lean{latencyError}), where $a$ is the resampler's lookahead in frames from
+the data constraint of the specification. Then the baseline's playback is at
+latency $L$ within $E$ from some output sample on
+(\lean{plays\_at\_latency}).
 \end{theorem}
 
-To first order in the rate errors, $E \approx (d_{\max} - d_{\min})/2 +
-2\varepsilon_R + \varepsilon_D L$, and the least latency is about $E$ plus
-the longest delay, the handoff delay, the request lead and the spans of two
-blocks and of the lookahead. With Theorem~\ref{thm:atlatency} and
+The theorem leaves out speakers on the sender's host. The baseline supports
+them: the sender's host takes each block it hands over as its latest block,
+and zero as its clock offset. A later theorem will cover them. A world of
+two hosts with exact clocks and devices, blocks of one frame and delays of
+one second meets every hypothesis of the theorem for a latency of three
+seconds, with $E = 0$ (\lean{plays\_at\_latency\_example}), so the
+hypotheses can all hold at once.
+
+To first order in the rate errors $\varepsilon_C$ and $\varepsilon_D$,
+\[
+  E \approx e_0 + \varepsilon_C \bigl(2P + d_{\max} + 2\lambda_{\max} + 2A_q
+    + S_b\bigr) + \varepsilon_D \bigl(L + 3e_0 + 2s + S_b\bigr),
+\]
+where $e_0 = 2\varepsilon_R + (d_{\max} - d_{\min})/2$ is the target's error
+with exact clocks and devices. The period
+and the latency enter through $2\varepsilon_C P$ and $\varepsilon_D L$; the
+other first-order terms are the rate errors times delays, request leads,
+handoff delays and spans of blocks. When the period is much longer than the
+latency, as it usually is, $2\varepsilon_C P$ is the largest of them: with
+clocks that err by $5 \times 10^{-5}$, a period of one second adds 0.1~ms
+to $E$, and a period of one minute adds 6~ms. The least latency is about $E$
+plus the longest delay, the handoff delay, the request lead and the spans of
+two blocks and of the lookahead. With Theorem~\ref{thm:atlatency} and
 $\delta = (1 + \varepsilon_D)/\rho$, the longest time between two output
 samples, the baseline misses no samples and has no discontinuities in the
 long run, its latency is at most $L + E + \delta$, its synchronization cost
@@ -252,7 +274,7 @@ The proof follows the solution's parts, each bounding one source of error:
   baseline remembers can be traced to the world. A host other than the
   sender's remembers the latest block that arrived and the estimate of the
   latest question answered
-  (\path{lean/Unisono/Solutions/FixedDelayMemory.lean}); at a step, the block
+  (\path{lean/Unisono/Solutions/FixedDelay/Memory.lean}); at a step, the block
   is no older than any block handed over more than $d_{\max}$ before it
   (\lean{block\_memory}).
 \item \emph{The clocks:} every question is answered, so at every step later
@@ -264,9 +286,9 @@ The proof follows the solution's parts, each bounding one source of error:
   longest delays (\lean{offset\_sample}). Such an estimate errs from the
   true difference of the two clocks at the sender's reading by at most half
   the largest difference of the two delays, plus the clocks' rate error
-  times the mean delay (\lean{offset\_error}), and the difference of two
-  clocks drifts by at most twice their rate error per second
-  (\lean{offset\_drift}).
+  times the mean of the longest delays of the question and the answer
+  (\lean{offset\_error}), and the difference of two clocks drifts by at most
+  twice their rate error per second (\lean{offset\_drift}).
 \item \emph{The target:} the time that the target of output sample $k$
   stands for is within $e$ of $o_r(k) - L$ (\lean{target\_time\_error}), and
   the sound at the target was captured within $E_t$ of it

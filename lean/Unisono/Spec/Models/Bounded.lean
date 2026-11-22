@@ -190,8 +190,8 @@ theorem Clock.advance_mem {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) {s t : T
 question and the answer take between `dmin₁` and `dmax₁`, and between
 `dmin₂` and `dmax₂` seconds, the estimate `t₂ - (t₁ + t₄) / 2` of the
 sender's clock minus the host's errs from their true difference at `s₂` by
-at most half the largest difference of the two delays, plus `ε` times
-their mean. -/
+at most half the largest difference of the two delays, plus `ε` times the
+mean of `dmax₁` and `dmax₂`. -/
 theorem offset_error {C S : Clock} {ε : ℝ} (hC : C.RateWithin ε) {s₁ s₂ s₄ : Time}
     {dmin₁ dmax₁ dmin₂ dmax₂ : ℝ} (h₁ : dmin₁ ≤ s₂ - s₁) (h₁' : s₂ - s₁ ≤ dmax₁)
     (h₂ : dmin₂ ≤ s₄ - s₂) (h₂' : s₄ - s₂ ≤ dmax₂) (hpos₁ : 0 < dmin₁) (hpos₂ : 0 < dmin₂) :

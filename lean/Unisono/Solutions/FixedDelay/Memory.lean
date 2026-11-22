@@ -74,16 +74,18 @@ theorem block_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payloa
       · exact absurd hs hh
       · exact keep hb
     · rename_i i f' c' F ho
-      split at hb
-      · rename_i f'' c'' hold
-        split_ifs at hb with hlt
+      split_ifs at hb with hs
+      · exact absurd hs hh
+      · split at hb
+        · rename_i f'' c'' hold
+          split_ifs at hb with hlt
+          · simp only [Option.some.injEq, Prod.mk.injEq] at hb
+            obtain ⟨rfl, rfl⟩ := hb
+            exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ho⟩
+          · exact keep hb
         · simp only [Option.some.injEq, Prod.mk.injEq] at hb
           obtain ⟨rfl, rfl⟩ := hb
           exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ho⟩
-        · exact keep hb
-      · simp only [Option.some.injEq, Prod.mk.injEq] at hb
-        obtain ⟨rfl, rfl⟩ := hb
-        exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ho⟩
     · split_ifs at hb
       · exact keep hb
       · exact keep hb
@@ -113,11 +115,13 @@ theorem block_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload)
         · exact absurd hs hh
         · exact ⟨f₀, c₀, h₀, le_rfl⟩
       · rename_i i' f₁ c₁ F₁ ho₁
-        rw [h₀]
-        simp only
-        split_ifs with hlt
-        · exact ⟨f₁, c₁, rfl, hlt.le⟩
-        · exact ⟨f₀, c₀, h₀, le_rfl⟩
+        split_ifs with hs
+        · exact absurd hs hh
+        · rw [h₀]
+          simp only
+          split_ifs with hlt
+          · exact ⟨f₁, c₁, rfl, hlt.le⟩
+          · exact ⟨f₀, c₀, h₀, le_rfl⟩
       · split_ifs <;> exact ⟨f₀, c₀, h₀, le_rfl⟩
       · split_ifs
         · exact ⟨f₀, c₀, h₀, le_rfl⟩
@@ -132,7 +136,7 @@ theorem block_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload)
       subst he
       unfold remember
       rw [ho]
-      simp only
+      simp only [hh, ↓reduceIte]
       split
       · rename_i f₀ c₀ h₀
         split_ifs with hlt
@@ -168,9 +172,7 @@ theorem offset_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Paylo
     · split_ifs at ho with hs
       · exact absurd hs hh
       · exact keep ho
-    · split at ho
-      · split_ifs at ho <;> exact keep ho
-      · exact keep ho
+    · split_ifs at ho <;> (try split at ho) <;> (try split_ifs at ho) <;> exact keep ho
     · split_ifs at ho <;> exact keep ho
     · rename_i i sent received F hobs
       split_ifs at ho with hs
@@ -205,9 +207,7 @@ theorem offset_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload
       · split_ifs with hs
         · exact absurd hs hh
         · exact ⟨a₀, θ₀, h₀, le_rfl⟩
-      · split
-        · split_ifs <;> exact ⟨a₀, θ₀, h₀, le_rfl⟩
-        · exact ⟨a₀, θ₀, h₀, le_rfl⟩
+      · split_ifs <;> (try split) <;> (try split_ifs) <;> exact ⟨a₀, θ₀, h₀, le_rfl⟩
       · split_ifs <;> exact ⟨a₀, θ₀, h₀, le_rfl⟩
       · split_ifs with hs
         · exact absurd hs hh
@@ -255,10 +255,8 @@ theorem asked_request (h : H) (l : List (Event H R Payload)) {a : ℝ}
       exact ⟨l₁, e', l₂ ++ [e], by rw [hl]; simp, h1, h2, h3⟩
     unfold remember at ha
     split at ha
-    · split_ifs at ha <;> exact keep ha
-    · split at ha
-      · split_ifs at ha <;> exact keep ha
-      · exact keep ha
+    · split_ifs at ha <;> (try split at ha) <;> exact keep ha
+    · split_ifs at ha <;> (try split at ha) <;> (try split_ifs at ha) <;> exact keep ha
     · split_ifs at ha <;> exact keep ha
     · split_ifs at ha
       · exact keep ha
@@ -294,10 +292,8 @@ theorem last_after_request (h : H) (l₁ : List (Event H R Payload)) (e : Event 
     rw [← ih']
     unfold remember
     split
-    · split_ifs <;> rfl
-    · split
-      · split_ifs <;> rfl
-      · rfl
+    · split_ifs <;> (try split) <;> rfl
+    · split_ifs <;> (try split) <;> (try split_ifs) <;> rfl
     · split_ifs <;> rfl
     · split_ifs
       · rfl
@@ -325,10 +321,8 @@ theorem last_none (h : H) (l : List (Event H R Payload)) {r : Fin R}
     rw [← ih']
     unfold remember
     split
-    · split_ifs <;> rfl
-    · split
-      · split_ifs <;> rfl
-      · rfl
+    · split_ifs <;> (try split) <;> rfl
+    · split_ifs <;> (try split) <;> (try split_ifs) <;> rfl
     · split_ifs <;> rfl
     · split_ifs
       · rfl
@@ -360,10 +354,8 @@ theorem answered_question (l : List (Event H R Payload)) {i : H} {a : ℝ}
       exact ⟨l₁, e', l₂ ++ [e], by rw [hl]; simp, h1, h2⟩
     unfold remember at ha
     split at ha
-    · split_ifs at ha <;> exact keep ha
-    · split at ha
-      · split_ifs at ha <;> exact keep ha
-      · exact keep ha
+    · split_ifs at ha <;> (try split at ha) <;> exact keep ha
+    · split_ifs at ha <;> (try split at ha) <;> (try split_ifs at ha) <;> exact keep ha
     · rename_i i' sent F hobs
       split_ifs at ha with hans
       · by_cases hi : i' = i
@@ -394,10 +386,8 @@ theorem answered_latest (l : List (Event H R Payload)) {e : Event H R Payload} (
       intro a₀ h₀
       unfold remember
       split
-      · split_ifs <;> exact ⟨a₀, h₀, le_rfl⟩
-      · split
-        · split_ifs <;> exact ⟨a₀, h₀, le_rfl⟩
-        · exact ⟨a₀, h₀, le_rfl⟩
+      · split_ifs <;> (try split) <;> exact ⟨a₀, h₀, le_rfl⟩
+      · split_ifs <;> (try split) <;> (try split_ifs) <;> exact ⟨a₀, h₀, le_rfl⟩
       · rename_i i' sent' F' hobs
         split_ifs with hans
         · by_cases hi : i' = i

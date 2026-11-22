@@ -27,8 +27,8 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
-public import Unisono.Solutions.FixedDelayBounded
-public import Unisono.Solutions.FixedDelayMemory
+public import Unisono.Solutions.FixedDelay.Latency
+public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
@@ -1209,10 +1209,6 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.progress
 
-/-- info: 'Unisono.Solutions.FixedDelay.exists_last_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.exists_last_before
-
 /-- info: 'Unisono.Solutions.FixedDelay.asked_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.asked_gap
@@ -1268,3 +1264,7 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.guarantees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.guarantees
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_at_latency_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_at_latency_example
