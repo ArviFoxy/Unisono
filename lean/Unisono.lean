@@ -27,11 +27,16 @@ public import Unisono.Sender
 public import Unisono.Solutions.FixedDelay
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
+public import Unisono.Solutions.Star.Level
+public import Unisono.Solutions.Star.Receivers
+public import Unisono.Solutions.Star.Separation
+public import Unisono.Solutions.Star.Spectral
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Solution
 public import Unisono.Spec.World

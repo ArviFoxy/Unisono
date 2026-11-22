@@ -7,6 +7,7 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.SecondOrder
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
@@ -46,8 +47,8 @@ build.
 * The run processes events in chronological order
   (`Solution.eventTime_le_succ`), and a run that advances past every true
   time decides what every output sample plays (`Solution.decided`).
-* Neither model of the world is empty (`Bounds.example_within`,
-  `DelayModel.example_holds`).
+* No model of the world is empty (`Bounds.example_within`,
+  `DelayModel.example_holds`, `SecondOrderModel.example_holds`).
 -/
 
 @[expose] public noncomputable section
@@ -698,7 +699,7 @@ theorem syncCost_one_off (w : World H R) (plays : Fin R → ℕ → Option ℝ) 
   rw [Finset.sum_congr rfl hpair, Finset.sum_ite, Finset.sum_const_zero, add_zero,
     Finset.sum_const, nsmul_eq_mul, hcard]
 
-/-! ## Neither model is empty -/
+/-! ## No model is empty -/
 
 /-- **The bounded model is not empty.** A world with one speaker on the
 sender's host, exact clocks and devices, blocks of one frame, and a network
@@ -848,6 +849,85 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
         simp only [hdrop]
         rw [hmix]
         exact tendsto_const_nhds }
+
+/-- **The second-order model is not empty**: a world of one host with exact
+clocks and devices, whose link to itself has a constant delay of one second,
+no jitter and no holds, follows the model with no noise at all. -/
+theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel Unit 1) (P : Measure Unit)
+    (world : Unit → World Unit 1) (d : Unit → Unit → Unit → Link),
+    IsProbabilityMeasure P ∧ m.Holds P world d := by
+  let link : Link := ⟨fun _ => 1, fun _ => 0, ∅, ∅⟩
+  let w : World Unit 1 :=
+    { rate := 1
+      rate_pos := one_pos
+      sender := ()
+      host := fun _ => ()
+      hosts := fun _ => Or.inl rfl
+      clock := fun _ => ⟨id, strictMono_id, continuous_id⟩
+      source :=
+        { capture := fun n => n
+          capture_strictMono := Nat.strictMono_cast
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          handed := fun b => b
+          handed_strictMono := Nat.strictMono_cast
+          handed_after := fun b => by simp
+          reported := fun b => b }
+      speaker := fun _ =>
+        { out := fun k => k + 1
+          out_strictMono := fun a b h => by simpa using h
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          asked := fun b => b + 1 / 2
+          asked_strictMono := fun a b h => by simpa using h
+          asked_before := fun b => by norm_num
+          reported := fun b => b + 1 }
+      network := ⟨fun _ _ s q => link.deliver s q,
+        fun _ _ _ _ _ h => Link.deliver_after link (fun _ => one_pos) (fun _ => le_rfl) h⟩
+      target := fun _ => 0 }
+  have hzero : ∀ t₁ τ₁ t₂ τ₂,
+      secondDifferenceCovariance ClockNoise.zero.density t₁ τ₁ t₂ τ₂ = 0 := by
+    intro t₁ τ₁ t₂ τ₂
+    simp [secondDifferenceCovariance, ClockNoise.density, ClockNoise.zero]
+  refine ⟨
+    { clock := fun _ => ClockNoise.zero
+      commonJitter := fun _ => ⟨0, fun _ => 0⟩
+      ownJitter := fun _ _ => ⟨0, fun _ => 0⟩
+      capture := ClockNoise.zero
+      playback := fun _ => ClockNoise.zero
+      timestampVariance := 0
+      timestampVariance_nonneg := le_rfl },
+    Measure.dirac (), fun _ => w, fun _ _ _ => link, inferInstance, ?_⟩
+  refine
+    { network := fun _ _ _ _ _ => rfl
+      clocks := fun _ => ⟨fun _ _ => by simp [w, secondDifference],
+        fun _ _ _ _ => by simp [w, secondDifference, hzero]⟩
+      clocks_uncorrelated := fun i j h => absurd (Subsingleton.elim i j) h
+      jitter := ⟨fun _ _ _ => 0, fun _ _ _ _ => 0, fun _ _ _ _ => by simp [link],
+        fun _ => ⟨fun _ => by simp, fun _ _ => by simp⟩,
+        fun _ _ => ⟨fun _ => by simp, fun _ _ => by simp⟩,
+        fun _ _ _ _ _ => by simp, fun _ _ _ _ _ _ _ => by simp⟩
+      holds := ⟨fun _ _ => ∅, fun _ _ _ => ∅, fun _ _ _ => by simp [link]⟩
+      capture := ⟨1, fun _ => rfl, fun _ _ => by simp [w, devicePhase, gridDifference],
+        fun _ _ _ _ => by simp [w, devicePhase, gridDifference, hzero]⟩
+      playback := fun _ => ⟨1, fun _ => rfl, fun _ _ => by
+          simp only [w, devicePhase, gridDifference]
+          push_cast
+          simp only [div_one, id]
+          ring_nf
+          simp,
+        fun _ _ _ _ => by
+          simp only [w, devicePhase, gridDifference, hzero]
+          push_cast
+          simp only [div_one, id]
+          ring_nf
+          simp⟩
+      capture_timestamps := ⟨fun _ => by simp [w, captureError],
+        fun _ _ => by simp [w, captureError]⟩
+      playback_timestamps := fun _ => ⟨fun _ => by simp [w, playbackError],
+        fun _ _ => by simp [w, playbackError]⟩ }
 
 end Further
 

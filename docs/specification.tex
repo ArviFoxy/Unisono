@@ -591,8 +591,64 @@ other. Mixing is assumed without a rate; a rate will be added when a
 statement about finite time windows needs one. The model is not empty
 (\lean{DelayModel.example\_holds}).
 
-Stochastic models of how the clocks wander are not part of this
-specification yet; they will be introduced together with the theorems that
-rely on them.
+\subsection{A second-order model}
+
+The model \lean{SecondOrderModel} states the means and covariances of the
+world's noise: of the clocks, of the delays and of the devices
+(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Synchronization,
+latency, tracking and roughness are quadratic in the latency errors. For
+them, and for solutions that are linear in their measurements, the means and
+covariances are all that matters. Missed samples depend on more: on how long
+the holds of the delay model last.
+
+\begin{definition}[Second-order model]
+A host's clock reads $C_i(t) = t + \phi_i(t)$ at true time $t$, where
+$\phi_i$ is the clock's \emph{phase}. Its fractional frequency
+$\dot\phi_i$ has the one-sided power spectral density
+\[
+  S_i(f) = h_{0,i} + \frac{h_{-1,i}}{f} + \frac{h_{-2,i}}{f^2},
+  \qquad f > 0,
+\]
+whose three terms are white, flicker and random-walk frequency noise
+(\lean{ClockNoise}), the power-law components that dominate in quartz
+oscillators. The first differences of a phase with random-walk frequency
+noise are not stationary, so the model states the second differences
+$\Delta^2_\tau \phi(t) = \phi(t + 2\tau) - 2\phi(t + \tau) + \phi(t)$: they
+have mean zero and the covariances (\lean{FollowsNoise},
+\lean{secondDifferenceCovariance})
+\[
+  E\bigl[\Delta^2_{\tau_1}\phi(t_1)\,\Delta^2_{\tau_2}\phi(t_2)\bigr]
+  = \int_0^\infty \frac{S(f)}{(2\pi f)^2}\,
+    \mathrm{Re}\Bigl[e^{2\pi i f (t_1 - t_2)}
+      \bigl(e^{2\pi i f \tau_1} - 1\bigr)^2\,
+      \overline{\bigl(e^{2\pi i f \tau_2} - 1\bigr)^2}\Bigr]\,df .
+\]
+The integral converges for all three components. The phases of different
+hosts are uncorrelated.
+
+Each link's delay is its floor, its jitter and its holds, as in the delay
+model. The jitter of the link from host $i$ to host $j$ is
+$J_{ij} = J^c_i + J'_{ij}$: a part common to all links that leave $i$, and a
+part of its own. Each part has a constant mean and a covariance that
+depends only on the time between two messages (\lean{JitterNoise}), and the
+parts are uncorrelated with each other. The holds of a link are those
+common to all links that leave its host, and those of its own.
+
+The capture device's timing deviates from the sender's clock, and each
+playback device's timing from its host's clock, as a clock deviates from
+true time. The phase of a device at its $k$-th frame or output sample is the
+reading of its host's clock at that moment minus $k/\rho$
+(\lean{devicePhase}), and it follows a power-law spectrum at the nominal
+times $k/\rho$ (\lean{FollowsNoiseOnGrid}). The devices' timestamps add white
+noise of variance $\sigma_R^2$ (\lean{WhiteErrors}).
+\end{definition}
+
+Consider a star of hosts, in which every message goes between the sender
+and one receiving host, a host that drives a speaker and is not the
+sender's. There, the parts common to all links are the sender's clock, the
+jitter and the holds common to the sender's links, and the capture device.
+The parts of each link are a receiving host's clock, the link's own jitter
+and holds, and the playback devices on that host. The model is not empty
+(\lean{SecondOrderModel.example\_holds}).
 
 \end{document}

@@ -1,0 +1,510 @@
+% This Source Code Form is subject to the terms of the Mozilla Public
+% License, v. 2.0. If a copy of the MPL was not distributed with this
+% file, You can obtain one at https://mozilla.org/MPL/2.0/.
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{needspace}
+\usepackage{microtype}
+\usepackage[hidelinks]{hyperref}
+
+% The same source gives the same PDF: no dates, no random identifier and no
+% description of the machine that built it. `just pdfs` passes the SHA-256
+% of this file as \sourcehash, and the PDF records it, so that
+% `just pdfs-check` can tell whether the committed PDF was built from the
+% current source.
+\ifdefined\pdfinfoomitdate
+  \pdfinfoomitdate=1
+  \pdftrailerid{}
+  \pdfsuppressptexinfo=-1
+\fi
+\providecommand{\sourcehash}{unknown}
+\hypersetup{
+  pdftitle={Optimal playback with exchanges between the sender and each receiver},
+  pdfsubject={Built from docs/star-optimum.tex with SHA-256 \sourcehash}
+}
+
+\setlist{itemsep=2pt,topsep=4pt,parsep=0pt}
+\emergencystretch=3em
+\clubpenalty=10000
+\widowpenalty=10000
+
+\newcommand{\lean}[1]{\texttt{#1}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{remark}[definition]{Remark}
+
+\begin{document}
+
+\begin{center}
+{\LARGE\bfseries Optimal playback with exchanges between\\[2pt]
+the sender and each receiver\par}
+\end{center}
+\medskip
+
+This document presents a solution to the problem of
+\path{docs/specification.pdf} in which the hosts form a \emph{star}: every
+message goes between the sender and one \emph{receiving host}, a host that
+drives a speaker and is not the sender's. It proves that the solution's way
+of playing is the best possible for the quadratic objectives, among all ways
+that use only what a receiving host has seen, and compares it with the
+baseline of \path{docs/fixed-playout-delay.pdf}. The proofs are in
+\path{lean/Unisono/Solutions/Star/}, the model of the world is the
+second-order model of the specification
+(\path{lean/Unisono/Spec/Models/SecondOrder.lean}), and the simulation is in
+\path{crates/unisono-sim/src/star.rs}. The numbers below come from
+\texttt{cargo run --release -p unisono-sim --example star}.
+
+The solution has three parts:
+\begin{itemize}
+\item a \emph{front end} that keeps, of each group of consecutive clock
+  exchanges, the one with the shortest round trip;
+\item an \emph{estimator} that computes the best estimate of the offset and
+  the relative frequency of the sender's clock and the host's clock from the
+  front end's measurements: a Kalman filter, which in the stationary
+  Gaussian case is the Wiener filter;
+\item the \emph{law} of \path{lean/Unisono/Model/Regulation.lean}, which
+  steers the playback position towards the estimate with the least squared
+  distance and the least squared change of pace.
+\end{itemize}
+The main theorem says that the law applied to the best estimate, the
+conditional mean, is optimal among all causal ways of playing, for any
+probability distribution of the noise. With several receivers, a
+broadcast from the sender removes the sender's clock from the
+synchronization error. The latency level comes from the distribution of the
+holds.
+
+\section{The problem of one receiver}
+
+A receiver reads the stream once in each cycle of its device, the callback
+in which the device asks for the next block. Let:
+\begin{itemize}
+\item $S_k$ be the position, in frames, that is truly due at the start of
+  cycle $k$: the position whose sound was captured the latency $L$ before
+  the cycle's first output sample leaves;
+\item $p_k$ be the receiver's position at the start of cycle $k$, and $n_k$
+  the number of frames that cycle $k$ reads, so that $p_{k+1} = p_k + n_k$;
+\item $w_k = n_k - n_{k-1}$ be the change of the pace at cycle $k$;
+\item $\mathcal F_k$ be the $\sigma$-algebra of what the receiver has seen
+  before cycle $k$.
+\end{itemize}
+A way of playing is \emph{causal} when $p_0$, $n_{-1}$ and every $n_k$ are
+$\mathcal F_k$-measurable with finite mean squares. For a gain
+$0 < g < 1$ and the weight
+\[
+  c_g = \frac{g^4}{(2 - g)^2 (1 - g)},
+\]
+which takes every positive value once as $g$ ranges over $(0, 1)$, cycle $k$
+costs
+\[
+  c_g\,(S_k - p_k)^2 + w_k^2 .
+\]
+The first term is the squared latency error at the start of the cycle,
+counted in frames: the error in seconds times the nominal rate. The second
+term is the squared change of the playback speed between two cycles, times
+the square of the cycle's length in frames. The specification's objectives
+count every output sample; this document counts the first output sample of
+each cycle.
+
+\subsection{The orthogonality principle}
+
+In a real inner product space, let $K$ be a linear subspace, $b$ a vector
+and $x^\circ \in K$ a vector with $b - x^\circ$ orthogonal to $K$. Then
+every $x \in K$ satisfies
+$\|b - x\|^2 = \|b - x^\circ\|^2 + \|x - x^\circ\|^2$. The vector
+$x^\circ$ is the orthogonal projection of $b$ on $K$, and no element of
+$K$ is closer to $b$. For random variables with finite mean squares, the
+mean of the product is an inner product, and the $\mathcal F_k$-measurable
+random variables form a closed subspace. The conditional expectation
+$\E[S \mid \mathcal F_k]$ is the orthogonal projection on that subspace,
+which Mathlib provides.
+
+The principle is used twice. First, the receiver's position $p_k$ is
+$\mathcal F_k$-measurable, so the error of the best estimate
+$\hat S_k = \E[S_k \mid \mathcal F_k]$ is orthogonal to the distance
+$\hat S_k - p_k$, and
+\[
+  \E(S_k - p_k)^2 = \E(\hat S_k - p_k)^2 + \E(S_k - \hat S_k)^2
+\]
+(\lean{mean\_square\_split}). Second, the revisions of the best estimates
+between two cycles are orthogonal to everything known before the first of
+them, and against such revisions the law is optimal
+(\lean{mean\_cost\_sum}).
+
+\subsection{The best estimate and the law are optimal together}
+
+Let $\hat a_k = \E[S_{k+1} - S_k \mid \mathcal F_k]$ be the expected
+advance over cycle $k$. The \emph{state} before cycle $k$ consists of the
+distance $E_k = \hat S_k - p_k$ of the position behind the best estimate,
+and the number $v_k = n_{k-1} - \hat a_k$ of frames by which the last cycle
+read more than the expected advance. The \emph{revision} between cycle $k$
+and cycle $k + 1$ is
+\[
+  \xi_k = \bigl(\E[S_{k+1} \mid \mathcal F_{k+1}] - \E[S_{k+1} \mid
+  \mathcal F_k],\ \hat a_k - \hat a_{k+1}\bigr).
+\]
+The law with gain $g$ changes the pace by
+\[
+  \ell_g(E, v) = \frac{g^2}{2 - g}\,E - g\,v ,
+\]
+and the cost of all cycles from a state under the law, without revisions,
+is the quadratic form
+\[
+  V_g(E, v) = \frac{g^3}{(2 - g)(1 - g)}\,E^2 - \frac{2 g^2}{2 - g}\,E v
+    + g\,v^2
+\]
+(\lean{value}).
+
+\begin{theorem}[The cost splits]\label{thm:split}
+Suppose the pace of the due position is expected to stay:
+$\E[S_{k+2} - S_{k+1} \mid \mathcal F_k] = \E[S_{k+1} - S_k \mid
+\mathcal F_k]$ for every $k$, and every $S_k$ has a finite mean square. Then
+for every causal way of playing and every number $n$ of cycles,
+\begin{multline*}
+  \sum_{k < n} \E\bigl[c_g (S_k - p_k)^2 + w_k^2\bigr] + \E V_g(E_n, v_n)
+  = c_g \sum_{k < n} \E(S_k - \hat S_k)^2 + \E V_g(E_0, v_0) \\
+  + \sum_{k < n} \E V_g(\xi_k)
+  + \frac{1}{1 - g} \sum_{k < n} \E\bigl(w_k - \ell_g(E_k, v_k)\bigr)^2
+\end{multline*}
+(\lean{mean\_cost\_split}).
+\end{theorem}
+
+No way of playing changes the first three terms on the right. The last term
+is zero exactly when every change of the pace is the law's change applied to
+the state. Playing that way is causal (\lean{lawRead}, \lean{known\_lawRead})
+and therefore optimal: for every causal way of playing from the same start,
+its cost plus the value of the final state is at least the optimal one
+(\lean{mean\_cost\_law\_le}). The theorem asks nothing of the distribution
+of the noise: the revisions need not be independent, of one law, or
+Gaussian. The only condition is that the pace is expected to stay, which a
+due position driven by clocks with white and random-walk frequency noise
+satisfies. Flicker frequency noise does not satisfy it, because its
+frequency is not a martingale, and is outside the theorem.
+
+Together with the law's long-run results (\lean{mean\_cost\_rate},
+\lean{mean\_value\_law\_le}), the theorem gives the long-run statement: the
+mean cost per cycle of any causal way of playing is at least $c_g$ times the
+mean squared error of the best estimate plus the mean value of a revision,
+and the law attains this bound, because its states keep a bounded mean
+value. This combination is not stated as one theorem in Lean.
+
+The theorem holds for every filtration. It therefore applies to whatever the
+receiver chooses to observe, including the output of the front end. Which
+estimator gives the conditional mean depends on the model. When the front
+end's errors and the clocks' noise are Gaussian, the conditional mean is the
+Kalman filter, and the theorem makes the Kalman filter with the law optimal
+among all causal ways of playing. For other distributions, the Kalman filter
+is the best linear estimator; the corresponding statement for linear ways of
+playing follows from the same argument with linear projections, but is not
+formalized.
+
+\subsection{The frequency domain}
+
+The same solution comes out of the Wiener--Hopf method. In the stationary
+Gaussian case with a measurement at every cycle, the optimal map from the
+measurements to the positions is linear and time-invariant, and the
+Wiener--Hopf method finds it by factoring two spectra.
+
+\paragraph{The weight.} The change of the pace is the second difference of
+the position. On the unit circle $z = e^{i\omega}$, the cost's weight is
+therefore $c_g + |1 - z|^4$. It factors as
+\[
+  c_g + \bigl(2 - z - z^{-1}\bigr)^2 = \frac{P_g(z)\,P_g(z^{-1})}{1 - g},
+  \qquad P_g(z) = z^2 - \frac{4(1 - g)}{2 - g}\,z + (1 - g)
+\]
+(\lean{weight\_factor}), where $2 - z - z^{-1} = |1 - z|^2$ on the circle.
+Under the law, two cycles without revisions satisfy
+$x_{k+2} = \frac{4(1 - g)}{2 - g}\,x_{k+1} - (1 - g)\,x_k$
+(\lean{step\_step}): the law's closed loop has the characteristic
+polynomial $P_g$. Both roots of $P_g$ lie inside the unit circle, with
+modulus $\sqrt{1 - g}$. The law is thus the causal factor of the weight,
+as the Wiener--Hopf solution prescribes.
+
+\paragraph{The papers' law.} The earlier papers derived, in continuous time,
+the law that minimizes $q e^2 + r \dot u^2$ for a latency error $e$ driven by
+white noise, where $u$ is the warp: the difference between the playback
+speed and the nominal speed. The weight $q + r\omega^4$ factors as
+$|W(i\omega)|^2$ with $W(s) = c_2 s^2 + c_1 s + c_0$, $c_0^2 = q$,
+$c_2^2 = r$ and $c_1^2 = 2 c_0 c_2$ (\lean{butterworth}): the
+second-order Butterworth polynomial with natural frequency
+$(q/r)^{1/4}$ and damping $1/\sqrt 2$, which is the papers' closed loop.
+The law of this document is its exact discrete-time counterpart: when the
+measurement is exact and the due position is a random walk, the estimator
+is the measurement itself, and the optimal controller is the causal factor
+$P_g$ of the discrete weight.
+
+\paragraph{The estimate.} Let the due position follow a random walk whose
+steps have variance $q$, measured at every cycle with white noise of
+variance $r$. Let $a$ be the root in $(0, 1)$ of
+$a^2 - (2 + q/r)\,a + 1 = 0$ (\lean{filterRoot}). The spectrum of the
+measurements factors as
+\[
+  \frac{q + r\,(2 - z - z^{-1})}{(1 - z)(1 - z^{-1})}
+  = \frac{r}{a}\,\frac{(1 - a z)(1 - a z^{-1})}{(1 - z)(1 - z^{-1})}
+\]
+(\lean{estimate\_factor}), and the Wiener filter is
+$\hat S = \frac{1 - a}{1 - a z^{-1}}\,y$ for measurements $y$. In the time
+domain this filter is the steady state of the Kalman filter, whose gain is
+$1 - a$ (\lean{riccati\_fixed}). Its estimate errs with variance
+$r(1 - a)$ (\lean{posterior\_variance}), and its revisions have variance
+$q$ (\lean{revision\_variance}). The optimal mean cost per cycle is
+therefore
+\[
+  c_g\, r\,(1 - a) + \frac{g^3}{(2 - g)(1 - g)}\,q ,
+\]
+the first term from the estimate's error and the second from the value of a
+revision, which moves only the position. The simulation's Kalman filter
+reaches the variance $r(1 - a)$ to nine digits
+(\texttt{the\_filter\_reaches\_the\_closed\_form}).
+
+The clocks of the second-order model add random-walk frequency noise, which
+gives the estimator a second state, the relative frequency. Its steady
+state solves a $2 \times 2$ Riccati equation, which the simulation iterates.
+Flicker frequency noise has no finite-dimensional state; its spectrum
+$h_{-1}/f$ is not rational, and its spectral factor is computed from the
+logarithm of the spectrum by Fourier transforms. Neither case is formalized
+here.
+
+\subsection{The front end}
+
+Network delays are one-sided: a message never arrives before the link's
+smallest delay, and holds only make messages later. A linear filter of $n$
+samples errs by about $\sigma/\sqrt n$, where $\sigma$ is the spread of the
+delays. The shortest of $n$ delays errs by about $1/(n f_0)$, where $f_0$
+is the density of the delays just above the smallest. Of each group of
+consecutive exchanges, the front end therefore keeps the one with the
+shortest round trip, and the estimator works on these measurements. A hold
+that does not cover a whole group does not reach the measurement. What
+remains is the asymmetry of the two directions' smallest delays, which no
+exchange with the sender can observe.
+
+\section{Several receivers}
+
+Receiving host $j$ must follow $\theta_j = c + i_j$, the difference between
+the sender's clock and its own. The part $c$ is common to all receiving
+hosts: the sender's clock, and the delays on the sender's side. The part
+$i_j$ belongs to host $j$: its clock and its link. Host $j$ measures
+$\theta_j + m_j$, where $m_j$ is the error of its measurements. A linear way
+of playing applies a linear map $F_j$ to the measurements, such as a causal
+filter acting on sequences of random variables, and makes the error
+$e_j = F_j(\theta_j + m_j) - \theta_j$. Synchronization depends only on the
+differences $e_j - e_{j'}$.
+
+\begin{theorem}[What the receivers share cancels]\label{thm:cancel}
+\leavevmode
+\begin{itemize}
+\item If all receivers apply the same map $F$, then
+  $e_j - e_{j'} = F(i_j + m_j - i_{j'} - m_{j'}) - (i_j - i_{j'})$, and
+  the synchronization cost does not depend on $c$
+  (\lean{error\_sub\_error\_same}, \lean{syncCost\_same\_filter}).
+\item If two receivers apply different maps, the common part enters their
+  difference as $(F_j - F_{j'})\,c$ (\lean{error\_sub\_error}).
+\item Suppose the sender broadcasts an estimate $c + \eta$ of the common
+  part. Each receiver applies a map $G$, the same for all, to the broadcast,
+  and its own map $F_j$ to its measurement minus the broadcast. Then
+  $e_j - e_{j'} = F_j(i_j + m_j - \eta) - F_{j'}(i_{j'} + m_{j'} - \eta)
+  - (i_j - i_{j'})$, whatever the maps $F_j$ are, and the synchronization
+  cost does not depend on $c$ (\lean{broadcastError\_sub},
+  \lean{syncCost\_broadcast}).
+\end{itemize}
+\end{theorem}
+
+The identities hold for every realization, so they hold for the mean
+squares as well. The first explains why identical receivers do not need the
+broadcast. The second explains why a mix of wired and wireless receivers
+does: the optimal filter of a receiver with noisy measurements is narrower,
+so it follows the sender's clock with a different lag. The broadcast's own
+error $\eta$ still enters through the receivers' maps. The sender averages
+the receivers' measurements with weights inversely proportional to their
+variances, so $\eta$ is mostly the error of the best-measured receivers.
+
+\paragraph{Numbers.} The simulation of the second-order model in
+Table~\ref{tab:broadcast} has three wired receivers, whose measurements err
+by $3\,\mu$s, and two wireless receivers, whose measurements err by
+$150\,\mu$s, one measurement every two seconds. All receivers' clocks are
+quartz: white frequency noise of $2 \times 10^{-18}$ per hertz, an Allan
+deviation of $10^{-9}$ at one second, and a random walk of the frequency
+that adds $10^{-18}$ to its variance per second. The sender's clock is
+either such a quartz, or one whose frequency wanders a hundred times faster,
+as an oscillator that heats and cools does. Without the broadcast, each
+receiver runs its own Kalman filter. With it, every receiver runs the same
+filter on the broadcast and its own filter on the rest.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+& \multicolumn{2}{c}{all receivers} & \multicolumn{2}{c}{wired pairs}
+  & \multicolumn{2}{c}{wired and wireless} \\
+sender's clock & own & broadcast & own & broadcast & own & broadcast \\
+\midrule
+quartz & 7.05 & 6.66 & 0.89 & 0.87 & 12.70 & 11.89 \\
+wandering & 11.52 & 6.66 & 1.33 & 0.87 & 21.03 & 11.89 \\
+\bottomrule
+\end{tabular}
+\caption{Root mean square spread of the errors, in microseconds: the
+standard deviation over all receivers, and the difference within the pairs
+of each kind.}\label{tab:broadcast}
+\end{table}
+
+With a quartz sender the broadcast gains little: the receivers' lags differ
+by less than their own noise. With a wandering sender, the receivers without
+the broadcast drift apart, while with the broadcast the spreads are the same
+as with a quartz sender. The sender's clock no longer enters them, as
+Theorem~\ref{thm:cancel} says.
+
+\paragraph{What a star cannot do.} A change in the asymmetry of a link's two
+directions shifts the offset estimate by half the change, and no exchange
+with the sender reveals it. On a wireless link, a change of the link's rate
+moves the smallest delay of each direction separately. Exchanges between the
+receivers, or the arrival times of one multicast message at several
+receivers, would expose such changes. They are left to a solution that
+lets receivers communicate with each other.
+
+\section{The latency level from the holds}
+
+A hold is an episode in which a link keeps the messages sent on it and
+releases them when it ends. Suppose the latency level leaves a margin of
+$m$ seconds above what the other delays use. Then a hold of length $h$
+makes the receiver miss the output samples of $(h - m)^+$ seconds, where
+$x^+$ is the larger of $x$ and zero. When holds start at the rate $\lambda$
+per second with lengths distributed as $\mu$, the mean time missed per
+second is $\lambda \int (h - m)^+ \,d\mu(h)$, by Campbell's formula for
+stationary marked point processes, as long as holds do not overlap and
+playback resumes on time after each of them. With a price $a$ per second of
+latency and a price $b$ per second of missed playback, the margin $m$ costs
+\[
+  a\,m + b \int (h - m)^+\, d\nu(h), \qquad \nu = \lambda\,\mu .
+\]
+When several receivers play at one common level, their measures add, each
+shifted by what the other delays use at that receiver.
+
+\begin{theorem}[The best margin is a quantile]\label{thm:margin}
+Let $\nu$ be a finite measure with a finite mean, and let
+$b\,\nu\{h > m\} \le a \le b\,\nu\{h \ge m\}$. Then every margin $x$ costs
+at least as much as $m$ (\lean{margin\_best}).
+\end{theorem}
+
+The best margin is the one beyond which holds are rarer than $a/b$ per
+second; only the tail of their distribution matters. For holds of $30$~ms
+on average, exponentially distributed, every $20$ seconds,
+$\lambda e^{-m/\bar h} = a/b$ gives $m = \bar h \ln(\lambda b / a)$, where
+$\bar h$ is the mean length. Table~\ref{tab:holds} shows the margins for
+three ratios of the prices, the fraction of time that Campbell's formula
+predicts to be missed, $\lambda \bar h e^{-m/\bar h}$, and the fraction of
+packets that the simulated link makes late by more than the margin, out of
+$2 \times 10^7$ packets.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrr}
+\toprule
+$a/b$ & margin (ms) & Campbell & simulated \\
+\midrule
+$10^{-2}$ & 48.3 & $3.00 \times 10^{-4}$ & $2.88 \times 10^{-4}$ \\
+$10^{-3}$ & 117.4 & $3.00 \times 10^{-5}$ & $3.02 \times 10^{-5}$ \\
+$10^{-4}$ & 186.4 & $3.00 \times 10^{-6}$ & $2.80 \times 10^{-6}$ \\
+\bottomrule
+\end{tabular}
+\caption{Margins from the quantile rule for holds of $30$~ms on average every
+$20$~s, and the fraction of time missed.}\label{tab:holds}
+\end{table}
+
+The baseline needs a latency above the longest delay, holds included, to
+guarantee that it misses nothing. The quantile rule instead prices each
+millisecond of margin against the playback it saves.
+
+\section{Against the baseline}
+
+Table~\ref{tab:baseline} compares the baseline with the solution of this
+document in the simulation of \path{crates/unisono-sim/src/star.rs}. Each
+run lasts ten minutes, with cycles of $10$~ms, and the first minute is not
+counted. Every receiver sends a clock query every $0.25$~s, so both ways of
+playing use the network equally. Excess delays are exponentially
+distributed. The wired links add $5\,\mu$s on average to nine messages in
+ten and $200\,\mu$s on average to the tenth. The wireless links add
+$0.3$~ms on average to half of the messages and $3$~ms on average to the
+other half, and hold everything for $30$~ms on average every $20$ seconds.
+The clocks are quartz,
+with relative frequencies of up to $10$ parts per million. The baseline
+steers towards the estimate of the latest exchange with a slew of
+$10^{-3}$ seconds per second. The solution keeps the exchange with the
+shortest round trip out of every eight, filters with the variance of its
+link's measurements, and uses the law with gain $g = 0.05$, whose closed
+loop settles in about $0.4$~s.
+
+\begin{table}[ht]
+\centering
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+& \multicolumn{2}{c}{spread ($\mu$s)} & \multicolumn{2}{c}{error ($\mu$s)}
+  & \multicolumn{2}{c}{speed change (ppm)}
+  & \multicolumn{2}{c}{largest change (ppm)} \\
+receivers & base & solution & base & solution & base & solution & base
+  & solution \\
+\midrule
+two wired & 31.7 & 0.24 & 45.2 & 0.42 & 186.8 & 0.002 & 2000 & 0.04 \\
+two wireless & 226.7 & 21.1 & 321.9 & 24.2 & 292.0 & 0.20 & 2000 & 6.5 \\
+three wired, two wireless & 186.1 & 14.6 & 210.6 & 17.3 & 234.2 & 0.11
+  & 2000 & 5.1 \\
+\bottomrule
+\end{tabular}
+\caption{The baseline against the solution. The spread is the root mean
+square of the standard deviation of the receivers' errors; the error is the
+root mean square of each receiver's error against the sender's clock; the
+speed change is the change of the playback speed from one cycle to the
+next, in parts per million.}\label{tab:baseline}
+\end{table}
+
+On the wired links the solution synchronizes a hundred times more closely.
+It changes the speed by at most a few hundredths of a part per million, where
+the baseline reverses its correction at the full slew. On the wireless links the
+solution's error is set by the asymmetric medium access, which the shortest
+round trip of eight exchanges does not remove entirely. It is still ten
+times smaller than the baseline's. The comparison simulates the clock
+exchanges, not the stream: the devices run exactly on their hosts' clocks,
+and the stream's late packets are simulated separately, in the previous
+section.
+
+\section{What is proved}
+
+\begin{itemize}
+\item \path{lean/Unisono/Spec/Models/SecondOrder.lean}: the second-order
+  model and its non-empty example (\lean{SecondOrderModel.example\_holds} in
+  \path{lean/Unisono/Spec/Checks.lean}).
+\item \path{lean/Unisono/Solutions/Star/Separation.lean}: the cost splits
+  for every causal way of playing (\lean{mean\_cost\_split}), and the best
+  estimate with the law is optimal (\lean{mean\_cost\_law},
+  \lean{mean\_cost\_law\_le}).
+\item \path{lean/Unisono/Solutions/Star/Spectral.lean}: the factorization
+  of the weight and the law's characteristic polynomial, the Butterworth
+  factor of the papers' weight, and the steady state of the scalar Kalman
+  filter.
+\item \path{lean/Unisono/Solutions/Star/Receivers.lean}: the cancellation
+  identities for several receivers, with and without the broadcast.
+\item \path{lean/Unisono/Solutions/Star/Level.lean}: the quantile rule for
+  the margin.
+\end{itemize}
+Every theorem depends only on the axioms \lean{propext},
+\lean{Classical.choice} and \lean{Quot.sound}
+(\path{lean/Unisono/Audit.lean}).
+
+The theorems are about the problem of one receiver cycle by cycle, and
+about linear maps for several receivers. The solution is not yet defined as
+a solution of the specification's run, as the baseline is, so no theorem
+connects it end to end with the specification's objectives. The Kalman
+filter's optimality over all causal ways of playing requires Gaussian
+noise, Campbell's formula is used rather than proved, and flicker frequency
+noise is outside the theorem.
+
+\end{document}

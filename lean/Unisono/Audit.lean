@@ -29,6 +29,10 @@ public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
+public import Unisono.Solutions.Star.Level
+public import Unisono.Solutions.Star.Receivers
+public import Unisono.Solutions.Star.Separation
+public import Unisono.Solutions.Star.Spectral
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
@@ -1268,3 +1272,131 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.plays_at_latency_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.plays_at_latency_example
+
+/-- info: 'Unisono.Solutions.Star.unforeseen_neg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.unforeseen_neg
+
+/-- info: 'Unisono.Solutions.Star.known_position' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.known_position
+
+/-- info: 'Unisono.Solutions.Star.known_previous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.known_previous
+
+/-- info: 'Unisono.Solutions.Star.known_condExp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.known_condExp
+
+/-- info: 'Unisono.Solutions.Star.state_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.state_succ
+
+/-- info: 'Unisono.Solutions.Star.path_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.path_ae
+
+/-- info: 'Unisono.Solutions.Star.admissible' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.admissible
+
+/-- info: 'Unisono.Solutions.Star.mean_cost_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.mean_cost_split
+
+/-- info: 'Unisono.Solutions.Star.mean_cost_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.mean_cost_ge
+
+/-- info: 'Unisono.Solutions.Star.lawRun_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.lawRun_eq
+
+/-- info: 'Unisono.Solutions.Star.paceChange_lawRead' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.paceChange_lawRead
+
+/-- info: 'Unisono.Solutions.Star.known_lawRead' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.known_lawRead
+
+/-- info: 'Unisono.Solutions.Star.mean_cost_law' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.mean_cost_law
+
+/-- info: 'Unisono.Solutions.Star.mean_cost_law_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.mean_cost_law_le
+
+/-- info: 'Unisono.Solutions.Star.weight_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.weight_factor
+
+/-- info: 'Unisono.Solutions.Star.step_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.step_step
+
+/-- info: 'Unisono.Solutions.Star.butterworth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.butterworth
+
+/-- info: 'Unisono.Solutions.Star.filterRoot_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.filterRoot_eq
+
+/-- info: 'Unisono.Solutions.Star.filterRoot_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.filterRoot_pos
+
+/-- info: 'Unisono.Solutions.Star.filterRoot_lt_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.filterRoot_lt_one
+
+/-- info: 'Unisono.Solutions.Star.estimate_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.estimate_factor
+
+/-- info: 'Unisono.Solutions.Star.riccati_fixed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.riccati_fixed
+
+/-- info: 'Unisono.Solutions.Star.posterior_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.posterior_variance
+
+/-- info: 'Unisono.Solutions.Star.revision_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.revision_variance
+
+/-- info: 'Unisono.Solutions.Star.error_sub_error_same' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.error_sub_error_same
+
+/-- info: 'Unisono.Solutions.Star.error_sub_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.error_sub_error
+
+/-- info: 'Unisono.Solutions.Star.broadcastError_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.broadcastError_sub
+
+/-- info: 'Unisono.Solutions.Star.syncCost_congr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.syncCost_congr
+
+/-- info: 'Unisono.Solutions.Star.syncCost_same_filter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.syncCost_same_filter
+
+/-- info: 'Unisono.Solutions.Star.syncCost_broadcast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.syncCost_broadcast
+
+/-- info: 'Unisono.Solutions.Star.margin_best' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Star.margin_best
+
+/-- info: 'Unisono.Spec.SecondOrderModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.SecondOrderModel.example_holds

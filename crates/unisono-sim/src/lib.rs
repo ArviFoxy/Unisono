@@ -18,6 +18,7 @@ pub mod packets;
 pub mod protection;
 pub mod random;
 pub mod reference;
+pub mod star;
 pub mod stream;
 
 /// A point in true time, in nanoseconds from the start of a simulation.
