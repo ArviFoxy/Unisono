@@ -2,67 +2,142 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Receivers that exchange messages only with the sender.
+//! Simulation of star and peer (receiver-receiver) synchronization controllers.
 //!
-//! Each receiver must play every frame a fixed latency after its capture, as
-//! the sender's clock measures it. It learns the difference between the
-//! sender's clock and its own from exchanges with the sender over links with
-//! jitter and holds, and it hears nothing from the other receivers. This
-//! module simulates the clocks, the exchanges and two ways of playing, so
-//! that they can be compared on what the receivers play:
+//! This module numerically evaluates the architectures proved in
+//! `Unisono.Solutions.Optimal` under realistic clocks, asymmetric links, packet
+//! loss, and link pauses:
 //!
-//! * the baseline of `docs/fixed-playout-delay.pdf`, which steers towards the
-//!   estimate from the latest exchange and corrects by at most its slew;
-//! * the best estimate with the law of `docs/star-optimum.pdf`: of each group
-//!   of exchanges, the one with the shortest round trip; a Kalman filter for
-//!   the offset and the relative frequency of the two clocks; and the law of
-//!   `Unisono.Model.Regulation` applied to the estimate.
-//!
-//! A receiver's playback is described by the offset it plays at: the
-//! difference between the sender's clock and its own that its positions
-//! assume. Its error is that offset minus the true difference, in seconds:
-//! the error of its latency, as the sender's clock measures it.
-//!
-//! The module also simulates the second-order model of the specification
-//! with several receivers, to measure how a broadcast of the common part
-//! changes synchronization, and the late arrivals of a stream through a link
-//! with holds.
+//! * **Clocks (`FrequencyNoise`, `PhaseCourse`).** Parameterized by IEEE 1139
+//!   one-sided power-law coefficients (`white` for white frequency noise and
+//!   `walk` for random-walk frequency noise), with exact continuous-time
+//!   Cholesky sampling of the `[phase, frequency]` increment covariance using
+//!   `white / 2` and `2 * pi^2 * walk` (matching `Unisono.Spec.ClockNoise`).
+//! * **Star estimation and control (`OffsetFilter`, `SlidingMinRtt`,
+//!   `compare_star`).** Compares the fixed-delay baseline (at both 1000 ppm and
+//!   100 ppm slew) against a non-blocking sliding-window min-RTT front end, an
+//!   exact zero-lag timestamped Kalman filter with Joseph-form covariance
+//!   updates (with both oracle and online-estimated measurement variance), and
+//!   the clamped `Regulation.law` pace controller, tracking all six
+//!   specification objectives including missed samples and discontinuities.
+//! * **Sender-disciplined timestamped schedule
+//!   (`disciplined_schedule_comparison`).** Simulates heterogeneous receivers
+//!   with nonzero random initial offsets and frequencies, delayed schedule
+//!   delivery, shared sender-NIC jitter, and exact inverse-variance residual
+//!   variance `sigma_r^2 - V_bc`.
+//! * **Peer / receiver-receiver topologies (`solve_graph_blue`,
+//!   `peer_topology_comparison`).** Solves the exact Graph-Laplacian BLUE
+//!   (Thomson's principle) across arbitrary communication graphs and compares
+//!   independent star operation against peer-mesh estimation combined with
+//!   two-gain modal lip-sync control and pure-consensus low-latency control,
+//!   including asymmetric Wi-Fi sender + wired peer topologies.
+//! * **Playout level with discontinuities (`hold_margin_with_clicks`,
+//!   `stream_pause_metrics`).** Evaluates both missed-sample fraction and
+//!   discontinuity (click) rate under exponential link pauses.
+
+use std::collections::VecDeque;
+use std::f64::consts::PI;
 
 use crate::TrueTime;
 use crate::link::{Link, LinkModel};
 use crate::random::Generator;
 
-/// The noise of an oscillator's fractional frequency.
+/// IEEE 1139 power-law frequency noise of an oscillator.
+///
+/// The one-sided fractional-frequency spectral density is
+/// `white + walk / f^2`, matching `Unisono.Spec.ClockNoise`.
 #[derive(Clone, Copy, Debug)]
 pub struct FrequencyNoise {
-    /// The level of white frequency noise: the one-sided spectral density of
-    /// the fractional frequency, in 1/Hz. The phase gains a variance of half
-    /// this level per second.
+    /// White frequency noise PSD coefficient (seconds, i.e. 1/Hz).
+    /// Phase diffusion variance rate is `white / 2`.
     pub white: f64,
-    /// The variance that the random walk adds to the fractional frequency per
-    /// second.
+    /// Random-walk frequency noise PSD coefficient (Hz).
+    /// Fractional-frequency diffusion variance rate is `2 * pi^2 * walk`.
     pub walk: f64,
 }
 
-/// The number of whole steps of `step` seconds in `duration` seconds,
-/// rounded up.
+impl FrequencyNoise {
+    /// Laboratory OCXO-grade oscillator (Allan deviation around `1e-9` at 1 s).
+    pub const OCXO: FrequencyNoise = FrequencyNoise {
+        white: 2e-18,
+        walk: 5e-20,
+    };
+
+    /// Typical consumer quartz crystal oscillator (Allan deviation around
+    /// `1e-7` at 1 s, thermal drift around 0.6 ppm over 100 s).
+    pub const CONSUMER_QUARTZ: FrequencyNoise = FrequencyNoise {
+        white: 2e-14,
+        walk: 5e-16,
+    };
+
+    /// Thermally drifting consumer oscillator (100x larger frequency random
+    /// walk PSD than `CONSUMER_QUARTZ`, representative of a warming laptop or
+    /// phone).
+    pub const WANDERING_QUARTZ: FrequencyNoise = FrequencyNoise {
+        white: 2e-14,
+        walk: 5e-14,
+    };
+
+    /// Phase white-frequency variance rate `white / 2` (in s^2 / s).
+    #[must_use]
+    pub fn white_variance_rate(self) -> f64 {
+        self.white / 2.0
+    }
+
+    /// Fractional-frequency random-walk variance rate `2 * pi^2 * walk` (1/s).
+    #[must_use]
+    pub fn walk_variance_rate(self) -> f64 {
+        2.0 * PI * PI * self.walk
+    }
+
+    /// Sum of two independent clocks' noise parameters.
+    #[must_use]
+    pub fn combine(self, other: FrequencyNoise) -> FrequencyNoise {
+        FrequencyNoise {
+            white: self.white + other.white,
+            walk: self.walk + other.walk,
+        }
+    }
+}
+
+/// Number of whole steps of `step` seconds covering `duration`, rounded up.
 fn step_count(duration: f64, step: f64) -> usize {
-    // The ratio is positive and far below 2^52 in every simulation here.
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-    let count = (duration / step).ceil() as usize;
+    let count = (duration / step).ceil().max(0.0) as usize;
     count
 }
 
-/// A count as a float, for averages.
+/// Convert a count to `f64` for averages.
 fn as_float(count: usize) -> f64 {
-    // Counts here stay far below 2^52.
     #[allow(clippy::cast_precision_loss)]
     let value = count as f64;
     value
 }
 
-/// The course of an oscillator's phase, its reading minus true time, in
-/// seconds, drawn at a fixed step.
+/// Advance a `(phase, frequency)` state by `dt >= 0` using exact continuous-time
+/// Cholesky sampling of the integrated Brownian-motion covariance `Q(dt)`.
+pub fn advance_clock(
+    state: &mut (f64, f64),
+    noise: FrequencyNoise,
+    dt: f64,
+    generator: &mut Generator,
+) {
+    if dt <= 0.0 {
+        return;
+    }
+    let q0 = noise.white_variance_rate();
+    let q2 = noise.walk_variance_rate();
+    let z1 = generator.normal();
+    let z2 = generator.normal();
+    let df = (q2 * dt).sqrt() * z2;
+    let cond_phase_var = q0 * dt + q2 * dt * dt * dt / 12.0;
+    let dphi = state.1 * dt + 0.5 * dt * df + cond_phase_var.sqrt() * z1;
+    state.0 += dphi;
+    state.1 += df;
+}
+
+/// Simulated oscillator phase trajectory `C(t) - t` sampled on a uniform grid
+/// of step `step` seconds.
 #[derive(Clone, Debug)]
 pub struct PhaseCourse {
     step: f64,
@@ -70,8 +145,8 @@ pub struct PhaseCourse {
 }
 
 impl PhaseCourse {
-    /// Draws the course over `duration` seconds from the phase `offset` and
-    /// the fractional frequency `frequency`, with the noise `noise`.
+    /// Draw a continuous-time phase trajectory starting at `(offset, frequency)`
+    /// over `duration` seconds using exact Cholesky increments.
     #[must_use]
     pub fn draw(
         offset: f64,
@@ -83,83 +158,336 @@ impl PhaseCourse {
     ) -> PhaseCourse {
         let count = step_count(duration, step) + 2;
         let mut phases = Vec::with_capacity(count);
-        let mut phase = offset;
-        let mut fractional = frequency;
+        let mut state = (offset, frequency);
         for _ in 0..count {
-            phases.push(phase);
-            phase += fractional * step + (noise.white / 2.0 * step).sqrt() * generator.normal();
-            fractional += (noise.walk * step).sqrt() * generator.normal();
+            phases.push(state.0);
+            advance_clock(&mut state, noise, step, generator);
         }
         PhaseCourse { step, phases }
     }
 
-    /// The phase at true time `t` seconds, interpolated between the steps.
+    /// Interpolated phase error at true time `t` seconds.
     #[must_use]
     pub fn at(&self, t: f64) -> f64 {
         let position = (t / self.step).max(0.0);
-        // The position is not negative and within the drawn course.
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let index = (position.floor() as usize).min(self.phases.len() - 2);
         let fraction = position - as_float(index);
         self.phases[index] + fraction * (self.phases[index + 1] - self.phases[index])
     }
 
-    /// The clock's reading at true time `t`.
+    /// Clock reading `t + at(t)` at true time `t`.
     #[must_use]
     pub fn reading(&self, t: f64) -> f64 {
         t + self.at(t)
     }
 }
 
-/// One exchange of a receiver with the sender, as the receiver sees it.
+/// One completed two-way clock probe exchange between `querier` and
+/// `responder`, as observed by `querier`.
 #[derive(Clone, Copy, Debug)]
 pub struct Exchange {
-    /// The estimate `t₂ - (t₁ + t₄) / 2` of the sender's clock minus the
-    /// receiver's clock.
+    /// NTP offset estimate `t2 - (t1 + t4) / 2` of `responder - querier`.
     pub offset: f64,
-    /// The round trip `t₄ - t₁`, on the receiver's clock.
+    /// Measured round-trip time `t4 - t1` on `querier`'s clock.
     pub round_trip: f64,
-    /// The receiver's reading in the middle of the exchange, `(t₁ + t₄) / 2`.
+    /// Midpoint timestamp `(t1 + t4) / 2` on `querier`'s clock.
     pub middle: f64,
-    /// The true time at which the answer arrives.
+    /// True time at which the reply arrived at `querier`.
     pub arrival: f64,
 }
 
-/// The exchanges of a receiver that sends a clock query every `period`
-/// seconds of true time from `start` on, over the links `forward` (to the
-/// sender) and `backward` (from the sender).
+/// Configuration for generating two-way clock probe exchanges over potentially
+/// asymmetric, lossy links with endpoint timestamp noise.
+#[derive(Clone, Copy, Debug)]
+pub struct ExchangeConfig {
+    /// Forward link (`querier -> responder`).
+    pub forward: LinkModel,
+    /// Return link (`responder -> querier`).
+    pub backward: LinkModel,
+    /// Independent per-direction packet drop probability in `[0, 1)`.
+    pub drop_rate: f64,
+    /// Standard deviation of per-endpoint timestamp jitter, in seconds.
+    pub timestamp_std: f64,
+    /// Interval between outgoing probe attempts, in seconds.
+    pub period: f64,
+    /// True start time of the first probe attempt, in seconds.
+    pub start: f64,
+    /// Simulation horizon, in seconds.
+    pub duration: f64,
+}
+
+/// Generate completed probe exchanges between `querier` and `responder` under
+/// asymmetric links, packet loss, and endpoint timestamp noise.
 #[must_use]
 pub fn exchanges(
-    sender: &PhaseCourse,
-    receiver: &PhaseCourse,
-    forward: &mut Link,
-    backward: &mut Link,
-    period: f64,
-    start: f64,
-    duration: f64,
+    responder: &PhaseCourse,
+    querier: &PhaseCourse,
+    config: ExchangeConfig,
+    seed: u64,
 ) -> Vec<Exchange> {
+    let base = Generator::new(seed);
+    let mut forward = Link::new(config.forward, base.fork(1));
+    let mut backward = Link::new(config.backward, base.fork(2));
+    let mut draws = base.fork(3);
     let mut result = Vec::new();
-    let mut sent = start;
-    while sent < duration {
+    let mut sent = config.start;
+    while sent < config.duration {
         let arrived = forward.arrival(TrueTime::from_seconds(sent)).seconds();
         let answered = backward.arrival(TrueTime::from_seconds(arrived)).seconds();
-        let t1 = receiver.reading(sent);
-        let t2 = sender.reading(arrived);
-        let t4 = receiver.reading(answered);
-        result.push(Exchange {
-            offset: t2 - f64::midpoint(t1, t4),
-            round_trip: t4 - t1,
-            middle: f64::midpoint(t1, t4),
-            arrival: answered,
-        });
-        sent += period;
+        let dropped = draws.chance(config.drop_rate) || draws.chance(config.drop_rate);
+        if !dropped && answered < config.duration + 1.0 {
+            let j1 = config.timestamp_std * draws.normal();
+            let j2 = config.timestamp_std * draws.normal();
+            let j4 = config.timestamp_std * draws.normal();
+            let t1 = querier.reading(sent) + j1;
+            let t2 = responder.reading(arrived) + j2;
+            let t4 = querier.reading(answered) + j4;
+            let rtt = (t4 - t1).max(1e-9);
+            result.push(Exchange {
+                offset: t2 - f64::midpoint(t1, t4),
+                round_trip: rtt,
+                middle: f64::midpoint(t1, t4),
+                arrival: answered,
+            });
+        }
+        sent += config.period;
     }
     result
 }
 
-/// The baseline's offset at each cycle of `cycle` seconds: it steers towards
-/// the estimate of the latest exchange that has arrived, correcting by at
-/// most `slew` seconds per second, and starts at the first estimate.
+/// Exact zero-lag timestamped two-state Kalman filter for relative clock
+/// `(offset, frequency)` using Joseph-form covariance updates.
+///
+/// The filter stores its posterior state `(offset, frequency, covariance)` at
+/// the timestamp `last_time` of the last incorporated measurement. Reading the
+/// current estimate at playback time `now >= last_time` calls
+/// [`OffsetFilter::predict_at`] without mutating filter state, eliminating
+/// lag-approximation covariance drift.
+#[derive(Clone, Debug)]
+pub struct OffsetFilter {
+    /// Posterior offset estimate at `last_time`, in seconds.
+    pub offset: f64,
+    /// Posterior relative fractional-frequency estimate at `last_time`.
+    pub frequency: f64,
+    /// Timestamp (on the local clock) of the stored posterior state.
+    pub last_time: f64,
+    covariance: [[f64; 2]; 2],
+    noise: FrequencyNoise,
+}
+
+impl OffsetFilter {
+    /// Create a filter initialized at `(offset, 0)` at timestamp `time`.
+    #[must_use]
+    pub fn new_at(
+        offset: f64,
+        time: f64,
+        offset_variance: f64,
+        frequency_variance: f64,
+        noise: FrequencyNoise,
+    ) -> OffsetFilter {
+        OffsetFilter {
+            offset,
+            frequency: 0.0,
+            last_time: time,
+            covariance: [[offset_variance, 0.0], [0.0, frequency_variance]],
+            noise,
+        }
+    }
+
+    /// Create a filter initialized at `time = 0.0`.
+    #[must_use]
+    pub fn new(
+        offset: f64,
+        offset_variance: f64,
+        frequency_variance: f64,
+        noise: FrequencyNoise,
+    ) -> OffsetFilter {
+        OffsetFilter::new_at(offset, 0.0, offset_variance, frequency_variance, noise)
+    }
+
+    /// Advance the stored state and covariance forward by `dt >= 0` using the
+    /// exact continuous-time integrated Brownian-motion covariance `Q(dt)`.
+    pub fn predict(&mut self, dt: f64) {
+        if dt <= 0.0 {
+            return;
+        }
+        self.offset += self.frequency * dt;
+        self.last_time += dt;
+        let [[p00, p01], [_, p11]] = self.covariance;
+        let q0 = self.noise.white_variance_rate();
+        let q2 = self.noise.walk_variance_rate();
+        let next_p00 = p00 + 2.0 * p01 * dt + p11 * dt * dt + q0 * dt + q2 * dt * dt * dt / 3.0;
+        let next_p01 = p01 + p11 * dt + q2 * dt * dt / 2.0;
+        let next_p11 = p11 + q2 * dt;
+        self.covariance = [[next_p00, next_p01], [next_p01, next_p11]];
+    }
+
+    /// Read-only conditional-mean prediction `(offset, frequency)` at `time`
+    /// without mutating the stored posterior at `last_time`.
+    #[must_use]
+    pub fn predict_at(&self, time: f64) -> (f64, f64) {
+        let dt = (time - self.last_time).max(0.0);
+        (self.offset + self.frequency * dt, self.frequency)
+    }
+
+    /// Zero-lag scalar measurement update (`H = [1, 0]`) at `last_time` using
+    /// the numerically stable Joseph covariance form.
+    pub fn update_zero_lag(&mut self, measured: f64, variance: f64) {
+        let meas_var = variance.max(1e-18);
+        let [[p00, p01], [_, p11]] = self.covariance;
+        let innov_var = (p00 + meas_var).max(1e-18);
+        let k0 = p00 / innov_var;
+        let k1 = p01 / innov_var;
+        let innovation = measured - self.offset;
+        self.offset += k0 * innovation;
+        self.frequency += k1 * innovation;
+        // Joseph form: P+ = (I - K H) P (I - K H)^T + K R K^T with H = [1, 0].
+        let one_m_k0 = 1.0 - k0;
+        let next_p00 = one_m_k0 * one_m_k0 * p00 + k0 * k0 * meas_var;
+        let next_p01 = one_m_k0 * (p01 - k1 * p00) + k0 * k1 * meas_var;
+        let next_p11 = (k1 * k1 * p00 - 2.0 * k1 * p01 + p11) + k1 * k1 * meas_var;
+        self.covariance = [[next_p00.max(0.0), next_p01], [next_p01, next_p11.max(0.0)]];
+    }
+
+    /// Incorporate a measurement stamped at `meas_time >= last_time` by
+    /// predicting exactly to `meas_time` and performing a zero-lag Joseph update.
+    /// Returns `false` if the measurement is older than `last_time`.
+    pub fn update_at(&mut self, measured: f64, meas_time: f64, variance: f64) -> bool {
+        if meas_time < self.last_time {
+            return false;
+        }
+        self.predict(meas_time - self.last_time);
+        self.update_zero_lag(measured, variance);
+        true
+    }
+
+    /// Current posterior offset variance, in s^2.
+    #[must_use]
+    pub fn offset_variance(&self) -> f64 {
+        self.covariance[0][0]
+    }
+}
+
+/// Control law of `Unisono.Model.Regulation.law` with gain `g` in `(0, 1)`.
+#[must_use]
+pub fn law(g: f64, distance: f64, pace: f64) -> f64 {
+    g * g / (2.0 - g) * distance - g * pace
+}
+
+/// Effective position weight of a decentralized star receiver with `receivers`
+/// speakers and specification weights `(c_sync, c_track)`:
+/// `((R - 1) / R) * c_sync + c_track`, matching `decentralized_star_cost_eq`.
+#[must_use]
+pub fn decentralized_star_weight(receivers: usize, c_sync: f64, c_track: f64) -> f64 {
+    let count = as_float(receivers.max(1));
+    ((count - 1.0) / count) * c_sync + c_track
+}
+
+/// Optimal `Regulation.law` gain `g` in `(0, 1)` for quadratic position weight
+/// `c > 0` (inverting `weight g = g^4 / ((2 - g)^2 * (1 - g))` by bisection).
+#[must_use]
+pub fn gain_for_weight(c: f64) -> f64 {
+    if c <= 0.0 {
+        return 0.0;
+    }
+    let mut lo = 0.0_f64;
+    let mut hi = 1.0_f64;
+    for _ in 0..80 {
+        let mid = f64::midpoint(lo, hi);
+        let weight_val = mid.powi(4) / ((2.0 - mid).powi(2) * (1.0 - mid));
+        if weight_val < c {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    f64::midpoint(lo, hi)
+}
+
+/// How the Kalman filter sets measurement error variance.
+#[derive(Clone, Copy, Debug)]
+pub enum VarianceMode {
+    /// Fixed variance (e.g., from offline calibration or oracle knowledge).
+    Oracle(f64),
+    /// Online adaptive variance estimated from the excess RTT spread
+    /// `rtt - min_rtt` inside the sliding window.
+    Online {
+        /// Initial variance before the window fills, in s^2.
+        initial: f64,
+        /// Minimum floor variance (reflecting timestamp resolution), in s^2.
+        floor: f64,
+    },
+}
+
+/// Non-blocking sliding-window minimum-RTT front end.
+///
+/// Unlike blocking chunked groups (which stall whenever any UDP probe drops),
+/// this front end maintains a rolling buffer of the latest `window` received
+/// exchanges and emits the minimum-RTT entry every `stride` arrivals.
+#[derive(Clone, Debug)]
+pub struct SlidingMinRtt {
+    window: usize,
+    stride: usize,
+    seen: usize,
+    buffer: VecDeque<Exchange>,
+    ewma_excess_sq: Option<f64>,
+}
+
+impl SlidingMinRtt {
+    /// Create a sliding-window min-RTT selector.
+    #[must_use]
+    pub fn new(window: usize, stride: usize) -> SlidingMinRtt {
+        SlidingMinRtt {
+            window: window.max(1),
+            stride: stride.max(1),
+            seen: 0,
+            buffer: VecDeque::with_capacity(window.max(1)),
+            ewma_excess_sq: None,
+        }
+    }
+
+    /// Push a newly arrived exchange. Returns `Some((best_exchange, variance))`
+    /// whenever a new filtered measurement should be fed to [`OffsetFilter`].
+    pub fn push(&mut self, exchange: Exchange, mode: VarianceMode) -> Option<(Exchange, f64)> {
+        if self.buffer.len() == self.window {
+            self.buffer.pop_front();
+        }
+        self.buffer.push_back(exchange);
+        self.seen += 1;
+        if self.seen < self.stride || !self.seen.is_multiple_of(self.stride) {
+            return None;
+        }
+        let best = self
+            .buffer
+            .iter()
+            .copied()
+            .min_by(|a, b| a.round_trip.total_cmp(&b.round_trip))?;
+        let variance = match mode {
+            VarianceMode::Oracle(var) => var,
+            VarianceMode::Online { initial, floor } => {
+                let mut excesses: Vec<f64> = self
+                    .buffer
+                    .iter()
+                    .map(|e| (e.round_trip - best.round_trip).max(0.0))
+                    .collect();
+                excesses.sort_by(f64::total_cmp);
+                let med = excesses[excesses.len() / 2];
+                let raw_var = (med * med) / (4.0 * as_float(self.buffer.len()));
+                let alpha = 0.15;
+                let smoothed = match self.ewma_excess_sq {
+                    Some(prev) => (1.0 - alpha) * prev + alpha * raw_var,
+                    None => 0.5 * initial + 0.5 * raw_var,
+                };
+                self.ewma_excess_sq = Some(smoothed);
+                smoothed.max(floor)
+            }
+        };
+        Some((best, variance))
+    }
+}
+
+/// Fixed-delay baseline playback trajectory with configurable slew limit.
 #[must_use]
 pub fn baseline(exchanges: &[Exchange], cycle: f64, cycles: usize, slew: f64) -> Vec<Option<f64>> {
     let mut offsets = Vec::with_capacity(cycles);
@@ -185,154 +513,75 @@ pub fn baseline(exchanges: &[Exchange], cycle: f64, cycles: usize, slew: f64) ->
     offsets
 }
 
-/// A Kalman filter for the offset and the relative frequency of two clocks.
-#[derive(Clone, Debug)]
-pub struct OffsetFilter {
-    /// The estimate of the offset, in seconds.
-    pub offset: f64,
-    /// The estimate of the relative fractional frequency.
-    pub frequency: f64,
-    covariance: [[f64; 2]; 2],
-    noise: FrequencyNoise,
-}
-
-impl OffsetFilter {
-    /// A filter that starts at `offset` with the variance `offset_variance`,
-    /// and at frequency zero with the variance `frequency_variance`, for the
-    /// combined noise `noise` of the two clocks.
-    #[must_use]
-    pub fn new(
-        offset: f64,
-        offset_variance: f64,
-        frequency_variance: f64,
-        noise: FrequencyNoise,
-    ) -> OffsetFilter {
-        OffsetFilter {
-            offset,
-            frequency: 0.0,
-            covariance: [[offset_variance, 0.0], [0.0, frequency_variance]],
-            noise,
-        }
-    }
-
-    /// Moves the estimate `dt` seconds ahead.
-    pub fn predict(&mut self, dt: f64) {
-        self.offset += self.frequency * dt;
-        let [[a, b], [_, d]] = self.covariance;
-        let white = self.noise.white / 2.0;
-        let walk = self.noise.walk;
-        let next_a = a + 2.0 * b * dt + d * dt * dt + white * dt + walk * dt * dt * dt / 3.0;
-        let next_b = b + d * dt + walk * dt * dt / 2.0;
-        let next_d = d + walk * dt;
-        self.covariance = [[next_a, next_b], [next_b, next_d]];
-    }
-
-    /// Takes in a measurement `measured` of the offset `lag` seconds ago, with
-    /// error variance `variance`.
-    pub fn update(&mut self, measured: f64, lag: f64, variance: f64) {
-        let [[a, b], [_, d]] = self.covariance;
-        // The measurement is h · state with h = (1, -lag).
-        let ha = a - lag * b;
-        let hb = b - lag * d;
-        let innovation_variance = ha - lag * hb + variance + self.noise.white / 2.0 * lag.abs();
-        let gain_offset = ha / innovation_variance;
-        let gain_frequency = hb / innovation_variance;
-        let innovation = measured - (self.offset - lag * self.frequency);
-        self.offset += gain_offset * innovation;
-        self.frequency += gain_frequency * innovation;
-        self.covariance = [
-            [a - gain_offset * ha, b - gain_offset * hb],
-            [b - gain_offset * hb, d - gain_frequency * hb],
-        ];
-    }
-
-    /// The variance of the offset's estimate.
-    #[must_use]
-    pub fn offset_variance(&self) -> f64 {
-        self.covariance[0][0]
-    }
-}
-
-/// The law of `Unisono.Model.Regulation` with gain `g`: the change of the
-/// pace for the distance `distance` behind the estimate and the pace `pace`
-/// beyond the expected advance.
-#[must_use]
-pub fn law(g: f64, distance: f64, pace: f64) -> f64 {
-    g * g / (2.0 - g) * distance - g * pace
-}
-
-/// How the best estimate with the law plays.
+/// Configuration for the star-optimal receiver controller.
 #[derive(Clone, Copy, Debug)]
-pub struct EstimateSetting {
-    /// The number of consecutive exchanges of which the one with the shortest
-    /// round trip is measured.
-    pub group: usize,
-    /// The variance of that measurement's error, in square seconds.
-    pub measurement_variance: f64,
-    /// The combined frequency noise of the sender's and the receiver's clocks.
+pub struct StarControllerConfig {
+    /// Sliding-window capacity for min-RTT selection.
+    pub window: usize,
+    /// Number of received probes between filter updates.
+    pub stride: usize,
+    /// Measurement variance mode (`Oracle` or `Online`).
+    pub variance: VarianceMode,
+    /// Combined sender + receiver oscillator noise.
     pub noise: FrequencyNoise,
-    /// The law's gain.
+    /// `Regulation.law` gain `g` in `(0, 1)`.
     pub gain: f64,
+    /// Maximum allowed speed deviation from nominal (e.g. `1e-3`).
+    pub max_slew: f64,
 }
 
-/// The offset of the best estimate with the law at each cycle of `cycle`
-/// seconds. Each group of exchanges gives one measurement, its exchange with
-/// the shortest round trip, once all of its exchanges have arrived.
+/// Simulate one star-optimal receiver using [`SlidingMinRtt`], exact zero-lag
+/// [`OffsetFilter`], and clamped `Regulation.law`.
 #[must_use]
-pub fn estimate_with_law(
+pub fn star_optimal_receiver(
     exchanges: &[Exchange],
     receiver: &PhaseCourse,
     cycle: f64,
     cycles: usize,
-    setting: EstimateSetting,
+    config: StarControllerConfig,
 ) -> Vec<Option<f64>> {
-    let groups: Vec<(f64, Exchange)> = exchanges
-        .chunks(setting.group)
-        .filter(|chunk| chunk.len() == setting.group)
-        .map(|chunk| {
-            let ready = chunk.iter().map(|e| e.arrival).fold(f64::MIN, f64::max);
-            let best = chunk
-                .iter()
-                .copied()
-                .min_by(|x, y| x.round_trip.total_cmp(&y.round_trip))
-                .unwrap_or(chunk[0]);
-            (ready, best)
-        })
-        .collect();
+    let mut selector = SlidingMinRtt::new(config.window, config.stride);
+    let mut filter: Option<OffsetFilter> = None;
+    let mut played: Option<(f64, f64)> = None;
     let mut offsets = Vec::with_capacity(cycles);
     let mut next = 0;
-    let mut filter: Option<OffsetFilter> = None;
-    // The offset played and the number of seconds the last cycle advanced it.
-    let mut played: Option<(f64, f64)> = None;
+
     for k in 0..cycles {
         let now = as_float(k) * cycle;
-        if let Some(f) = filter.as_mut() {
-            f.predict(cycle);
-        }
-        while next < groups.len() && groups[next].0 <= now {
-            let (_, measured) = groups[next];
-            let lag = receiver.reading(now) - measured.middle;
-            match filter.as_mut() {
-                Some(f) => f.update(measured.offset, lag, setting.measurement_variance),
-                None => {
-                    filter = Some(OffsetFilter::new(
-                        measured.offset,
-                        setting.measurement_variance,
-                        1e-10,
-                        setting.noise,
-                    ));
+        while next < exchanges.len() && exchanges[next].arrival <= now {
+            if let Some((best, var)) = selector.push(exchanges[next], config.variance) {
+                match filter.as_mut() {
+                    Some(filt) => {
+                        let _ = filt.update_at(best.offset, best.middle, var);
+                    }
+                    None => {
+                        filter = Some(OffsetFilter::new_at(
+                            best.offset,
+                            best.middle,
+                            var,
+                            1e-10,
+                            config.noise,
+                        ));
+                    }
                 }
             }
             next += 1;
         }
+        let local_now = receiver.reading(now);
         played = match (played, filter.as_ref()) {
-            (Some((offset, read)), Some(f)) => {
-                let distance = f.offset - offset;
-                let pace = read - f.frequency * cycle;
-                let next_read = read + law(setting.gain, distance, pace);
+            (Some((offset, read)), Some(filt)) => {
+                let (est_off, est_freq) = filt.predict_at(local_now);
+                let distance = est_off - offset;
+                let pace = read - est_freq * cycle;
+                let max_step = config.max_slew * cycle;
+                let next_read =
+                    (read + law(config.gain, distance, pace)).clamp(-max_step, max_step);
                 Some((offset + next_read, next_read))
             }
-            (None, Some(f)) => Some((f.offset, f.frequency * cycle)),
+            (None, Some(filt)) => {
+                let (est_off, est_freq) = filt.predict_at(local_now);
+                Some((est_off, est_freq * cycle))
+            }
             (previous, None) => previous,
         };
         offsets.push(played.map(|(offset, _)| offset));
@@ -340,29 +589,83 @@ pub fn estimate_with_law(
     offsets
 }
 
-/// What a way of playing achieves over a run, from the end of the warm-up on.
+/// All six performance metrics matching `Unisono.Spec.Objectives` over a
+/// simulation run (after warm-up).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Outcome {
-    /// The root mean square, over the cycles, of the standard deviation of
-    /// the receivers' errors at each cycle, in seconds.
+    /// RMS inter-speaker timing spread (standard deviation across speakers), in
+    /// seconds.
     pub spread: f64,
-    /// The root mean square of the receivers' errors, in seconds.
+    /// RMS latency tracking error across speakers, in seconds.
     pub error: f64,
-    /// The root mean square of the change of the playback speed from one
-    /// cycle to the next.
+    /// RMS per-cycle playback speed change (roughness proxy), dimensionless.
     pub speed_change: f64,
-    /// The largest change of the playback speed from one cycle to the next.
+    /// Peak per-cycle playback speed change, dimensionless.
     pub largest_speed_change: f64,
+    /// Fleet-averaged fraction of audio cycles whose stream packet arrived past
+    /// the playout deadline (missed samples).
+    pub missed_fraction: f64,
+    /// Fleet-averaged rate of playback discontinuities (on-time to late
+    /// transitions per second).
+    pub discontinuity_rate: f64,
 }
 
-/// What the receivers' offsets `played` achieve against the true offsets
-/// `truth`, over the cycles from `first` on.
+/// Simulate audio stream packet delivery over a forward link with playout
+/// margin `margin` (seconds above minimum delay) and return
+/// `(missed_fraction, discontinuity_rate)`.
 #[must_use]
-pub fn outcome(
+pub fn stream_pause_metrics(
+    link: LinkModel,
+    drop_rate: f64,
+    cycle: f64,
+    duration: f64,
+    warmup: f64,
+    margin: f64,
+    seed: u64,
+) -> (f64, f64) {
+    let base = Generator::new(seed);
+    let mut path = Link::new(link, base.fork(1));
+    let mut drops = base.fork(2);
+    let cycles = step_count(duration, cycle);
+    let first = step_count(warmup, cycle);
+    let deadline_excess = link.minimum + margin;
+    let mut missed = 0_usize;
+    let mut discontinuities = 0_usize;
+    let mut counted = 0_usize;
+    let mut prev_late = false;
+    for k in 0..cycles {
+        let sent = as_float(k) * cycle;
+        let arrival = path.arrival(TrueTime::from_seconds(sent)).seconds();
+        let late = drops.chance(drop_rate) || (arrival - sent > deadline_excess);
+        if k >= first {
+            counted += 1;
+            if late {
+                missed += 1;
+                if !prev_late {
+                    discontinuities += 1;
+                }
+            }
+        }
+        prev_late = late;
+    }
+    let active_time = as_float(counted.max(1)) * cycle;
+    (
+        as_float(missed) / as_float(counted.max(1)),
+        as_float(discontinuities) / active_time,
+    )
+}
+
+/// Evaluate timing and speed-change metrics from played trajectories against
+/// ground truth, augmented with fleet-averaged stream missed and discontinuity
+/// rates.
+#[must_use]
+pub fn evaluate_outcome(
     played: &[Vec<Option<f64>>],
     truth: &[Vec<f64>],
     cycle: f64,
     first: usize,
+    missed_fraction: f64,
+    discontinuity_rate: f64,
 ) -> Outcome {
     let receivers = played.len();
     let cycles = played.iter().map(Vec::len).min().unwrap_or(0);
@@ -370,8 +673,8 @@ pub fn outcome(
     let mut error_sum = 0.0;
     let mut speed_sum = 0.0;
     let mut largest: f64 = 0.0;
-    let mut counted = 0;
-    let mut speed_counted = 0;
+    let mut counted = 0_usize;
+    let mut speed_counted = 0_usize;
     for k in first.max(2)..cycles {
         let errors: Vec<f64> = (0..receivers)
             .filter_map(|r| played[r][k].map(|p| p - truth[r][k]))
@@ -384,8 +687,8 @@ pub fn outcome(
         error_sum += errors.iter().map(|e| e * e).sum::<f64>() / as_float(receivers);
         counted += 1;
         for row in played {
-            if let (Some(a), Some(b), Some(c)) = (row[k - 2], row[k - 1], row[k]) {
-                let change = (c - 2.0 * b + a) / cycle;
+            if let (Some(prev2), Some(prev1), Some(curr)) = (row[k - 2], row[k - 1], row[k]) {
+                let change = (curr - 2.0 * prev1 + prev2) / cycle;
                 speed_sum += change * change;
                 largest = largest.max(change.abs());
                 speed_counted += 1;
@@ -393,150 +696,276 @@ pub fn outcome(
         }
     }
     if counted == 0 {
-        return Outcome::default();
+        return Outcome {
+            missed_fraction,
+            discontinuity_rate,
+            ..Outcome::default()
+        };
     }
     Outcome {
         spread: (spread_sum / as_float(counted)).sqrt(),
         error: (error_sum / as_float(counted)).sqrt(),
         speed_change: (speed_sum / as_float(speed_counted.max(1))).sqrt(),
         largest_speed_change: largest,
+        missed_fraction,
+        discontinuity_rate,
     }
 }
 
-/// A receiver of a comparison: its link in both directions, its clock, and
-/// the variance of the error of its measurement.
+/// Per-receiver network, clock, and timestamp configuration in a star scenario.
 #[derive(Clone, Copy, Debug)]
 pub struct ReceiverSetting {
-    /// The link to the sender and the link from it.
-    pub link: LinkModel,
-    /// The noise of the receiver's clock.
+    /// Forward link (receiver to sender for queries).
+    pub forward: LinkModel,
+    /// Return link (sender to receiver for replies and audio stream delivery).
+    pub backward: LinkModel,
+    /// Packet loss probability per direction.
+    pub drop_rate: f64,
+    /// Endpoint timestamp noise standard deviation, in seconds.
+    pub timestamp_std: f64,
+    /// Receiver oscillator noise.
     pub clock: FrequencyNoise,
-    /// The variance of the error of the exchange with the shortest round trip
-    /// in a group, in square seconds, which the Kalman filter assumes.
-    pub measurement_variance: f64,
+    /// Calibrated or oracle measurement variance of the min-RTT output, in s^2.
+    pub oracle_variance: f64,
 }
 
-/// A comparison of the baseline with the best estimate and the law.
+/// Full star comparison scenario.
 #[derive(Clone, Debug)]
-pub struct Comparison {
-    /// Seconds per cycle.
+pub struct StarComparison {
+    /// Playback control cycle period, in seconds.
     pub cycle: f64,
-    /// Seconds between two clock queries of a receiver.
+    /// Clock probe interval, in seconds.
     pub period: f64,
-    /// Exchanges per group of the best estimate's measurement.
-    pub group: usize,
-    /// Seconds simulated.
+    /// Sliding-window size for min-RTT selection.
+    pub window: usize,
+    /// Stride (received probes per filter update).
+    pub stride: usize,
+    /// Total simulated duration, in seconds.
     pub duration: f64,
-    /// Seconds before the outcome is counted.
+    /// Warm-up duration excluded from steady-state metrics, in seconds.
     pub warmup: f64,
-    /// The baseline's slew, in seconds per second.
-    pub slew: f64,
-    /// The law's gain.
+    /// Playout buffer margin above minimum link delay, in seconds.
+    pub playout_margin: f64,
+    /// `Regulation.law` gain for the star-optimal controller.
     pub gain: f64,
-    /// The noise of the sender's clock.
+    /// Sender oscillator noise.
     pub sender: FrequencyNoise,
-    /// The receivers.
+    /// Receiver settings.
     pub receivers: Vec<ReceiverSetting>,
 }
 
-/// The outcomes of the baseline and of the best estimate with the law, in
-/// that order, for one run drawn from `seed`.
-#[must_use]
-pub fn compare(setting: &Comparison, seed: u64) -> (Outcome, Outcome) {
-    let generator = Generator::new(seed);
+/// Four-way star comparison outcomes on the same realization: baseline at
+/// 1000 ppm slew, baseline at 100 ppm slew, star-optimal with oracle variance,
+/// and star-optimal with online adaptive variance.
+#[derive(Clone, Copy, Debug)]
+pub struct StarComparisonResult {
+    /// Fixed-delay baseline with 1000 ppm slew limit.
+    pub baseline_1000ppm: Outcome,
+    /// Fixed-delay baseline with 100 ppm slew limit (fair roughness comparison).
+    pub baseline_100ppm: Outcome,
+    /// Star-optimal controller with calibrated or oracle measurement variance.
+    pub star_oracle: Outcome,
+    /// Star-optimal controller with online adaptive measurement variance.
+    pub star_online: Outcome,
+}
+
+/// Per-receiver output trajectories for [`compare_star`].
+struct StarReceiverRun {
+    base_1000: Vec<Option<f64>>,
+    base_100: Vec<Option<f64>>,
+    opt_oracle: Vec<Option<f64>>,
+    opt_online: Vec<Option<f64>>,
+    truth: Vec<f64>,
+    missed: f64,
+    discontinuities: f64,
+}
+
+fn run_star_receiver(
+    setting: &StarComparison,
+    sender: &PhaseCourse,
+    receiver: ReceiverSetting,
+    index: usize,
+    seed: u64,
+    generator: &Generator,
+) -> StarReceiverRun {
     let step = 1e-3;
     let length = setting.duration + 5.0;
+    let cycles = step_count(setting.duration, setting.cycle);
+    let label = 10 + 10 * u64::try_from(index).unwrap_or(0);
+    let mut draws = generator.fork(label);
+    let frequency = 2e-5 * (draws.uniform() - 0.5);
+    let offset = draws.uniform() - 0.5;
+    let clock = PhaseCourse::draw(offset, frequency, receiver.clock, step, length, &mut draws);
+    let start = setting.period * draws.uniform();
+    let measured = exchanges(
+        sender,
+        &clock,
+        ExchangeConfig {
+            forward: receiver.forward,
+            backward: receiver.backward,
+            drop_rate: receiver.drop_rate,
+            timestamp_std: receiver.timestamp_std,
+            period: setting.period,
+            start,
+            duration: setting.duration,
+        },
+        seed.wrapping_add(label + 1),
+    );
+    let (missed, discontinuities) = stream_pause_metrics(
+        receiver.backward,
+        receiver.drop_rate,
+        setting.cycle,
+        setting.duration,
+        setting.warmup,
+        setting.playout_margin,
+        seed.wrapping_add(label + 2),
+    );
+    let noise = setting.sender.combine(receiver.clock);
+    let base_1000 = baseline(&measured, setting.cycle, cycles, 1e-3);
+    let base_100 = baseline(&measured, setting.cycle, cycles, 1e-4);
+    let opt_oracle = star_optimal_receiver(
+        &measured,
+        &clock,
+        setting.cycle,
+        cycles,
+        StarControllerConfig {
+            window: setting.window,
+            stride: setting.stride,
+            variance: VarianceMode::Oracle(receiver.oracle_variance),
+            noise,
+            gain: setting.gain,
+            max_slew: 1e-3,
+        },
+    );
+    let opt_online = star_optimal_receiver(
+        &measured,
+        &clock,
+        setting.cycle,
+        cycles,
+        StarControllerConfig {
+            window: setting.window,
+            stride: setting.stride,
+            variance: VarianceMode::Online {
+                initial: (200e-6_f64).powi(2),
+                floor: receiver.timestamp_std.powi(2).max(1e-12),
+            },
+            noise,
+            gain: setting.gain,
+            max_slew: 1e-3,
+        },
+    );
+    let truth = (0..cycles)
+        .map(|k| {
+            let t = as_float(k) * setting.cycle;
+            sender.at(t) - clock.at(t)
+        })
+        .collect();
+    StarReceiverRun {
+        base_1000,
+        base_100,
+        opt_oracle,
+        opt_online,
+        truth,
+        missed,
+        discontinuities,
+    }
+}
+
+/// Run the four-way star comparison on a single deterministic seed.
+#[must_use]
+pub fn compare_star(setting: &StarComparison, seed: u64) -> StarComparisonResult {
+    let generator = Generator::new(seed);
     let sender = PhaseCourse::draw(
         0.0,
         0.0,
         setting.sender,
-        step,
-        length,
+        1e-3,
+        setting.duration + 5.0,
         &mut generator.fork(1),
     );
-    let cycles = step_count(setting.duration, setting.cycle);
     let first = step_count(setting.warmup, setting.cycle);
-    let mut base = Vec::new();
-    let mut best = Vec::new();
-    let mut truth = Vec::new();
-    for (index, receiver) in setting.receivers.iter().enumerate() {
-        let label = 10 + 10 * u64::try_from(index).unwrap_or(0);
-        let mut draws = generator.fork(label);
-        let frequency = 2e-5 * (draws.uniform() - 0.5);
-        let offset = draws.uniform() - 0.5;
-        let clock = PhaseCourse::draw(offset, frequency, receiver.clock, step, length, &mut draws);
-        let mut forward = Link::new(receiver.link, generator.fork(label + 1));
-        let mut backward = Link::new(receiver.link, generator.fork(label + 2));
-        let start = setting.period * draws.uniform();
-        let measured = exchanges(
-            &sender,
-            &clock,
-            &mut forward,
-            &mut backward,
-            setting.period,
-            start,
-            setting.duration,
-        );
-        base.push(baseline(&measured, setting.cycle, cycles, setting.slew));
-        let noise = FrequencyNoise {
-            white: setting.sender.white + receiver.clock.white,
-            walk: setting.sender.walk + receiver.clock.walk,
-        };
-        best.push(estimate_with_law(
-            &measured,
-            &clock,
+    let runs: Vec<StarReceiverRun> = setting
+        .receivers
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(idx, rx)| run_star_receiver(setting, &sender, rx, idx, seed, &generator))
+        .collect();
+
+    let count = as_float(runs.len().max(1));
+    let avg_missed = runs.iter().map(|r| r.missed).sum::<f64>() / count;
+    let avg_disc = runs.iter().map(|r| r.discontinuities).sum::<f64>() / count;
+    let truth: Vec<Vec<f64>> = runs.iter().map(|r| r.truth.clone()).collect();
+    let collect = |f: fn(&StarReceiverRun) -> &Vec<Option<f64>>| -> Vec<Vec<Option<f64>>> {
+        runs.iter().map(|r| f(r).clone()).collect()
+    };
+
+    StarComparisonResult {
+        baseline_1000ppm: evaluate_outcome(
+            &collect(|r| &r.base_1000),
+            &truth,
             setting.cycle,
-            cycles,
-            EstimateSetting {
-                group: setting.group,
-                measurement_variance: receiver.measurement_variance,
-                noise,
-                gain: setting.gain,
-            },
-        ));
-        truth.push(
-            (0..cycles)
-                .map(|k| {
-                    let t = as_float(k) * setting.cycle;
-                    sender.at(t) - clock.at(t)
-                })
-                .collect::<Vec<f64>>(),
-        );
+            first,
+            avg_missed,
+            avg_disc,
+        ),
+        baseline_100ppm: evaluate_outcome(
+            &collect(|r| &r.base_100),
+            &truth,
+            setting.cycle,
+            first,
+            avg_missed,
+            avg_disc,
+        ),
+        star_oracle: evaluate_outcome(
+            &collect(|r| &r.opt_oracle),
+            &truth,
+            setting.cycle,
+            first,
+            avg_missed,
+            avg_disc,
+        ),
+        star_online: evaluate_outcome(
+            &collect(|r| &r.opt_online),
+            &truth,
+            setting.cycle,
+            first,
+            avg_missed,
+            avg_disc,
+        ),
     }
-    (
-        outcome(&base, &truth, setting.cycle, first),
-        outcome(&best, &truth, setting.cycle, first),
-    )
 }
 
-/// The spread of the errors over groups of receivers, in seconds.
+/// RMS inter-speaker spreads across receiver subgroups, in seconds.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Spreads {
-    /// The root mean square of the standard deviation over all receivers.
+    /// RMS standard deviation across all receivers.
     pub all: f64,
-    /// The root mean square of the difference between two receivers of the
-    /// first kind.
+    /// RMS pairwise difference within the first group (e.g., wired pairs).
     pub first_kind: f64,
-    /// The root mean square of the difference between a receiver of the
-    /// first kind and one of the second.
+    /// RMS pairwise difference between first-group and second-group receivers.
     pub mixed: f64,
 }
 
-/// Two receivers' kinds in the second-order model: how many receivers of
-/// each kind, and the standard deviation of each kind's measurement error.
+/// Two heterogeneous receiver classes for the sender-disciplined schedule test.
 #[derive(Clone, Copy, Debug)]
-pub struct Kinds {
-    /// Receivers of the first kind.
+pub struct HeterogeneousKinds {
+    /// Number of low-jitter receivers (first group).
     pub first: usize,
-    /// Receivers of the second kind.
+    /// Number of high-jitter receivers (second group).
     pub second: usize,
-    /// The standard deviation of a measurement of the first kind, in seconds.
+    /// Own-link measurement error standard deviation for the first group, in s.
     pub first_error: f64,
-    /// The standard deviation of a measurement of the second kind, in seconds.
+    /// Own-link measurement error standard deviation for the second group, in s.
     pub second_error: f64,
+    /// Shared sender-NIC transmit jitter standard deviation common to all
+    /// receivers in a step, in s.
+    pub tx_common_error: f64,
+    /// Delivery delay (in steps) of the sender-disciplined timestamped schedule
+    /// message (non-zero to avoid idealized instantaneous broadcast).
+    pub schedule_delay_steps: usize,
 }
 
-/// Sums of squared differences of errors, for `Spreads`.
 #[derive(Clone, Copy, Debug, Default)]
 struct SpreadSums {
     all: f64,
@@ -548,8 +977,6 @@ struct SpreadSums {
 }
 
 impl SpreadSums {
-    /// Adds the errors of one step; the first `first` receivers are of the
-    /// first kind.
     fn add(&mut self, errors: &[f64], first: usize) {
         let mean = errors.iter().sum::<f64>() / as_float(errors.len());
         self.all += errors.iter().map(|e| (e - mean).powi(2)).sum::<f64>() / as_float(errors.len());
@@ -568,7 +995,7 @@ impl SpreadSums {
         }
     }
 
-    fn finish(&self) -> Spreads {
+    fn finish(self) -> Spreads {
         let root = |sum: f64, count: usize| {
             if count == 0 {
                 0.0
@@ -584,33 +1011,19 @@ impl SpreadSums {
     }
 }
 
-/// A phase and a fractional frequency that follow the noise `noise`, moved
-/// `interval` seconds ahead.
-fn advance(
-    state: &mut (f64, f64),
-    noise: FrequencyNoise,
-    interval: f64,
-    generator: &mut Generator,
-) {
-    state.0 += state.1 * interval + (noise.white / 2.0 * interval).sqrt() * generator.normal();
-    state.1 += (noise.walk * interval).sqrt() * generator.normal();
-}
-
-/// Synchronization in the second-order model with several receivers, without
-/// and with a broadcast of the common part, in that order.
+/// Compare independent star filters against a **sender-disciplined timestamped
+/// schedule** across heterogeneous receivers.
 ///
-/// The sender's clock and every receiver's clock follow their noise. Every
-/// `interval` seconds each receiver measures the difference of the sender's
-/// clock and its own, with white error of its kind. Without the broadcast,
-/// each receiver estimates that difference with its own Kalman filter. With
-/// it, the sender averages the measurements with weights inversely
-/// proportional to their variances and broadcasts the average. Every receiver
-/// estimates the broadcast with the same filter, which follows the part
-/// common to all, and its measurement minus the broadcast with a filter of
-/// its own.
+/// Unlike an idealized instantaneous broadcast:
+/// * Each host starts with random nonzero initial offset and fractional
+///   frequency (join-referenced at step 0).
+/// * The sender embeds its precision-weighted fleet correction tagged with
+///   sender time and delivered with delay `kinds.schedule_delay_steps`.
+/// * Residual filters use the exact variance `sigma_r^2 - V_bc` (proved in
+///   `Unisono.Solutions.Optimal.residual_variance_sub`), not `sigma_r^2 + V_bc`.
 #[must_use]
-pub fn broadcast_comparison(
-    kinds: Kinds,
+pub fn disciplined_schedule_comparison(
+    kinds: HeterogeneousKinds,
     sender: FrequencyNoise,
     receiver: FrequencyNoise,
     interval: f64,
@@ -627,96 +1040,540 @@ pub fn broadcast_comparison(
         }
     };
     let weights: Vec<f64> = (0..count).map(|r| 1.0 / error_of(r).powi(2)).collect();
-    let total: f64 = weights.iter().sum();
-    let broadcast_variance = 1.0 / total;
-    let both = FrequencyNoise {
-        white: sender.white + receiver.white,
-        walk: sender.walk + receiver.walk,
-    };
+    let total_w: f64 = weights.iter().sum();
+    let v_bc = 1.0 / total_w;
+    let combined_noise = sender.combine(receiver);
+
+    let mut sender_state = (
+        generator.uniform() - 0.5,
+        2e-5 * (generator.uniform() - 0.5),
+    );
+    let mut rx_states: Vec<(f64, f64)> = (0..count)
+        .map(|_| {
+            (
+                generator.uniform() - 0.5,
+                2e-5 * (generator.uniform() - 0.5),
+            )
+        })
+        .collect();
+
+    let init_truth: Vec<f64> = rx_states.iter().map(|p| sender_state.0 - p.0).collect();
+    let init_avg: f64 = init_truth
+        .iter()
+        .zip(&weights)
+        .map(|(val, w)| val * w)
+        .sum::<f64>()
+        / total_w;
+
     let mut own: Vec<OffsetFilter> = (0..count)
-        .map(|r| OffsetFilter::new(0.0, error_of(r).powi(2), 1e-12, both))
+        .map(|r| OffsetFilter::new(init_truth[r], error_of(r).powi(2), 1e-10, combined_noise))
         .collect();
     let mut residual: Vec<OffsetFilter> = (0..count)
-        .map(|r| OffsetFilter::new(0.0, error_of(r).powi(2), 1e-12, receiver))
+        .map(|r| {
+            OffsetFilter::new(
+                init_truth[r] - init_avg,
+                (error_of(r).powi(2) - v_bc).max(1e-18),
+                1e-10,
+                receiver,
+            )
+        })
         .collect();
-    let mut common = OffsetFilter::new(0.0, broadcast_variance, 1e-12, sender);
-    let mut sender_phase = (0.0, 0.0);
-    let mut phases = vec![(0.0, 0.0); count];
+    let mut sender_sched = OffsetFilter::new(init_avg, v_bc, 1e-10, sender);
+    let delay = kinds.schedule_delay_steps;
+    let mut sched_queue: VecDeque<(f64, f64, f64)> = VecDeque::with_capacity(delay + 1);
+    for _ in 0..delay {
+        sched_queue.push_back((0.0, init_avg, 0.0));
+    }
+
     let mut without = SpreadSums::default();
     let mut with = SpreadSums::default();
+
     for step in 0..steps {
-        advance(&mut sender_phase, sender, interval, &mut generator);
-        for phase in &mut phases {
-            advance(phase, receiver, interval, &mut generator);
+        let now_t = as_float(step + 1) * interval;
+        advance_clock(&mut sender_state, sender, interval, &mut generator);
+        for state in &mut rx_states {
+            advance_clock(state, receiver, interval, &mut generator);
         }
-        let truth: Vec<f64> = phases.iter().map(|p| sender_phase.0 - p.0).collect();
+        let tx_common = kinds.tx_common_error * generator.normal();
+        let truth: Vec<f64> = rx_states.iter().map(|p| sender_state.0 - p.0).collect();
         let measured: Vec<f64> = (0..count)
-            .map(|r| truth[r] + error_of(r) * generator.normal())
+            .map(|r| truth[r] + tx_common + error_of(r) * generator.normal())
             .collect();
-        let average = measured
+        let avg_meas = measured
             .iter()
             .zip(&weights)
-            .map(|(m, w)| m * w)
+            .map(|(val, w)| val * w)
             .sum::<f64>()
-            / total;
-        common.predict(interval);
-        common.update(average, 0.0, broadcast_variance);
+            / total_w;
+
+        sender_sched.predict(interval);
+        sender_sched.update_zero_lag(avg_meas, v_bc + kinds.tx_common_error.powi(2));
+        sched_queue.push_back((now_t, sender_sched.offset, sender_sched.frequency));
+        let (sched_t, sched_off, sched_freq) =
+            sched_queue
+                .pop_front()
+                .unwrap_or((now_t, sender_sched.offset, sender_sched.frequency));
+        let delivered_common = sched_off + sched_freq * (now_t - sched_t);
+
         let mut own_errors = Vec::with_capacity(count);
-        let mut split_errors = Vec::with_capacity(count);
+        let mut sched_errors = Vec::with_capacity(count);
         for r in 0..count {
+            let own_var = error_of(r).powi(2) + kinds.tx_common_error.powi(2);
             own[r].predict(interval);
-            own[r].update(measured[r], 0.0, error_of(r).powi(2));
+            own[r].update_zero_lag(measured[r], own_var);
             own_errors.push(own[r].offset - truth[r]);
+
+            let res_var = (error_of(r).powi(2) - v_bc).max(1e-18);
             residual[r].predict(interval);
-            residual[r].update(
-                measured[r] - average,
-                0.0,
-                error_of(r).powi(2) + broadcast_variance,
-            );
-            split_errors.push(common.offset + residual[r].offset - truth[r]);
+            residual[r].update_zero_lag(measured[r] - avg_meas, res_var);
+            sched_errors.push(delivered_common + residual[r].offset - truth[r]);
         }
         if step >= steps / 10 {
             without.add(&own_errors, kinds.first);
-            with.add(&split_errors, kinds.first);
+            with.add(&sched_errors, kinds.first);
         }
     }
     (without.finish(), with.finish())
 }
 
-/// The fraction of the packets of a stream, one sent every `cycle` seconds
-/// for `duration` seconds through a link that follows `link`, that arrive
-/// more than `margin` seconds after they are sent.
-#[must_use]
-pub fn late_fraction(link: LinkModel, cycle: f64, duration: f64, margin: f64, seed: u64) -> f64 {
-    let mut path = Link::new(link, Generator::new(seed));
-    let packets = step_count(duration, cycle);
-    let late = (0..packets)
-        .filter(|&k| {
-            let sent = as_float(k) * cycle;
-            path.arrival(TrueTime::from_seconds(sent)).seconds() - sent > margin
-        })
-        .count();
-    as_float(late) / as_float(packets.max(1))
+/// Directed weighted measurement edge `(src -> dst)` observing
+/// `phase(dst) - phase(src)` with noise variance `variance` and optional
+/// static one-way asymmetry bias `bias`.
+#[derive(Clone, Copy, Debug)]
+pub struct GraphEdge {
+    /// Source host index in `0..nodes`.
+    pub src: usize,
+    /// Destination host index in `0..nodes`.
+    pub dst: usize,
+    /// Measurement noise variance (must be positive), in s^2.
+    pub variance: f64,
+    /// Static one-way delay asymmetry bias added to the edge measurement, in s.
+    pub bias: f64,
 }
 
-/// The margin that the quantile rule chooses for holds that start at `rate`
-/// per second with exponentially distributed lengths of mean `mean`, when a
-/// second of latency costs `price_ratio` times as much as a second of missed
-/// playback: the margin beyond which holds are rarer than `price_ratio` per
-/// second.
+/// Build the reduced `(nodes - 1) x (nodes - 1)` weighted graph Laplacian with
+/// host `0` grounded at zero.
+fn build_reduced_laplacian(nodes: usize, edges: &[GraphEdge]) -> Vec<Vec<f64>> {
+    let dim = nodes - 1;
+    let mut laplacian = vec![vec![0.0_f64; dim]; dim];
+    for edge in edges {
+        let weight = 1.0 / edge.variance.max(1e-18);
+        let src = edge.src;
+        let dst = edge.dst;
+        if src > 0 {
+            laplacian[src - 1][src - 1] += weight;
+        }
+        if dst > 0 {
+            laplacian[dst - 1][dst - 1] += weight;
+        }
+        if src > 0 && dst > 0 {
+            laplacian[src - 1][dst - 1] -= weight;
+            laplacian[dst - 1][src - 1] -= weight;
+        }
+    }
+    laplacian
+}
+
+/// Solve the exact **Graph-Laplacian BLUE** (Thomson's principle) on a
+/// connected measurement graph with `nodes` hosts (host `0` grounded at `0.0`).
+///
+/// Given noisy edge observations `obs[e] = phi[dst] - phi[src] + eta_e` with
+/// independent variances `edges[e].variance`, solves the weighted normal
+/// equations for `phi_hat[1..nodes]` with `phi_hat[0] = 0.0`.
 #[must_use]
-pub fn hold_margin(rate: f64, mean: f64, price_ratio: f64) -> f64 {
-    if rate <= price_ratio {
-        0.0
-    } else {
-        mean * (rate / price_ratio).ln()
+pub fn solve_graph_blue(nodes: usize, edges: &[GraphEdge], obs: &[f64]) -> Vec<f64> {
+    if nodes <= 1 {
+        return vec![0.0; nodes];
+    }
+    let laplacian = build_reduced_laplacian(nodes, edges);
+    let mut rhs = vec![0.0_f64; nodes - 1];
+    for (edge, &meas) in edges.iter().zip(obs) {
+        let weight = 1.0 / edge.variance.max(1e-18);
+        if edge.src > 0 {
+            rhs[edge.src - 1] -= weight * meas;
+        }
+        if edge.dst > 0 {
+            rhs[edge.dst - 1] += weight * meas;
+        }
+    }
+    let sol = solve_linear_system(laplacian, rhs);
+    let mut phi = Vec::with_capacity(nodes);
+    phi.push(0.0);
+    phi.extend(sol);
+    phi
+}
+
+/// Compute the exact effective resistance (the minimum unbiased linear
+/// estimator variance for `phi[dst_node] - phi[src_node]` under Thomson's
+/// principle) between `src_node` and `dst_node` on `edges`.
+#[must_use]
+pub fn effective_resistance(
+    nodes: usize,
+    edges: &[GraphEdge],
+    src_node: usize,
+    dst_node: usize,
+) -> f64 {
+    if nodes <= 1 || src_node == dst_node {
+        return 0.0;
+    }
+    let laplacian = build_reduced_laplacian(nodes, edges);
+    let mut rhs = vec![0.0_f64; nodes - 1];
+    if dst_node > 0 {
+        rhs[dst_node - 1] += 1.0;
+    }
+    if src_node > 0 {
+        rhs[src_node - 1] -= 1.0;
+    }
+    let psi_rest = solve_linear_system(laplacian, rhs);
+    let psi = |node: usize| if node == 0 { 0.0 } else { psi_rest[node - 1] };
+    psi(dst_node) - psi(src_node)
+}
+
+/// Dense Gaussian elimination with partial pivoting for small SPD Laplacian
+/// systems.
+fn solve_linear_system(mut mat: Vec<Vec<f64>>, mut rhs: Vec<f64>) -> Vec<f64> {
+    let dim = rhs.len();
+    for col in 0..dim {
+        let mut pivot = col;
+        let mut max_val = mat[col][col].abs();
+        for (row, row_vals) in mat.iter().enumerate().skip(col + 1) {
+            let val = row_vals[col].abs();
+            if val > max_val {
+                max_val = val;
+                pivot = row;
+            }
+        }
+        if max_val < 1e-30 {
+            continue;
+        }
+        mat.swap(col, pivot);
+        rhs.swap(col, pivot);
+        let pivot_row = mat[col][col..dim].to_vec();
+        let diag = pivot_row[0];
+        for row in (col + 1)..dim {
+            let factor = mat[row][col] / diag;
+            rhs[row] -= factor * rhs[col];
+            for (cell, &piv) in mat[row][col..dim].iter_mut().zip(&pivot_row) {
+                *cell -= factor * piv;
+            }
+        }
+    }
+    let mut sol = vec![0.0_f64; dim];
+    for idx in (0..dim).rev() {
+        let mut sum = rhs[idx];
+        for col in (idx + 1)..dim {
+            sum -= mat[idx][col] * sol[col];
+        }
+        if mat[idx][idx].abs() >= 1e-30 {
+            sol[idx] = sum / mat[idx][idx];
+        }
+    }
+    sol
+}
+
+/// Configuration for comparing Star vs Peer (receiver-receiver) topologies.
+#[derive(Clone, Debug)]
+pub struct PeerComparisonConfig {
+    /// Number of receivers (at least 2; total hosts is `receivers + 1`, with
+    /// sender at index `0`).
+    pub receivers: usize,
+    /// Measurement graph edges for the peer topology (star edges are the
+    /// subset incident on host `0`).
+    pub peer_edges: Vec<GraphEdge>,
+    /// Sender oscillator noise.
+    pub sender_noise: FrequencyNoise,
+    /// Per-receiver oscillator noise.
+    pub receiver_noise: FrequencyNoise,
+    /// Control and measurement step interval, in seconds.
+    pub interval: f64,
+    /// Total simulated steps.
+    pub steps: usize,
+    /// Common-mode gain `g_com` for lip-sync mode.
+    pub g_com: f64,
+    /// Differential-mode gain `g_diff` for both lip-sync and low-latency modes.
+    pub g_diff: f64,
+}
+
+/// Side-by-side results comparing Star, Peer Lip-Sync, and Peer Low-Latency
+/// (Pure Consensus) on the same realization.
+#[derive(Clone, Copy, Debug)]
+pub struct PeerComparisonResult {
+    /// Theoretical Star pairwise standard deviation `sqrt(R_eff(1, 2))`, in s.
+    pub star_pair_std_theory: f64,
+    /// Theoretical Peer pairwise standard deviation `sqrt(R_eff(1, 2))`, in s.
+    pub peer_pair_std_theory: f64,
+    /// Independent Star controller outcome.
+    pub star: Outcome,
+    /// Peer Graph-Laplacian BLUE + two-gain modal lip-sync controller outcome.
+    pub peer_lipsync: Outcome,
+    /// Peer Graph-Laplacian BLUE + pure-consensus low-latency controller
+    /// (`g_com = 0`) outcome.
+    pub peer_lowlatency: Outcome,
+}
+
+/// One step of scalar `Regulation.law` position and pace evolution.
+fn step_regulator(
+    state: (f64, f64),
+    est_off: f64,
+    est_freq: f64,
+    dt: f64,
+    gain: f64,
+) -> (f64, f64) {
+    let dist = est_off - state.0;
+    let pace = state.1 - est_freq * dt;
+    let next_read = state.1 + law(gain, dist, pace);
+    (state.0 + next_read, next_read)
+}
+
+/// Mutable state of all three controllers during [`peer_topology_comparison`].
+struct PeerSimState {
+    star_filters: Vec<OffsetFilter>,
+    peer_com_filter: OffsetFilter,
+    peer_diff_filters: Vec<OffsetFilter>,
+    star_pos: Vec<(f64, f64)>,
+    lip_com: (f64, f64),
+    lip_diff: Vec<(f64, f64)>,
+    low_com_pos: f64,
+    low_diff: Vec<(f64, f64)>,
+}
+
+impl PeerSimState {
+    fn new(
+        config: &PeerComparisonConfig,
+        star_edges: &[GraphEdge],
+        clocks: &[(f64, f64)],
+        peer_com_var: f64,
+        peer_diff_var: f64,
+    ) -> PeerSimState {
+        let r_count = clocks.len() - 1;
+        let combined = config.sender_noise.combine(config.receiver_noise);
+        let star_var_of = |r: usize| -> f64 {
+            star_edges
+                .iter()
+                .find(|e| (e.src == 0 && e.dst == r + 1) || (e.dst == 0 && e.src == r + 1))
+                .map_or(1e-6, |e| e.variance)
+        };
+        let init_truth: Vec<f64> = (0..r_count)
+            .map(|r| clocks[0].0 - clocks[r + 1].0)
+            .collect();
+        let init_mean = init_truth.iter().sum::<f64>() / as_float(r_count);
+
+        PeerSimState {
+            star_filters: (0..r_count)
+                .map(|r| OffsetFilter::new(init_truth[r], star_var_of(r), 1e-10, combined))
+                .collect(),
+            peer_com_filter: OffsetFilter::new(init_mean, peer_com_var.max(1e-18), 1e-10, combined),
+            peer_diff_filters: (0..r_count)
+                .map(|r| {
+                    OffsetFilter::new(
+                        init_truth[r] - init_mean,
+                        peer_diff_var,
+                        1e-10,
+                        config.receiver_noise,
+                    )
+                })
+                .collect(),
+            star_pos: init_truth.iter().map(|&x| (x, 0.0)).collect(),
+            lip_com: (init_mean, 0.0),
+            lip_diff: init_truth.iter().map(|&x| (x - init_mean, 0.0)).collect(),
+            low_com_pos: init_mean,
+            low_diff: init_truth.iter().map(|&x| (x - init_mean, 0.0)).collect(),
+        }
+    }
+
+    fn step(
+        &mut self,
+        config: &PeerComparisonConfig,
+        clocks: &[(f64, f64)],
+        edge_obs: &[f64],
+        peer_com_var: f64,
+        peer_diff_var: f64,
+        hist: &mut PeerHistories,
+    ) {
+        let r_count = clocks.len() - 1;
+        let nodes = clocks.len();
+        let dt = config.interval;
+
+        for (edge, &obs_val) in config.peer_edges.iter().zip(edge_obs) {
+            if edge.src == 0 && edge.dst >= 1 {
+                let idx = edge.dst - 1;
+                self.star_filters[idx].predict(dt);
+                self.star_filters[idx].update_zero_lag(-obs_val, edge.variance);
+            } else if edge.dst == 0 && edge.src >= 1 {
+                let idx = edge.src - 1;
+                self.star_filters[idx].predict(dt);
+                self.star_filters[idx].update_zero_lag(obs_val, edge.variance);
+            }
+        }
+
+        let phi_hat = solve_graph_blue(nodes, &config.peer_edges, edge_obs);
+        let peer_offsets: Vec<f64> = (0..r_count).map(|r| -phi_hat[r + 1]).collect();
+        let mean_offset = peer_offsets.iter().sum::<f64>() / as_float(r_count);
+
+        self.peer_com_filter.predict(dt);
+        self.peer_com_filter
+            .update_zero_lag(mean_offset, peer_com_var.max(1e-18));
+        self.lip_com = step_regulator(
+            self.lip_com,
+            self.peer_com_filter.offset,
+            self.peer_com_filter.frequency,
+            dt,
+            config.g_com,
+        );
+
+        for r in 0..r_count {
+            self.star_pos[r] = step_regulator(
+                self.star_pos[r],
+                self.star_filters[r].offset,
+                self.star_filters[r].frequency,
+                dt,
+                config.g_diff,
+            );
+            hist.star[r].push(Some(self.star_pos[r].0));
+            hist.truth[r].push(clocks[0].0 - clocks[r + 1].0);
+
+            self.peer_diff_filters[r].predict(dt);
+            self.peer_diff_filters[r].update_zero_lag(peer_offsets[r] - mean_offset, peer_diff_var);
+            let filt = &self.peer_diff_filters[r];
+            self.lip_diff[r] = step_regulator(
+                self.lip_diff[r],
+                filt.offset,
+                filt.frequency,
+                dt,
+                config.g_diff,
+            );
+            hist.lip[r].push(Some(self.lip_com.0 + self.lip_diff[r].0));
+
+            self.low_diff[r] = step_regulator(
+                self.low_diff[r],
+                filt.offset,
+                filt.frequency,
+                dt,
+                config.g_diff,
+            );
+            hist.low[r].push(Some(self.low_com_pos + self.low_diff[r].0));
+        }
     }
 }
 
-/// The fraction of time that holds starting at `rate` per second, with
-/// exponentially distributed lengths of mean `mean`, keep beyond the margin
-/// `margin`, by Campbell's formula: `rate * mean * exp(-margin / mean)`.
+struct PeerHistories {
+    star: Vec<Vec<Option<f64>>>,
+    lip: Vec<Vec<Option<f64>>>,
+    low: Vec<Vec<Option<f64>>>,
+    truth: Vec<Vec<f64>>,
+}
+
+/// Simulate and compare Star vs Peer Graph-Laplacian BLUE + Modal Control on
+/// the same oscillator trajectories and edge measurements.
+#[must_use]
+pub fn peer_topology_comparison(config: &PeerComparisonConfig, seed: u64) -> PeerComparisonResult {
+    let r_count = config.receivers.max(2);
+    let nodes = r_count + 1;
+    let star_edges: Vec<GraphEdge> = config
+        .peer_edges
+        .iter()
+        .copied()
+        .filter(|e| e.src == 0 || e.dst == 0)
+        .collect();
+    let star_reff = effective_resistance(nodes, &star_edges, 1, 2);
+    let peer_reff = effective_resistance(nodes, &config.peer_edges, 1, 2);
+    let peer_com_var = (0..r_count)
+        .map(|r| effective_resistance(nodes, &config.peer_edges, 0, r + 1))
+        .sum::<f64>()
+        / as_float(r_count * r_count);
+    let peer_diff_var = (peer_reff / 2.0).max(1e-18);
+
+    let mut generator = Generator::new(seed);
+    let dt = config.interval;
+    let mut clocks: Vec<(f64, f64)> = (0..nodes)
+        .map(|node| {
+            if node == 0 {
+                (0.0, 0.0)
+            } else {
+                (
+                    generator.uniform() - 0.5,
+                    2e-5 * (generator.uniform() - 0.5),
+                )
+            }
+        })
+        .collect();
+    let mut sim = PeerSimState::new(config, &star_edges, &clocks, peer_com_var, peer_diff_var);
+    let mut hist = PeerHistories {
+        star: vec![Vec::with_capacity(config.steps); r_count],
+        lip: vec![Vec::with_capacity(config.steps); r_count],
+        low: vec![Vec::with_capacity(config.steps); r_count],
+        truth: vec![Vec::with_capacity(config.steps); r_count],
+    };
+
+    for _ in 0..config.steps {
+        advance_clock(&mut clocks[0], config.sender_noise, dt, &mut generator);
+        for clk in clocks.iter_mut().skip(1) {
+            advance_clock(clk, config.receiver_noise, dt, &mut generator);
+        }
+        let edge_obs: Vec<f64> = config
+            .peer_edges
+            .iter()
+            .map(|e| {
+                (clocks[e.dst].0 - clocks[e.src].0)
+                    + e.bias
+                    + e.variance.sqrt() * generator.normal()
+            })
+            .collect();
+        sim.step(
+            config,
+            &clocks,
+            &edge_obs,
+            peer_com_var,
+            peer_diff_var,
+            &mut hist,
+        );
+    }
+
+    let warmup = config.steps / 5;
+    PeerComparisonResult {
+        star_pair_std_theory: star_reff.sqrt(),
+        peer_pair_std_theory: peer_reff.sqrt(),
+        star: evaluate_outcome(&hist.star, &hist.truth, dt, warmup, 0.0, 0.0),
+        peer_lipsync: evaluate_outcome(&hist.lip, &hist.truth, dt, warmup, 0.0, 0.0),
+        peer_lowlatency: evaluate_outcome(&hist.low, &hist.truth, dt, warmup, 0.0, 0.0),
+    }
+}
+
+/// Optimal playout margin for exponential pauses of rate `rate` and mean length
+/// `mean`, minimizing latency, missed audio, and discontinuity rate over
+/// `m >= 0` (matches `Unisono.Solutions.Optimal.margin_best_exponential_with_clicks`).
+#[must_use]
+pub fn hold_margin_with_clicks(
+    rate: f64,
+    mean: f64,
+    w_lat: f64,
+    w_missed: f64,
+    w_click: f64,
+) -> f64 {
+    if rate <= 0.0 || mean <= 0.0 || w_lat <= 0.0 {
+        return 0.0;
+    }
+    let effective_weight = w_missed + w_click / mean;
+    let ratio = rate * effective_weight / w_lat;
+    if ratio <= 1.0 { 0.0 } else { mean * ratio.ln() }
+}
+
+/// Optimal playout margin when discontinuities are unpriced (`w_click = 0`).
+#[must_use]
+pub fn hold_margin(rate: f64, mean: f64, price_ratio: f64) -> f64 {
+    hold_margin_with_clicks(rate, mean, price_ratio, 1.0, 0.0)
+}
+
+/// Expected fraction of missed playback under exponential pauses (Campbell's
+/// formula): `rate * mean * exp(-margin / mean)`.
 #[must_use]
 pub fn campbell_fraction(rate: f64, mean: f64, margin: f64) -> f64 {
     rate * mean * (-margin / mean).exp()
+}
+
+/// Expected discontinuity (click) rate per second under exponential pauses:
+/// `rate * exp(-margin / mean)`.
+#[must_use]
+pub fn click_rate(rate: f64, mean: f64, margin: f64) -> f64 {
+    rate * (-margin / mean).exp()
 }

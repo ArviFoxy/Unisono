@@ -593,28 +593,35 @@ statement about finite time windows needs one. The model is not empty
 
 \subsection{A second-order model}
 
-The model \lean{SecondOrderModel} states the means and covariances of the
-world's noise: of the clocks, of the delays and of the devices
-(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Synchronization,
-latency, tracking and roughness are quadratic in the latency errors. For
-them, and for solutions that are linear in their measurements, the means and
-covariances are all that matters. Missed samples depend on more: on how long
-the holds of the delay model last.
+The model \lean{SecondOrderModel} specifies the means and covariances of the
+oscillator, network, and audio-device noise
+(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Among the six objectives,
+synchronization, tracking, and linearized playback roughness are quadratic in
+the timing errors, while mean latency is linear; for linear estimators and
+quadratic controllers, first and second moments therefore determine the
+steady-state performance. Missed samples and discontinuities additionally
+depend on the tail duration distribution of link pauses, outages, and packet
+drops from \lean{DelayModel}.
 
 \begin{definition}[Second-order model]
 A host's clock reads $C_i(t) = t + \phi_i(t)$ at true time $t$, where
 $\phi_i$ is the clock's \emph{phase}. Its fractional frequency
-$\dot\phi_i$ has the one-sided power spectral density
+$\dot\phi_i$ has the IEEE~1139 one-sided power spectral density
 \[
   S_i(f) = h_{0,i} + \frac{h_{-1,i}}{f} + \frac{h_{-2,i}}{f^2},
   \qquad f > 0,
 \]
-whose three terms are white, flicker and random-walk frequency noise
-(\lean{ClockNoise}), the power-law components that dominate in quartz
-oscillators. The first differences of a phase with random-walk frequency
-noise are not stationary, so the model states the second differences
+whose three terms are white, flicker, and random-walk frequency noise
+(\lean{ClockNoise}), the power-law terms that govern quartz and crystal
+oscillators. In state-space form, the white-frequency component adds phase
+diffusion at variance rate $q_{0,i} = h_{0,i}/2$
+(\lean{whiteVarianceRate}), while the random-walk component adds
+fractional-frequency diffusion at variance rate
+$q_{2,i} = 2\pi^2 h_{-2,i}$ (\lean{walkVarianceRate}). Because first
+differences of a phase with random-walk frequency noise are not stationary,
+the model specifies second differences
 $\Delta^2_\tau \phi(t) = \phi(t + 2\tau) - 2\phi(t + \tau) + \phi(t)$: they
-have mean zero and the covariances (\lean{FollowsNoise},
+have mean zero and covariances (\lean{FollowsNoise},
 \lean{secondDifferenceCovariance})
 \[
   E\bigl[\Delta^2_{\tau_1}\phi(t_1)\,\Delta^2_{\tau_2}\phi(t_2)\bigr]
@@ -623,32 +630,41 @@ have mean zero and the covariances (\lean{FollowsNoise},
       \bigl(e^{2\pi i f \tau_1} - 1\bigr)^2\,
       \overline{\bigl(e^{2\pi i f \tau_2} - 1\bigr)^2}\Bigr]\,df .
 \]
-The integral converges for all three components. The phases of different
-hosts are uncorrelated.
+The integral converges for all three components. The phase second differences
+of distinct hosts are uncorrelated.
 
-Each link's delay is its floor, its jitter and its holds, as in the delay
-model. The jitter of the link from host $i$ to host $j$ is
-$J_{ij} = J^c_i + J'_{ij}$: a part common to all links that leave $i$, and a
-part of its own. Each part has a constant mean and a covariance that
-depends only on the time between two messages (\lean{JitterNoise}), and the
-parts are uncorrelated with each other. The holds of a link are those
-common to all links that leave its host, and those of its own.
+Each link's delay consists of its baseline, its jitter, and its pauses,
+outages, and drops, as in \lean{DelayModel}. The jitter on the directed link
+from host $i$ to host $j$ decomposes additively as
+\[
+  J_{ij}(t) = J^{\mathrm{tx}}_i(t) + J^{\mathrm{rx}}_j(t) + J^{\mathrm{own}}_{ij}(t),
+\]
+separating sender-side transmit jitter $J^{\mathrm{tx}}_i$ (shared across
+links leaving $i$, e.g.\ NIC queuing or OS scheduling), receiver-side arrival
+jitter $J^{\mathrm{rx}}_j$ (shared across links entering $j$, e.g.\ shared
+Wi-Fi medium or interrupt latency), and link-specific jitter
+$J^{\mathrm{own}}_{ij}$. Each component is wide-sense stationary with constant
+mean and lag-dependent covariance (\lean{JitterNoise}), and all three jitter
+families are mutually uncorrelated across components, hosts, and links.
 
 The capture device's timing deviates from the sender's clock, and each
-playback device's timing from its host's clock, as a clock deviates from
-true time. The phase of a device at its $k$-th frame or output sample is the
-reading of its host's clock at that moment minus $k/\rho$
-(\lean{devicePhase}), and it follows a power-law spectrum at the nominal
-times $k/\rho$ (\lean{FollowsNoiseOnGrid}). The devices' timestamps add white
-noise of variance $\sigma_R^2$ (\lean{WhiteErrors}).
+playback device's timing from its host's clock, according to the same
+power-law clock model on the nominal sample grid $k/\rho$
+(\lean{devicePhase}, \lean{FollowsNoiseOnGrid}), where $\rho > 0$ is the
+nominal frame rate. Capture timestamps add white zero-mean noise of variance
+$\sigma_{\mathrm{cap}}^2$, and each speaker $r$'s playback timestamps add
+white zero-mean noise of variance $\sigma_{\mathrm{play},r}^2$
+(\lean{WhiteErrors}). Host clocks, audio devices, network jitter components,
+and timestamp errors are mutually uncorrelated across distinct sources.
 \end{definition}
 
-Consider a star of hosts, in which every message goes between the sender
-and one receiving host, a host that drives a speaker and is not the
-sender's. There, the parts common to all links are the sender's clock, the
-jitter and the holds common to the sender's links, and the capture device.
-The parts of each link are a receiving host's clock, the link's own jitter
-and holds, and the playback devices on that host. The model is not empty
+Communication topologies are classified directly on \lean{Solution}
+(\path{lean/Unisono/Spec/Topologies.lean}): \lean{UsesGraph} restricts every
+sent message $(h \to j)$ to an allowed adjacency relation, and \lean{IsStar}
+specializes this to star graphs where every message either leaves or enters
+the sender ($h = \text{sender} \lor j = \text{sender}$). A non-degenerate
+three-host witness with nonzero uncorrelated link jitter confirms that
+\lean{SecondOrderModel} is satisfiable
 (\lean{SecondOrderModel.example\_holds}).
 
 \end{document}

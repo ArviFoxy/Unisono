@@ -27,10 +27,11 @@ public import Unisono.Sender
 public import Unisono.Solutions.FixedDelay
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
-public import Unisono.Solutions.Star.Level
-public import Unisono.Solutions.Star.Receivers
-public import Unisono.Solutions.Star.Separation
-public import Unisono.Solutions.Star.Spectral
+public import Unisono.Solutions.Optimal.Estimation
+public import Unisono.Solutions.Optimal.Level
+public import Unisono.Solutions.Optimal.ModalControl
+public import Unisono.Solutions.Optimal.SpecSolutions
+public import Unisono.Solutions.Optimal.Spectral
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Run
@@ -39,4 +40,5 @@ public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Solution
+public import Unisono.Spec.Topologies
 public import Unisono.Spec.World
