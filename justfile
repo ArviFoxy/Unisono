@@ -6,26 +6,31 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: sizes format-check lint test targets realtime cost translation prove translation-check spec-check spec
+check: sizes format-check lint test targets realtime cost translation prove translation-check pdfs-check pdfs
 
 # No file of the repository is larger than a megabyte: the largest by far is
 # the translation of the core, a quarter of that.
 sizes:
     @git ls-files -z | xargs -0 sh -c 'large=0; for f in "$@"; do [ -f "$f" ] || continue; n=$(wc -c < "$f"); if [ "$n" -gt 1048576 ]; then echo "too large: $f ($n bytes)"; large=1; fi; done; exit $large' _
 
-# Build the specification of the problem as a PDF and copy it to
-# docs/specification.pdf, the copy kept in the repository. The PDF records the
-# SHA-256 of its source. The build fails on any LaTeX warning, such as a line
-# that runs into the margin.
-spec:
-    latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=target/spec -usepretex='\def\specsource{'"$(sha256sum docs/specification.tex | cut -d' ' -f1)"'}' docs/specification.tex
-    @! grep -E "Warning|Overfull|Underfull" target/spec/specification.log
-    cp target/spec/specification.pdf docs/specification.pdf
+# The documents written in LaTeX. Each is kept in the repository as a PDF
+# next to its source.
+documents := "docs/specification docs/fixed-playout-delay"
 
-# The PDF of the specification in the repository is built from the current
-# source.
-spec-check:
-    @pdfinfo docs/specification.pdf | grep -q "$(sha256sum docs/specification.tex | cut -d' ' -f1)" || { echo "docs/specification.pdf is not built from the current docs/specification.tex: run just spec"; exit 1; }
+# Build each document as a PDF and copy it next to its source. Each PDF
+# records the SHA-256 of its source. The build fails on any LaTeX warning,
+# such as a line that runs into the margin.
+pdfs:
+    for doc in {{ documents }}; do \
+      name=$(basename "$doc"); \
+      latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir="target/pdfs/$name" -usepretex='\def\sourcehash{'"$(sha256sum "$doc.tex" | cut -d' ' -f1)"'}' "$doc.tex" || exit 1; \
+      ! grep -E "Warning|Overfull|Underfull" "target/pdfs/$name/$name.log" || exit 1; \
+      cp "target/pdfs/$name/$name.pdf" "$doc.pdf" || exit 1; \
+    done
+
+# Each PDF in the repository is built from its current source.
+pdfs-check:
+    @for doc in {{ documents }}; do pdfinfo "$doc.pdf" | grep -q "$(sha256sum "$doc.tex" | cut -d' ' -f1)" || { echo "$doc.pdf is not built from the current $doc.tex: run just pdfs"; exit 1; }; done
 
 # Rewrite the Rust sources in the standard format.
 format:
