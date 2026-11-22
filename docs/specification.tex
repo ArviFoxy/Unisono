@@ -395,11 +395,13 @@ of each output sample accrues as
 $\limsup_{T \to \infty} A(T)/T$ (\lean{longRun}). The cost of a playback,
 for weights $w = (w_S, w_\Lambda, w_\Theta, w_V, w_M, w_D) \ge 0$
 (\lean{Weights}), is
-\begin{multline*}
+\[
+\begin{aligned}
   J = \limsup_{T \to \infty} \frac{1}{T}\Bigl(
-      w_S A_S(T) + w_\Lambda A_\Lambda(T) + w_\Theta A_\Theta(T) \\
-    + w_V A_V(T) + w_M A_M(T) + w_D A_D(T) \Bigr),
-\end{multline*}
+      &w_S A_S(T) + w_\Lambda A_\Lambda(T) + w_\Theta A_\Theta(T) \\
+    &+ w_V A_V(T) + w_M A_M(T) + w_D A_D(T) \Bigr),
+\end{aligned}
+\]
 where $A_S$, $A_\Lambda$ and $A_\Theta$ accrue $S$, $\Lambda$ and $\Theta$
 per frame, and $A_V$, $A_M$ and $A_D$ accrue roughness, missed samples and
 discontinuities per output sample (\lean{World.cost}). The cost of a
