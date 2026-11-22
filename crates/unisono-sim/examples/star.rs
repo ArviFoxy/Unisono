@@ -68,10 +68,11 @@ const WIRELESS: LinkModel = LinkModel {
 };
 
 /// Fixed nominal offline measurement variance for wired links `(10 us)^2`
-/// (never peeks at the simulator's true `timestamp_std`).
+/// (chosen without inspecting the simulator's `2 us` vs. `10 us` `timestamp_std`).
 const NOMINAL_WIRED_VAR: f64 = 1e-10;
 
-/// Fixed nominal offline measurement variance for Wi-Fi links `(170 us)^2`.
+/// Offline Wi-Fi measurement variance `(170 us)^2`, measured from this
+/// simulator's 8-exchange minimum-RTT distribution on `WIRELESS`.
 const NOMINAL_WIRELESS_VAR: f64 = 2.89e-8;
 
 fn with_min(base: LinkModel, minimum: f64) -> LinkModel {
@@ -346,7 +347,8 @@ fn print_star_table(seeds: &[u64], smoke: bool) {
     );
     println!(
         "Note: star rows use the true oscillator (h_0, h_{{-2}}) prior unless noted; \
-         deadlines use causally observed min_rtt / 2; calib uses fixed nominal (10us)^2 / (170us)^2."
+         deadlines use causally observed min_rtt / 2; \
+         Star nom uses (10us)^2 wired and simulator-measured (170us)^2 Wi-Fi."
     );
     println!(
         "{:<50} | {:>19} | {:>19} | {:>19} | {:>7} | {:>15}",

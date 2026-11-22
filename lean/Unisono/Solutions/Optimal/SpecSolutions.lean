@@ -65,7 +65,10 @@ when no audio frames are delivered or played).
      speaker `0` requests at `b + 1` and speaker `1` at `b + 1 + 1/3`, so
      `FixedDelay.solution` (`FixedDelay.noCrossOriginCollision_sepBaseWorld`)
      and `StarProtocol.solution` (`StarProtocol.noCrossOriginCollision_sepBaseWorld`)
-     both satisfy `NoCrossOriginCollision` and are covered by the star lower bound.
+     both satisfy `NoCrossOriginCollision` on `sepBaseWorld`. Applying the star
+     lower bound to either protocol additionally requires proving that it makes
+     progress in all three worlds and plays every frame from some `N₀` onward,
+     which is not proved for `FixedDelay` or `StarProtocol` here.
    * **Tight forwarding-only star witness (`ForwardStar.solution`):** proves
      the star lower bound `A²` is tight (`ForwardStar.sync_eq` equals
      `ENNReal.ofReal (A ^ 2)` in both `sepWorldPlus A` and `sepWorldMinus A`).
@@ -2037,7 +2040,9 @@ theorem noCrossOriginCollision_sepBaseWorld_of_star_request_senders {Msg : Type}
     exact hno_eq b₁ b₂ (by linarith)
 
 /-- `FixedDelay.solution` satisfies `NoCrossOriginCollision` on `sepBaseWorld`
-when `p.sender = 0`, so it is covered by `peer_beats_star_asymmetry_bound`. -/
+when `p.sender = 0`. This discharges the collision-freedom hypothesis of
+`peer_beats_star_asymmetry_bound`; progress in all three worlds and playing
+every frame from some `N₀` onward are separate hypotheses not proved here. -/
 theorem FixedDelay.noCrossOriginCollision_sepBaseWorld
     (p : FixedDelay.Params (Fin 3)) (hs : p.sender = 0) (lookahead : ℕ+) :
     (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).NoCrossOriginCollision
@@ -2176,7 +2181,9 @@ theorem FixedDelay.noCrossOriginCollision_sepBaseWorld
     exact hno_eq b₁ b₂ (by linarith)
 
 /-- `StarProtocol.solution` satisfies `NoCrossOriginCollision` on `sepBaseWorld`
-when `p.sender = 0`, so it is covered by `peer_beats_star_asymmetry_bound`. -/
+when `p.sender = 0`. This discharges the collision-freedom hypothesis of
+`peer_beats_star_asymmetry_bound`; progress in all three worlds and playing
+every frame from some `N₀` onward are separate hypotheses not proved here. -/
 theorem StarProtocol.noCrossOriginCollision_sepBaseWorld
     (p : StarProtocol.Params (Fin 3)) (hs : p.sender = 0) (lookahead : ℕ+) :
     (StarProtocol.solution p : Solution (Fin 3) 2 StarProtocol.Payload).NoCrossOriginCollision

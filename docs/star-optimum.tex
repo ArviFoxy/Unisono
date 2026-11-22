@@ -542,18 +542,21 @@ $r \ne r'$. Then
 \]
 \end{theorem}
 
-Theorem~\ref{thm:star-split} is a cost identity, not a minimization. Under the
-idealized assumption that every receiver knows its true offset $\theta_r$ and
-frequency without measurement noise, the shared gain $g_{\mathrm{star}}^*$ that
-minimizes stationary cost lies between $\mathrm{gainForWeight}(\tilde c_\Theta)$
+Theorem~\ref{thm:star-split} is a cost identity, not a minimization. In the
+numerical perfect-information Lyapunov benchmark of Table~\ref{tab:lyap},
+Part~A (where every receiver observes its true offset $\theta_r$ and frequency
+without measurement noise; this is a numerical observation across the swept
+cases, not a proved general theorem), the shared gain $g_{\mathrm{star}}^*$
+minimizing stationary cost falls between $\mathrm{gainForWeight}(\tilde c_\Theta)$
 and $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$.
-However, \emph{this interval does not hold once measurement noise and a Kalman
-filter are in the loop}: a wandering sender raises each receiver's Kalman gain,
-which passes more private measurement noise into the regulator (charged at
-$\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$) and drives the best shared gain
-strictly \emph{below} $\mathrm{gainForWeight}(\tilde c_\Theta)$. Moreover, a
-star receiver measures only the difference $\theta_r = \phi_{\mathrm{src}} - \phi_r$
-and cannot separate sender wander from receiver wander from its own data.
+However, \emph{even that numerical interval fails once measurement noise and a
+Kalman filter are in the loop} (Table~\ref{tab:lyap}, Part~B): a wandering
+sender raises each receiver's Kalman gain, which passes more private measurement
+noise into the regulator (charged at $\frac{R-1}{R}\tilde c_S + \tilde c_\Theta$)
+and drives the best shared gain strictly \emph{below}
+$\mathrm{gainForWeight}(\tilde c_\Theta)$. Moreover, a star receiver measures
+only the difference $\theta_r = \phi_{\mathrm{src}} - \phi_r$ and cannot
+separate sender wander from receiver wander from its own data.
 Section~\ref{sec:sim-lyap} solves both the perfect-information benchmark and
 the coupled filter-in-the-loop Lyapunov equation to quantify this effect.
 
@@ -1077,10 +1080,12 @@ Table~\ref{tab:lyap} (shared star gain) &
   noiseless offsets every $10\,\text{ms}$, while Part~B models noisy
   measurements with the true variance and cadence. \\
 Table~\ref{tab:star} (star controllers) &
-  Measurements, variance floor, nominal variance, and playback deadlines
-  ($\min\mathrm{RTT}/2$) use only local data; matched rows pass true
-  $(h_0, h_{-2})$ priors (Table~\ref{tab:prior} sweeps prior errors from
-  $0.01\times$ to $10\times$). \\
+  Probe measurements, the online variance floor $(5\,\mu\text{s})^2$, and
+  playback deadlines ($\min\mathrm{RTT}/2$) use only local data;
+  \texttt{Star nom} uses fixed link-class variances ($(10\,\mu\text{s})^2$ wired,
+  and $(170\,\mu\text{s})^2$ Wi-Fi measured offline from this simulator's
+  minimum-RTT distribution); matched rows pass true $(h_0, h_{-2})$ priors
+  (Table~\ref{tab:prior} sweeps prior errors from $0.01\times$ to $10\times$). \\
 Table~\ref{tab:sched} (causal schedule) &
   Messages are delayed and lost, and step-0 startup is strictly local; sender
   and receivers know true link variances and oscillator noise parameters. \\
@@ -1169,8 +1174,9 @@ against the coupled Kalman-filter-in-the-loop Lyapunov solver (Part~B).}
 
 At $0\times$ sender wander in Part~A, $g_{\mathrm{star}}^*$ matches
 $g_{\mathrm{indep}} = 0.07157$ as required by Theorem~\ref{thm:star-weight}
-(a consistency check of the solver). Under perfect information, $g_{\mathrm{star}}^*$
-stays inside $[\mathrm{gainForWeight}(\tilde c_\Theta), g_{\mathrm{indep}}]$
+(a consistency check of the solver). Across the swept sender-wander scales in
+Part~A, the numerical optimum $g_{\mathrm{star}}^*$ stays inside
+$[\mathrm{gainForWeight}(\tilde c_\Theta), g_{\mathrm{indep}}]$
 and cuts cost by $22.8\%$ at $100\times$ and $48.6\%$ at $1000\times$. Once
 noisy measurements and the Kalman filter enter the loop (Part~B), every optimal
 gain falls \emph{below} $\mathrm{gainForWeight}(\tilde c_\Theta) = 0.02484$
@@ -1189,10 +1195,11 @@ lookahead, probe period $0.25\,\text{s}$, window $N_{\mathrm{win}} = 8$
 emitting every $4$ replies): the fixed-delay baseline at $1000\,\text{ppm}$ and
 $100\,\text{ppm}$ slew, a $100\,\text{ppm}$ baseline given the same
 sliding-window minimum-RTT selector (\texttt{minRTT 100}), and the star Kalman
-controller with either a fixed nominal variance (\texttt{Star nom}:
-$(10\,\mu\text{s})^2$ wired, $(170\,\mu\text{s})^2$ Wi-Fi, never inspecting
-ground-truth timestamp noise) or online adaptive variance (\texttt{Star online},
-fixed floor $(5\,\mu\text{s})^2$). Every policy's playback deadline uses only
+controller with either a fixed offline link-class variance (\texttt{Star nom}:
+$(10\,\mu\text{s})^2$ wired, chosen without inspecting the $2\,\mu\text{s}$ vs.\
+$10\,\mu\text{s}$ timestamp noise, and $(170\,\mu\text{s})^2$ Wi-Fi, measured
+offline from this simulator's 8-exchange minimum-RTT distribution) or online
+adaptive variance (\texttt{Star online}, fixed floor $(5\,\mu\text{s})^2$). Every policy's playback deadline uses only
 the receiver's causally observed running $\min\mathrm{RTT}/2$ (never true
 \texttt{link.minimum}). The star gain uses
 $\mathrm{gainForWeight}(\frac{R-1}{R}\tilde c_S + \tilde c_\Theta)$ at
