@@ -591,8 +591,115 @@ other. Mixing is assumed without a rate; a rate will be added when a
 statement about finite time windows needs one. The model is not empty
 (\lean{DelayModel.example\_holds}).
 
-Stochastic models of how the clocks wander are not part of this
-specification yet; they will be introduced together with the theorems that
-rely on them.
+\subsection{A second-order model}
+
+The model \lean{SecondOrderModel} specifies the means and covariances of the
+oscillator, network, and audio-device noise
+(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Among the six objectives,
+synchronization, tracking, and playback roughness are quadratic in the timing
+errors and playback speed changes, while mean latency is linear; for linear
+time-invariant loops driven by measurements at fixed times (without packet loss,
+minimum-round-trip selection, speed clamps, or random device request times),
+first and second moments determine the steady-state performance on those four
+objectives. Missed samples and discontinuities additionally depend on how long
+link pauses and outages last and how often packets are dropped, as in
+\lean{DelayModel}.
+
+\begin{definition}[Second-order model]
+A host's clock reads $C_i(t) = t + \phi_i(t)$ at true time $t$, where
+$\phi_i$ is the clock's \emph{phase}. Its fractional frequency
+$\dot\phi_i$ has the band-limited IEEE~Std~1139-2008 one-sided power spectral
+density on $[f_{\mathrm{lo},i}, f_{\mathrm{hi},i}]$ with
+$0 < f_{\mathrm{lo},i} \le f_{\mathrm{hi},i}$:
+\[
+  S_i(f) =
+  \begin{cases}
+    h_{0,i} + \dfrac{h_{-1,i}}{f} + \dfrac{h_{-2,i}}{f^2},
+      & f_{\mathrm{lo},i} \le f \le f_{\mathrm{hi},i}, \\[6pt]
+    0, & \text{otherwise},
+  \end{cases}
+\]
+whose three terms are white, flicker, and random-walk frequency noise
+(\lean{ClockNoise}), the power-law terms used to model quartz and crystal
+oscillators (IEEE~Std~1139-2008). In state-space approximations over lags
+inside the band, the white-frequency component adds phase diffusion at variance
+rate $q_{0,i} = h_{0,i}/2$ (\lean{whiteVarianceRate}), while the random-walk
+component adds fractional-frequency diffusion at variance rate
+$q_{2,i} = 2\pi^2 h_{-2,i}$ (\lean{walkVarianceRate}). The model specifies
+second differences
+$\Delta^2_\tau \phi(t) = \phi(t + 2\tau) - 2\phi(t + \tau) + \phi(t)$: they
+are square-integrable under the probability measure $P$, with mean zero and
+covariances (\lean{FollowsNoise}, \lean{secondDifferenceCovariance})
+\[
+  E\bigl[\Delta^2_{\tau_1}\phi(t_1)\,\Delta^2_{\tau_2}\phi(t_2)\bigr]
+  = \int_0^\infty \frac{S(f)}{(2\pi f)^2}\,
+    \mathrm{Re}\Bigl[e^{2\pi i f (t_1 - t_2)}
+      \bigl(e^{2\pi i f \tau_1} - 1\bigr)^2\,
+      \overline{\bigl(e^{2\pi i f \tau_2} - 1\bigr)^2}\Bigr]\,df .
+\]
+Because $S$ is supported on $[f_{\mathrm{lo}}, f_{\mathrm{hi}}]$ with
+$f_{\mathrm{lo}} > 0$, the integral converges for all three components
+(\lean{secondDifferenceCovariance\_integrableOn}) and satisfies
+$E[(\Delta^2_\tau \phi(t))^2] \le 4\tau^2 \int_{f_{\mathrm{lo}}}^{f_{\mathrm{hi}}} S(f)\,df$
+for every $\tau \in \mathbb{R}$ (\lean{secondDifferenceCovariance\_diag\_le}),
+so the second-moment bound is compatible with any rate-error bound
+\lean{Clock.RateWithin} at all lags $\tau$. The phase second differences of
+distinct hosts are uncorrelated.
+
+Each link's delay consists of its baseline, its jitter, and its pauses,
+outages, and drops, as in \lean{DelayModel}. The jitter on the directed link
+from host $i$ to host $j$ decomposes additively as
+\[
+  J_{ij}(t) = J^{\mathrm{tx}}_i(t) + J^{\mathrm{rx}}_j(t) + J^{\mathrm{own}}_{ij}(t),
+\]
+separating sender-side transmit jitter $J^{\mathrm{tx}}_i$ (shared across
+links leaving $i$, such as network-interface queueing or operating-system
+scheduling), receiver-side arrival jitter $J^{\mathrm{rx}}_j$ (shared across
+links entering $j$, such as receive-side interrupt latency or a shared
+wireless medium), and link-specific jitter $J^{\mathrm{own}}_{ij}$. Each
+component is square-integrable and wide-sense stationary with constant mean
+and lag-dependent covariance (\lean{JitterNoise}, \lean{HasMoments}).
+Link-specific jitter $J^{\mathrm{own}}_{ij}$ is uncorrelated across distinct
+links and with both transmit and receive jitter, while correlations among
+transmit and receive jitter processes $J^{\mathrm{tx}}_i$ and
+$J^{\mathrm{rx}}_j$ are left unconstrained so that same-host uplink--downlink
+coupling and shared-medium wireless contention across stations on one access
+point are admitted.
+
+The capture device's timing and each playback device's timing deviate from
+true time according to the same band-limited clock model on the nominal sample
+grid $k/\rho$ (\lean{devicePhase}, \lean{FollowsNoiseOnGrid}), where
+$\rho > 0$ is the nominal frame rate. The capture device is uncorrelated with
+every host clock other than the sender's ($i \ne \mathrm{sender}$), each
+playback device $r$ is uncorrelated with every host clock other than its own
+host's ($i \ne \mathrm{host}(r)$), capture and playback devices on distinct
+hosts are uncorrelated, and playback devices on distinct hosts are
+uncorrelated; this admits both independent-crystal interfaces (such as USB
+audio devices) and host-clocked or multichannel devices sharing a host's
+oscillator. Capture timestamps add square-integrable white zero-mean noise of
+variance $\sigma_{\mathrm{cap}}^2$, and each speaker $r$'s playback
+timestamps add square-integrable white zero-mean noise of variance
+$\sigma_{\mathrm{play},r}^2$ (\lean{WhiteErrors}). Across source families,
+host clocks and audio devices are uncorrelated with network jitter and
+timestamp errors, network jitter is uncorrelated with timestamp errors, and
+timestamp errors are mutually uncorrelated across distinct devices.
+\end{definition}
+
+A three-host witness with nonzero uncorrelated link jitter confirms that
+\lean{SecondOrderModel} is satisfiable (\lean{SecondOrderModel.example\_holds}).
+In that witness, clocks, devices, and timestamps carry zero noise; although
+band-limiting makes \lean{ClockNoise} compatible with bounded clock rates in
+second moments (\lean{secondDifferenceCovariance\_diag\_le}), constructing a
+random strictly increasing \lean{Clock} with nonzero \lean{ClockNoise} is left
+open. No theorem in the repository currently takes \lean{SecondOrderModel} as a
+hypothesis.
+
+\subsection{Communication topologies}
+
+Communication topologies are classified directly on \lean{Solution}
+(\path{lean/Unisono/Spec/Topologies.lean}): \lean{UsesGraph} restricts every
+sent message $(h \to j)$ to an allowed adjacency relation, and \lean{IsStar}
+specializes this to star graphs where every message either leaves or enters
+the sender ($h = \text{sender} \lor j = \text{sender}$).
 
 \end{document}

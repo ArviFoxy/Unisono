@@ -7,6 +7,7 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.SecondOrder
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
@@ -46,8 +47,8 @@ build.
 * The run processes events in chronological order
   (`Solution.eventTime_le_succ`), and a run that advances past every true
   time decides what every output sample plays (`Solution.decided`).
-* Neither model of the world is empty (`Bounds.example_within`,
-  `DelayModel.example_holds`).
+* No model of the world is empty (`Bounds.example_within`,
+  `DelayModel.example_holds`, `SecondOrderModel.example_holds`).
 -/
 
 @[expose] public noncomputable section
@@ -698,7 +699,7 @@ theorem syncCost_one_off (w : World H R) (plays : Fin R → ℕ → Option ℝ) 
   rw [Finset.sum_congr rfl hpair, Finset.sum_ite, Finset.sum_const_zero, add_zero,
     Finset.sum_const, nsmul_eq_mul, hcard]
 
-/-! ## Neither model is empty -/
+/-! ## No model is empty -/
 
 /-- **The bounded model is not empty.** A world with one speaker on the
 sender's host, exact clocks and devices, blocks of one frame, and a network
@@ -848,6 +849,215 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
         simp only [hdrop]
         rw [hmix]
         exact tendsto_const_nhds }
+
+/-- **The second-order model is not empty**: a 3-host star (sender `0`, speakers
+on hosts `1` and `2`) over a uniform probability space on `Bool × Bool`, with
+nonzero uncorrelated link jitter of variance `1` on links `(0, 1)` and `(0, 2)`
+and zero clock, device, and timestamp noise, satisfies `SecondOrderModel.Holds`.
+Band-limiting `ClockNoise` to `[lowFreq, highFreq]` resolves the rate-bound
+incompatibility (`secondDifferenceCovariance_diag_le`), while constructing a
+witness with nonzero `ClockNoise` whose clock paths remain strictly increasing
+remains open. -/
+theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
+    (P : Measure (Bool × Bool)) (world : Bool × Bool → World (Fin 3) 2)
+    (d : Bool × Bool → Fin 3 → Fin 3 → Link),
+    m.Holds P world d ∧
+      m.ownJitter 0 1 = ⟨1, fun _ => 1⟩ ∧ m.ownJitter 0 2 = ⟨1, fun _ => 1⟩ := by
+  let P : Measure (Bool × Bool) :=
+    (4 : ℝ≥0∞)⁻¹ • (Measure.dirac (false, false) + Measure.dirac (false, true)
+      + Measure.dirac (true, false) + Measure.dirac (true, true))
+  have hP : IsProbabilityMeasure P := by
+    refine ⟨?_⟩
+    simp only [P, smul_apply, add_apply, Measure.dirac_apply' _ MeasurableSet.univ,
+      Set.indicator_univ, Pi.one_apply, smul_eq_mul]
+    have h4 : (1 : ℝ≥0∞) + 1 + 1 + 1 = 4 := by norm_num
+    rw [h4, ENNReal.inv_mul_cancel (by norm_num) (by norm_num)]
+  have hmemLp : ∀ f : Bool × Bool → ℝ, MemLp f 2 P := by
+    intro f
+    have : IsProbabilityMeasure P := hP
+    refine MemLp.of_bound (Measurable.aestronglyMeasurable (measurable_of_countable f))
+      (max (max |f (false, false)| |f (false, true)|)
+        (max |f (true, false)| |f (true, true)|)) (ae_of_all _ fun ω => ?_)
+    rw [Real.norm_eq_abs]
+    rcases ω with ⟨b₁, b₂⟩
+    cases b₁ <;> cases b₂
+    · exact le_trans (le_max_left _ _) (le_max_left _ _)
+    · exact le_trans (le_max_right _ _) (le_max_left _ _)
+    · exact le_trans (le_max_left _ _) (le_max_right _ _)
+    · exact le_trans (le_max_right _ _) (le_max_right _ _)
+  have hint : ∀ f : Bool × Bool → ℝ,
+      ∫ ω, f ω ∂P = (f (false, false) + f (false, true) + f (true, false) + f (true, true)) / 4 := by
+    intro f
+    have hfin : ∀ a : Bool × Bool, Integrable f (Measure.dirac a) :=
+      fun a => integrable_dirac eNorm_lt_top
+    have hadd1 : Integrable f (Measure.dirac (false, false) + Measure.dirac (false, true)) :=
+      (hfin _).add_measure (hfin _)
+    have hadd2 : Integrable f
+        (Measure.dirac (false, false) + Measure.dirac (false, true) + Measure.dirac (true, false)) :=
+      hadd1.add_measure (hfin _)
+    simp only [P, integral_smul_measure, integral_add_measure hadd2 (hfin _),
+      integral_add_measure hadd1 (hfin _), integral_add_measure (hfin _) (hfin _),
+      integral_dirac, ENNReal.toReal_inv, ENNReal.toReal_ofNat, smul_eq_mul]
+    ring
+  let s1 : Bool × Bool → ℝ := fun ω => if ω.1 then 1 else -1
+  let s2 : Bool × Bool → ℝ := fun ω => if ω.2 then 1 else -1
+  let own : Bool × Bool → Fin 3 → Fin 3 → Time → ℝ := fun ω i j _ =>
+    if i = 0 ∧ j = 1 then 1 + s1 ω else if i = 0 ∧ j = 2 then 1 + s2 ω else 0
+  have hown_nonneg : ∀ ω i j u, 0 ≤ own ω i j u := by
+    intro ω i j u
+    simp only [own, s1, s2]
+    split_ifs <;> norm_num
+  let d : Bool × Bool → Fin 3 → Fin 3 → Link := fun ω i j =>
+    ⟨fun _ => 1, own ω i j, ∅, ∅⟩
+  let world : Bool × Bool → World (Fin 3) 2 := fun ω =>
+    { rate := 1
+      rate_pos := one_pos
+      sender := 0
+      host := fun r => if r = 0 then 1 else 2
+      hosts := fun h => by
+        fin_cases h
+        · exact Or.inl rfl
+        · exact Or.inr ⟨0, by decide⟩
+        · exact Or.inr ⟨1, by decide⟩
+      clock := fun _ => ⟨id, strictMono_id, continuous_id⟩
+      source :=
+        { capture := fun n => n
+          capture_strictMono := Nat.strictMono_cast
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          handed := fun b => b
+          handed_strictMono := Nat.strictMono_cast
+          handed_after := fun b => by simp
+          reported := fun b => b }
+      speaker := fun _ =>
+        { out := fun k => k + 1
+          out_strictMono := fun a b h => by simpa using h
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          asked := fun b => b + 1 / 2
+          asked_strictMono := fun a b h => by simpa using h
+          asked_before := fun b => by norm_num
+          reported := fun b => b + 1 }
+      network := ⟨fun i j s q => (d ω i j).deliver s q,
+        fun i j _ _ _ h => Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h⟩
+      target := fun _ => 0 }
+  let ownJ : Fin 3 → Fin 3 → JitterNoise := fun i j =>
+    if i = 0 ∧ j = 1 then ⟨1, fun _ => 1⟩
+    else if i = 0 ∧ j = 2 then ⟨1, fun _ => 1⟩
+    else ⟨0, fun _ => 0⟩
+  let m : SecondOrderModel (Fin 3) 2 :=
+    { rate := 1
+      rate_pos := one_pos
+      sender := 0
+      host := fun r => if r = 0 then 1 else 2
+      clock := fun _ => ClockNoise.zero
+      txJitter := fun _ => ⟨0, fun _ => 0⟩
+      rxJitter := fun _ => ⟨0, fun _ => 0⟩
+      ownJitter := ownJ
+      capture := ClockNoise.zero
+      playback := fun _ => ClockNoise.zero
+      captureTimestampVariance := 0
+      captureTimestampVariance_nonneg := le_rfl
+      playbackTimestampVariance := fun _ => 0
+      playbackTimestampVariance_nonneg := fun _ => le_rfl }
+  have hclk_zero : ∀ ω i t τ, secondDifference (fun t => ((world ω).clock i).read t - t) t τ = 0 := by
+    intro ω i t τ
+    simp [world, secondDifference]
+  have hdev_cap : ∀ ω k j, gridDifference (devicePhase (world ω).source.capture m.rate) k j = 0 := by
+    intro ω k j
+    simp [m, world, devicePhase, gridDifference]
+  have hdev_spk : ∀ ω r k j,
+      gridDifference (devicePhase ((world ω).speaker r).out m.rate) k j = 0 := by
+    intro ω r k j
+    simp only [m, world, devicePhase, gridDifference]
+    push_cast
+    simp only [div_one]
+    ring
+  refine ⟨m, P, world, d, ?_, by simp [m, ownJ], by simp [m, ownJ]⟩
+  refine
+    { prob := hP
+      network := fun _ _ _ _ _ => rfl
+      rate_eq := fun _ => rfl
+      sender_eq := fun _ => rfl
+      host_eq := fun _ _ => rfl
+      clocks := fun i => ⟨fun _ _ => hmemLp _, fun t τ => by simp [hclk_zero],
+        fun t₁ τ₁ t₂ τ₂ => by simp [m, hclk_zero, secondDifferenceCovariance_zero]⟩
+      clocks_uncorrelated := fun i j _ t₁ τ₁ t₂ τ₂ => by simp [hclk_zero]
+      jitter := ⟨fun _ _ _ => 0, fun _ _ _ => 0, own,
+        fun ω i j u => by simp [d],
+        fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
+        fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
+        fun i j => ⟨fun _ => hmemLp _, fun s => by
+            rw [hint]
+            by_cases h1 : i = 0 ∧ j = 1
+            · simp [m, ownJ, own, s1, h1]; norm_num
+            · by_cases h2 : i = 0 ∧ j = 2
+              · simp [m, ownJ, own, s2, h2]; norm_num
+              · simp [m, ownJ, own, h1, h2],
+          fun s u => by
+            rw [hint]
+            by_cases h1 : i = 0 ∧ j = 1
+            · simp [m, ownJ, own, s1, h1]; norm_num
+            · by_cases h2 : i = 0 ∧ j = 2
+              · simp [m, ownJ, own, s2, h2]; norm_num
+              · simp [m, ownJ, own, h1, h2]⟩,
+        fun _ _ _ _ _ => by simp,
+        fun _ _ _ _ _ => by simp,
+        fun i j i' j' hne s u => by
+          have hzero_left : ∀ a b : Fin 3, ¬(a = 0 ∧ b = 1) → ¬(a = 0 ∧ b = 2) →
+              ∀ ω t, own ω a b t = 0 := fun a b h1 h2 ω t => by simp [own, h1, h2]
+          by_cases h1 : i = 0 ∧ j = 1
+          · by_cases h2' : i' = 0 ∧ j' = 2
+            · simp only [hint, own, s1, s2, h1, h2', and_true, true_and, ite_true]
+              norm_num
+            · have h1' : ¬(i' = 0 ∧ j' = 1) := by
+                intro h; exact hne (Prod.ext (h1.1.trans h.1.symm) (h1.2.trans h.2.symm))
+              simp [hzero_left i' j' h1' h2']
+          · by_cases h2 : i = 0 ∧ j = 2
+            · by_cases h1' : i' = 0 ∧ j' = 1
+              · simp only [hint, own, s1, s2, h2, h1', and_true, true_and, ite_true]
+                norm_num
+              · have h2' : ¬(i' = 0 ∧ j' = 2) := by
+                  intro h; exact hne (Prod.ext (h2.1.trans h.1.symm) (h2.2.trans h.2.symm))
+                simp [hzero_left i' j' h1' h2']
+            · simp [hzero_left i j h1 h2],
+        fun _ _ _ _ _ => by simp [hclk_zero],
+        fun _ _ _ _ _ => by simp [hclk_zero],
+        fun _ _ _ _ _ _ => by simp [hclk_zero],
+        fun _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ => by simp [world, captureError],
+        fun _ _ _ => by simp [world, captureError],
+        fun _ _ _ _ => by simp [world, captureError],
+        fun _ _ _ _ => by simp [world, playbackError],
+        fun _ _ _ _ => by simp [world, playbackError],
+        fun _ _ _ _ _ => by simp [world, playbackError]⟩
+      capture := ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_cap],
+        fun k₁ j₁ k₂ j₂ => by simp [m, hdev_cap, secondDifferenceCovariance_zero]⟩
+      playback := fun r => ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_spk],
+        fun k₁ j₁ k₂ j₂ => by simp [m, hdev_spk, secondDifferenceCovariance_zero]⟩
+      capture_clock_uncorrelated := fun i _ t τ k j => by simp [hclk_zero]
+      playback_clock_uncorrelated := fun i r _ t τ k j => by simp [hclk_zero]
+      capture_playback_uncorrelated := fun r _ k₁ j₁ k₂ j₂ => by simp [hdev_cap]
+      playback_uncorrelated := fun r r' _ k₁ j₁ k₂ j₂ => by simp [hdev_spk]
+      capture_timestamps := ⟨fun _ => hmemLp _, fun b => by simp [world, captureError],
+        fun b b' => by simp [m, world, captureError]⟩
+      playback_timestamps := fun r => ⟨fun _ => hmemLp _, fun b => by simp [world, playbackError],
+        fun b b' => by simp [m, world, playbackError]⟩
+      capture_playback_timestamps_uncorrelated := fun r b₁ b₂ => by simp [world, captureError]
+      playback_timestamps_uncorrelated := fun r r' _ b₁ b₂ => by simp [world, playbackError]
+      clock_capture_timestamps_uncorrelated := fun i t τ b => by simp [hclk_zero]
+      clock_playback_timestamps_uncorrelated := fun i r t τ b => by simp [hclk_zero]
+      capture_device_capture_timestamps_uncorrelated := fun k j b => by simp [hdev_cap]
+      capture_device_playback_timestamps_uncorrelated := fun r k j b => by simp [hdev_cap]
+      playback_device_capture_timestamps_uncorrelated := fun r k j b => by simp [hdev_spk]
+      playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
 
 end Further
 

@@ -15,7 +15,7 @@ sizes:
 
 # The documents written in LaTeX. Each is kept in the repository as a PDF
 # next to its source.
-documents := "docs/specification docs/fixed-playout-delay"
+documents := "docs/specification docs/fixed-playout-delay docs/star-optimum"
 
 # Build each document as a PDF and copy it next to its source. Each PDF
 # records the SHA-256 of its source. The build fails on any LaTeX warning,
@@ -53,6 +53,7 @@ lint:
 
 test: interleavings
     cargo test --workspace
+    cargo run --quiet --package unisono-sim --example star -- --smoke > /dev/null
 
 # Check the ring between threads under every interleaving of its two threads.
 interleavings:
