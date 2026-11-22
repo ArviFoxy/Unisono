@@ -32,11 +32,50 @@
 
 #![warn(clippy::undocumented_unsafe_blocks)]
 
+use std::{fmt, io};
+
+/// A configuration validation error returned when settings violate a runtime
+/// invariant (for example a zero rate, non-finite cost weight, or oversized
+/// packet).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InvalidSettings {
+    message: &'static str,
+}
+
+impl InvalidSettings {
+    /// Creates an invalid-settings error with a static diagnostic message.
+    #[must_use]
+    pub const fn new(message: &'static str) -> InvalidSettings {
+        InvalidSettings { message }
+    }
+
+    /// The diagnostic message.
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        self.message
+    }
+}
+
+impl fmt::Display for InvalidSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.message)
+    }
+}
+
+impl std::error::Error for InvalidSettings {}
+
+impl From<InvalidSettings> for io::Error {
+    fn from(error: InvalidSettings) -> io::Error {
+        io::Error::new(io::ErrorKind::InvalidInput, error.message)
+    }
+}
+
 pub mod asking;
 pub mod audio;
 pub mod clock;
 pub mod level;
 pub mod memory;
+pub mod network_thread;
 pub mod proxy;
 pub mod pump;
 pub mod receive;

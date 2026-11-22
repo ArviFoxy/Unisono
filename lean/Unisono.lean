@@ -24,7 +24,12 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.FixedDelay
+public import Unisono.Solutions.FixedDelay.Latency
+public import Unisono.Solutions.FixedDelay.Memory
+public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.Run
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Objectives

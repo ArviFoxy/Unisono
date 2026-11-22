@@ -290,6 +290,29 @@ theorem step_spec (p : player.Player) (wanted : Std.I64) (frames : Std.U32)
   step with step_clamped_spec lim as ⟨s, hseq, _, _⟩
   omega
 
+@[step]
+theorem position_units_total (p : timing.Position) :
+    timing.Position.units p ⦃ _ => True ⦄ := by
+  unfold timing.Position.units
+  run
+
+@[step]
+theorem position_from_units_total (units : Std.U128) :
+    timing.Position.from_units units ⦃ _ => True ⦄ := by
+  unfold timing.Position.from_units
+  run
+
+@[step]
+theorem step_units_total (s : timing.Step) : timing.Step.units s ⦃ _ => True ⦄ := by
+  unfold timing.Step.units
+  run
+
+@[step]
+theorem position_advance_total (p : timing.Position) (s : timing.Step) (frames : Std.U64) :
+    timing.Position.advance p s frames ⦃ _ => True ⦄ := by
+  unfold timing.Position.advance
+  run
+
 /-- Playing a cycle takes a step within the limit of the pace and leaves the
 settings of the regulator as they are. -/
 @[step]
@@ -301,11 +324,14 @@ theorem play_spec (p : player.Player) (frames : Std.U32)
   unfold player.Player.play
   step as ⟨wanted⟩
   step as ⟨st, hlo, hhi⟩
-  step*
+  step as ⟨i1, hi1⟩
+  step as ⟨i2, hi2⟩
+  step as ⟨o⟩
+  cases o <;> simp [hlo, hhi]
 
 @[step]
-theorem jumps_total (p : player.Player) (behind : Std.I64) :
-    player.Player.jumps p behind ⦃ _ => True ⦄ := by
+theorem jumps_total (p : player.Player) (now : timing.Position) :
+    player.Player.jumps p now ⦃ _ => True ⦄ := by
   unfold player.Player.jumps
   run
 
@@ -329,10 +355,10 @@ theorem cycle_spec (p : player.Player) (now later : timing.Position) (frames : S
   · split
     · simp only [WP.spec_ok]
       refine ⟨?_, ?_, trivial⟩ <;> (rw [hu]; omega)
-    · step as ⟨behind⟩
-      step as ⟨jumped⟩
+    · step as ⟨jumped⟩
       cases jumped
       · simp only [Bool.false_eq_true, ↓reduceIte]
+        step as ⟨behind⟩
         step as ⟨ahead⟩
         step as ⟨start, st, q, hlo, hhi, hreg⟩
         exact ⟨hlo, hhi, hreg⟩
@@ -382,30 +408,8 @@ theorem position_fraction_total (p : timing.Position) :
   unfold timing.Position.impl.fraction
   simp
 
-@[step]
-theorem position_units_total (p : timing.Position) :
-    timing.Position.units p ⦃ _ => True ⦄ := by
-  unfold timing.Position.units
-  run
-
-@[step]
-theorem position_from_units_total (units : Std.U128) :
-    timing.Position.from_units units ⦃ _ => True ⦄ := by
-  unfold timing.Position.from_units
-  run
-
-@[step]
-theorem step_units_total (s : timing.Step) : timing.Step.units s ⦃ _ => True ⦄ := by
-  unfold timing.Step.units
-  run
-
 theorem step_new_total (offset : Std.I64) : timing.Step.new offset ⦃ _ => True ⦄ := by
   unfold timing.Step.new
-  run
-
-theorem position_advance_total (p : timing.Position) (s : timing.Step) (frames : Std.U64) :
-    timing.Position.advance p s frames ⦃ _ => True ⦄ := by
-  unfold timing.Position.advance
   run
 
 theorem step_from_parts_per_billion_total (parts : Std.I64) :

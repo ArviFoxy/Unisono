@@ -55,7 +55,7 @@ impl Options {
 
     /// The value of `name` read as a `T`, if it is given; it may be given
     /// once.
-    fn one<T: FromStr>(&self, name: &str) -> Result<Option<T>, Wrong> {
+    pub(crate) fn one<T: FromStr>(&self, name: &str) -> Result<Option<T>, Wrong> {
         match self.all(name) {
             [] => Ok(None),
             [value] => value

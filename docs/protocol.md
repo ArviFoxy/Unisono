@@ -59,10 +59,11 @@ or that missed packets, holds them at once.
 
 ## The report
 
-A receiver sends reports to the sender. A report is padded with zeros to the
-length of an audio packet of the stream, so that it meets the delays that an
-audio packet meets. The first 32 bytes say who reports; the needs of the
-latest stretches follow them in the padding.
+A receiver sends reports to the sender. A report is padded with zeros to at
+least the length of the report plus its needs (85 bytes), or the length of an
+audio packet of the stream when larger, so that it meets the delays that an
+audio packet meets without truncating its needs. The first 32 bytes say who
+reports; the needs of the latest stretches follow them in the padding.
 
 | Offset | Bytes | Field | Meaning |
 |---|---|---|---|
@@ -86,7 +87,8 @@ the largest need of a frame of it. Each stretch appears in several reports,
 so a lost report loses nothing; the sender keeps, for each stretch, the
 largest need over the reports and the receivers, and chooses the level from
 that (see the model, section 6.5). Padding of zeros gives no needs, and a
-sender reads only as many as are there.
+sender reads only as many as are there; entries whose index would fall before
+stretch 0 (`count > newest + 1`) are ignored by `parse_needs`.
 
 ## What a receiver does with an audio packet
 
@@ -133,8 +135,14 @@ timing; they cannot make it stop.
 
 ## The answer to a report
 
-The sender answers every report of its stream with a datagram of exactly 32
-bytes, sent to the address the report came from.
+The sender answers every report of its stream that comes from one of its
+configured receiver addresses (`--to` / `receivers`) with a datagram of
+exactly 32 bytes, sent to the address the report came from. Reports from any
+other source address are ignored and counted as ignored datagrams (so unknown
+peers cannot steer the level choice or elicit echoes; a receiver whose replies
+leave from a different source address than the one the sender targets, such as
+an IPv6 temporary address or another interface on a multihomed host, will need
+its outgoing address matched or bound).
 
 | Offset | Bytes | Field | Meaning |
 |---|---|---|---|

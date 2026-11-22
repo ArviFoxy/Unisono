@@ -92,12 +92,13 @@ impl<const S: usize> Needs<S> {
     /// Whether `stretch` is among the kept ones or after them: not older than
     /// the newest by `S` or more.
     fn kept(&self, stretch: u64) -> bool {
-        stretch.saturating_add(S as u64) > self.newest
+        (stretch as u128).wrapping_add(S as u128) > self.newest as u128
     }
 
     /// Takes in that a frame of `stretch` needed `need` nanoseconds.
     pub fn observe(&mut self, stretch: u64, need: i64) {
-        let far = stretch.saturating_add(S as u64).saturating_add(S as u64) <= self.newest;
+        let far =
+            (stretch as u128).wrapping_add((S as u128).wrapping_mul(2)) <= self.newest as u128;
         if !self.held_any() || far {
             self.clear();
             self.newest = stretch;
@@ -278,5 +279,16 @@ mod tests {
             (needs.recent().newest, needs.recent().count),
             (39, u8::try_from(RECENT).unwrap())
         );
+    }
+
+    #[test]
+    fn stretches_at_u64_max_are_kept_without_saturation_wrap() {
+        let mut needs = Needs::<4>::new();
+        needs.observe(u64::MAX, 100);
+        assert_eq!(needs.get(u64::MAX), Some(100));
+        needs.observe(u64::MAX, 50);
+        assert_eq!(needs.get(u64::MAX), Some(100));
+        assert_eq!(needs.recent().newest, u64::MAX);
+        assert_eq!(needs.recent().needs[0], 1);
     }
 }

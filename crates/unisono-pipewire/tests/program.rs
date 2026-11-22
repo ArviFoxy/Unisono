@@ -131,7 +131,7 @@ fn the_program_plays_through_pipewire_a_level_after_the_capture() {
     )
     .expect("a capture stream");
     std::thread::sleep(Duration::from_secs(7));
-    recording.stop();
+    recording.stop().expect("stopping capture stream");
     assert!(sender.wait().expect("the sender ends").success());
     assert!(receiver.wait().expect("the receiver ends").success());
 

@@ -106,7 +106,7 @@ impl Asking {
             let patience = header.level.max(0);
             let reach =
                 u64::try_from(i128::from(patience) * i128::from(header.rate) / 1_000_000_000)
-                    .unwrap_or(0);
+                    .unwrap_or(u64::MAX);
             let first = self.next.max(header.index.saturating_sub(reach));
             if header.index > first {
                 self.open(Run {
@@ -138,25 +138,68 @@ impl Asking {
         }
     }
 
-    /// Takes in that the frames from `from` up to `to` arrived: a run that
-    /// they begin or end is that much shorter.
+    /// Takes in that the frames from `from` up to `to` arrived: runs covered
+    /// at either end shrink, fully covered runs are cleared, and a run split
+    /// in its interior becomes a prefix and a suffix run.
     fn fill(&mut self, from: u64, to: u64) {
+        if to <= from {
+            return;
+        }
+        let mut splits: [Option<Run>; RUNS] = [None; RUNS];
+        let mut split_count = 0usize;
         for slot in &mut self.runs {
             let Some(run) = slot else {
                 continue;
             };
             let end = run.first.saturating_add(run.frames);
-            if from <= run.first && to > run.first {
-                let covered = to.min(end) - run.first;
+            if to <= run.first || from >= end {
+                continue;
+            }
+            if from <= run.first && to >= end {
+                *slot = None;
+            } else if from <= run.first {
+                let covered = to - run.first;
                 run.first += covered;
                 run.frames -= covered;
-            } else if from > run.first && from < end && to >= end {
+            } else if to >= end {
                 run.frames = from - run.first;
-            }
-            if run.frames == 0 {
-                *slot = None;
+            } else {
+                let suffix = Run {
+                    first: to,
+                    frames: end - to,
+                    found: run.found,
+                    asked: run.asked,
+                    patience: run.patience,
+                };
+                run.frames = from - run.first;
+                if let Some(target) = splits.get_mut(split_count) {
+                    *target = Some(suffix);
+                    split_count += 1;
+                }
             }
         }
+        for suffix in splits.into_iter().take(split_count).flatten() {
+            self.open(suffix);
+        }
+    }
+
+    /// Nanoseconds until the earliest active run is next due at `now`, `Some(0)`
+    /// if a request is due immediately, or `None` if no active run remains.
+    #[must_use]
+    pub fn next_due(&self, now: i64) -> Option<i64> {
+        self.timeline?;
+        let mut earliest: Option<i64> = None;
+        for run in self.runs.iter().flatten() {
+            if now.saturating_sub(run.found) > run.patience {
+                continue;
+            }
+            let wait = match run.asked {
+                None => 0,
+                Some(asked) => AGAIN.saturating_sub(now.saturating_sub(asked)).max(0),
+            };
+            earliest = Some(earliest.map_or(wait, |best| best.min(wait)));
+        }
+        earliest
     }
 
     /// The next request that is due at `now` on the receiver's clock, if
@@ -334,5 +377,42 @@ mod tests {
         };
         asking.arrived(&bare, 20_000_000);
         assert_eq!(asking.due(20_000_000), None);
+    }
+
+    #[test]
+    fn arriving_packet_inside_a_run_splits_it_into_prefix_and_suffix() {
+        let mut asking = Asking::new();
+        asking.arrived(&packet(0), 0);
+        // Packets at 240, 480, 720 are missing.
+        asking.arrived(&packet(960), 20_000_000);
+        assert_eq!(asking.next_due(20_000_000), Some(0));
+        assert_eq!(asking.due(20_000_000), Some(wanted(240, 720)));
+        assert_eq!(asking.next_due(23_000_000), Some(7_000_000));
+        // The middle packet [480..720) arrives first.
+        asking.arrived(&packet(480), 25_000_000);
+        // Both [240..480) and [720..960) are re-requested at 30 ms, but NOT [480..720).
+        let mut requests = Vec::new();
+        while let Some(w) = asking.due(30_000_000) {
+            requests.push(w);
+        }
+        assert_eq!(requests, vec![wanted(240, 240), wanted(720, 240)]);
+        // Filling the remaining two halves clears everything.
+        asking.arrived(&packet(240), 31_000_000);
+        asking.arrived(&packet(720), 32_000_000);
+        assert_eq!(asking.next_due(32_000_000), None);
+        assert_eq!(asking.due(40_000_000), None);
+    }
+
+    #[test]
+    fn huge_patience_times_rate_saturates_reach_instead_of_dropping_the_run() {
+        let mut asking = Asking::new();
+        let huge = Audio {
+            rate: 192_000,
+            level: i64::MAX,
+            ..packet(0)
+        };
+        asking.arrived(&huge, 0);
+        asking.arrived(&Audio { index: 960, ..huge }, 20_000_000);
+        assert_eq!(asking.due(20_000_000), Some(wanted(240, 720)));
     }
 }

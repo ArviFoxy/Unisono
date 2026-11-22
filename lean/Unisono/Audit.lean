@@ -27,7 +27,11 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.FixedDelay.Latency
+public import Unisono.Solutions.FixedDelay.Memory
+public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.Run
 public import Unisono.Spec.Models.Delays
 
 /-!
@@ -775,6 +779,50 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Model.RegulationRandom.unforeseen_pace
 
+/-- info: 'Unisono.Fixed.rem_euclid_wide_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.rem_euclid_wide_spec
+
+/-- info: 'Unisono.Due.dueUnits_eq_floor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Due.dueUnits_eq_floor
+
+/-- info: 'Unisono.Relation.slope_within_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.slope_within_spec
+
+/-- info: 'Unisono.Relation.eval_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.eval_spec
+
+/-- info: 'Unisono.Relation.append_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.append_spec
+
+/-- info: 'Unisono.Relation.keep_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.keep_spec
+
+/-- info: 'Unisono.Relation.end_window_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Relation.end_window_spec
+
+/-- info: 'Unisono.Device.fit_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Device.fit_spec
+
+/-- info: 'Unisono.Rounds.shift_rounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Rounds.shift_rounds
+
+/-- info: 'Unisono.Answers.clear_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Answers.clear_spec
+
+/-- info: 'Unisono.Model.Level.measure_largest_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Level.measure_largest_le
+
 /-! ## Checks of the specification's definitions -/
 
 /-- info: 'Unisono.Spec.speed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
@@ -852,3 +900,371 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.DelayModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.DelayModel.example_holds
+
+/-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.longRun_le
+
+/-- info: 'Unisono.Spec.missed_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missed_eq_zero
+
+/-- info: 'Unisono.Spec.discontinuities_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuities_eq_zero
+
+/-- info: 'Unisono.Spec.meanLatency_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.meanLatency_le
+
+/-- info: 'Unisono.Spec.sync_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sync_le
+
+/-- info: 'Unisono.Spec.tracking_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.tracking_le
+
+/-- info: 'Unisono.Spec.Solution.held_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.held_mono
+
+/-- info: 'Unisono.Spec.Solution.frames_arrive' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.frames_arrive
+
+/-- info: 'Unisono.Spec.State.sendAll_delivered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.sendAll_delivered
+
+/-- info: 'Unisono.Spec.Solution.exists_handed_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.exists_handed_step
+
+/-- info: 'Unisono.Spec.State.handle_delivered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.handle_delivered
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_arrives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_arrives
+
+/-- info: 'Unisono.Spec.Solution.mem_inFlight_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.mem_inFlight_succ
+
+/-- info: 'Unisono.Spec.Solution.views_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_succ
+
+/-- info: 'Unisono.Solutions.FixedDelay.origin_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.origin_inFlight
+
+/-- info: 'Unisono.Spec.offset_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.offset_error
+
+/-- info: 'Unisono.Spec.offset_drift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.offset_drift
+
+/-- info: 'Unisono.Spec.Solution.handled_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_before
+
+/-- info: 'Unisono.Spec.Solution.handled_of_mem_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_mem_views
+
+/-- info: 'Unisono.Solutions.FixedDelay.advance_tracks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.advance_tracks
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_received' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_received
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_latest
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_received' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_received
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_latest
+
+/-- info: 'Unisono.Solutions.FixedDelay.asked_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.asked_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_after_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_after_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_none
+
+/-- info: 'Unisono.Solutions.FixedDelay.answered_query' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answered_query
+
+/-- info: 'Unisono.Solutions.FixedDelay.answered_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answered_latest
+
+/-- info: 'Unisono.Spec.Solution.sent_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.sent_inFlight
+
+/-- info: 'Unisono.Spec.Solution.copy_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.copy_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.replicate_copies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.replicate_copies
+
+/-- info: 'Unisono.Solutions.FixedDelay.query_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.query_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.answer_inFlight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answer_inFlight
+
+/-- info: 'Unisono.Solutions.FixedDelay.query_answered' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.query_answered
+
+/-- info: 'Unisono.Solutions.FixedDelay.answer_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.answer_reaches
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_sample' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_sample
+
+/-- info: 'Unisono.Spec.Solution.handled_time' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_time
+
+/-- info: 'Unisono.Spec.Solution.eventTime_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_mono
+
+/-- info: 'Unisono.Spec.Solution.handled_of_views_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_views_eq
+
+/-- info: 'Unisono.Solutions.FixedDelay.solution_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.solution_append
+
+/-- info: 'Unisono.Spec.Clock.read_sub_near' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Clock.read_sub_near
+
+/-- info: 'Unisono.Spec.offset_drift_abs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.offset_drift_abs
+
+/-- info: 'Unisono.Spec.CaptureDevice.capture_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.capture_sub_mem
+
+/-- info: 'Unisono.Spec.PlaybackDevice.out_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.out_sub_mem
+
+/-- info: 'Unisono.Spec.World.captured_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_sub_mem
+
+/-- info: 'Unisono.Spec.World.exists_captured_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.exists_captured_eq
+
+/-- info: 'Unisono.Spec.World.sub_le_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.sub_le_of_captured
+
+/-- info: 'Unisono.Solutions.FixedDelay.target_time_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.target_time_error
+
+/-- info: 'Unisono.Solutions.FixedDelay.positions_fold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.positions_fold
+
+/-- info: 'Unisono.Solutions.FixedDelay.lookup_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.lookup_chosen
+
+/-- info: 'Unisono.Solutions.FixedDelay.positions_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.positions_block
+
+/-- info: 'Unisono.Solutions.FixedDelay.lastChosen_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.lastChosen_block
+
+/-- info: 'Unisono.Solutions.FixedDelay.chosen_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.chosen_succ
+
+/-- info: 'Unisono.Solutions.FixedDelay.chosen_isSome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.chosen_isSome
+
+/-- info: 'Unisono.Solutions.FixedDelay.advance_converges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.advance_converges
+
+/-- info: 'Unisono.Spec.Solution.askedNext_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_mono
+
+/-- info: 'Unisono.Spec.Solution.exists_asked_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.exists_asked_step
+
+/-- info: 'Unisono.Spec.Solution.plays_of_asked_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_of_asked_step
+
+/-- info: 'Unisono.Spec.Solution.handled_of_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_of_asked
+
+/-- info: 'Unisono.Spec.Solution.handled_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_asked
+
+/-- info: 'Unisono.Spec.Solution.askedNext_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_succ
+
+/-- info: 'Unisono.Spec.Solution.views_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_append
+
+/-- info: 'Unisono.Spec.Solution.no_request_between' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.no_request_between
+
+/-- info: 'Unisono.Solutions.FixedDelay.last_at_next_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.last_at_next_request
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_handled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_handled
+
+/-- info: 'Unisono.Solutions.FixedDelay.block_memory' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.block_memory
+
+/-- info: 'Unisono.Solutions.FixedDelay.offset_recent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.offset_recent
+
+/-- info: 'Unisono.Solutions.FixedDelay.captured_nominal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.captured_nominal
+
+/-- info: 'Unisono.Solutions.FixedDelay.captured_target' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.captured_target
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_block_of_frame' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_block_of_frame
+
+/-- info: 'Unisono.Solutions.FixedDelay.frame_held' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.frame_held
+
+/-- info: 'Unisono.Solutions.FixedDelay.playable_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.playable_of_captured
+
+/-- info: 'Unisono.Spec.Solution.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.progress
+
+/-- info: 'Unisono.Spec.CaptureDevice.handed_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.handed_unbounded
+
+/-- info: 'Unisono.Spec.PlaybackDevice.asked_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.asked_unbounded
+
+/-- info: 'Unisono.Solutions.FixedDelay.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.progress
+
+/-- info: 'Unisono.Solutions.FixedDelay.asked_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.asked_gap
+
+/-- info: 'Unisono.Solutions.FixedDelay.handed_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.handed_gap
+
+/-- info: 'Unisono.Solutions.FixedDelay.request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.request_step
+
+/-- info: 'Unisono.Solutions.FixedDelay.target_band' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.target_band
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_last_below' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_last_below
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_block_of_sample' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_block_of_sample
+
+/-- info: 'Unisono.Solutions.FixedDelay.trajectory_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.trajectory_step
+
+/-- info: 'Unisono.Spec.World.captured_lipschitz' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_lipschitz
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_eq_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_eq_chosen
+
+/-- info: 'Unisono.Solutions.FixedDelay.targetError_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.targetError_mono
+
+/-- info: 'Unisono.Solutions.FixedDelay.late_targets' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.late_targets
+
+/-- info: 'Unisono.Solutions.FixedDelay.speaker_at_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.speaker_at_latency
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_at_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_at_latency
+
+/-- info: 'Unisono.Solutions.FixedDelay.guarantees' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.guarantees
+
+/-- info: 'Unisono.Solutions.FixedDelay.plays_at_latency_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.plays_at_latency_example

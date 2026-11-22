@@ -267,4 +267,42 @@ theorem sums_rounds {W : Std.Usize} (d : device.Device W) (newest : device.Readi
     simp only [h0]
     omega
 
+/-- Shifting the timestamps of a device takes one round for each report it keeps. -/
+theorem shift_rounds {W : Std.Usize} (d : device.Device W) (b : Std.I128) (kept : Std.Usize) :
+    EndsWithin
+      (fun x : device.Device W × Std.Usize =>
+        device.Device.shift_loop.body b kept x.1 x.2)
+      (kept.val + 1) (d, 0#usize) := by
+  apply endsWithin_of_measure
+    (measure := fun x : device.Device W × Std.Usize => kept.val - x.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨s, place⟩ -
+    unfold device.Device.shift_loop.body
+    simp only
+    split
+    · have hlt : place.val < kept.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add place 1#usize).val = place.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨o⟩
+      cases o with
+      | none =>
+        simp only [bind_ok]
+        step as ⟨place1, hplace1⟩
+        rw [hplace1]
+        omega
+      | some reading =>
+        simp only
+        step as ⟨i, hi⟩
+        step as ⟨i1, hi1⟩
+        step with Unisono.Fixed.saturate_spec as ⟨i2, hi2⟩
+        simp only [Array.to_slice_mut, lift, core.slice.Slice.get_mut,
+          core.slice.index.Usize.get_mut, bind_ok, Std.uncurry]
+        cases s.readings.to_slice[place]? <;>
+          (simp only [bind_ok, WP.spec_ok]; rw [hnext]; omega)
+    · simp
+  · trivial
+  · have h0 : (0#usize).val = 0 := by rfl
+    simp only [h0]
+    omega
+
 end Unisono.Rounds

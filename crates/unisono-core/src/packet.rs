@@ -544,7 +544,8 @@ impl Recent {
 }
 
 /// Writes `recent` after the first [`REPORT`] bytes of the report in
-/// `bytes`, and says whether there was room for it.
+/// `bytes`, and says whether there was room for it. Leaves `bytes` untouched
+/// when it is too short.
 // The casts turn a signed number into the unsigned one with the same bits.
 #[allow(clippy::cast_sign_loss)]
 pub fn write_needs(recent: &Recent, bytes: &mut [u8]) -> bool {
@@ -553,6 +554,10 @@ pub fn write_needs(recent: &Recent, bytes: &mut [u8]) -> bool {
     } else {
         RECENT
     };
+    let needed = REPORT.wrapping_add(9).wrapping_add(count.wrapping_mul(4));
+    if bytes.len() < needed {
+        return false;
+    }
     let mut written = write(bytes, REPORT, 8, recent.newest);
     // `count` is at most `RECENT`, which fits a byte.
     written &= write(bytes, REPORT.wrapping_add(8), 1, count as u64);
@@ -572,7 +577,8 @@ pub fn write_needs(recent: &Recent, bytes: &mut [u8]) -> bool {
 
 /// Reads the needs that the report in `bytes` carries after its first
 /// [`REPORT`] bytes. A report that carries none, or fewer than it says,
-/// gives as many as are there: padding of zeros gives none.
+/// gives as many as are there: padding of zeros gives none. Counts beyond
+/// stretch 0 are ignored.
 // The casts take a number that was read from exactly as many bytes as the
 // field has, or turn an unsigned number into the signed one with the same
 // bits.
@@ -593,7 +599,7 @@ pub fn parse_needs(bytes: &[u8]) -> Recent {
         RECENT
     };
     let mut i = 0usize;
-    while i < said {
+    while i < said && (i as u64) <= newest {
         let at = REPORT.wrapping_add(9).wrapping_add(i.wrapping_mul(4));
         let Some(need) = read(bytes, at, 4) else {
             break;
@@ -718,9 +724,10 @@ mod tests {
     use std::vec::Vec;
 
     use super::{
-        Audio, ECHO, Echo, Format, HEADER, KIND_AUDIO, KIND_ECHO, KIND_REPORT, NEEDS, RECENT,
-        REPORT, Recent, Rejected, Report, UNKNOWN_NEED, kind, parse_audio, parse_echo, parse_needs,
-        parse_report, write_audio, write_echo, write_needs, write_report,
+        Audio, ECHO, Echo, Format, HEADER, KIND_AUDIO, KIND_ECHO, KIND_REPORT, KIND_REQUEST, NEEDS,
+        RECENT, REPORT, REQUEST, Recent, Rejected, Report, Request, UNKNOWN_NEED, kind,
+        parse_audio, parse_echo, parse_needs, parse_report, parse_request, write_audio, write_echo,
+        write_needs, write_report, write_request,
     };
 
     fn header() -> Audio {
@@ -930,5 +937,57 @@ mod tests {
         assert_eq!(kind(&[]), Err(Rejected::TooShort));
         bytes[0] = 0;
         assert_eq!(kind(&bytes), Err(Rejected::NotUnisono));
+    }
+
+    #[test]
+    fn write_needs_does_not_partially_mutate_short_buffers_and_parse_needs_clamps_to_zero() {
+        let mut recent = Recent::NONE;
+        recent.newest = 2;
+        recent.count = 3;
+        recent.needs[0] = 10;
+        recent.needs[1] = 20;
+        recent.needs[2] = 30;
+        // Room for only 1 need (REPORT + 9 + 4), not 3 (REPORT + 9 + 12).
+        let mut short = vec![0xaa; REPORT + 13];
+        assert!(!write_needs(&recent, &mut short));
+        assert!(short.iter().all(|&b| b == 0xaa));
+
+        // Wire claims count = 11 with newest = 2: only stretches 2, 1, 0 exist.
+        let mut wire = vec![0u8; REPORT + NEEDS];
+        wire[REPORT..REPORT + 8].copy_from_slice(&2u64.to_le_bytes());
+        wire[REPORT + 8] = 11;
+        for i in 0..11usize {
+            let at = REPORT + 9 + i * 4;
+            let val = i32::try_from(i + 1).unwrap_or(0);
+            wire[at..at + 4].copy_from_slice(&val.to_le_bytes());
+        }
+        let parsed = parse_needs(&wire);
+        assert_eq!((parsed.newest, parsed.count), (2, 3));
+        assert_eq!(&parsed.needs[..3], &[1, 2, 3]);
+    }
+
+    #[test]
+    fn a_request_is_read_back_and_malformed_requests_are_rejected() {
+        let request = Request {
+            stream: 5,
+            timeline: 99,
+            first: 12_345,
+            frames: 480,
+        };
+        let mut bytes = [0u8; REQUEST];
+        assert_eq!(write_request(&request, &mut bytes), Some(REQUEST));
+        assert_eq!(kind(&bytes), Ok(KIND_REQUEST));
+        assert_eq!(parse_request(&bytes), Ok(request));
+        assert_eq!(write_request(&request, &mut [0u8; REQUEST - 1]), None);
+        assert_eq!(
+            parse_request(&bytes[..REQUEST - 1]),
+            Err(Rejected::TooShort)
+        );
+        let mut long = [0u8; REQUEST + 1];
+        long[..REQUEST].copy_from_slice(&bytes);
+        assert_eq!(parse_request(&long), Err(Rejected::Length));
+        let mut wrong_kind = bytes;
+        wrong_kind[5] = KIND_ECHO;
+        assert_eq!(parse_request(&wrong_kind), Err(Rejected::Kind(KIND_ECHO)));
     }
 }

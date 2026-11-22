@@ -19,6 +19,7 @@ mod sending;
 use std::f64::consts::TAU;
 use std::process::ExitCode;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use unisono_runtime::clock;
@@ -31,6 +32,40 @@ unisono: sends a stream of audio to receivers, or receives one and plays it.
   unisono send --to ADDRESS ...       see `unisono send --help`
   unisono receive --listen ADDRESS    see `unisono receive --help`
 ";
+
+/// Maximum frames allowed for `--cycle`.
+pub(crate) const MAX_CYCLE: usize = 65_536;
+
+/// Set to `true` when `SIGINT` or `SIGTERM` arrives so the program stops
+/// cleanly, closes its sockets, and prints its summary.
+static INTERRUPTED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a termination signal has been received.
+pub(crate) fn interrupted() -> bool {
+    INTERRUPTED.load(Ordering::Relaxed)
+}
+
+/// Installs async-signal-safe `SIGINT` and `SIGTERM` handlers on Unix.
+#[cfg(unix)]
+fn install_signal_handlers() {
+    extern "C" fn handle_signal(_signal: libc::c_int) {
+        INTERRUPTED.store(true, Ordering::Relaxed);
+    }
+
+    // SAFETY: `sigaction` with an async-signal-safe handler that only performs
+    // a lock-free atomic store is valid POSIX behavior.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = handle_signal as *const () as usize;
+        action.sa_flags = libc::SA_RESTART;
+        libc::sigemptyset(&raw mut action.sa_mask);
+        let _ = libc::sigaction(libc::SIGINT, &raw const action, std::ptr::null_mut());
+        let _ = libc::sigaction(libc::SIGTERM, &raw const action, std::ptr::null_mut());
+    }
+}
+
+#[cfg(not(unix))]
+fn install_signal_handlers() {}
 
 /// What a software capture device captures.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -91,15 +126,6 @@ impl Signal {
 /// memory within what the system lets it lock.
 pub(crate) const STACK: usize = 512 * 1024;
 
-/// Holds the calling thread, a network thread, to the system calls that
-/// such a thread makes. Where the system does not take the list, the thread
-/// runs on as it is, and a line says so.
-pub(crate) fn restrict_network_thread() {
-    if let Err(error) = unisono_runtime::syscalls::restrict() {
-        eprintln!("unisono: the network thread's system calls are not restricted: {error}");
-    }
-}
-
 /// The audio system that a program plays to or captures from.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum System {
@@ -117,7 +143,7 @@ pub(crate) enum System {
 impl System {
     /// The system that `--audio` and `--device` name.
     pub(crate) fn from_options(options: &Options) -> Result<System, Wrong> {
-        let device: Option<String> = options.all("device").first().cloned();
+        let device: Option<String> = options.one("device")?;
         match options.get("audio", "software".to_string())?.as_str() {
             "software" => Ok(System::Software),
             #[cfg(feature = "pipewire")]
@@ -141,6 +167,17 @@ impl System {
 
 /// What runs a command.
 type Command = fn(&Options) -> Result<(), Wrong>;
+
+/// Validates `--drift` (in parts per billion) so the software device pace stays
+/// strictly positive.
+pub(crate) fn validate_drift(drift: i32) -> Result<(), Wrong> {
+    if !(-999_999_999..=999_999_999).contains(&drift) {
+        return Err(Wrong(
+            "`--drift` must be strictly between -1000000000 and 1000000000 ppb".into(),
+        ));
+    }
+    Ok(())
+}
 
 /// Sleeps until the raw clock reads `time`, or for 2 ms at most, so that a
 /// loop looks at its work often enough.
@@ -171,11 +208,16 @@ fn main() -> ExitCode {
         print!("{help}");
         return ExitCode::SUCCESS;
     }
+    install_signal_handlers();
     let result = Options::parse(rest, known).and_then(|options| {
-        clock::shift(
-            options.get("clock-offset", 0)?,
-            options.get("clock-skew", 0)?,
-        );
+        let offset: i64 = options.get("clock-offset", 0)?;
+        let skew: i64 = options.get("clock-skew", 0)?;
+        if skew <= -1_000_000_000 {
+            return Err(Wrong(
+                "`--clock-skew` must be greater than -1000000000 ppb".into(),
+            ));
+        }
+        clock::shift(offset, skew);
         run(&options)
     });
     match result {
