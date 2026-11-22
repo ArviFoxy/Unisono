@@ -65,6 +65,27 @@ structure arrivals.Arrivals (K : Std.Usize) where
   places : Array arrivals.Arrival K
   next : Std.Usize
 
+/-- [unisono_core::blue::EdgeObs]
+    Source: 'crates/unisono-core/src/blue.rs', lines 60:0-69:1
+    Visibility: public -/
+structure blue.EdgeObs where
+  «from» : Std.Usize
+  «to» : Std.Usize
+  offset_ns : Std.I64
+  variance_ns2 : Std.U64
+
+/-- [unisono_core::blue::BlueResult]
+    Source: 'crates/unisono-core/src/blue.rs', lines 84:0-104:1
+    Visibility: public -/
+structure blue.BlueResult where
+  active_count : Std.Usize
+  reachable : Array Bool 17#usize
+  offsets_ns : Array Std.I64 17#usize
+  common_offset_ns : Std.I64
+  common_var_ns2 : Std.U64
+  self_diff_offset_ns : Std.I64
+  self_diff_var_ns2 : Std.U64
+
 /-- [unisono_core::device::Reading]
     Source: 'crates/unisono-core/src/device.rs', lines 36:0-41:1
     Visibility: public -/
@@ -91,6 +112,89 @@ structure device.Device (W : Std.Usize) where
   rate : Std.U32
   aside : Option device.Reading
 
+/-- [unisono_core::kalman::NoisePrior]
+    Source: 'crates/unisono-core/src/kalman.rs', lines 75:0-80:1
+    Visibility: public -/
+structure kalman.NoisePrior where
+  q0_q16_ns2_per_s : Std.I128
+  q2_q80_per_s : Std.I128
+
+/-- [unisono_core::kalman::KalmanFilter]
+    Source: 'crates/unisono-core/src/kalman.rs', lines 232:0-250:1
+    Visibility: public -/
+structure kalman.KalmanFilter where
+  anchored : Bool
+  base_offset_ns : Std.I64
+  last_time_ns : Std.I64
+  theta_q16 : Std.I64
+  freq_q48 : Std.I64
+  p00 : Std.I128
+  p01 : Std.I128
+  p11 : Std.I128
+  prior : kalman.NoisePrior
+  jump_ns : Std.I64
+
+/-- [unisono_core::min_rtt::Exchange]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 45:0-56:1
+    Visibility: public -/
+structure min_rtt.Exchange where
+  id : Std.U64
+  t1 : Std.I64
+  t2 : Std.I64
+  t3 : Std.I64
+  t4 : Std.I64
+
+/-- [unisono_core::min_rtt::Sampled]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 61:0-70:1
+    Visibility: public -/
+structure min_rtt.Sampled where
+  id : Std.U64
+  midpoint_ns : Std.I64
+  offset_ns : Std.I64
+  rtt_ns : Std.I64
+
+/-- [unisono_core::min_rtt::Measurement]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 75:0-86:1
+    Visibility: public -/
+structure min_rtt.Measurement where
+  id : Std.U64
+  midpoint_ns : Std.I64
+  offset_ns : Std.I64
+  rtt_ns : Std.I64
+  variance_ns2 : Std.U64
+
+/-- [unisono_core::min_rtt::Slot]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 117:0-120:1 -/
+structure min_rtt.Slot where
+  used : Bool
+  sample : min_rtt.Sampled
+
+/-- [unisono_core::min_rtt::RttWindow]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 137:0-141:1 -/
+structure min_rtt.RttWindow where
+  held : Bool
+  window : Std.I64
+  rtt_ns : Std.I64
+
+/-- [unisono_core::min_rtt::SlidingMinRtt]
+    Source: 'crates/unisono-core/src/min_rtt.rs', lines 186:0-201:1
+    Visibility: public -/
+structure min_rtt.SlidingMinRtt (W : Std.Usize) where
+  slots : Array min_rtt.Slot W
+  len : Std.Usize
+  next : Std.Usize
+  stride : Std.Usize
+  seen : Std.U64
+  has_emitted : Bool
+  last_emitted_id : Std.U64
+  has_ewma : Bool
+  ewma_var_ns2 : Std.U64
+  initial_var_ns2 : Std.U64
+  floor_var_ns2 : Std.U64
+  min_windows : Array min_rtt.RttWindow 8#usize
+  newest_window : Std.I64
+  has_min_window : Bool
+
 /-- [unisono_core::needs::Place]
     Source: 'crates/unisono-core/src/needs.rs', lines 28:0-35:1 -/
 structure needs.Place where
@@ -106,7 +210,7 @@ structure needs.Needs (S : Std.Usize) where
   newest : Std.U64
 
 /-- [unisono_core::packet::Recent]
-    Source: 'crates/unisono-core/src/packet.rs', lines 526:0-535:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 647:0-656:1
     Visibility: public -/
 structure packet.Recent where
   newest : Std.U64
@@ -114,7 +218,7 @@ structure packet.Recent where
   needs : Array Std.I32 11#usize
 
 /-- [unisono_core::packet::Format]
-    Source: 'crates/unisono-core/src/packet.rs', lines 67:0-72:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 94:0-99:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Format where
@@ -122,7 +226,7 @@ inductive packet.Format where
 | Signed24 : packet.Format
 
 /-- [unisono_core::packet::Audio]
-    Source: 'crates/unisono-core/src/packet.rs', lines 106:0-151:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 133:0-178:1
     Visibility: public -/
 structure packet.Audio where
   stream : Std.U16
@@ -145,7 +249,7 @@ structure packet.Audio where
   clock : Std.U32
 
 /-- [unisono_core::packet::Rejected]
-    Source: 'crates/unisono-core/src/packet.rs', lines 156:0-179:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 183:0-206:1
     Visibility: public -/
 @[discriminant isize]
 inductive packet.Rejected where
@@ -162,7 +266,7 @@ inductive packet.Rejected where
 | Pace : packet.Rejected
 
 /-- [unisono_core::packet::Report]
-    Source: 'crates/unisono-core/src/packet.rs', lines 388:0-397:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 415:0-424:1
     Visibility: public -/
 structure packet.Report where
   stream : Std.U16
@@ -171,22 +275,63 @@ structure packet.Report where
   sequence : Std.U64
 
 /-- [unisono_core::packet::Echo]
-    Source: 'crates/unisono-core/src/packet.rs', lines 402:0-411:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 430:0-441:1
     Visibility: public -/
 structure packet.Echo where
   stream : Std.U16
   receiver : Std.U64
   sequence : Std.U64
   arrival : Std.I64
+  departure : Std.I64
 
 /-- [unisono_core::packet::Request]
-    Source: 'crates/unisono-core/src/packet.rs', lines 416:0-425:1
+    Source: 'crates/unisono-core/src/packet.rs', lines 446:0-455:1
     Visibility: public -/
 structure packet.Request where
   stream : Std.U16
   timeline : Std.U64
   first : Std.U64
   frames : Std.U64
+
+/-- [unisono_core::packet::PeerProbe]
+    Source: 'crates/unisono-core/src/packet.rs', lines 460:0-469:1
+    Visibility: public -/
+structure packet.PeerProbe where
+  stream : Std.U16
+  prober : Std.U64
+  target : Std.U64
+  sequence : Std.U64
+
+/-- [unisono_core::packet::PeerEcho]
+    Source: 'crates/unisono-core/src/packet.rs', lines 474:0-487:1
+    Visibility: public -/
+structure packet.PeerEcho where
+  stream : Std.U16
+  prober : Std.U64
+  responder : Std.U64
+  sequence : Std.U64
+  arrival : Std.I64
+  departure : Std.I64
+
+/-- [unisono_core::packet::RelayEdge]
+    Source: 'crates/unisono-core/src/packet.rs', lines 496:0-508:1
+    Visibility: public -/
+structure packet.RelayEdge where
+  from_id : Std.U64
+  to_id : Std.U64
+  offset_ns : Std.I64
+  variance_ns2 : Std.U64
+  age_ns : Std.U32
+
+/-- [unisono_core::packet::PeerRelay]
+    Source: 'crates/unisono-core/src/packet.rs', lines 524:0-535:1
+    Visibility: public -/
+structure packet.PeerRelay where
+  stream : Std.U16
+  sender : Std.U64
+  sequence : Std.U64
+  count : Std.U8
+  edges : Array packet.RelayEdge 16#usize
 
 /-- [unisono_core::player::Regulation]
     Source: 'crates/unisono-core/src/player.rs', lines 75:0-87:1
@@ -234,6 +379,43 @@ structure player.Player where
   pace : Std.I64
   slope : Std.I32
 
+/-- [unisono_core::player::ModalRegulation]
+    Source: 'crates/unisono-core/src/player.rs', lines 396:0-412:1
+    Visibility: public -/
+structure player.ModalRegulation where
+  star_gain : Std.U32
+  common_gain : Std.U32
+  diff_gain : Std.U32
+  limit : Std.U32
+  jump : Std.U32
+
+/-- [unisono_core::timing::Schedule]
+    Source: 'crates/unisono-core/src/timing.rs', lines 191:0-205:1
+    Visibility: public -/
+structure timing.Schedule where
+  index : Std.U64
+  capture : Std.I64
+  rate : Std.U32
+  drift : Std.I32
+  level : Std.I64
+  level_slope : Std.I32
+
+/-- [unisono_core::player::ModalPlayer]
+    Source: 'crates/unisono-core/src/player.rs', lines 576:0-588:1
+    Visibility: public -/
+structure player.ModalPlayer where
+  regulation : player.ModalRegulation
+  running : Bool
+  position : timing.Position
+  diff_pace : Std.I64
+  com_pace : Std.I64
+  slope : Std.I32
+  c_anchor_ns : Std.I64
+  com_pos_q32 : Std.I64
+  last_com_behind_q32 : Std.I64
+  was_peer : Bool
+  last_epoch : Std.U32
+
 /-- [unisono_core::presence::Outcome]
     Source: 'crates/unisono-core/src/presence.rs', lines 16:0-25:1
     Visibility: public -/
@@ -261,7 +443,7 @@ structure presence.Presence (N : Std.Usize) where
   base : Std.U64
 
 /-- [unisono_core::receiver::Heard]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 56:0-67:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 57:0-68:1
     Visibility: public -/
 structure receiver.Heard where
   ignored : Bool
@@ -270,7 +452,7 @@ structure receiver.Heard where
   marked : presence.Marked
 
 /-- [unisono_core::receiver::Segment]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 72:0-79:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 73:0-80:1
     Visibility: public -/
 structure receiver.Segment where
   first : Std.U64
@@ -278,7 +460,7 @@ structure receiver.Segment where
   held : Bool
 
 /-- [unisono_core::receiver::Settings]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 84:0-99:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 85:0-100:1
     Visibility: public -/
 structure receiver.Settings where
   stream : Std.U16
@@ -287,16 +469,19 @@ structure receiver.Settings where
   limit : Std.I64
   regulation : player.Regulation
 
-/-- [unisono_core::timing::Schedule]
-    Source: 'crates/unisono-core/src/timing.rs', lines 191:0-205:1
+/-- [unisono_core::sync::SyncSnapshot]
+    Source: 'crates/unisono-core/src/sync.rs', lines 156:0-187:1
     Visibility: public -/
-structure timing.Schedule where
-  index : Std.U64
-  capture : Std.I64
-  rate : Std.U32
-  drift : Std.I32
-  level : Std.I64
-  level_slope : Std.I32
+structure sync.SyncSnapshot where
+  valid : Bool
+  peer_active : Bool
+  epoch : Std.U32
+  fleet_line : relation.Line
+  common_line : relation.Line
+  path_ns : Std.I64
+  active_peers : Std.U8
+  common_var_ns2 : Std.U64
+  diff_var_ns2 : Std.U64
 
 /-- [unisono_core::relation::Sample]
     Source: 'crates/unisono-core/src/relation.rs', lines 24:0-29:1
@@ -319,7 +504,7 @@ structure relation.Estimator (M : Std.Usize) where
   line : Option relation.Line
 
 /-- [unisono_core::receiver::Receiver]
-    Source: 'crates/unisono-core/src/receiver.rs', lines 108:0-165:1
+    Source: 'crates/unisono-core/src/receiver.rs', lines 109:0-173:1
     Visibility: public -/
 structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   where
@@ -342,6 +527,9 @@ structure receiver.Receiver (N : Std.Usize) (M : Std.Usize) (K : Std.Usize)
   next_from : Std.U64
   after : Option timing.Schedule
   after_from : Std.U64
+  use_sync : Bool
+  sync_snapshot : sync.SyncSnapshot
+  modal_player : player.ModalPlayer
   player : player.Player
   identity : Std.U64
   reports : Std.U64
@@ -373,5 +561,82 @@ structure sender.Sender where
   stamped : Bool
   stamped_index : Std.U64
   stamped_departure : Std.I64
+
+/-- [unisono_core::sync::SyncSettings]
+    Source: 'crates/unisono-core/src/sync.rs', lines 97:0-127:1
+    Visibility: public -/
+structure sync.SyncSettings where
+  stream : Std.U16
+  identity : Std.U64
+  sender_prior : kalman.NoisePrior
+  local_prior : kalman.NoisePrior
+  variance_floor_ns2 : Std.U64
+  initial_variance_ns2 : Std.U64
+  jump_ns : Std.I64
+  peer_stale_ns : Std.I64
+  startup_duration_ns : Std.I64
+  startup_probe_ns : Std.I64
+  steady_probe_ns : Std.I64
+  relay_interval_ns : Std.I64
+
+/-- [unisono_core::sync::PeerSlot]
+    Source: 'crates/unisono-core/src/sync.rs', lines 243:0-258:1 -/
+structure sync.PeerSlot where
+  configured : Bool
+  identity : Std.U64
+  weight_q16 : Std.U32
+  next_seq : Std.U64
+  has_probed : Bool
+  next_probe_ns : Std.I64
+  departures : arrivals.Arrivals 8#usize
+  rtt_selector : min_rtt.SlidingMinRtt 8#usize
+  filter : kalman.KalmanFilter
+  has_meas : Bool
+  last_meas : min_rtt.Measurement
+  last_heard_ns : Std.I64
+  has_relay_seq : Bool
+  last_relay_seq : Std.U64
+
+/-- [unisono_core::sync::RelayedSlot]
+    Source: 'crates/unisono-core/src/sync.rs', lines 295:0-312:1 -/
+structure sync.RelayedSlot where
+  used : Bool
+  from_id : Std.U64
+  to_id : Std.U64
+  meas_time_ns : Std.I64
+  last_rx_ns : Std.I64
+  offset_ns : Std.I64
+  variance_ns2 : Std.U64
+  has_freq : Bool
+  freq_q48 : Std.I64
+
+/-- [unisono_core::sync::Sync]
+    Source: 'crates/unisono-core/src/sync.rs', lines 443:0-476:1
+    Visibility: public -/
+structure sync.Sync where
+  settings : sync.SyncSettings
+  has_started : Bool
+  start_ns : Std.I64
+  sender_weight_q16 : Std.U32
+  sender_departures : arrivals.Arrivals 8#usize
+  sender_min_rtt : min_rtt.SlidingMinRtt 8#usize
+  sender_filter : kalman.KalmanFilter
+  sender_has_meas : Bool
+  sender_last_meas : min_rtt.Measurement
+  peer_count : Std.Usize
+  peers : Array sync.PeerSlot 15#usize
+  relayed : Array sync.RelayedSlot 128#usize
+  relay_seq : Std.U64
+  has_relayed : Bool
+  next_relay_ns : Std.I64
+  common_filter : kalman.KalmanFilter
+  diff_filter : kalman.KalmanFilter
+  peer_active : Bool
+  last_active_mask : Std.U32
+  epoch : Std.U32
+  dirty : Bool
+  has_fused : Bool
+  last_fuse_ns : Std.I64
+  snapshot : sync.SyncSnapshot
 
 end unisono_core

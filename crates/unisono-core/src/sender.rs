@@ -153,9 +153,10 @@ impl Sender {
     }
 
     /// The answer to a report of a receiver that arrived when the sender's
-    /// clock read `arrival`. A report for another stream gets none.
+    /// clock read `arrival` and whose answer leaves at `departure`. A report
+    /// for another stream gets none.
     #[must_use]
-    pub fn answer(&self, report: &Report, arrival: i64) -> Option<Echo> {
+    pub fn answer(&self, report: &Report, arrival: i64, departure: i64) -> Option<Echo> {
         if report.stream != self.settings.stream {
             return None;
         }
@@ -164,6 +165,7 @@ impl Sender {
             receiver: report.receiver,
             sequence: report.sequence,
             arrival,
+            departure,
         })
     }
 
@@ -322,18 +324,19 @@ mod tests {
             sequence: 7,
         };
         assert_eq!(
-            sender.answer(&report, 123_456),
+            sender.answer(&report, 123_456, 123_900),
             Some(Echo {
                 stream: 3,
                 receiver: 42,
                 sequence: 7,
-                arrival: 123_456
+                arrival: 123_456,
+                departure: 123_900,
             })
         );
         let other = Report {
             stream: 4,
             ..report
         };
-        assert_eq!(sender.answer(&other, 123_456), None);
+        assert_eq!(sender.answer(&other, 123_456, 123_900), None);
     }
 }

@@ -50,8 +50,11 @@ extern crate std;
 
 pub mod answers;
 pub mod arrivals;
+pub mod blue;
 pub mod device;
 pub mod fixed;
+pub mod kalman;
+pub mod min_rtt;
 pub mod needs;
 pub mod packet;
 pub mod player;
@@ -59,4 +62,5 @@ pub mod presence;
 pub mod receiver;
 pub mod relation;
 pub mod sender;
+pub mod sync;
 pub mod timing;

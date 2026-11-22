@@ -128,9 +128,80 @@ pub fn root(x: i128) -> i128 {
     found
 }
 
+/// Returns `a * b`, saturated to the range of `i128`.
+#[must_use]
+pub fn saturating_mul_i128(a: i128, b: i128) -> i128 {
+    match a.checked_mul(b) {
+        Some(prod) => prod,
+        None => {
+            if (a < 0) == (b < 0) {
+                i128::MAX
+            } else {
+                i128::MIN
+            }
+        }
+    }
+}
+
+/// Returns `a * b`, saturated to the range of `i64`.
+#[must_use]
+pub fn saturating_mul_i64(a: i64, b: i64) -> i64 {
+    saturate((a as i128).wrapping_mul(b as i128))
+}
+
+/// Returns `floor((num * 2^shift) / den)`, saturated to the range of `i128`,
+/// for a positive `den`.
+///
+/// For a `den` that is not positive the result is `0`. A `shift` above
+/// [`MAX_SHIFT`] counts as [`MAX_SHIFT`]. Because the quotient and remainder
+/// are split before scaling, no intermediate product can overflow `i128` even
+/// at extreme inputs.
+#[must_use]
+pub fn scale_div_pow2(num: i128, shift: u32, den: i128) -> i128 {
+    if den <= 0 {
+        return 0;
+    }
+    let shift = if shift > MAX_SHIFT { MAX_SHIFT } else { shift };
+    let (Some(tq), Some(tr)) = (num.checked_div(den), num.checked_rem(den)) else {
+        return 0;
+    };
+    let (q, mut rem) = if tr < 0 {
+        (tq.wrapping_sub(1), tr.wrapping_add(den))
+    } else {
+        (tq, tr)
+    };
+    let max_q = i128::MAX.wrapping_shr(shift);
+    let min_q = i128::MIN.wrapping_shr(shift);
+    if q > max_q {
+        return i128::MAX;
+    }
+    if q < min_q {
+        return i128::MIN;
+    }
+    // `0 <= rem < den` throughout: `frac` accumulates `floor(rem * 2^shift / den)`.
+    let mut frac = 0i128;
+    let mut bit = 0u32;
+    while bit < shift {
+        frac = frac.wrapping_shl(1);
+        let half_up = den.wrapping_sub(rem);
+        if rem >= half_up {
+            rem = rem.wrapping_sub(half_up);
+            frac = frac.wrapping_add(1);
+        } else {
+            rem = rem.wrapping_add(rem);
+        }
+        bit = bit.saturating_add(1);
+    }
+    // `min_q <= q <= max_q` and `0 <= frac < 2^shift`, so neither operation wraps.
+    q.wrapping_shl(shift).wrapping_add(frac)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, rem_euclid_wide, root, saturate};
+    use super::{
+        MAX_SHIFT, div_floor, div_floor_wide, mul_shift, rem_euclid_wide, root, saturate,
+        scale_div_pow2,
+    };
 
     #[test]
     fn rem_euclid_wide_maps_negative_and_extreme_values_into_range() {
@@ -248,5 +319,35 @@ mod tests {
         assert_eq!(div_floor_wide(-8 * big, big), -8);
         assert_eq!(div_floor_wide(5, 0), 0);
         assert_eq!(div_floor_wide(5, -3), 0);
+    }
+
+    #[test]
+    fn scale_div_pow2_is_exact_without_intermediate_overflow() {
+        assert_eq!(scale_div_pow2(1, 32, 2), 1 << 31);
+        assert_eq!(scale_div_pow2(1, 32, 3), (1i128 << 32) / 3);
+        // Negative values round toward negative infinity.
+        assert_eq!(scale_div_pow2(-1, 32, 3), -((1i128 << 32) / 3) - 1);
+        assert_eq!(scale_div_pow2(-1, 32, 2), -(1i128 << 31));
+        assert_eq!(scale_div_pow2(5, 32, 0), 0);
+        assert_eq!(scale_div_pow2(5, 32, -4), 0);
+        // Huge denominators near `i128::MAX` never overflow `2 * rem`.
+        let huge_even = i128::MAX - 7;
+        assert_eq!(
+            scale_div_pow2(huge_even - 1, 64, huge_even),
+            (1i128 << 64) - 1
+        );
+        assert_eq!(scale_div_pow2(huge_even / 2, 64, huge_even), 1i128 << 63);
+        let huge_odd = i128::MAX - 6;
+        assert_eq!(
+            scale_div_pow2(huge_odd / 2, 64, huge_odd),
+            (1i128 << 63) - 1
+        );
+        assert_eq!(scale_div_pow2(i128::MIN, 0, 1), i128::MIN);
+        assert_eq!(scale_div_pow2(i128::MAX, 1, 1), i128::MAX);
+        assert_eq!(scale_div_pow2(i128::MIN, 1, 1), i128::MIN);
+        // Saturation at exact `max_q` / `min_q`.
+        let max_q = i128::MAX >> 64;
+        assert_eq!(scale_div_pow2(max_q, 64, 1), max_q << 64);
+        assert_eq!(scale_div_pow2(max_q + 1, 64, 1), i128::MAX);
     }
 }

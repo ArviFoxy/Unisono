@@ -43,7 +43,7 @@
 //! silence.
 
 use crate::fixed::{div_floor, div_floor_wide, root, saturate};
-use crate::timing::{Position, Step, distance};
+use crate::timing::{Position, Schedule, Step, distance};
 
 /// The number of nanoseconds in a second, and of parts in a billion.
 const BILLION: i64 = 1_000_000_000;
@@ -385,6 +385,484 @@ impl Player {
             start,
             step,
             jumped,
+        }
+    }
+}
+
+/// Settings for [`ModalPlayer`], supporting both single-mode Star regulation
+/// and decoupled common/differential Peer modal regulation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(translating), derive(Debug))]
+pub struct ModalRegulation {
+    /// Gain per second when operating in single-mode Star (`peer_active = false`),
+    /// in units of `2^-16`.
+    pub star_gain: u32,
+    /// Common-mode gain per second in Peer mode (`peer_active = true`), in
+    /// units of `2^-16`. Must be positive for bounded latency.
+    pub common_gain: u32,
+    /// Differential-mode gain per second in Peer mode (`peer_active = true`),
+    /// in units of `2^-16`.
+    pub diff_gain: u32,
+    /// Pace limit either way, in parts per billion (capped at
+    /// `LARGEST_LIMIT = 3_000_000`).
+    pub limit: u32,
+    /// Distance to the schedule, in whole frames, beyond which playback jumps
+    /// directly to the schedule.
+    pub jump: u32,
+}
+
+impl ModalRegulation {
+    /// Single-mode regulation using the same gain for Star, common, and
+    /// differential modes.
+    #[must_use]
+    pub const fn from_single(reg: Regulation) -> Self {
+        ModalRegulation {
+            star_gain: reg.gain,
+            common_gain: reg.gain,
+            diff_gain: reg.gain,
+            limit: reg.limit,
+            jump: reg.jump,
+        }
+    }
+
+    /// Standard lip-sync peer regulation: `star = 4.0 /s`, `common = 0.5 /s`,
+    /// `diff = 4.0 /s`.
+    #[must_use]
+    pub const fn lipsync(limit: u32, jump: u32) -> Self {
+        ModalRegulation {
+            star_gain: 262_144,
+            common_gain: 32_768,
+            diff_gain: 262_144,
+            limit,
+            jump,
+        }
+    }
+
+    /// Bounded low-latency peer regulation: `star = 4.0 /s`,
+    /// `common = 0.05 /s` (strictly positive so latency remains bounded),
+    /// `diff = 4.0 /s`.
+    #[must_use]
+    pub const fn low_latency(limit: u32, jump: u32) -> Self {
+        ModalRegulation {
+            star_gain: 262_144,
+            common_gain: 3_277,
+            diff_gain: 262_144,
+            limit,
+            jump,
+        }
+    }
+}
+
+/// Converts a nanosecond offset delta into `2^-32` stream frames at
+/// `schedule`'s current effective frame rate.
+fn ns_to_frames_q32(schedule: &Schedule, delta_ns: i64) -> i64 {
+    let pace = (BILLION as i128).wrapping_add(schedule.drift as i128);
+    let stretch = (BILLION as i128).wrapping_add(schedule.level_slope as i128);
+    if schedule.rate == 0 || pace <= 0 || stretch <= 0 {
+        return 0;
+    }
+    let clamped_ns = if delta_ns > 10_000_000_000 {
+        10_000_000_000i128
+    } else if delta_ns < -10_000_000_000 {
+        -10_000_000_000i128
+    } else {
+        delta_ns as i128
+    };
+    let frames_per = (schedule.rate as i128).wrapping_mul(pace);
+    let divisor = saturate((BILLION as i128).wrapping_mul(stretch));
+    let product = clamped_ns.wrapping_mul(frames_per);
+    let whole = div_floor(product, divisor);
+    let rest = product.wrapping_sub(whole.wrapping_mul(divisor as i128));
+    let frac = div_floor(rest.wrapping_shl(32), divisor);
+    saturate(whole.wrapping_shl(32).wrapping_add(frac))
+}
+
+/// Computes `Regulation.law` gains for a single cycle of `duration` ns at
+/// `gain_q16`.
+fn gains_for(gain_q16: u32, duration: i64) -> Gains {
+    let span = if duration < 0 {
+        0
+    } else if duration > LONGEST_CYCLE {
+        LONGEST_CYCLE
+    } else {
+        duration
+    };
+    let scaled = (gain_q16 as i128)
+        .wrapping_mul(span as i128)
+        .wrapping_shl(16);
+    let gain = div_floor(scaled, BILLION);
+    let gain = if gain > LARGEST_GAIN {
+        LARGEST_GAIN
+    } else {
+        gain
+    };
+    let square = gain.wrapping_mul(gain);
+    let coarse = square.wrapping_shr(32);
+    let wide = root(coarse.wrapping_mul(coarse).wrapping_add(SIXTEEN));
+    let sum = coarse.wrapping_add(wide).wrapping_shr(1);
+    let spread = root(square.wrapping_mul(sum));
+    let modulus = sum.wrapping_shl(16).wrapping_sub(spread).wrapping_shr(1);
+    Gains {
+        ahead: modulus.wrapping_mul(modulus).wrapping_shr(64),
+        behind: square.wrapping_mul(modulus).wrapping_shr(64),
+    }
+}
+
+/// Evaluates `Regulation.law` for `(behind, ahead)` at `gain_q16`.
+fn regulate_for(gain_q16: u32, behind: i64, ahead: i64, duration: i64) -> i64 {
+    let gains = gains_for(gain_q16, duration);
+    let kept = gains.ahead.wrapping_mul(ahead as i128).wrapping_shr(32);
+    let added = gains.behind.wrapping_mul(behind as i128).wrapping_shr(32);
+    saturate(kept.wrapping_add(added))
+}
+
+/// Carries a previous cycle's read distance (in `2^-48` frames) across a
+/// change in schedule level slope.
+fn carry_slope(read_q48: i128, prev_slope: i32, slope: i32) -> i128 {
+    let before = (BILLION as i128).wrapping_add(prev_slope as i128);
+    let now = (BILLION as i128).wrapping_add(slope as i128);
+    if prev_slope != slope && before > 0 && now > 0 {
+        div_floor_wide(read_q48.wrapping_mul(before), now)
+    } else {
+        read_q48
+    }
+}
+
+/// Pace reach in units of `2^-64` frame per output frame for `limit` ppb.
+fn reach_for(limit: u32) -> i128 {
+    let clamped = if limit > LARGEST_LIMIT {
+        LARGEST_LIMIT
+    } else {
+        limit
+    };
+    div_floor((clamped as i128).wrapping_mul(FRAME), BILLION)
+}
+
+/// Clamps `x` to `[-hi, hi]` for `hi >= 0`.
+fn clamp_sym_i128(x: i128, hi: i128) -> i128 {
+    let lo = 0i128.wrapping_sub(hi);
+    if x > hi {
+        hi
+    } else if x < lo {
+        lo
+    } else {
+        x
+    }
+}
+
+/// Converts a desired excess `wanted` (in `2^-48` frames) over `scheduled`
+/// (in `2^-32` frames) across `frames` output frames into a speed-limited
+/// [`Step`].
+fn step_for_limit(limit: u32, wanted: i64, frames: u32, scheduled: i64) -> Step {
+    let reach = reach_for(limit);
+    let beyond = (scheduled as i128)
+        .wrapping_mul(SIXTEEN_BITS)
+        .wrapping_add(wanted as i128)
+        .wrapping_sub((frames as i128).wrapping_mul(FRAME_IN_CORRECTIONS));
+    let step = div_floor(beyond.wrapping_mul(SIXTEEN_BITS), frames as i64);
+    Step::clamped(saturate(clamp_sym_i128(step, reach)))
+}
+
+/// Parallel two-mode (common / differential) playback regulator.
+///
+/// - When `peer_active` is `false`, behaves identically to [`Player`] at
+///   `regulation.star_gain`.
+/// - When `peer_active` is `true`, decomposes the schedule into the
+///   fleet-common offset `com_now_ns..com_then_ns` (regulated gently at
+///   `common_gain`) and the local differential residual (regulated tightly at
+///   `diff_gain`), summing both laws in parallel within `regulation.limit`.
+#[derive(Clone, Copy)]
+#[cfg_attr(not(translating), derive(Debug))]
+pub struct ModalPlayer {
+    regulation: ModalRegulation,
+    running: bool,
+    position: Position,
+    diff_pace: i64,
+    com_pace: i64,
+    slope: i32,
+    c_anchor_ns: i64,
+    com_pos_q32: i64,
+    last_com_behind_q32: i64,
+    was_peer: bool,
+    last_epoch: u32,
+}
+
+impl ModalPlayer {
+    /// Creates an idle modal regulator holding no playback position yet.
+    #[must_use]
+    pub fn new(regulation: ModalRegulation) -> Self {
+        ModalPlayer {
+            regulation,
+            running: false,
+            position: Position {
+                frame: 0,
+                fraction: 0,
+            },
+            diff_pace: 0,
+            com_pace: 0,
+            slope: 0,
+            c_anchor_ns: 0,
+            com_pos_q32: 0,
+            last_com_behind_q32: 0,
+            was_peer: false,
+            last_epoch: 0,
+        }
+    }
+
+    /// Updates regulation parameters without disturbing playback continuity.
+    pub fn set_regulation(&mut self, regulation: ModalRegulation) {
+        self.regulation = regulation;
+    }
+
+    /// Active regulation parameters.
+    #[must_use]
+    pub fn regulation(&self) -> ModalRegulation {
+        self.regulation
+    }
+
+    /// Resets playback state so the next cycle starts cleanly on the schedule.
+    pub fn stop(&mut self) {
+        self.running = false;
+        self.diff_pace = 0;
+        self.com_pace = 0;
+        self.slope = 0;
+        self.c_anchor_ns = 0;
+        self.com_pos_q32 = 0;
+        self.last_com_behind_q32 = 0;
+        self.was_peer = false;
+        self.last_epoch = 0;
+    }
+
+    /// The held playback position for the next output frame, if running.
+    #[must_use]
+    pub fn position(&self) -> Option<Position> {
+        if self.running {
+            Some(self.position)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `now` is beyond the configured jump threshold from `self.position`.
+    fn jumps(&self, now: Position) -> bool {
+        if !self.running {
+            return true;
+        }
+        let current = self.position.units();
+        let target = now.units();
+        let gap = if target >= current {
+            target.wrapping_sub(current)
+        } else {
+            current.wrapping_sub(target)
+        };
+        let limit = (self.regulation.jump as u128).wrapping_shl(64);
+        gap > limit
+    }
+
+    /// Plans one output device cycle of `frames` frames taking `duration` ns.
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub fn cycle(
+        &mut self,
+        now: Position,
+        then: Position,
+        frames: u32,
+        duration: i64,
+        schedule: &Schedule,
+        peer_active: bool,
+        epoch: u32,
+        com_now_ns: i64,
+        com_then_ns: i64,
+    ) -> Plan {
+        let scheduled = distance(now, then);
+        if frames == 0 || scheduled <= 0 {
+            return Plan {
+                frames: 0,
+                start: self.position,
+                step: Step::UNITY,
+                jumped: false,
+            };
+        }
+
+        let jumped = self.jumps(now);
+        if jumped {
+            self.running = true;
+            self.position = now;
+            self.slope = schedule.level_slope;
+            self.c_anchor_ns = com_now_ns;
+            self.was_peer = peer_active;
+            self.last_epoch = epoch;
+            let step = step_for_limit(self.regulation.limit, 0, frames, scheduled);
+            if peer_active {
+                let com_sched = ns_to_frames_q32(schedule, com_then_ns.saturating_sub(com_now_ns));
+                let reach = reach_for(self.regulation.limit);
+                let raw_com_pace = div_floor((com_sched as i128).wrapping_shl(32), frames as i64);
+                let com_pace = saturate(clamp_sym_i128(raw_com_pace, reach));
+                self.com_pace = com_pace;
+                self.diff_pace = step.offset().wrapping_sub(com_pace);
+                self.com_pos_q32 = saturate(
+                    (frames as i128)
+                        .wrapping_mul(com_pace as i128)
+                        .wrapping_shr(32),
+                );
+                self.last_com_behind_q32 = com_sched.saturating_sub(self.com_pos_q32);
+            } else {
+                self.com_pace = 0;
+                self.diff_pace = step.offset();
+                self.com_pos_q32 = 0;
+                self.last_com_behind_q32 = 0;
+            }
+            let start = self.position;
+            self.position = match start.advance(step, frames as u64) {
+                Some(next) => next,
+                None => Position {
+                    frame: u64::MAX,
+                    fraction: u64::MAX,
+                },
+            };
+            return Plan {
+                frames,
+                start,
+                step,
+                jumped: true,
+            };
+        }
+
+        if !peer_active {
+            // Single-mode Star path: bit-identical to `Player` at `star_gain`.
+            let total_pace = if self.was_peer {
+                self.was_peer = false;
+                self.last_epoch = epoch;
+                self.com_pos_q32 = 0;
+                self.last_com_behind_q32 = 0;
+                let combined = self.diff_pace.saturating_add(self.com_pace);
+                self.com_pace = 0;
+                combined
+            } else {
+                self.diff_pace
+            };
+            let behind = distance(self.position, now);
+            let read = (frames as i128)
+                .wrapping_mul(FRAME_IN_CORRECTIONS)
+                .wrapping_add(
+                    (frames as i128)
+                        .wrapping_mul(total_pace as i128)
+                        .wrapping_shr(16),
+                );
+            let carried = carry_slope(read, self.slope, schedule.level_slope);
+            let ahead =
+                saturate(carried.wrapping_sub((scheduled as i128).wrapping_mul(SIXTEEN_BITS)));
+            let wanted = regulate_for(self.regulation.star_gain, behind, ahead, duration);
+            let step = step_for_limit(self.regulation.limit, wanted, frames, scheduled);
+            self.diff_pace = step.offset();
+            self.com_pace = 0;
+            self.slope = schedule.level_slope;
+            let start = self.position;
+            self.position = match start.advance(step, frames as u64) {
+                Some(next) => next,
+                None => Position {
+                    frame: u64::MAX,
+                    fraction: u64::MAX,
+                },
+            };
+            return Plan {
+                frames,
+                start,
+                step,
+                jumped: false,
+            };
+        }
+
+        // Peer two-mode modal path.
+        if !self.was_peer || epoch != self.last_epoch {
+            self.c_anchor_ns = com_now_ns;
+            if self.was_peer {
+                // Peer-to-peer membership change: preserve `com_behind` smoothly.
+                self.com_pos_q32 = saturate(0i128.wrapping_sub(self.last_com_behind_q32 as i128));
+            } else {
+                // Entering Peer from Star: keep prior pace continuous.
+                self.com_pace = 0;
+                self.com_pos_q32 = 0;
+                self.last_com_behind_q32 = 0;
+            }
+            self.was_peer = true;
+            self.last_epoch = epoch;
+        } else {
+            // Bumpless anchor recentering if cumulative common drift > 1 s.
+            let drift_ns = (com_now_ns as i128).wrapping_sub(self.c_anchor_ns as i128);
+            let abs_drift = if drift_ns < 0 {
+                0i128.wrapping_sub(drift_ns)
+            } else {
+                drift_ns
+            };
+            if abs_drift > BILLION as i128 {
+                let delta_q32 = ns_to_frames_q32(schedule, saturate(drift_ns));
+                self.c_anchor_ns = com_now_ns;
+                self.com_pos_q32 = self.com_pos_q32.saturating_sub(delta_q32);
+            }
+        }
+
+        let com_now_q32 = ns_to_frames_q32(schedule, com_now_ns.saturating_sub(self.c_anchor_ns));
+        let com_then_q32 = ns_to_frames_q32(schedule, com_then_ns.saturating_sub(self.c_anchor_ns));
+        let com_sched = com_then_q32.saturating_sub(com_now_q32);
+        let base_sched = scheduled.saturating_sub(com_sched);
+
+        let total_behind = distance(self.position, now);
+        let com_behind = com_now_q32.saturating_sub(self.com_pos_q32);
+        let diff_behind = total_behind.saturating_sub(com_behind);
+
+        let com_read_prev = (frames as i128)
+            .wrapping_mul(self.com_pace as i128)
+            .wrapping_shr(16);
+        let com_carried = carry_slope(com_read_prev, self.slope, schedule.level_slope);
+        let com_ahead =
+            saturate(com_carried.wrapping_sub((com_sched as i128).wrapping_mul(SIXTEEN_BITS)));
+
+        let diff_read_prev = (frames as i128)
+            .wrapping_mul(FRAME_IN_CORRECTIONS)
+            .wrapping_add(
+                (frames as i128)
+                    .wrapping_mul(self.diff_pace as i128)
+                    .wrapping_shr(16),
+            );
+        let diff_carried = carry_slope(diff_read_prev, self.slope, schedule.level_slope);
+        let diff_ahead =
+            saturate(diff_carried.wrapping_sub((base_sched as i128).wrapping_mul(SIXTEEN_BITS)));
+
+        let com_wanted = regulate_for(self.regulation.common_gain, com_behind, com_ahead, duration);
+        let diff_wanted =
+            regulate_for(self.regulation.diff_gain, diff_behind, diff_ahead, duration);
+        let total_wanted = saturate((com_wanted as i128).wrapping_add(diff_wanted as i128));
+        let step = step_for_limit(self.regulation.limit, total_wanted, frames, scheduled);
+
+        let com_cycle_q48 = (com_sched as i128)
+            .wrapping_mul(SIXTEEN_BITS)
+            .wrapping_add(com_wanted as i128);
+        let raw_com_pace = div_floor(com_cycle_q48.wrapping_mul(SIXTEEN_BITS), frames as i64);
+        let reach = reach_for(self.regulation.limit);
+        let com_pace = saturate(clamp_sym_i128(raw_com_pace, reach));
+
+        self.com_pace = com_pace;
+        self.diff_pace = step.offset().wrapping_sub(com_pace);
+        let com_adv_q32 = (frames as i128)
+            .wrapping_mul(com_pace as i128)
+            .wrapping_shr(32);
+        self.com_pos_q32 = saturate((self.com_pos_q32 as i128).saturating_add(com_adv_q32));
+        self.last_com_behind_q32 = com_then_q32.saturating_sub(self.com_pos_q32);
+        self.slope = schedule.level_slope;
+
+        let start = self.position;
+        self.position = match start.advance(step, frames as u64) {
+            Some(next) => next,
+            None => Position {
+                frame: u64::MAX,
+                fraction: u64::MAX,
+            },
+        };
+        Plan {
+            frames,
+            start,
+            step,
+            jumped: false,
         }
     }
 }
@@ -766,5 +1244,157 @@ mod tests {
         let plan = player.cycle(at(far), at(far + FRAMES as u64), FRAMES, DURATION, 0);
         assert!(plan.jumped);
         assert_eq!(plan.start, at(far));
+    }
+
+    #[test]
+    fn modal_player_star_mode_is_bit_identical_to_single_player() {
+        use super::{ModalPlayer, ModalRegulation};
+        use crate::timing::Schedule;
+
+        let reg = Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 240,
+        };
+        let mut single = Player::new(reg);
+        let mut modal = ModalPlayer::new(ModalRegulation::from_single(reg));
+        let sched = Schedule {
+            index: 0,
+            capture: 0,
+            rate: 48_000,
+            drift: 0,
+            level: 20_000_000,
+            level_slope: 0,
+        };
+        let mut now = at(10_000);
+        for c in 0..200 {
+            let bump = if c == 20 { 50 } else { 0 };
+            now = Position {
+                frame: now.frame + bump,
+                fraction: now.fraction,
+            };
+            let then = advance(now, FRAMES, step_for(25_000));
+            let p_single = single.cycle(now, then, FRAMES, DURATION, 0);
+            let p_modal = modal.cycle(now, then, FRAMES, DURATION, &sched, false, 0, 0, 0);
+            assert_eq!(p_modal, p_single, "mismatch on cycle {c}");
+            now = then;
+        }
+    }
+
+    #[test]
+    fn modal_player_equal_gains_matches_single_player() {
+        use super::{ModalPlayer, ModalRegulation};
+        use crate::timing::{Schedule, due};
+
+        let reg = Regulation {
+            gain: 4 << 16,
+            limit: 1_000_000,
+            jump: 240,
+        };
+        let mut single = Player::new(reg);
+        let mut modal = ModalPlayer::new(ModalRegulation::from_single(reg));
+        let sched = Schedule {
+            index: 0,
+            capture: 0,
+            rate: 48_000,
+            drift: 0,
+            level: 0,
+            level_slope: 0,
+        };
+        for c in 0..150i64 {
+            let t = 1_000_000_000 + c * DURATION;
+            let com_now = if c >= 30 { 500_000 } else { 0 };
+            let com_then = com_now;
+            let diff_now = if c >= 60 { -300_000 } else { 0 };
+            let now = due(&sched, t + com_now + diff_now).expect("due");
+            let then = due(&sched, t + DURATION + com_then + diff_now).expect("due");
+            let ps = single.cycle(now, then, FRAMES, DURATION, 0);
+            let pm = modal.cycle(
+                now, then, FRAMES, DURATION, &sched, true, 1, com_now, com_then,
+            );
+            assert_eq!(pm.jumped, ps.jumped);
+            assert!(
+                (pm.step.offset() - ps.step.offset()).abs() <= 1 << 20,
+                "cycle {c}: modal={} single={}",
+                pm.step.offset(),
+                ps.step.offset()
+            );
+        }
+    }
+
+    #[test]
+    fn modal_player_decouples_common_and_differential_perturbations() {
+        use super::{ModalPlayer, ModalRegulation};
+        use crate::timing::{Schedule, due};
+
+        let mut modal = ModalPlayer::new(ModalRegulation::lipsync(1_000_000, 240));
+        let sched = Schedule {
+            index: 0,
+            capture: 0,
+            rate: 48_000,
+            drift: 0,
+            level: 0,
+            level_slope: 0,
+        };
+        // Lock on cycle 0.
+        let t0 = 1_000_000_000i64;
+        modal.cycle(
+            due(&sched, t0).expect("due"),
+            due(&sched, t0 + DURATION).expect("due"),
+            FRAMES,
+            DURATION,
+            &sched,
+            true,
+            1,
+            0,
+            0,
+        );
+        // Common-mode +200 us step (9.6 frames) responds gently at common_gain = 0.5/s.
+        let t1 = t0 + DURATION;
+        let com_step = 200_000i64;
+        let plan_com = modal.cycle(
+            due(&sched, t1 + com_step).expect("due"),
+            due(&sched, t1 + DURATION + com_step).expect("due"),
+            FRAMES,
+            DURATION,
+            &sched,
+            true,
+            1,
+            com_step,
+            com_step,
+        );
+
+        // Reset and apply the exact same +200 us step purely as a differential
+        // step (`com` unchanged): responds ~64x faster at diff_gain = 4.0/s!
+        modal.stop();
+        modal.cycle(
+            due(&sched, t0).expect("due"),
+            due(&sched, t0 + DURATION).expect("due"),
+            FRAMES,
+            DURATION,
+            &sched,
+            true,
+            1,
+            0,
+            0,
+        );
+        let plan_diff = modal.cycle(
+            due(&sched, t1 + com_step).expect("due"),
+            due(&sched, t1 + DURATION + com_step).expect("due"),
+            FRAMES,
+            DURATION,
+            &sched,
+            true,
+            1,
+            0,
+            0,
+        );
+        assert!(plan_com.step.offset() > 0);
+        assert!(
+            plan_diff.step.offset() > plan_com.step.offset() * 30,
+            "diff={} should be far stronger than com={}",
+            plan_diff.step.offset(),
+            plan_com.step.offset()
+        );
     }
 }
