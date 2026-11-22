@@ -21,12 +21,43 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 dir="$root/.tools/aeneas"
 built="$dir/.built-commit"
 
+# Retry transient network errors during git operations.
+retry() {
+    local attempt
+    for attempt in 1 2 3; do
+        if "$@"; then
+            return 0
+        fi
+        if [ "$attempt" -eq 3 ]; then
+            return 1
+        fi
+        sleep 10
+    done
+}
+
+retry_clone() {
+    local dest="$1"
+    shift
+    local attempt
+    for attempt in 1 2 3; do
+        rm -rf "$dest"
+        if git clone "$@" "$dest"; then
+            return 0
+        fi
+        if [ "$attempt" -eq 3 ]; then
+            rm -rf "$dest"
+            return 1
+        fi
+        sleep 10
+    done
+}
+
 mkdir -p "$root/.tools"
 if [ ! -d "$dir/.git" ]; then
-    git clone --quiet https://github.com/AeneasVerif/aeneas "$dir"
+    retry_clone "$dir" --quiet https://github.com/AeneasVerif/aeneas
 fi
 if [ "$(git -C "$dir" rev-parse HEAD)" != "$AENEAS_REV" ]; then
-    git -C "$dir" fetch --quiet origin
+    retry git -C "$dir" fetch --quiet origin
     git -C "$dir" checkout --quiet "$AENEAS_REV"
 fi
 if [ "$mode" = fetch ]; then
@@ -42,10 +73,10 @@ cd "$dir"
 # the OCaml library that Aeneas compiles from source.
 charon_rev="$(tail -1 charon-pin)"
 if [ ! -d charon/.git ]; then
-    git clone --quiet --recurse-submodules https://github.com/AeneasVerif/charon charon
+    retry_clone charon --quiet --recurse-submodules https://github.com/AeneasVerif/charon
 fi
 if [ "$(git -C charon rev-parse HEAD)" != "$charon_rev" ]; then
-    git -C charon fetch --quiet origin
+    retry git -C charon fetch --quiet origin
     git -C charon checkout --quiet "$charon_rev"
 fi
 # Charon's build formats its sources, and its toolchain file does not ask for

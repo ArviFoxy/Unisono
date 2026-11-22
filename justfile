@@ -11,7 +11,7 @@ check: sizes format-check lint test targets realtime cost translation prove tran
 # No file of the repository is larger than a megabyte: the largest by far is
 # the translation of the core, a quarter of that.
 sizes:
-    @git ls-files -z | xargs -0 du --bytes | awk '$1 > 1048576 { print "too large: " $2; large = 1 } END { exit large }'
+    @git ls-files -z | xargs -0 sh -c 'large=0; for f in "$@"; do [ -f "$f" ] || continue; n=$(wc -c < "$f"); if [ "$n" -gt 1048576 ]; then echo "too large: $f ($n bytes)"; large=1; fi; done; exit $large' _
 
 # The documents written in LaTeX. Each is kept in the repository as a PDF
 # next to its source.
@@ -35,12 +35,21 @@ pdfs-check:
 # Rewrite the Rust sources in the standard format.
 format:
     cargo fmt --all
+    cargo fmt --manifest-path tools/realtime-check/Cargo.toml
+    cargo fmt --manifest-path tools/realtime-audio/Cargo.toml
 
 format-check:
     cargo fmt --all --check
+    cargo fmt --manifest-path tools/realtime-check/Cargo.toml --check
+    cargo fmt --manifest-path tools/realtime-audio/Cargo.toml --check
 
 lint:
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo clippy --package unisono --features pipewire --all-targets -- -D warnings
+    cargo clippy --package unisono --features alsa --all-targets -- -D warnings
+    cargo clippy --package unisono --all-features --all-targets -- -D warnings
+    cargo clippy --manifest-path tools/realtime-check/Cargo.toml --lib --release --target-dir target/tools -- -D warnings
+    cargo clippy --manifest-path tools/realtime-audio/Cargo.toml --lib --release --target-dir target/tools -- -D warnings
 
 test: interleavings
     cargo test --workspace
@@ -94,18 +103,20 @@ cost:
     cargo run --quiet --release --package cycle-cost
 
 # The tests against a running PipeWire, in the container of
-# containers/pipewire. Needs docker; continuous integration runs it too.
+# containers/audio. Needs docker; continuous integration runs it too.
 pipewire:
-    tools/container.sh pipewire tools/pipewire-test.sh
+    tools/container.sh audio tools/pipewire-test.sh
 
 # The tests of the ALSA device, against the device that PipeWire gives ALSA
-# programs, in the container of containers/alsa. Needs docker; continuous
+# programs, in the container of containers/audio. Needs docker; continuous
 # integration runs it too.
 alsa:
-    tools/container.sh alsa tools/alsa-test.sh
+    tools/container.sh audio tools/alsa-test.sh
 
 # Hold the dependencies against deny.toml: known vulnerabilities, licences
 # and sources. Needs cargo-deny; continuous integration runs it too.
 dependencies:
     cargo deny check
+    cargo deny --manifest-path tools/realtime-check/Cargo.toml check
+    cargo deny --manifest-path tools/realtime-audio/Cargo.toml check
 

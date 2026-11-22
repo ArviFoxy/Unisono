@@ -51,20 +51,7 @@ pub fn mul_shift(a: i64, b: i64, shift: u32) -> i64 {
 /// For a `b` that is not positive the result is 0.
 #[must_use]
 pub fn div_floor(a: i128, b: i64) -> i128 {
-    if b <= 0 {
-        return 0;
-    }
-    let divisor = b as i128;
-    // The divisor is positive, so neither operation can fail.
-    let (Some(quotient), Some(remainder)) = (a.checked_div(divisor), a.checked_rem(divisor)) else {
-        return 0;
-    };
-    // Rust rounds a quotient toward zero, which is upward for a negative one.
-    if remainder < 0 {
-        quotient.wrapping_sub(1)
-    } else {
-        quotient
-    }
+    div_floor_wide(a, b as i128)
 }
 
 /// Returns `a / b` rounded toward negative infinity, for a positive `b` of
@@ -85,6 +72,28 @@ pub fn div_floor_wide(a: i128, b: i128) -> i128 {
     } else {
         quotient
     }
+}
+
+/// Returns the Euclidean remainder of `a` divided by `b`, in `0..b`, or
+/// `None` when `b` is zero.
+#[must_use]
+pub fn rem_euclid_wide(a: i128, b: usize) -> Option<usize> {
+    if b == 0 {
+        return None;
+    }
+    let divisor = b as i128;
+    let Some(remainder) = a.checked_rem(divisor) else {
+        return None;
+    };
+    let non_negative = if remainder < 0 {
+        remainder.wrapping_add(divisor)
+    } else {
+        remainder
+    };
+    // `non_negative` is in `0..b`, so it fits `usize`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let place = non_negative as usize;
+    Some(place)
 }
 
 /// The largest power of four that an `i128` holds: 2^126.
@@ -121,7 +130,19 @@ pub fn root(x: i128) -> i128 {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, root, saturate};
+    use super::{MAX_SHIFT, div_floor, div_floor_wide, mul_shift, rem_euclid_wide, root, saturate};
+
+    #[test]
+    fn rem_euclid_wide_maps_negative_and_extreme_values_into_range() {
+        assert_eq!(rem_euclid_wide(0, 0), None);
+        assert_eq!(rem_euclid_wide(-3, 3), Some(0));
+        assert_eq!(rem_euclid_wide(-2, 3), Some(1));
+        assert_eq!(rem_euclid_wide(-1, 3), Some(2));
+        assert_eq!(rem_euclid_wide(0, 3), Some(0));
+        assert_eq!(rem_euclid_wide(1, 3), Some(1));
+        assert_eq!(rem_euclid_wide(i128::MIN, 3), Some(1));
+        assert_eq!(rem_euclid_wide(i128::MAX, 3), Some(1));
+    }
 
     #[test]
     fn root_is_the_largest_integer_whose_square_fits() {

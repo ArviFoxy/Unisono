@@ -139,15 +139,6 @@ impl<const W: usize> Device<W> {
         div_floor(frames.wrapping_mul(BILLION), self.rate as i64)
     }
 
-    /// The last report: the one set aside if there is one, and else the
-    /// newest of the kept ones.
-    fn last(&self) -> Option<Reading> {
-        match self.aside {
-            Some(aside) => Some(aside),
-            None => self.newest(),
-        }
-    }
-
     /// Whether a report at `position` after the report `last` shows that the
     /// device started anew: its position is not after that of `last`, or it
     /// is further on than [`REACH`] frames.
@@ -203,8 +194,9 @@ impl<const W: usize> Device<W> {
 
     /// Moves the time of every kept report by `by` nanoseconds.
     fn shift(&mut self, by: i128) {
+        let kept = self.kept();
         let mut place = 0usize;
-        while place < W {
+        while place < kept {
             if let Some(reading) = self.at(place) {
                 let moved = Reading {
                     position: reading.position,
@@ -262,25 +254,23 @@ impl<const W: usize> Device<W> {
     /// device held before.
     pub fn observe(&mut self, position: u64, time: i64) {
         let report = Reading { position, time };
-        let (Some(last), Some(newest)) = (self.last(), self.newest()) else {
+        let Some(newest) = self.newest() else {
             self.start(report);
             return;
         };
-        if Self::restarted(last, position) {
-            self.start(report);
-            return;
-        }
         let Some(earlier) = self.aside else {
-            if self.follows(newest, report) {
+            if Self::restarted(newest, position) {
+                self.start(report);
+            } else if self.follows(newest, report) {
                 self.push(report);
             } else {
                 self.aside = Some(report);
             }
             return;
         };
-        if self.follows(earlier, report) {
+        if !Self::restarted(earlier, position) && self.follows(earlier, report) {
             self.step(earlier, report);
-        } else if self.follows(newest, report) {
+        } else if !Self::restarted(newest, position) && self.follows(newest, report) {
             self.aside = None;
             self.push(report);
         } else {
@@ -310,9 +300,8 @@ impl<const W: usize> Device<W> {
 
     /// `sums` with one more report.
     fn add(&self, sums: Sums, newest: Reading, reading: Reading) -> Sums {
-        // Differences of 64-bit numbers, then numbers within 2^32 and
-        // products of two of them, summed over at most 2^64 places: nothing
-        // wraps.
+        // Differences of 64-bit numbers clamped within `REACH` (2^28), summed
+        // over at most `MAX_KEPT` (2^12) places: nothing wraps in `i128`.
         let x = within((reading.position as i128).wrapping_sub(newest.position as i128));
         let elapsed = (reading.time as i128).wrapping_sub(newest.time as i128);
         let y = within(elapsed.wrapping_sub(self.nominal(x)));
@@ -325,18 +314,37 @@ impl<const W: usize> Device<W> {
         }
     }
 
-    /// Evaluates the fitted line at `position` from precomputed `sums` and
-    /// `spread`.
-    fn eval_at(&self, newest: Reading, sums: Sums, spread: i128, position: u64) -> i64 {
+    /// Computes `(newest, sums, spread, tilt)` once for the kept reports.
+    fn fit(&self) -> Option<(Reading, Sums, i128, i128)> {
+        let Some(newest) = self.newest() else {
+            return None;
+        };
+        let sums = self.sums(newest);
+        if sums.count <= 0 {
+            return None;
+        }
+        let spread = sums
+            .count
+            .wrapping_mul(sums.xx)
+            .wrapping_sub(sums.x.wrapping_mul(sums.x));
+        let tilt = if spread > 0 {
+            sums.count
+                .wrapping_mul(sums.xy)
+                .wrapping_sub(sums.x.wrapping_mul(sums.y))
+        } else {
+            0
+        };
+        Some((newest, sums, spread, tilt))
+    }
+
+    /// Evaluates the fitted line at `position` from precomputed `sums`,
+    /// `spread`, and `tilt`.
+    fn eval_at(&self, newest: Reading, sums: Sums, spread: i128, tilt: i128, position: u64) -> i64 {
         let ahead = within((position as i128).wrapping_sub(newest.position as i128));
         // With at most 2^12 reports and each value within 2^28: sums of x and
         // y are at most 2^40, sums of products at most 2^68, spread and tilt
         // at most 2^81, and the numerator below 2^123. No operation wraps.
         let beyond = if spread > 0 {
-            let tilt = sums
-                .count
-                .wrapping_mul(sums.xy)
-                .wrapping_sub(sums.x.wrapping_mul(sums.y));
             let lever = sums.count.wrapping_mul(ahead).wrapping_sub(sums.x);
             div_floor_wide(
                 sums.y
@@ -360,18 +368,10 @@ impl<const W: usize> Device<W> {
     /// first report.
     #[must_use]
     pub fn when(&self, position: u64) -> Option<i64> {
-        let Some(newest) = self.newest() else {
+        let Some((newest, sums, spread, tilt)) = self.fit() else {
             return None;
         };
-        let sums = self.sums(newest);
-        if sums.count <= 0 {
-            return None;
-        }
-        let spread = sums
-            .count
-            .wrapping_mul(sums.xx)
-            .wrapping_sub(sums.x.wrapping_mul(sums.x));
-        Some(self.eval_at(newest, sums, spread, position))
+        Some(self.eval_at(newest, sums, spread, tilt, position))
     }
 
     /// The fitted start time in nanoseconds and cycle duration in units of
@@ -384,18 +384,10 @@ impl<const W: usize> Device<W> {
     /// before the first report.
     #[must_use]
     pub fn when_cycle(&self, position: u64, frames: u32) -> Option<(i64, i64)> {
-        let Some(newest) = self.newest() else {
+        let Some((newest, sums, spread, tilt)) = self.fit() else {
             return None;
         };
-        let sums = self.sums(newest);
-        if sums.count <= 0 {
-            return None;
-        }
-        let spread = sums
-            .count
-            .wrapping_mul(sums.xx)
-            .wrapping_sub(sums.x.wrapping_mul(sums.x));
-        let start = self.eval_at(newest, sums, spread, position);
+        let start = self.eval_at(newest, sums, spread, tilt, position);
         let span = within(frames as i128);
         // `span <= 2^28`, so `span_q16 <= 2^44`: `span_q16 * BILLION < 2^74`
         // and `|span_q16 * tilt| <= 2^44 * 2^81 = 2^125`, so no operation
@@ -403,10 +395,6 @@ impl<const W: usize> Device<W> {
         let span_q16 = span.wrapping_shl(16);
         let nominal_q16 = div_floor(span_q16.wrapping_mul(BILLION), self.rate as i64);
         let beyond_q16 = if spread > 0 {
-            let tilt = sums
-                .count
-                .wrapping_mul(sums.xy)
-                .wrapping_sub(sums.x.wrapping_mul(sums.y));
             div_floor_wide(span_q16.wrapping_mul(tilt), spread)
         } else {
             0
@@ -729,5 +717,24 @@ mod tests {
             sum += duration;
         }
         assert!((sum - 4_995_004_995).abs() <= 40, "sum {sum}");
+    }
+
+    #[test]
+    fn single_forward_jumped_outlier_does_not_wipe_kept_reports() {
+        let mut device = Device::<16>::new(48_000);
+        for cycle in 0..8u64 {
+            let pos = cycle * 256;
+            let time = i64::try_from(pos * 1_000_000_000 / 48_000).unwrap_or(0);
+            device.observe(pos, time);
+        }
+        assert_eq!(device.kept(), 8);
+        // One bogus forward-jumped position outlier is set aside.
+        device.observe(1_000_000, 100_000_000);
+        assert_eq!(device.kept(), 8);
+        // Next valid report follows the last kept reading, dropping the outlier.
+        let next_pos = 8 * 256;
+        let next_time = i64::try_from(next_pos * 1_000_000_000 / 48_000).unwrap_or(0);
+        device.observe(next_pos, next_time);
+        assert_eq!(device.kept(), 9);
     }
 }

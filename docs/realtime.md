@@ -25,9 +25,18 @@ time or for the start and length of a cycle, and read and write packets. The che
   reference that cannot be resolved, and the check sees it by name. On every
   run the check also builds a function that does panic and fails unless that
   reference appears: the check is seen to catch what it is for;
-- **the sources of the core have no trait object and no pointer to a
-  function,** so every call is to a function the compiler knows, and the code
-  that was inspected is all the code these functions can run.
+- **the core's sources outside tests contain no trait objects (`dyn`) and no
+  function pointers (`fn(...)`),** so every call in the core is direct across
+  both the audit build and the shipped program;
+- **every reached function of the audit build is audited fail-closed by
+  `crates/reachable`,** with jump tables disabled (`-max-jump-table-size=0`)
+  and eager RELRO linking (`-Wl,-z,relro,-z,now`), so in the audited library no
+  direct call, unconditional or conditional jump (including hinted branches),
+  linear fallthrough, or indirect branch can leave unisono's own code, branch
+  through writable memory, jump into the middle of an allowed helper, or reach
+  a trap or kernel entry. `crates/reachable` audits x86-64 ELF libraries only
+  and exits with status 2 on other architectures (so `just realtime` and `just
+  check` target x86-64 Linux).
 
 These are statements about every path, not about the paths that a test ran.
 They hold for the code as compiled for the machine that runs the check.
@@ -38,12 +47,13 @@ The core is one part of what an audio thread runs. The rest uses the
 standard library: the receiver's playback takes in what the network thread
 handed over, plans with the core, resamples, conceals and fades; the
 sender's capture hands frames to the network thread. `tools/realtime-audio`
-builds the two cycles, as the program sizes them, into a library of their
-own, and `crates/reachable` follows every call from them through the
-machine code, through the table of addresses as well. The check fails
-unless every function they reach is unisono's own, one of the functions
-that copy and fill memory, or one of the compiler's helpers for 128-bit
-arithmetic, and none of them enters the kernel or calls through a pointer.
+builds the two cycles with runtime-sized slices into a library of their
+own, and `crates/reachable` follows every direct call, jump, fallthrough,
+and relocation-backed indirect call from them through the demangled machine
+code. The check fails unless every function they reach belongs to unisono,
+one of the functions that copy and fill memory, or one of the compiler's
+helpers for 128-bit arithmetic, and none of them enters the kernel, traps,
+or branches through an unresolved pointer.
 A path to a panic, to the allocator or to a lock reaches a function of
 the standard library and fails it; so does freeing memory. It is seen to
 fail: a function with a path to a panic is built beside them, and the
@@ -98,9 +108,13 @@ more work; it says nothing about the machine.
 **What the processor and the operating system add.** Memory that is not in
 place when it is touched, floating-point numbers so small that arithmetic on
 them is slow, and interrupts are outside what any of the above sees. The
-program locks the memory it has once its threads run and everything they use
-is made (`unisono_runtime::memory`); its threads have small stacks, so that
-the whole of it fits within the usual limit on locked memory. The only
+program locks the memory it has once both its network and audio threads run
+and everything they use is made (`unisono_runtime::memory`); its own threads
+use 512 KiB stacks to keep locked-memory use modest. Systems that enforce a
+low default `RLIMIT_MEMLOCK` (for example 8 MiB) will still refuse `mlockall`
+unless raised to roughly 16 MiB for ALSA or 32–64 MiB for PipeWire (due to
+shared libraries and PipeWire's IPC/shared-memory pools); failure to lock
+memory is warned on stderr and does not abort the process. The only
 recurrence on the audio path, the concealment's prediction, takes a value
 too small for full precision as silence, so such numbers do not arise there;
 the processor is not set to treat them as zero. Interrupts and the
@@ -113,11 +127,19 @@ graph itself.
 bytes that anyone who reaches its socket can send. The kernel holds it to a
 list of system calls (`unisono_runtime::syscalls`): receiving and sending on
 the socket that is open, waiting for it, reading the clock and sleeping,
-waking other threads, writing to a file that is open, returning memory, and
-ending. Any other call of that thread fails as not permitted and does
-nothing: it cannot open a file, make a socket, start a program or change
-what memory may be executed. The program asks for this at the start of the
-network thread of a sender and of a receiver, on Linux on x86-64 and 64-bit
-ARM; elsewhere the thread runs unrestricted and a line says so. A test
-holds a thread to the list and has it send, sleep and end, and fail to open
-a file and to make a socket.
+waking other threads, writing to a file that is open, non-executable memory
+management (`brk`, `munmap`, `madvise`, and `mmap`/`mprotect` without
+`PROT_EXEC`), signaling its own process via `tgkill` (so `abort()` terminates
+cleanly), and ending. Before installing the filter, `restrict()` queries the process
+personality (`personality(0xffffffff)`) and refuses startup if
+`READ_IMPLIES_EXEC` is active, because `PROT_READ` mappings would otherwise be
+executable without `PROT_EXEC`. A call under a foreign architecture terminates
+the process; any other call of that thread fails with `EPERM`
+(`PermissionDenied`) and does nothing: it cannot open a file, make a socket,
+start a program or make memory executable. The program asks for this at the
+start of the network thread of a sender and of a receiver on little-endian
+Linux on x86-64 and 64-bit ARM, and fails startup if installing the filter
+fails there; on other platforms (`Unsupported`) the thread runs unrestricted
+and a warning is printed. Tests verify both the BPF verdicts and a live
+restricted thread sending, sleeping, mapping non-executable memory, and being
+denied `openat`, `socket`, and `mprotect(..., PROT_EXEC)`.

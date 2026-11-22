@@ -39,19 +39,21 @@ int64_t unisono_clock(void);
 typedef struct unisono_sender_settings {
     /* Where to send from, as "address:port"; NULL for any. */
     const char *bind;
-    /* The receivers, each as "address:port". */
+    /* The receivers, each as "address:port"; at least 1 and at most 4096. */
     const char *const *receivers;
     size_t receiver_count;
     /* The stream's number, which its receivers are set up with as well. */
     uint16_t stream;
-    /* Frames per second, and samples in a frame. */
+    /* Frames per second (1 to 1000000), and samples in a frame (at least 1). */
     uint32_t rate;
     uint8_t channels;
     /* Bits of a sample on the wire: 16 or 24. */
     uint8_t bits;
-    /* Frames in a packet. */
+    /* Frames in a packet; header plus payload must fit within 9000 bytes. */
     uint16_t packet_frames;
-    /* The most frames that one call of `unisono_sender_capture` hands over. */
+    /* The most frames that one call of `unisono_sender_capture` hands over;
+     * the 64-buffer capture ring (`64 * cycle_frames * channels * sizeof(float)`)
+     * must not exceed 64 MiB. */
     uint32_t cycle_frames;
     /* The latency that receivers hold at the start, in nanoseconds. */
     int64_t level;
@@ -79,7 +81,9 @@ unisono_sender *unisono_sender_start(const unisono_sender_settings *settings,
 
 /* Hands over the `frame_count` frames at `frames` that the capture device
  * captured in one cycle. `position` is the device's count of frames at the
- * first of them and `time` when that frame was captured. */
+ * first of them and `time` when that frame was captured. Calls with a NULL or
+ * misaligned pointer, `frame_count == 0`, or a byte size exceeding
+ * `PTRDIFF_MAX` are ignored without error. */
 void unisono_sender_capture(unisono_sender *sender, const float *frames,
                             size_t frame_count, uint64_t position,
                             int64_t time);
@@ -96,7 +100,7 @@ typedef struct unisono_receiver_settings {
     uint16_t stream;
     /* A number that tells this receiver from the others of the stream. */
     uint64_t identity;
-    /* Frames per second, and samples in a frame. */
+    /* Frames per second (1 to 1000000), and samples in a frame (at least 1). */
     uint32_t rate;
     uint8_t channels;
 } unisono_receiver_settings;
@@ -114,14 +118,20 @@ unisono_receiver *unisono_receiver_start(
     const unisono_receiver_settings *settings, char *error,
     size_t error_size);
 
-/* The port that the receiver receives on. */
+/* The port that the receiver receives on. Must not be called concurrently
+ * with `unisono_receiver_play` or `unisono_receiver_stop`. */
 uint16_t unisono_receiver_port(const unisono_receiver *receiver);
 
 /* Fills the `frame_count` frames at `frames` with what the playback device
- * is to play in one cycle. `position` is the device's count of frames at
- * the first of them and `time` when that frame leaves the device. Frames
- * for which the stream has nothing are silence or a continuation of what
- * was played. */
+ * is to play in one cycle. `frames` need not be initialized by the caller when
+ * valid arguments are passed. `position` is the device's count of frames at
+ * the first of them and `time` when that frame leaves the device. Frames for
+ * which the stream has nothing are silence or a continuation of what was
+ * played.
+ *
+ * If `receiver` or `frames` is NULL or misaligned, if `frame_count == 0`, or
+ * if the byte size exceeds `PTRDIFF_MAX`, the call is ignored without error
+ * and nothing is written to `frames`. */
 void unisono_receiver_play(unisono_receiver *receiver, float *frames,
                            size_t frame_count, uint64_t position,
                            int64_t time);

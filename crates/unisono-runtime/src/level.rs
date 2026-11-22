@@ -109,6 +109,13 @@
 
 use unisono_core::packet::{RECENT, Recent, UNKNOWN_NEED};
 
+use crate::InvalidSettings;
+
+/// Maximum magnitude of `Choice::slope`, in nanoseconds per second of stream,
+/// matching the core packet format's pace limit so both `+slope` and `-slope`
+/// are valid on the wire.
+pub const MAX_SLOPE: i32 = 999_999_999;
+
 /// The weights of the cost of a level.
 #[derive(Clone, Copy, Debug)]
 pub struct Weights {
@@ -128,6 +135,50 @@ pub struct Weights {
     pub moving: f64,
 }
 
+impl Weights {
+    /// Validates that all cost weights are finite and non-negative and the
+    /// target level lies within `[0, CEILING]`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any weight is non-finite or negative,
+    /// or `target` is out of range.
+    pub fn validate(&self) -> Result<(), InvalidSettings> {
+        let valid_weight = |w: f64| w.is_finite() && w >= 0.0;
+        if !valid_weight(self.latency) {
+            return Err(InvalidSettings::new(
+                "latency weight must be finite and non-negative",
+            ));
+        }
+        if !(0..=CEILING).contains(&self.target) {
+            return Err(InvalidSettings::new(
+                "target level must be between 0 and 2 seconds",
+            ));
+        }
+        if !valid_weight(self.off_target) {
+            return Err(InvalidSettings::new(
+                "off-target weight must be finite and non-negative",
+            ));
+        }
+        if !valid_weight(self.gap) {
+            return Err(InvalidSettings::new(
+                "gap weight must be finite and non-negative",
+            ));
+        }
+        if !valid_weight(self.missed) {
+            return Err(InvalidSettings::new(
+                "missed-frame weight must be finite and non-negative",
+            ));
+        }
+        if !valid_weight(self.moving) {
+            return Err(InvalidSettings::new(
+                "moving weight must be finite and non-negative",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// What the choice of the level is set up with.
 #[derive(Clone, Copy, Debug)]
 pub struct Choice {
@@ -137,6 +188,27 @@ pub struct Choice {
     pub history: usize,
     /// How fast the level moves, in nanoseconds per second of stream.
     pub slope: i32,
+}
+
+impl Choice {
+    /// Validates the weights, history length, and level-ramp slope.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when weights are invalid, `history` is
+    /// zero, or `slope` is not in `1..=MAX_SLOPE`.
+    pub fn validate(&self) -> Result<(), InvalidSettings> {
+        self.weights.validate()?;
+        if self.history == 0 {
+            return Err(InvalidSettings::new("choice history must be at least 1"));
+        }
+        if self.slope <= 0 || self.slope > MAX_SLOPE {
+            return Err(InvalidSettings::new(
+                "choice slope must be between 1 and 999_999_999 ns/s",
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// What the stretches seen say about the assumptions that the choice of the
@@ -267,7 +339,7 @@ impl Chooser {
         let history = choice.history.max(RECENT + 1);
         Chooser {
             choice: Choice { history, ..choice },
-            stretch: f64::from(window) / f64::from(rate.max(1)),
+            stretch: f64::from(window.max(1)) / f64::from(rate.max(1)),
             timeline: None,
             base: 0,
             newest: 0,
@@ -293,6 +365,16 @@ impl Chooser {
     #[must_use]
     pub fn slope(&self) -> i32 {
         self.choice.slope
+    }
+
+    /// Takes in the needs that a report on `timeline` carried, ignoring the
+    /// record if its `newest` stretch exceeds `max_stretch` (which no honest
+    /// receiver can have seen on `timeline`).
+    pub fn observe_up_to(&mut self, timeline: u64, recent: &Recent, max_stretch: u64) {
+        if recent.newest > max_stretch {
+            return;
+        }
+        self.observe(timeline, recent);
     }
 
     /// Takes in the needs that a report on `timeline` carried. A timeline
@@ -322,6 +404,9 @@ impl Chooser {
     /// Takes in that stretch `stretch` needed `need` seconds at one
     /// receiver.
     fn take(&mut self, stretch: u64, need: f64) {
+        if !need.is_finite() {
+            return;
+        }
         let length = self.kept.len() as u64;
         if stretch.saturating_add(length) <= self.newest {
             return;
@@ -342,8 +427,11 @@ impl Chooser {
     /// The level to move to from `current`, in nanoseconds, if the evidence
     /// says that moving is worth its cost.
     pub fn choose(&mut self, current: i64) -> Option<i64> {
-        self.check();
         let weights = self.choice.weights;
+        if weights.validate().is_err() || !self.stretch.is_finite() || self.stretch <= 0.0 {
+            return None;
+        }
+        self.check();
         let mut evidence = self.gather()?;
         let cost_now = evidence.cost(seconds(current), &weights);
         let (best, cost_best) = evidence.best(&weights);
@@ -378,31 +466,40 @@ impl Chooser {
         let Some(last) = self.newest.checked_sub(RECENT as u64) else {
             return;
         };
+        if let Some(done) = self.checked
+            && done >= last
+        {
+            return;
+        }
+        let length = self.kept.len() as u64;
+        let oldest = self.newest.saturating_sub(length - 1);
         let from = match self.checked {
-            Some(done) => (done + 1).max(last.saturating_sub(CHECKED_AT_ONCE - 1)),
+            Some(done) => done
+                .saturating_add(1)
+                .max(last.saturating_sub(CHECKED_AT_ONCE - 1)),
             None => last,
-        };
-        let oldest = (self.newest + 1).saturating_sub(self.kept.len() as u64);
+        }
+        .max(oldest);
+        let mut others = 0u64;
+        let mut largest = f64::NEG_INFINITY;
+        for before in oldest..from {
+            if let Some(other) = self.need(before) {
+                others += 1;
+                largest = largest.max(other);
+            }
+        }
         for stretch in from..=last {
-            let Some(need) = self.need(stretch) else {
-                continue;
-            };
-            let mut others = 0u64;
-            let mut largest = f64::NEG_INFINITY;
-            for before in oldest..stretch {
-                if let Some(other) = self.need(before) {
-                    others += 1;
-                    largest = largest.max(other);
+            if let Some(need) = self.need(stretch) {
+                if others > 0 {
+                    self.checks.stretches += 1;
+                    self.checks.expected += 1.0 / (others as f64 + 1.0);
+                    if need > largest {
+                        self.checks.largest += 1;
+                        self.checks.beyond += exceeds_beyond(need, largest.max(0.0));
+                    }
                 }
-            }
-            if others == 0 {
-                continue;
-            }
-            self.checks.stretches += 1;
-            self.checks.expected += 1.0 / (others as f64 + 1.0);
-            if need > largest {
-                self.checks.largest += 1;
-                self.checks.beyond += exceeds_beyond(need, largest.max(0.0));
+                others += 1;
+                largest = largest.max(need);
             }
         }
         self.checked = Some(last);
@@ -416,7 +513,7 @@ impl Chooser {
         self.ends.clear();
         let length = self.kept.len() as u64;
         let last = self.newest.checked_sub(RECENT as u64)?;
-        let first = (self.newest + 1).saturating_sub(length);
+        let first = self.newest.saturating_sub(length - 1);
         // The need before a stretch that is not known counts as none.
         let mut before = f64::NEG_INFINITY;
         for stretch in first..=last {
@@ -435,9 +532,9 @@ impl Chooser {
         if self.sorted.is_empty() {
             return None;
         }
-        self.sorted.sort_by(f64::total_cmp);
-        self.starts.sort_by(f64::total_cmp);
-        self.ends.sort_by(f64::total_cmp);
+        self.sorted.sort_unstable_by(f64::total_cmp);
+        self.starts.sort_unstable_by(f64::total_cmp);
+        self.ends.sort_unstable_by(f64::total_cmp);
         self.sums.clear();
         self.sums.push(0.0);
         let mut sum = 0.0;
@@ -957,5 +1054,108 @@ mod tests {
         report(&mut chooser, 8, 0, &quiet);
         let level = chooser.choose(2_000_000).expect("the level rises");
         assert!(level > 40_000_000, "{level}");
+    }
+
+    #[test]
+    fn observe_up_to_rejects_future_stretch_and_u64_max_does_not_overflow() {
+        let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
+        let mut spoofed = Recent::NONE;
+        spoofed.count = 1;
+        spoofed.newest = u64::MAX;
+        spoofed.needs[0] = 5_000;
+        chooser.observe_up_to(7, &spoofed, 100);
+        assert_eq!(chooser.choose(20_000_000), None);
+
+        // Even if `newest == u64::MAX` is observed directly, `choose()` must
+        // not overflow `newest + 1` or `done + 1`.
+        chooser.observe(7, &spoofed);
+        let _ = chooser.choose(20_000_000);
+        let _ = chooser.choose(20_000_000);
+    }
+
+    #[test]
+    fn weights_and_choice_validation_reject_nan_negative_and_bad_slope() {
+        assert!(CHOICE.validate().is_ok());
+        assert!(
+            Weights {
+                latency: f64::NAN,
+                ..WEIGHTS
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Weights {
+                gap: -1.0,
+                ..WEIGHTS
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Weights {
+                target: -1,
+                ..WEIGHTS
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(Choice { slope: 0, ..CHOICE }.validate().is_err());
+        assert!(
+            Choice {
+                slope: -5,
+                ..CHOICE
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Choice {
+                slope: 1_000_000_000,
+                ..CHOICE
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            Choice {
+                history: 0,
+                ..CHOICE
+            }
+            .validate()
+            .is_err()
+        );
+
+        // A chooser constructed directly with NaN weights or window 0 does not
+        // panic and returns None.
+        let mut bad = Chooser::new(
+            Choice {
+                weights: Weights {
+                    latency: f64::NAN,
+                    ..WEIGHTS
+                },
+                ..CHOICE
+            },
+            0,
+            48_000,
+        );
+        let mut recent = Recent::NONE;
+        recent.count = 1;
+        recent.newest = 20;
+        recent.needs[0] = 5_000;
+        bad.observe(1, &recent);
+        assert_eq!(bad.choose(20_000_000), None);
+    }
+
+    #[test]
+    fn check_is_idempotent_when_called_repeatedly_without_new_stretches() {
+        let mut numbers = Numbers(0xdead_beef_cafe_babe);
+        let quiet = needs(&mut numbers, 80, 1e9);
+        let mut chooser = Chooser::new(CHOICE, 2_400, 48_000);
+        report(&mut chooser, 7, 0, &quiet);
+        let level = chooser.choose(20_000_000).unwrap_or(20_000_000);
+        let first = chooser.checks();
+        assert_eq!(chooser.choose(level), None);
+        assert_eq!(chooser.checks(), first);
     }
 }

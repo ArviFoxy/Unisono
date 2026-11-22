@@ -82,7 +82,7 @@ impl Capture for Record {
     }
 }
 
-fn settings(name: &str, monitor: bool) -> Settings {
+fn settings(name: &str, monitor: bool, cycle: u32) -> Settings {
     Settings {
         name: name.into(),
         rate: RATE,
@@ -90,13 +90,11 @@ fn settings(name: &str, monitor: bool) -> Settings {
         target: Some("unisono-test-sink".into()),
         monitor,
         largest_cycle: 8_192,
-        cycle: 256,
+        cycle,
     }
 }
 
-#[test]
-#[ignore = "needs the PipeWire instance of tools/pipewire-test.sh"]
-fn a_ramp_played_into_a_sink_is_captured_with_the_times_it_was_played() {
+fn verify_roundtrip(cycle: u32) {
     let played = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::new(Mutex::new(Vec::new()));
     let playing = play(
@@ -104,24 +102,33 @@ fn a_ramp_played_into_a_sink_is_captured_with_the_times_it_was_played() {
             next: 0,
             cycles: Arc::clone(&played),
         },
-        settings("unisono-test-play", false),
+        settings("unisono-test-play", false, cycle),
     )
     .expect("a playback stream");
     let capturing = capture(
         Record {
             cycles: Arc::clone(&recorded),
         },
-        settings("unisono-test-capture", true),
+        settings("unisono-test-capture", true, cycle),
     )
     .expect("a capture stream");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping playback stream");
 
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
-    assert!(played.len() > 50, "{} cycles played", played.len());
-    assert!(recorded.len() > 50, "{} cycles recorded", recorded.len());
+    let min_cycles = (50 * 256 / cycle as usize).max(15);
+    assert!(
+        played.len() > min_cycles,
+        "{} cycles played (expected > {min_cycles})",
+        played.len()
+    );
+    assert!(
+        recorded.len() > min_cycles,
+        "{} cycles recorded (expected > {min_cycles})",
+        recorded.len()
+    );
 
     // Each stream's positions go on without a break, and its times follow
     // them at the rate.
@@ -149,8 +156,8 @@ fn a_ramp_played_into_a_sink_is_captured_with_the_times_it_was_played() {
     // cycle says when its first frame plays; a recorded cycle whose first
     // sample is a frame of the ramp says when that frame was captured.
     let mut differences = Vec::new();
-    for cycle in &recorded[recorded.len() / 4..] {
-        let Some(value) = cycle.first.filter(|value| *value > 0.0) else {
+    for cycle_rec in &recorded[recorded.len() / 4..] {
+        let Some(value) = cycle_rec.first.filter(|value| *value > 0.0) else {
             continue;
         };
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -164,23 +171,50 @@ fn a_ramp_played_into_a_sink_is_captured_with_the_times_it_was_played() {
                 let when =
                     played_cycle.time as f64 + (frame - start) as f64 * 1e9 / f64::from(RATE);
                 #[allow(clippy::cast_precision_loss)]
-                differences.push(cycle.time as f64 - when);
+                differences.push(cycle_rec.time as f64 - when);
                 break;
             }
             start = end;
         }
     }
+    let min_matched = (20 * 256 / cycle as usize).max(10);
     assert!(
-        differences.len() > 20,
-        "{} frames found again",
+        differences.len() > min_matched,
+        "{} frames found again (expected > {min_matched})",
         differences.len()
     );
     differences.sort_by(f64::total_cmp);
     let median = differences[differences.len() / 2];
     println!(
-        "captured minus played: median {median} ns, from {} to {}",
+        "cycle {cycle}: captured minus played: median {median} ns, from {} to {}",
         differences[0],
         differences[differences.len() - 1]
     );
     assert!(median.abs() < 2e6, "median {median} ns");
+}
+
+#[test]
+#[ignore = "needs the PipeWire instance of tools/pipewire-test.sh"]
+fn a_ramp_played_into_a_sink_is_captured_with_the_times_it_was_played() {
+    verify_roundtrip(256);
+}
+
+#[test]
+#[ignore = "needs the PipeWire instance of tools/pipewire-test.sh"]
+fn larger_quantum_and_drop_teardown_work_cleanly() {
+    verify_roundtrip(1_024);
+    // Dropping a `Running` handle without calling `.stop()` joins cleanly.
+    let cycles = Arc::new(Mutex::new(Vec::new()));
+    {
+        let _playing = play(
+            Ramp {
+                next: 0,
+                cycles: Arc::clone(&cycles),
+            },
+            settings("unisono-test-drop", false, 512),
+        )
+        .expect("a playback stream");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(!cycles.lock().expect("cycles").is_empty());
 }

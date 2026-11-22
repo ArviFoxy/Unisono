@@ -282,9 +282,10 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// Begins to follow the timeline of `header`, with nothing held. When the
     /// timeline is on the clock of the one before, as after a restart of
     /// the sender's capture, the estimate of that clock stays and only the
-    /// numbering of its windows starts again. On another clock it is
-    /// dropped. What is known about the delay of the path stays in both
-    /// cases: it is not a matter of the sender's clock.
+    /// numbering of its windows starts again. On another clock the estimate,
+    /// its kept answers and the in-flight report departures are dropped,
+    /// while the delay of the path stays as a prior until an echo on the new
+    /// clock arrives.
     fn adopt(&mut self, header: &Audio) {
         let was_following = self.following;
         let same_clock = was_following && header.clock == self.clock_id;
@@ -303,6 +304,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             self.clock.reset_window();
         } else {
             self.clock = Estimator::new(span_of(header), self.limit);
+            self.answers.clear();
+            self.departures = Arrivals::new();
         }
     }
 
@@ -621,9 +624,8 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         };
         // The position due has reached the packet at which the level takes
         // another course: from here on that packet's schedule holds.
-        let (schedule, now) = match self.reached(&now, first) {
-            Some(turned) => turned,
-            None => (schedule, now),
+        let Some((schedule, now)) = self.reached(schedule, now, first) else {
+            return idle;
         };
         let Some(then) = due(&schedule, last) else {
             return idle;
@@ -649,21 +651,40 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         due(&schedule, sender_time(&line, self.path, time))
     }
 
-    /// Takes the next schedule kept into use, if the position `now` that is
-    /// due when the sender's clock reads `first` has reached the index it
-    /// holds from, and returns it with the position that is due under it.
-    fn reached(&mut self, now: &Position, first: i64) -> Option<(Schedule, Position)> {
-        let Some(next) = self.next else {
-            return None;
-        };
-        if now.frame < self.next_from {
-            return None;
+    /// Advances through any queued schedule whose starting index the due
+    /// position has reached, returning the active schedule and its position
+    /// due at `first`. Returns `None` when a reached schedule has no position
+    /// due at `first`.
+    fn reached(
+        &mut self,
+        schedule: Schedule,
+        now: Position,
+        first: i64,
+    ) -> Option<(Schedule, Position)> {
+        let mut current = schedule;
+        let mut current_now = now;
+        // At most two schedules (`next` and `after`) can be queued.
+        if let Some(next) = self.next
+            && current_now.frame >= self.next_from
+        {
+            self.turn();
+            let Some(turned) = due(&next, first) else {
+                return None;
+            };
+            current = next;
+            current_now = turned;
         }
-        self.turn();
-        let Some(due) = due(&next, first) else {
-            return None;
-        };
-        Some((next, due))
+        if let Some(next) = self.next
+            && current_now.frame >= self.next_from
+        {
+            self.turn();
+            let Some(turned) = due(&next, first) else {
+                return None;
+            };
+            current = next;
+            current_now = turned;
+        }
+        Some((current, current_now))
     }
 
     /// Moves the playhead forward by `frames`.
@@ -995,12 +1016,15 @@ mod tests {
             frame: 119,
             fraction: u64::MAX,
         };
-        assert!(receiver.reached(&before, 20_000_000).is_none());
+        assert_eq!(
+            receiver.reached(used, before, 20_000_000),
+            Some((used, before))
+        );
         let at = Position {
             frame: 120,
             fraction: 0,
         };
-        let (turned, _) = receiver.reached(&at, 20_000_000).expect("the change");
+        let (turned, _) = receiver.reached(used, at, 20_000_000).expect("the change");
         assert_eq!((turned.index, turned.level_slope), (130, 4_800_000));
         assert_eq!(receiver.schedule(), Some(turned));
         // A packet that goes on along the rising level takes its place.
@@ -1026,12 +1050,22 @@ mod tests {
         let used = receiver.schedule().expect("a schedule");
         assert_eq!((used.index, used.level_slope), (100, 0));
         let at = |frame| Position { frame, fraction: 0 };
-        let (turned, _) = receiver.reached(&at(110), 20_000_000).expect("the rise");
+        let (turned, _) = receiver
+            .reached(used, at(110), 20_000_000)
+            .expect("the rise");
         assert_eq!((turned.index, turned.level_slope), (110, 4_800_000));
-        assert!(receiver.reached(&at(119), 20_000_000).is_none());
-        let (turned, _) = receiver.reached(&at(120), 20_000_000).expect("the hold");
+        assert_eq!(
+            receiver.reached(turned, at(119), 20_000_000),
+            Some((turned, at(119)))
+        );
+        let (turned, _) = receiver
+            .reached(turned, at(120), 20_000_000)
+            .expect("the hold");
         assert_eq!((turned.index, turned.level_slope), (120, 0));
-        assert!(receiver.reached(&at(200), 20_000_000).is_none());
+        assert_eq!(
+            receiver.reached(turned, at(200), 20_000_000),
+            Some((turned, at(200)))
+        );
     }
 
     #[test]
@@ -1051,10 +1085,61 @@ mod tests {
         let used = receiver.schedule().expect("a schedule");
         assert_eq!((used.index, used.level_slope), (110, 4_800_000));
         let at = |frame| Position { frame, fraction: 0 };
-        let (turned, _) = receiver.reached(&at(120), 20_000_000).expect("the hold");
+        let (turned, _) = receiver
+            .reached(used, at(120), 20_000_000)
+            .expect("the hold");
         assert_eq!((turned.index, turned.level_slope), (120, 0));
-        let (turned, _) = receiver.reached(&at(130), 20_000_000).expect("the fall");
+        let (turned, _) = receiver
+            .reached(turned, at(130), 20_000_000)
+            .expect("the fall");
         assert_eq!((turned.index, turned.level_slope), (130, -4_800_000));
+    }
+
+    #[test]
+    fn reached_turns_through_both_queued_schedules_and_idles_when_none_due() {
+        // Both `next` and `after` already due at `first`: turns straight to `after`.
+        let mut receiver = receiver();
+        receiver.packet(&header(7, 100, 10), 0);
+        let mut rising = header(7, 110, 10);
+        rising.level_slope = 4_800_000;
+        receiver.packet(&rising, 1);
+        let mut held = header(7, 120, 10);
+        held.level += 1_000;
+        receiver.packet(&held, 2);
+        let used = receiver.schedule().expect("a schedule");
+        // At first = 20_000_000 + 250_000 ns (12 frames past 110), `due(&rising)` >= 120.
+        let (turned, _) = receiver
+            .reached(
+                used,
+                Position {
+                    frame: 122,
+                    fraction: 0,
+                },
+                20_250_000,
+            )
+            .expect("turned to held");
+        assert_eq!((turned.index, turned.level_slope), (120, 0));
+        assert_eq!(receiver.schedule(), Some(turned));
+
+        // When `next` raises the level so `due(&next, first)` is None, `reached`
+        // returns None (cycle idles) instead of falling back to the old schedule.
+        let mut receiver = self::receiver();
+        receiver.packet(&header(7, 0, 10), 0);
+        let mut raised = header(7, 10, 10);
+        raised.level = 500_000_000;
+        receiver.packet(&raised, 1);
+        let used = receiver.schedule().expect("a schedule");
+        assert_eq!(
+            receiver.reached(
+                used,
+                Position {
+                    frame: 10,
+                    fraction: 0
+                },
+                20_000_000
+            ),
+            None
+        );
     }
 
     #[test]
@@ -1309,5 +1394,71 @@ mod tests {
             "{}",
             receiver.delay()
         );
+    }
+
+    #[test]
+    fn adopting_a_new_sender_clock_clears_old_answers_and_departures() {
+        // Old sender clock: receiver is 1000 s ahead of sender.
+        let old_offset = 1_000_000_000_000i64;
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        stream(&mut receiver, old_offset, 0, 60);
+        let first_report = receiver.report().expect("following");
+        let t_dep = old_offset + 600_000_000;
+        receiver.reported(first_report.sequence, t_dep);
+        receiver.echo(&Echo {
+            stream: 1,
+            receiver: 42,
+            sequence: first_report.sequence,
+            arrival: t_dep - old_offset + 140_000,
+        });
+        assert_eq!(receiver.delay(), 120_000);
+        // Also leave an in-flight report from the old clock.
+        let old_inflight = receiver.report().expect("following");
+        receiver.reported(old_inflight.sequence, t_dep + 10_000_000);
+
+        // Switch to timeline 9 on clock 2 whose clock is 500 s ahead of the old sender.
+        let new_offset = 500_000_000_000i64;
+        let mut p0 = header(9, 0, 480);
+        p0.clock = 2;
+        let mut p1 = header(9, 480, 480);
+        p1.clock = 2;
+        assert!(receiver.packet(&p0, t_dep + 1_000_000_000).ignored);
+        assert!(receiver.packet(&p1, t_dep + 1_010_000_000).adopted);
+        // Path prior stays until a new-clock echo arrives.
+        assert_eq!(receiver.delay(), 120_000);
+
+        // Re-converge on the new sender clock (clock == 2).
+        for n in 2..62u64 {
+            let mut h = header(9, n * 480, 480);
+            h.clock = 2;
+            let sent = i64::try_from(n).unwrap_or(0) * 10_000_000 + 500_000_000_000;
+            h.capture = sent;
+            h.flags = FLAG_STAMPED;
+            h.stamped_index = (n - 1) * 480;
+            h.stamped_departure = sent - 10_000_000;
+            receiver.packet(&h, sent + new_offset + 100_000);
+        }
+        assert!(receiver.clock().is_some());
+
+        // Delayed echo from the old clock is ignored because departures were cleared.
+        receiver.echo(&Echo {
+            stream: 1,
+            receiver: 42,
+            sequence: old_inflight.sequence,
+            arrival: t_dep - old_offset + 10_140_000,
+        });
+        assert_eq!(receiver.delay(), 120_000);
+
+        // New-clock echo computes the true delay instead of colliding with old answers.
+        let new_report = receiver.report().expect("following");
+        let new_dep = new_offset + 500_700_000_000;
+        receiver.reported(new_report.sequence, new_dep);
+        receiver.echo(&Echo {
+            stream: 1,
+            receiver: 42,
+            sequence: new_report.sequence,
+            arrival: new_dep - new_offset + 200_000,
+        });
+        assert_eq!(receiver.delay(), 150_000);
     }
 }

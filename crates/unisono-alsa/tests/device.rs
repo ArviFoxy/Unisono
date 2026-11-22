@@ -205,8 +205,8 @@ fn a_ramp_played_on_the_device_is_what_the_sink_plays() {
     )
     .expect("a capture stream");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping ALSA playback device");
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
     hold(&played, &recorded, 500e3);
@@ -233,9 +233,35 @@ fn what_the_sink_plays_is_captured_on_the_device() {
     )
     .expect("an ALSA device that captures");
     std::thread::sleep(Duration::from_secs(3));
-    capturing.stop();
-    playing.stop();
+    capturing.stop().expect("stopping capture stream");
+    playing.stop().expect("stopping ALSA playback device");
     let played = played.lock().expect("the played cycles").clone();
     let recorded = recorded.lock().expect("the recorded cycles").clone();
     hold(&played, &recorded, 500e3);
+}
+
+#[test]
+#[ignore = "needs the PipeWire instance of tools/alsa-test.sh"]
+fn alsa_device_reports_cycle_and_realtime_and_restarts_cleanly_on_drop() {
+    for round in 0..2 {
+        let cycles = Arc::new(Mutex::new(Vec::new()));
+        let running = unisono_alsa::play(
+            Ramp {
+                next: 0,
+                cycles: Arc::clone(&cycles),
+            },
+            &device(),
+        )
+        .expect("an ALSA playback device");
+        assert!(running.cycle() > 0, "round {round}: negotiated cycle");
+        // Deterministic after the startup handshake (never races).
+        let _ = running.realtime();
+        std::thread::sleep(Duration::from_millis(250));
+        // Drop without calling `.stop()` must stop and join cleanly.
+        drop(running);
+        assert!(
+            !cycles.lock().expect("cycles").is_empty(),
+            "round {round}: expected playback cycles"
+        );
+    }
 }

@@ -72,6 +72,57 @@ theorem measurableSet_largestAt {n : ℕ} (i : Fin n) : MeasurableSet (largestAt
   exact MeasurableSet.iInter fun j => MeasurableSet.iInter fun _ =>
     measurableSet_lt (measurable_pi_apply j) (measurable_pi_apply i)
 
+private theorem largestAt_measure_eq {n : ℕ} (μ : Measure (Fin n → ℝ))
+    (horder : ∀ σ : Equiv.Perm (Fin n), μ.map (fun x => x ∘ σ) = μ) (i k : Fin n) :
+    μ (largestAt k) = μ (largestAt i) := by
+  have hmap : Measurable fun x : Fin n → ℝ => x ∘ (Equiv.swap i k) :=
+    measurable_pi_iff.mpr fun j => measurable_pi_apply _
+  have hpre : (fun x : Fin n → ℝ => x ∘ (Equiv.swap i k)) ⁻¹' (largestAt i) = largestAt k := by
+    ext x
+    simp only [Set.mem_preimage, largestAt, Set.mem_ofPred_eq, Function.comp_apply,
+      Equiv.swap_apply_left]
+    constructor
+    · intro h j hj
+      have := h (Equiv.swap i k j) (by
+        intro hcon
+        apply hj
+        have := congrArg (Equiv.swap i k) hcon
+        simpa using this)
+      simpa using this
+    · intro h j hj
+      exact h (Equiv.swap i k j) (by
+        intro hcon
+        apply hj
+        have := congrArg (Equiv.swap i k) hcon
+        simpa using this)
+  rw [← hpre, ← Measure.map_apply hmap (measurableSet_largestAt i), horder]
+
+private theorem largestAt_pairwise_disjoint {n : ℕ} :
+    Pairwise (Function.onFun Disjoint (largestAt (n := n))) := by
+  intro a b hab
+  rw [Function.onFun, Set.disjoint_left]
+  intro x ha hb
+  have h1 := ha b (Ne.symm hab)
+  have h2 := hb a hab
+  exact lt_asymm h1 h2
+
+/-- **Even when ties are allowed, a place is strictly largest with probability
+at most `1 / n`.** For `n` exchangeable needs, without any no-ties assumption,
+each place is strictly larger than all others with probability at most `1 / n`. -/
+theorem measure_largest_le {n : ℕ} (μ : Measure (Fin n → ℝ)) [IsProbabilityMeasure μ]
+    (horder : ∀ σ : Equiv.Perm (Fin n), μ.map (fun x => x ∘ σ) = μ) (i : Fin n) :
+    μ (largestAt i) ≤ (n : ℝ≥0∞)⁻¹ := by
+  have hle : μ (⋃ k, largestAt k) ≤ 1 := by
+    calc μ (⋃ k, largestAt k) ≤ μ Set.univ := measure_mono (Set.subset_univ _)
+      _ = 1 := measure_univ
+  rw [measure_iUnion largestAt_pairwise_disjoint measurableSet_largestAt, tsum_fintype] at hle
+  simp only [largestAt_measure_eq μ horder i, Finset.sum_const, Finset.card_univ,
+    Fintype.card_fin, nsmul_eq_mul] at hle
+  have hne0 : (n : ℝ≥0∞) ≠ 0 := Nat.cast_ne_zero.mpr (Nat.pos_of_ne_zero (Fin.pos i).ne').ne'
+  have hnetop : (n : ℝ≥0∞) ≠ ⊤ := ENNReal.natCast_ne_top n
+  rw [← one_div, ENNReal.le_div_iff_mul_le (Or.inl hne0) (Or.inl hnetop), mul_comm]
+  exact hle
+
 /-- **The next need is the largest with the probability one in the number of
 needs.** For `n` needs whose law is the same in every order, and of which no
 two are equal, each of them is the largest with the probability `1 / n`. -/
@@ -79,39 +130,7 @@ theorem measure_largest {n : ℕ} (μ : Measure (Fin n → ℝ)) [IsProbabilityM
     (horder : ∀ σ : Equiv.Perm (Fin n), μ.map (fun x => x ∘ σ) = μ)
     (hties : μ {x | ∃ i j, i ≠ j ∧ x i = x j} = 0) (i : Fin n) :
     μ (largestAt i) = (n : ℝ≥0∞)⁻¹ := by
-  -- every place is the largest with the same probability
-  have hsame : ∀ k, μ (largestAt k) = μ (largestAt i) := by
-    intro k
-    have hmap : Measurable fun x : Fin n → ℝ => x ∘ (Equiv.swap i k) :=
-      measurable_pi_iff.mpr fun j => measurable_pi_apply _
-    have hpre : (fun x : Fin n → ℝ => x ∘ (Equiv.swap i k)) ⁻¹' (largestAt i) = largestAt k := by
-      ext x
-      simp only [Set.mem_preimage, largestAt, Set.mem_ofPred_eq, Function.comp_apply,
-        Equiv.swap_apply_left]
-      constructor
-      · intro h j hj
-        have := h (Equiv.swap i k j) (by
-          intro hcon
-          apply hj
-          have := congrArg (Equiv.swap i k) hcon
-          simpa using this)
-        simpa using this
-      · intro h j hj
-        exact h (Equiv.swap i k j) (by
-          intro hcon
-          apply hj
-          have := congrArg (Equiv.swap i k) hcon
-          simpa using this)
-    rw [← hpre, ← Measure.map_apply hmap (measurableSet_largestAt i), horder]
-  -- no two places are the largest at once
-  have hdisjoint : Pairwise (Function.onFun Disjoint (largestAt (n := n))) := by
-    intro a b hab
-    rw [Function.onFun, Set.disjoint_left]
-    intro x ha hb
-    have h1 := ha b (Ne.symm hab)
-    have h2 := hb a hab
-    exact lt_asymm h1 h2
-  -- and unless two needs are equal, one place is
+  -- unless two needs are equal, one place is strictly largest
   have hcover : μ (⋃ k, largestAt k) = 1 := by
     have hsub : (⋃ k, largestAt k)ᶜ ⊆ {x : Fin n → ℝ | ∃ i j, i ≠ j ∧ x i = x j} := by
       intro x hx
@@ -125,8 +144,9 @@ theorem measure_largest {n : ℕ} (μ : Measure (Fin n → ℝ)) [IsProbabilityM
     have hmeas : MeasurableSet (⋃ k, largestAt (n := n) k) :=
       MeasurableSet.iUnion fun k => measurableSet_largestAt k
     rwa [prob_compl_eq_zero_iff hmeas] at hzero
-  rw [measure_iUnion hdisjoint measurableSet_largestAt, tsum_fintype] at hcover
-  simp only [hsame, Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul] at hcover
+  rw [measure_iUnion largestAt_pairwise_disjoint measurableSet_largestAt, tsum_fintype] at hcover
+  simp only [largestAt_measure_eq μ horder i, Finset.sum_const, Finset.card_univ,
+    Fintype.card_fin, nsmul_eq_mul] at hcover
   exact ENNReal.eq_inv_of_mul_eq_one_left (by rw [mul_comm]; exact hcover)
 
 /-! ## The mean over the next stretch -/

@@ -20,7 +20,7 @@
 //! what was kept is dropped. So whatever it holds, the memory follows the
 //! answers again from the first that is not of the `R` windows just passed.
 
-use crate::fixed::{div_floor, saturate};
+use crate::fixed::{div_floor, rem_euclid_wide, saturate};
 use crate::relation::Line;
 
 /// One answer: when its report left, on the receiver's clock, and when it
@@ -91,7 +91,7 @@ impl<const R: usize> Answers<R> {
     }
 
     /// Drops every answer.
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         let mut place = 0usize;
         while place < R {
             if let Some(slot) = self.places.get_mut(place) {
@@ -141,16 +141,10 @@ impl<const R: usize> Answers<R> {
     /// Takes `answer` into the place of `window`, if it went faster there and
     /// back than the one there, as `forward` says.
     fn put(&mut self, window: i64, answer: Answer, forward: &Line) {
-        // Every window has its place; which one it is does not matter, as
-        // long as the windows that are kept have places of their own, which
-        // `R` windows in a row have. The place is below `R`, so it is a
-        // `usize`.
-        #[allow(clippy::cast_sign_loss)]
-        let Some(place) = (window as u64).checked_rem(R as u64) else {
+        let Some(place) = rem_euclid_wide(window as i128, R) else {
             return;
         };
-        #[allow(clippy::cast_possible_truncation)]
-        let Some(slot) = self.places.get_mut(place as usize) else {
+        let Some(slot) = self.places.get_mut(place) else {
             return;
         };
         let faster = !slot.held
@@ -270,5 +264,14 @@ mod tests {
         wild.observe(answer(i64::MAX - 5, 1), &FLAT);
         wild.observe(answer(i64::MIN, 9), &FLAT);
         assert_eq!(wild.shortest(&FLAT), Some(109));
+    }
+
+    #[test]
+    fn negative_windows_do_not_collide_for_non_power_of_two_capacity() {
+        let mut answers = Answers::<3>::new(10);
+        // Window -1 and window 0 are both among the 3 kept windows [-2, 0].
+        answers.observe(answer(-5, 10), &FLAT);
+        answers.observe(answer(5, 50), &FLAT);
+        assert_eq!(answers.shortest(&FLAT), Some(110));
     }
 }
