@@ -2,10 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Simulated oscillators.
-//!
-//! An oscillator runs fast or slow by its fractional frequency, and that
-//! frequency wanders: a random walk, plus changes a test puts in by hand.
+//! Simulated host and audio-device oscillators with random-walk frequency
+//! drift and optional scripted rate steps.
 
 use crate::random::Generator;
 use crate::{TrueTime, nanos_to_seconds, seconds_to_nanos};

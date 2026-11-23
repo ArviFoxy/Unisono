@@ -2,99 +2,89 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! An audio device made of software.
+//! Virtual audio capture and playback devices.
 //!
-//! It has what a device of hardware has: a count of frames that advances at a
-//! rate of its own against the host's clock, cycles of a fixed number of
-//! frames, and a delay that it does not report. It has no clock of its own:
-//! whoever drives it says what time it is, and the device runs the cycles
-//! that are due by then. A test sets the time and so runs hours of audio in
-//! a moment; a program that reads the time from a real clock, and waits for
-//! the next cycle, has a device that discards what it plays, or produces
-//! what its source computes.
+//! Models an audio device's frame counter, fixed-size cycles, clock drift
+//! relative to the host clock, callback lead time, and unreported hardware
+//! latency without binding to an OS audio backend. The caller advances time
+//! explicitly via `run(now, ...)`, enabling deterministic accelerated tests
+//! as well as real-time software signal generation and sink recording.
 //!
-//! An [`Output`] keeps what it was given to play, and for every frame the
-//! true time at which it would have left a device of hardware is known: see
-//! [`Device::played`].
+//! [`Output`] records rendered samples into a fixed-capacity buffer, and
+//! [`Device::played`] / [`Device::captured`] compute the exact host-clock
+//! timestamp for any frame index.
 
 use crate::audio::{Capture, Playback};
 
-/// The number of nanoseconds in a second, and of parts in a billion.
+/// Nanoseconds per second (and parts per billion).
 const BILLION: i128 = 1_000_000_000;
 
-/// What a software device is like.
+/// Timing and format parameters for a software audio device.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Device {
-    /// Frames per second, nominally.
+    /// Nominal sample rate in frames per second.
     pub rate: u32,
-    /// The number of samples in a frame.
+    /// Number of interleaved channels per frame.
     pub channels: usize,
-    /// The number of frames in a cycle.
+    /// Number of frames processed per audio callback cycle.
     pub cycle: usize,
-    /// How much faster than `rate` the device runs against the host's clock,
-    /// in parts per billion.
+    /// Clock drift relative to the host clock, in parts per billion.
     pub drift: i32,
-    /// The reading of the host's clock that the device reports for the frame
-    /// it counts as 0.
+    /// Host-clock timestamp (ns) reported for frame 0.
     pub start: i64,
-    /// For playback, how long before the first frame of a cycle leaves the
-    /// device the cycle is asked for; for capture, how long after the last
-    /// frame of a cycle was captured the cycle is handed over. In
-    /// nanoseconds.
+    /// Callback scheduling offset in nanoseconds: for playback, how early a
+    /// cycle is requested before its first frame plays; for capture, how late
+    /// a cycle is delivered after its last frame is captured.
     pub lead: i64,
-    /// A delay that the device does not report, in nanoseconds: a frame
-    /// leaves a playback device this much later than reported, and entered a
-    /// capture device this much earlier.
+    /// Unreported hardware latency in nanoseconds (added to playback times,
+    /// subtracted from capture times).
     pub hidden: i64,
 }
 
 impl Device {
-    /// The reading of the host's clock that the device reports for the frame
-    /// it counts as `position`.
+    /// Returns the host-clock timestamp (ns) reported by the device for frame
+    /// `position`.
     #[must_use]
     pub fn reported(&self, position: u64) -> i64 {
-        // Frames per billion seconds; at least one, so that a device with a
-        // rate of zero does not divide by zero.
+        // Frames per billion seconds, clamped to >= 1 to avoid division by zero.
         let pace = (i128::from(self.rate) * (BILLION + i128::from(self.drift))).max(1);
-        // A 64-bit count times 10^18 is below 2^124.
+        // u64 * 10^18 fits well inside i128 (< 2^124).
         let elapsed = i128::from(position) * BILLION * BILLION / pace;
         let time = i128::from(self.start).saturating_add(elapsed);
         i64::try_from(time).unwrap_or(i64::MAX)
     }
 
-    /// The reading of the host's clock at which the frame that a playback
-    /// device counts as `position` leaves it.
+    /// Returns the actual host-clock timestamp (ns) at which playback frame
+    /// `position` leaves the DAC (including unreported hardware latency).
     #[must_use]
     pub fn played(&self, position: u64) -> i64 {
         self.reported(position).saturating_add(self.hidden)
     }
 
-    /// The reading of the host's clock at which the frame that a capture
-    /// device counts as `position` entered it.
+    /// Returns the actual host-clock timestamp (ns) at which capture frame
+    /// `position` entered the ADC (excluding unreported hardware latency).
     #[must_use]
     pub fn captured(&self, position: u64) -> i64 {
         self.reported(position).saturating_sub(self.hidden)
     }
 }
 
-/// A software device that plays.
-///
-/// It asks a [`Playback`] for the frames of each cycle and keeps them, up to
-/// a number of frames set at the start, so that it allocates nothing while
-/// it runs.
+/// Software playback device that invokes a [`Playback`] callback per cycle
+/// and stores rendered frames in a preallocated buffer.
 #[derive(Clone, Debug)]
 pub struct Output {
     device: Device,
-    /// The count of the first frame of the next cycle.
+    /// Index of the first frame in the next cycle.
     position: u64,
     buffer: Box<[f32]>,
     record: Vec<f32>,
-    /// Frames that were played after the record was full.
+    /// Frames played after `record` reached capacity.
     unrecorded: u64,
 }
 
 impl Output {
-    /// A device like `device` that keeps the first `record` frames it plays.
+    /// Creates a playback device that records up to `record` rendered frames
+    /// without allocating during cycles.
     #[must_use]
     pub fn new(device: Device, record: usize) -> Output {
         Output {
@@ -106,19 +96,20 @@ impl Output {
         }
     }
 
-    /// What the device is like.
+    /// Returns the device configuration.
     #[must_use]
     pub fn device(&self) -> &Device {
         &self.device
     }
 
-    /// The count of the first frame of the next cycle.
+    /// Returns the starting frame index of the next cycle.
     #[must_use]
     pub fn position(&self) -> u64 {
         self.position
     }
 
-    /// The reading of the host's clock at which the next cycle is asked for.
+    /// Returns the host-clock timestamp (ns) when the next playback cycle is
+    /// due to be requested.
     #[must_use]
     pub fn due(&self) -> i64 {
         self.device
@@ -126,9 +117,8 @@ impl Output {
             .saturating_sub(self.device.lead)
     }
 
-    /// Runs one cycle: asks `playback` for its frames and keeps them. A
-    /// `playback` whose frames have another number of samples than the
-    /// device's is not asked, and the cycle is silent.
+    /// Executes one playback cycle. If `playback.channels()` does not match
+    /// `self.device.channels`, outputs silence without calling `playback`.
     pub fn cycle(&mut self, playback: &mut impl Playback) {
         if playback.channels() == self.device.channels {
             let time = self.device.reported(self.position);
@@ -144,11 +134,11 @@ impl Output {
         self.position = self.position.saturating_add(self.device.cycle as u64);
     }
 
-    /// Runs the cycles that are asked for at or before the reading `now` of
-    /// the host's clock, and returns how many that were.
+    /// Runs all playback cycles due at or before host-clock timestamp `now`
+    /// (ns) and returns the number of cycles executed.
     pub fn run(&mut self, now: i64, playback: &mut impl Playback) -> usize {
         let mut cycles = 0;
-        // A device without frames in a cycle would never get past `now`.
+        // Guard against infinite loops when `cycle == 0`.
         while self.device.cycle > 0 && self.due() <= now && self.position < u64::MAX {
             self.cycle(playback);
             cycles += 1;
@@ -156,35 +146,33 @@ impl Output {
         cycles
     }
 
-    /// The frames that were played, interleaved, from the frame counted as 0
-    /// on, as far as they were kept.
+    /// Returns the recorded interleaved samples starting from frame 0.
     #[must_use]
     pub fn recorded(&self) -> &[f32] {
         &self.record
     }
 
-    /// The number of frames that were played after the record was full.
+    /// Returns the number of frames played after the recording buffer filled.
     #[must_use]
     pub fn unrecorded(&self) -> u64 {
         self.unrecorded
     }
 }
 
-/// A software device that captures.
-///
-/// Its frames come from a function, which is given the count of a frame, the
-/// true time at which that frame enters the device, and the frame to fill.
+/// Software capture device that generates input frames from a closure
+/// `(frame_index, capture_time_ns, frame_slice)` and delivers each cycle to a
+/// [`Capture`] implementation.
 #[derive(Clone, Debug)]
 pub struct Input<S> {
     device: Device,
-    /// The count of the first frame of the next cycle.
+    /// Index of the first frame in the next cycle.
     position: u64,
     buffer: Box<[f32]>,
     source: S,
 }
 
 impl<S: FnMut(u64, i64, &mut [f32])> Input<S> {
-    /// A device like `device` that captures what `source` computes.
+    /// Creates a capture device driven by signal generator `source`.
     #[must_use]
     pub fn new(device: Device, source: S) -> Input<S> {
         Input {
@@ -195,29 +183,28 @@ impl<S: FnMut(u64, i64, &mut [f32])> Input<S> {
         }
     }
 
-    /// What the device is like.
+    /// Returns the device configuration.
     #[must_use]
     pub fn device(&self) -> &Device {
         &self.device
     }
 
-    /// The count of the first frame of the next cycle.
+    /// Returns the starting frame index of the next cycle.
     #[must_use]
     pub fn position(&self) -> u64 {
         self.position
     }
 
-    /// The reading of the host's clock at which the next cycle is handed
-    /// over: when its last frame has been captured, and the lead after.
+    /// Returns the host-clock timestamp (ns) when the next capture cycle is
+    /// delivered (`reported(end) + lead`).
     #[must_use]
     pub fn due(&self) -> i64 {
         let end = self.position.saturating_add(self.device.cycle as u64);
         self.device.reported(end).saturating_add(self.device.lead)
     }
 
-    /// Runs one cycle: computes its frames and hands them to `capture`. A
-    /// `capture` whose frames have another number of samples than the
-    /// device's is given nothing.
+    /// Generates one cycle of frames and delivers it to `capture` if its
+    /// channel count matches `self.device.channels`.
     pub fn cycle(&mut self, capture: &mut impl Capture) {
         if self.device.channels > 0 {
             let frames = self.buffer.chunks_exact_mut(self.device.channels);
@@ -233,8 +220,8 @@ impl<S: FnMut(u64, i64, &mut [f32])> Input<S> {
         self.position = self.position.saturating_add(self.device.cycle as u64);
     }
 
-    /// Runs the cycles that are handed over at or before the reading `now`
-    /// of the host's clock, and returns how many that were.
+    /// Runs all capture cycles due at or before host-clock timestamp `now` (ns)
+    /// and returns the number of cycles executed.
     pub fn run(&mut self, now: i64, capture: &mut impl Capture) -> usize {
         let mut cycles = 0;
         while self.device.cycle > 0 && self.due() <= now && self.position < u64::MAX {
@@ -262,8 +249,7 @@ mod tests {
         }
     }
 
-    /// Plays, in each frame, the device's count of the frame and the time of
-    /// the cycle, and remembers the cycles it was asked for.
+    /// Test playback sink that tags each frame with its index and logs cycle metadata.
     struct Counting {
         cycles: Vec<(u64, i64, usize)>,
     }
@@ -282,29 +268,26 @@ mod tests {
         }
     }
 
-    /// A frame of 50,000 a second lasts 20,000 nanoseconds exactly, so the
-    /// expected times are whole numbers.
     #[test]
-    fn frames_are_reported_at_the_device_s_rate_from_its_start() {
+    fn reported_timestamps_follow_device_rate_and_drift() {
+        // At 50 kHz each frame is exactly 20,000 ns.
         let exact = device();
         assert_eq!(exact.reported(0), 1_000_000);
         assert_eq!(exact.reported(50_000), 1_001_000_000);
-        // A device that is a thousandth fast takes a second for 50,050
-        // frames.
+        // +1,000 ppm (+1,000,000 ppb) plays 50,050 frames per second.
         let fast = Device {
             drift: 1_000_000,
             ..exact
         };
         assert_eq!(fast.reported(50_050), 1_001_000_000);
-        // Rounding is downward and does not add up: frame 3 of a device at
-        // three frames a second is exactly a second on.
+        // Floor division avoids cumulative rounding drift.
         let slow = Device { rate: 3, ..exact };
         assert_eq!(slow.reported(1), 1_000_000 + 333_333_333);
         assert_eq!(slow.reported(3), 1_001_000_000);
     }
 
     #[test]
-    fn a_hidden_delay_moves_the_true_times_and_not_the_reported_ones() {
+    fn hidden_latency_shifts_true_times_only() {
         let hiding = Device {
             hidden: 250_000,
             ..device()
@@ -314,14 +297,11 @@ mod tests {
         assert_eq!(hiding.captured(100), hiding.reported(100) - 250_000);
     }
 
-    /// A cycle that is asked for too early or too late, or with the wrong
-    /// count or time, would show here.
     #[test]
-    fn an_output_asks_for_each_cycle_its_lead_before_the_cycle_leaves() {
+    fn output_schedules_cycles_by_lead_time() {
         let mut output = Output::new(device(), 250);
         let mut playback = Counting { cycles: Vec::new() };
-        // The first cycle leaves at 1 ms and is asked for at -2 ms; the
-        // second leaves 2 ms later.
+        // Cycle 0 plays at 1 ms and is requested at -2 ms; subsequent cycles step by 2 ms.
         assert_eq!(output.due(), -2_000_000);
         assert_eq!(output.run(-2_000_001, &mut playback), 0);
         assert_eq!(output.run(-2_000_000, &mut playback), 1);
@@ -338,12 +318,11 @@ mod tests {
     }
 
     #[test]
-    fn an_output_keeps_what_it_played_as_far_as_it_has_room() {
+    fn output_records_up_to_capacity_and_counts_overflow() {
         let mut output = Output::new(device(), 250);
         let mut playback = Counting { cycles: Vec::new() };
-        // Three cycles are asked for before 4 ms.
         assert_eq!(output.run(3_999_999, &mut playback), 3);
-        // Room for 250 frames holds two whole cycles; the third is counted.
+        // Capacity of 250 frames fits two 100-frame cycles; the third is counted as unrecorded.
         let recorded = output.recorded();
         assert_eq!(recorded.len(), 400);
         assert_eq!(recorded[0..2], [0.0, -1.0]);
@@ -351,7 +330,7 @@ mod tests {
         assert_eq!(output.unrecorded(), 100);
     }
 
-    /// Remembers what it was given.
+    /// Test capture sink that logs received cycles and sample data.
     struct Taking {
         cycles: Vec<(u64, i64)>,
         frames: Vec<f32>,
@@ -369,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn an_input_hands_over_each_cycle_once_it_is_captured() {
+    fn input_delivers_cycles_after_capture_plus_lead() {
         let hiding = Device {
             hidden: 250_000,
             ..device()
@@ -386,8 +365,7 @@ mod tests {
             cycles: Vec::new(),
             frames: Vec::new(),
         };
-        // The last frame of the first cycle is captured by 3 ms; the cycle
-        // is handed over 3 ms later.
+        // Cycle 0 finishes capturing at 3 ms and is delivered at 3 ms + 3 ms lead = 6 ms.
         assert_eq!(input.due(), 6_000_000);
         assert_eq!(input.run(5_999_999, &mut capture), 0);
         assert_eq!(input.run(8_000_000, &mut capture), 2);
@@ -395,12 +373,12 @@ mod tests {
         assert_eq!(capture.frames.len(), 400);
         assert_eq!(capture.frames[198..202], [0.5, 0.25, 0.5, -0.25]);
         drop(input);
-        // The sound entered the device earlier than the device reports.
+        // True capture time precedes the reported timestamp by `hidden` (250 us).
         assert_eq!(times, [750_000, 770_000]);
     }
 
     #[test]
-    fn a_device_without_frames_in_a_cycle_runs_no_cycles() {
+    fn zero_cycle_device_does_not_run() {
         let none = Device {
             cycle: 0,
             ..device()

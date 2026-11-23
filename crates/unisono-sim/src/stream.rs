@@ -2,20 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A stream from one sender to several receivers, in simulated time.
+//! Discrete-event multi-receiver stream simulator driving `unisono_core`.
 //!
-//! The sender has a clock and a capture device, each with its own
-//! oscillator. Every receiver has a playback device with an oscillator of its
-//! own and sits on a host, which has a clock and a link from the sender;
-//! receivers on one host share both. The sender and the receivers are the
-//! ones of `unisono_core`, driven by the events a running system would give
-//! them: packets with their stamps, and the cycles of the devices.
-//!
-//! For every cycle of a receiver's device the simulation records the
-//! **timing error**: the reading of the sender's clock at the true time when
-//! the cycle's first frame leaves the device, minus the capture time of the
-//! stream position played there plus the level. It is positive when the
-//! receiver plays late.
+//! Models a sender host (host clock + capture oscillator) and one or more
+//! receiver hosts (each with a host clock, link from sender, and per-speaker
+//! playback oscillators). Records per-cycle timing error: true sender clock
+//! time when the cycle's first frame leaves the DAC minus `(capture + level)`
+//! (positive means playing late).
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;

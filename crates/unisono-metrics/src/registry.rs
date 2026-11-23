@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The owner of the metric families, and their export.
+//! Metric family registry and Prometheus text-format serializer.
 
 use std::error::Error;
 use std::fmt::{self, Display, Formatter, Write};

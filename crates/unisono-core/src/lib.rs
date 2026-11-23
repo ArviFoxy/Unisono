@@ -2,17 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The pure core of unisono.
+//! Pure, panic-free, allocation-free protocol and timing core of `unisono`.
 //!
-//! Nothing in this crate performs input or output, reads a clock, allocates
-//! memory or can panic. Every function is a plain computation on its
-//! arguments, which is what lets the crate be translated to Lean and have its
-//! properties proved there.
-//!
-//! The lints below turn the constructs that can panic into compile errors:
-//! arithmetic that can overflow, indexing that can be out of bounds, and the
-//! panicking macros and methods. Tests are exempt, since a test fails by
-//! panicking.
+//! Performs no I/O, clock reads, or heap allocation, enabling direct
+//! translation to Lean via Charon/Aeneas for formal verification. Compile-time
+//! lints forbid integer overflow, out-of-bounds indexing, and panicking APIs
+//! outside tests.
 
 #![no_std]
 #![forbid(unsafe_code)]

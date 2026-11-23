@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono send`: a capture device and a sender that sends what it captures.
+//! `unisono send` subcommand: captures audio and streams it over UDP.
 
 use std::io;
 use std::net::SocketAddr;
@@ -18,10 +18,10 @@ use unisono_runtime::level::{Choice, Weights};
 use unisono_runtime::network_thread::{NetworkLoop, NetworkThread};
 use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings};
 use unisono_runtime::socket::{self, Socket};
-use unisono_runtime::software::{Device, Input};
+use unisono_runtime::virtual_device::{Device, Input};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Tally};
+use crate::metrics::{Metrics, Tally};
 use crate::options::{Options, Wrong};
 use crate::{MAX_CYCLE, Signal, System, sleep_until, validate_drift};
 

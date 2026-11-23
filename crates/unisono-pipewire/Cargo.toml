@@ -1,6 +1,6 @@
 [package]
 name = "unisono-pipewire"
-description = "PipeWire as an audio system for unisono: streams that play and capture through the runtime's audio interface."
+description = "PipeWire playback and capture audio backend for unisono."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,12 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Fixed-point arithmetic.
-//!
-//! A fixed-point number is an integer that stands for a multiple of a
-//! negative power of two: with 48 fractional bits, the integer `n` stands for
-//! `n / 2^48`. Multiplying two such numbers gives a product with twice the
-//! fractional bits, which [`mul_shift`] brings back.
+//! Overflow-safe fixed-point arithmetic helpers (floor division, saturation,
+//! and right-shifted multiplication [`mul_shift`]).
 
 /// The largest shift that [`mul_shift`] applies.
 pub const MAX_SHIFT: u32 = 64;

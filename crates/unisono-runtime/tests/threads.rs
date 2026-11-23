@@ -2,16 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A receiver's two ends with real sockets, on the loopback interface and
-//! the host's raw clock: a sender sends a stream and answers reports, the
-//! network end of the receiver takes datagrams in, and a software device
-//! plays what the audio end gives it.
+//! Two-thread receiver integration tests over real loopback UDP sockets and
+//! `CLOCK_MONOTONIC_RAW`.
 //!
-//! The stream is a ramp: the sample of frame `i` is `(i + 1) / 2^23`, so a
-//! sample that comes out of the device says which position of the stream it
-//! is, to a small fraction of a frame, and with the time at which the device
-//! plays it, how late it is. Here every clock is the same clock, so a frame
-//! captured at `t` is due at `t` plus the level.
+//! Sends a ramp signal `(i + 1) / 2^23` over loopback and drives a virtual
+//! playback device from the receiver's audio end, verifying end-to-end
+//! latency and path-delay measurement.
 
 mod common;
 
@@ -30,7 +26,7 @@ use unisono_runtime::receive::{
     Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes, link,
 };
 use unisono_runtime::socket::Socket;
-use unisono_runtime::software::{Device, Output};
+use unisono_runtime::virtual_device::{Device, Output};
 
 /// The latency that the receiver holds: 30 ms.
 const LEVEL: i64 = 30_000_000;

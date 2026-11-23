@@ -2,16 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The unisono program.
+//! Command-line entry point for `unisono` (`send` and `receive` subcommands).
 //!
-//! `unisono send` captures a signal with a software device and sends it;
-//! `unisono receive` receives a stream and plays it on a software device. The
-//! software devices run on the host's raw clock, at a rate that can be set,
-//! so that two programs on one host behave as two hosts would; with
-//! `--clock-offset` and `--clock-skew` each program has a clock of its own
-//! too. Audio systems take the devices' place later.
+//! Supports PipeWire, ALSA, and virtual software audio backends, plus
+//! synthetic clock offset/skew flags (`--clock-offset`, `--clock-skew`) for
+//! multi-process testing on a single host.
 
-mod exported;
+mod metrics;
 mod options;
 mod receiving;
 mod sending;

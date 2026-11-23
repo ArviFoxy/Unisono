@@ -2,12 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A deterministic simulation of clocks, links and hosts.
+//! Deterministic discrete-event simulator of clocks, network links, and hosts.
 //!
-//! Everything here is driven by a true time that the simulated parties cannot
-//! read, and by random numbers from a seeded generator, so a run is the same
-//! every time. The simulation computes in floating point; the code under test
-//! does not.
+//! Runs in floating-point true time (hidden from the protocols under test)
+//! using seeded PRNG streams so every scenario is reproducible.
 
 #![forbid(unsafe_code)]
 

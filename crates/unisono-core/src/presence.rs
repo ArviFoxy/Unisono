@@ -2,13 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Which frames of a stream a receiver holds.
+//! Sliding-window frame presence bitmap paired with the receiver sample ring.
 //!
-//! A receiver keeps the samples of a stretch of the stream in a ring, each
-//! frame at the place its index gives it. This module keeps the other half of
-//! that buffer: one bit for each index of the stretch, set when the frame has
-//! arrived. Presence is a property of each index by itself, so the order in
-//! which packets arrive, and whether one arrives twice, makes no difference.
+//! Stores one bit per frame index over `[playhead, playhead + 64 * N)`,
+//! making packet reception idempotent under reordering and duplication.
 
 /// What became of one frame.
 #[derive(Clone, Copy, PartialEq, Eq)]

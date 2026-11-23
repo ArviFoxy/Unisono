@@ -2,17 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The relation between two clocks, from packets in one direction.
+//! Exact integer lower-convex-hull clock-relation estimator from one-way
+//! packet timestamps.
 //!
-//! Each packet gives a [`Sample`]: the sender's clock when the packet left,
-//! and the receiver's clock at arrival minus that. The second number is the
-//! offset between the two clocks plus the packet's delay, and a delay is never
-//! negative. All samples therefore lie on or above the true relation shifted
-//! by the smallest delay, and the estimate is the highest line that lies on or
-//! below every recent sample.
-//!
-//! All arithmetic here is exact: times and values are integers, and the
-//! geometry compares products of their differences.
+//! Each [`Sample`] pairs `(sender_tx_ns, receiver_rx_ns - sender_tx_ns)`.
+//! Because propagation delay is non-negative, all samples lie on or above the
+//! true offset-plus-minimum-delay line; the estimator maintains the upper
+//! support line below recent samples using exact integer cross products.
 
 use crate::fixed::{div_floor, saturate};
 

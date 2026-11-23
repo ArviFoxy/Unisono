@@ -1,6 +1,6 @@
 [package]
 name = "unisono-realtime-audio"
-description = "The cycles of unisono's audio threads, built into one library whose machine code is then inspected."
+description = "Shared-library wrapper exposing unisono audio-thread cycles for static machine-code auditing."
 version = "0.1.0"
 edition = "2024"
 license = "MPL-2.0"

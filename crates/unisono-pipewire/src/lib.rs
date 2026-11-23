@@ -2,26 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! PipeWire as an audio system for unisono.
+//! PipeWire audio backend implementing [`Playback`] and [`Capture`].
 //!
-//! [`play`] makes a PipeWire stream that plays what a [`Playback`] gives it,
-//! and [`capture`] one that hands what it captures to a [`Capture`]. Each
-//! runs PipeWire's loop on a thread of its own and is called by PipeWire on
-//! the thread of the graph, once in each cycle. Nothing else of unisono knows
-//! PipeWire: the program uses this crate only when it is built with it.
+//! [`play`] and [`capture`] create PipeWire streams running on dedicated loop
+//! threads and invoke the real-time callbacks on PipeWire's graph thread each
+//! quantum. No other crate depends on PipeWire directly.
 //!
-//! # Times
+//! # Timestamping
 //!
-//! In each cycle PipeWire reports the graph time on the monotonic clock, the
-//! path delay, any queued buffers and resampler buffering, and the graph tick
-//! counter. Stream frame positions advance by the stream frames actually
-//! delivered or captured, using tick deltas to detect xrun gaps even when the
-//! graph rate differs from the stream rate. Times are converted to the raw
-//! monotonic clock through a typed [`Tracker<Monotonic>`].
+//! Each cycle, PipeWire reports graph time on `CLOCK_MONOTONIC`, path delay,
+//! queued/resampler buffering, and the graph tick counter. Stream frame
+//! positions advance by actual stream frames processed, using tick deltas to
+//! detect xruns even when graph rate differs from stream rate. Timestamps are
+//! converted to `CLOCK_MONOTONIC_RAW` through a typed [`Tracker<Monotonic>`].
 //!
-//! Samples are 32-bit floats, interleaved, at the rate and with the number
-//! of channels that are asked for; PipeWire converts what its devices take
-//! or give.
+//! Audio is exchanged as interleaved `f32` at the requested sample rate and
+//! channel count; PipeWire performs any required device format conversion.
 
 use std::cell::RefCell;
 use std::fmt;

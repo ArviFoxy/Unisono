@@ -1,6 +1,6 @@
 [package]
 name = "unisono-c"
-description = "unisono for programs written in C: a sender that is handed the frames of a capture device, and a receiver that fills the frames of a playback device."
+description = "C FFI shared library wrapping unisono sender and receiver endpoints."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -1,6 +1,6 @@
 [package]
 name = "unisono-alsa"
-description = "ALSA as an audio system for unisono: a device that plays and one that captures through the runtime's audio interface."
+description = "ALSA playback and capture audio backend for unisono."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

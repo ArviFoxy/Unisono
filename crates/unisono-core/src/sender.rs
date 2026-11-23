@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The sender of a stream: which index the next frame has, and what the
-//! header of the next packet says.
+//! Sender stream state machine: monotonic frame numbering, level ramping, and
+//! audio packet header generation.
 
 use crate::fixed::{div_floor, saturate};
 use crate::packet::{Audio, Echo, FLAG_STAMPED, Format, Report};

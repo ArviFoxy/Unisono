@@ -2,18 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A sender and a receiver, each on its two threads' ends, with real sockets
-//! on the loopback interface and the host's raw clock: a software capture
-//! device hands its frames to the sender, and a software playback device
-//! plays what the receiver gives it. The two devices run at rates of their
-//! own, as devices do.
+//! End-to-end loopback integration tests pairing a sender and receiver over
+//! real UDP sockets with independent virtual capture and playback devices
+//! running at distinct clock drift rates.
 //!
-//! The capture device captures a ramp: the sample of the frame it counts as
-//! `i` is `(i + 1) / 2^23`. A sample that comes out of the playback device
-//! therefore says which captured frame it is, to a small fraction of one,
-//! and with the time at which the capture device took that frame and the
-//! time at which the playback device plays it, how far from the level the
-//! latency is.
+//! The capture device emits a monotonic ramp `(i + 1) / 2^23` so each rendered
+//! output sample decodes its fractional source frame index, allowing exact
+//! measurement of playout latency error against the configured level.
 
 //!
 //! The level is held in one test; in the other the sender chooses it from
@@ -36,7 +31,7 @@ use unisono_runtime::receive::{
 };
 use unisono_runtime::send::{self, SenderCounts, SenderNetwork, Settings};
 use unisono_runtime::socket::Socket;
-use unisono_runtime::software::{Device, Input, Output};
+use unisono_runtime::virtual_device::{Device, Input, Output};
 
 /// The latency that the receiver holds at the start: 30 ms.
 const LEVEL: i64 = 30_000_000;

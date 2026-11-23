@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Sets of assumptions about hosts and links, with numbers.
+//! Named host and link parameter profiles used by simulation tests.
 //!
-//! A test names the set it runs under and holds its result against a number.
-//! The sets are what the tests assume, not what any real link was measured
-//! to do: a test that passes says that the code does what it should where the
-//! world is as assumed, and nothing about where it is not.
+//! Each test explicitly states which profile it runs against and the error
+//! bound it enforces; passing tests validate behavior under those modeled
+//! assumptions only.
 
 use crate::link::LinkModel;
 

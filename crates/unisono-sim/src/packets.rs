@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Packets from a simulated sender to a simulated receiver.
+//! Simulated packet stream generator between a sender and receiver.
 
 use crate::assumptions::OneWayAssumptions;
 use crate::clock::{Oscillator, OscillatorModel};

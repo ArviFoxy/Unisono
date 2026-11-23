@@ -2,8 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The program's metrics, and the address that serves them in the
-//! Prometheus text format.
+//! Prometheus metrics definitions and HTTP text-format exporter for `unisono`.
 
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};

@@ -2,34 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The receiver of a stream: which timeline it follows, which frames it
-//! holds, and which frame its device gets next.
+//! Receiver state machine: timeline adoption, monotonic playhead management,
+//! schedule tracking, and playback cycle planning.
 //!
-//! There is no session. A receiver follows one timeline at a time and takes
-//! up another when a packet of a later timeline arrives, or when the one it
-//! follows has been silent for a while. Whatever state it is in, packets of a
-//! timeline that keep arriving are therefore followed after that while at
-//! the latest.
+//! Operates statelessly with respect to sessions: adopts a newer timeline
+//! immediately or switches after the active timeline goes silent. The playhead
+//! advances strictly monotonically so every frame index is delivered at most
+//! once (held, concealed, or skipped); sustained arrival of only behind-playhead
+//! packets triggers a fresh restart after `silence`.
 //!
-//! The frames of the timeline pass the receiver's **playhead** once and in
-//! order: the playhead is the index of the next frame for the device, it
-//! only moves forward, and every index it passes is reported exactly once,
-//! as held, as absent, or as skipped. If packets of the followed timeline
-//! keep arriving and every frame of theirs is behind the playhead for a
-//! while, the playhead is wrong, and the receiver starts anew at the frames
-//! that arrive.
-//!
-//! The stamps of audio packets give the receiver its clock against the
-//! sender's, but later by the smallest delay of the path from the sender. To
-//! find that delay the receiver sends reports. The sender answers each with
-//! the time at which it arrived. The report's two stamps give the sender's
-//! clock against the receiver's, later by the delay of that report on the
-//! way back; added to the estimate from audio packets at the same moment,
-//! the clocks cancel, and what is left is the smallest delay from the sender
-//! and the delay of the report back. The smallest such sum over about a
-//! minute is the smallest delay there and back, and the receiver takes half
-//! of it for the path from the sender. The delay of a path is a constant,
-//! so the memory can be long, and reports can be rare.
+//! Supports both the unified [`SyncSnapshot`] / `ModalPlayer` synchronization
+//! pipeline (`use_sync = true`) and the legacy one-way lower-hull clock
+//! estimator (`relation::Estimator`) plus report/echo RTT path-delay estimate.
 
 use crate::answers::{Answer, Answers};
 use crate::arrivals::Arrivals;

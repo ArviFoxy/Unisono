@@ -2,15 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! unisono for programs written in C: see `include/unisono.h`, which says
-//! what each function does.
+//! C FFI bindings for `unisono` (public ABI documented in `include/unisono.h`).
 //!
-//! A sender is the capture end of [`unisono_runtime::send`] with a managed
-//! [`NetworkThread`] running its network end; a receiver is the audio end of
-//! [`unisono_runtime::receive`] with a managed [`NetworkThread`] running its
-//! network end. Each network thread is held to the system calls that such a
-//! thread makes where the system does that ([`unisono_runtime::syscalls`]),
-//! and returns its socket on stop so closing it happens outside the filter.
+//! Wraps the capture end of [`unisono_runtime::send`] and the audio end of
+//! [`unisono_runtime::receive`], each paired with a managed [`NetworkThread`]
+//! running under [`unisono_runtime::syscalls`] seccomp restrictions on Linux
+//! and returning its socket on shutdown so `close(fd)` runs outside the filter.
 
 use std::ffi::{CStr, c_char, c_int};
 use std::net::SocketAddr;

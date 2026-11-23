@@ -1,6 +1,6 @@
 [package]
 name = "unisono-runtime"
-description = "The shell around unisono's core: clocks, sockets with packet timestamps, the rings between threads, audio interfaces, a software audio device, and what turns a receiver's plan into frames."
+description = "Runtime I/O, threading, timestamped UDP sockets, SPSC rings, audio backend interfaces, virtual devices, and playback pipeline around unisono-core."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

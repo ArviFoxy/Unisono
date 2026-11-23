@@ -2,19 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The samples of the frames that a receiver holds.
+//! Fixed-capacity PCM sample ring buffer indexed by stream frame number.
 //!
-//! The core's receiver knows which frames of a stream it holds, by their
-//! index, and has room for a stretch of `64 * N` indices from its playhead
-//! on. The samples of those frames are kept here, in a ring with as many
-//! places as the stretch has indices: the frame with index `n` is at place
-//! `n mod capacity`. The place of a frame depends on its index alone, so
-//! nothing moves when the stretch does, and two frames of one stretch never
-//! share a place.
+//! Paired with `unisono_core::receiver::Receiver`, whose presence bitmap
+//! covers a window of `64 * N` frames starting at the playhead. Frame `n` is
+//! stored at slot `n % capacity`, so advancing the playhead requires no data
+//! movement and distinct frames within the active window never collide.
 //!
-//! The store does not know which of its places hold a frame; the receiver
-//! does. A frame is written only where the receiver has room for its index,
-//! and read only where the receiver says it is held.
+//! Occupancy is tracked exclusively by `Receiver`; callers write only indices
+//! admitted by `Receiver` and read only indices reported as present.
 
 use unisono_core::packet::Format;
 use unisono_dsp::format::{from_signed16, from_signed24};

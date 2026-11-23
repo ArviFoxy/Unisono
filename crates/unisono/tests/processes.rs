@@ -2,29 +2,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The program as processes: a sender and receivers on one host, each with a
-//! clock of its own (`--clock-offset`, `--clock-skew`) and a device that runs
-//! at a rate of its own (`--drift`), with a proxy in front of each receiver
-//! that delays what passes.
+//! Multi-process end-to-end integration tests running `unisono send` and
+//! `unisono receive` binaries with simulated per-process clocks
+//! (`--clock-offset`, `--clock-skew`), device drift (`--drift`), and a UDP
+//! impairment proxy.
 //!
-//! The sender captures a ramp, whose samples say which frame they are, and
-//! each receiver keeps what it played with the times of its device. The test
-//! turns every time into the host's clock, and measures for every frame how
-//! far its latency is from the level.
+//! The sender streams a frame-index ramp, and each receiver records rendered
+//! samples with device timestamps so the test can convert all times to host
+//! raw time and measure per-frame latency error against the configured level.
 //!
-//! The receivers are told the delay of their paths. Measured through the
-//! proxy, the delay errs high by a few hundred microseconds: the proxy holds
-//! a datagram past its time by an amount that varies, and the twenty reports
-//! a second of a receiver meet a short hold far more rarely than the two
-//! hundred audio packets do. `crates/unisono-runtime/tests/threads.rs` tests
-//! the measurement.
+//! Note: receivers receive fixed `--path` values here because the loopback
+//! proxy's variable timer wakeup jitter affects the 20 Hz report probe stream
+//! more than the 200 Hz audio stream; end-to-end RTT path-delay estimation is
+//! covered separately in `crates/unisono-runtime/tests/threads.rs`.
 
 use std::io::{BufRead, BufReader, Read};
 use std::net::SocketAddr;
 use std::process::{Child, Command, Stdio};
 
 use unisono_runtime::proxy::{Impairment, Proxy};
-use unisono_runtime::software::Device;
+use unisono_runtime::virtual_device::Device;
 
 /// The level that the sender announces: 30 ms.
 const LEVEL: i64 = 30_000_000;

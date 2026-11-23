@@ -1,6 +1,6 @@
 [package]
 name = "unisono-core"
-description = "The pure core of unisono: arithmetic, clock estimation, packet format and state machines."
+description = "Pure, panic-free protocol, clock-synchronization, and playback-regulation core of unisono."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,45 +2,27 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The regulator: where in the stream a receiver reads, cycle by cycle of its
-//! device.
+//! Discrete-time LQR playback pace regulator (`Player` and two-mode
+//! `ModalPlayer`).
 //!
-//! The schedule says which position of the stream is due at the start and at
-//! the end of a cycle. The regulator keeps the position at which the
-//! receiver actually reads, and the pace at which it read in the cycle
-//! before. Before a cycle it knows two distances:
-//!
-//! - `behind`, by which the position is behind the schedule;
-//! - `ahead`, by which the cycle would read further than the schedule
-//!   advances over it, if it kept the pace of the cycle before.
-//!
-//! The cycle then reads
+//! Given the scheduled stream positions at the start and end of an audio
+//! callback cycle, computes the per-sample resampling step from the current
+//! position lag (`behind`) and predicted pace excess (`ahead`):
 //!
 //! ```text
-//! d^2 ahead + a^2 d behind
+//! delta_frames = d^2 * ahead + a^2 * d * behind
 //! ```
 //!
-//! further than the schedule advances, where `a` is the gain per second
-//! times the length of the cycle and `d`, between 0 and 1, is the smaller
-//! root of `d + 1/d = (a^2 + sqrt(a^4 + 16)) / 2`. Of all ways to choose the
-//! pace of each cycle from what is known before it, this one makes the sum
-//! over the cycles of `a^4 behind^2` and the squared change of the pace
-//! smallest, whether the schedule holds still or is revised between the
-//! cycles in ways that cannot be foreseen (`docs/model.md`). `a^4` is the
-//! weight of the timing error against the weight of a change of the pace:
-//! the gain per second is the fourth root of the first over the second.
+//! where `a = gain * cycle_duration` and `d in (0, 1)` is the smaller root of
+//! `d + 1/d = (a^2 + sqrt(a^4 + 16)) / 2`. This is the exact stationary LQR
+//! feedback law minimizing `sum(a^4 * behind^2 + delta_pace^2)` (`docs/model.md`).
 //!
-//! A schedule whose own pace changes is followed in the same way: the pace
-//! that was read is held against the new schedule, and the difference
-//! shrinks by `d^2` in each cycle.
-//!
-//! The pace as a whole stays within a limit. A distance too large for that
-//! is not played away: the position jumps to the schedule.
-//!
-//! A jump can go back. That replays nothing, because the frames that a
-//! receiver has given to its device are behind its playhead and are not
-//! given again: until the position reaches the playhead the receiver plays
-//! silence.
+//! Pace offsets are clamped to `limit`; errors exceeding `jump` trigger a
+//! discontinuous seek to the scheduled position (backward jumps output silence
+//! until the playhead catches up so frames are never replayed). `ModalPlayer`
+//! applies separate common-mode and differential-mode gains when peer
+//! synchronization is active and degenerates exactly to single-mode `Player`
+//! when inactive.
 
 use crate::fixed::{div_floor, div_floor_wide, root, saturate};
 use crate::timing::{Position, Schedule, Step, distance};

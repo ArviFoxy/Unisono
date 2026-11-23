@@ -2,18 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The packets of a stream: audio from the sender, reports from receivers,
-//! and the sender's answers to reports.
+//! Wire packet headers and little-endian serializers/parsers for audio,
+//! sender reports/echoes, retransmission requests, and peer sync messages.
 //!
-//! An audio packet is a header of fixed size, then the samples. A receiver
-//! sends reports, and the sender answers each with the time at which it
-//! arrived; the two stamps of a report tell the receiver about the path back
-//! to the sender what the stamps of audio packets tell it about the path
-//! from the sender.
-//!
-//! Every number is written least significant byte first. All parties of a
-//! stream run the same version of the software, so there is one layout and
-//! nothing to negotiate: a packet of another version is rejected.
+//! All peers on a stream run the same wire protocol version; packets with
+//! mismatched versions or invalid lengths are rejected cleanly.
 
 /// The first four bytes of every packet: the letters `unis`.
 pub const MAGIC: u64 = 0x7369_6e75;

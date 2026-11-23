@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The estimator of a clock relation against simulated senders, receivers
-//! and links.
+//! Clock-relation estimator accuracy and fault-injection tests against
+//! simulated senders, receivers, and links.
 //!
-//! Each test names the assumptions it runs under and a largest error it
-//! accepts. For each such bound a second test shows that an estimator with a
-//! plausible defect exceeds it, so that the bound is known to be able to fail.
+//! Pairs each accuracy bound with a defect-injection control test verifying
+//! that broken estimators exceed the threshold.
 
 use unisono_core::relation::{Estimator, Sample};
 use unisono_sim::assumptions::{OneWayAssumptions, WIRED_BUSY, WIRED_CALM, WIRELESS};

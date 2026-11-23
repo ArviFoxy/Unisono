@@ -2,23 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Ways of protecting a stream against lost packets, held against each
-//! other.
+//! Packet-loss protection strategy comparison (retransmission, duplication,
+//! and forward error correction).
 //!
-//! A sender sends a packet every `period` seconds over a path that loses
-//! packets in outages: for a time, nothing that is sent in either direction
-//! arrives. A way of protecting the stream gives a packet that was lost a
-//! second way to the receiver, and the question for each way is when the
-//! frames of each packet are at the receiver, by whichever way comes first.
-//! That time, less the time the packet was sent, is what the packet needs of
-//! the level, and from the needs of all packets follows what the stream
-//! costs at the best level (`evaluate`): latency, gaps and missed frames, as
-//! the sender's choice of the level counts them. What a way sends on top of
-//! the stream is reported beside it.
-//!
-//! The model leaves out what no way of protecting can change: a pause that
-//! holds packets back and then delivers them delays the repairs as it delays
-//! the packets.
+//! Simulates a periodic packet stream over a link with burst outages and
+//! compares each strategy's earliest frame arrival times, optimal playout
+//! level cost ([`evaluate`]: latency, discontinuities, and missed frames), and
+//! bandwidth overhead. Link pauses that delay originals and repairs equally
+//! are excluded because no loss-recovery scheme alters them.
 
 use crate::random::Generator;
 

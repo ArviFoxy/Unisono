@@ -2,25 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! From the core's plan for a cycle to the frames that a device plays.
+//! Audio playback pipeline translating core playback plans into resampled PCM.
 //!
-//! For each cycle of a device the core's receiver says where in the stream
-//! the cycle's output frames are taken: a starting position and a step from
-//! one output frame to the next. The [`Pump`] does the rest. It takes the
-//! frames of the stream that those positions need from the receiver, in
-//! order, each exactly once: frames that are held come from the [`Store`],
-//! frames that are missing are made by the concealment. It keeps the few
-//! frames behind the receiver's playhead that the resampler's filter still
-//! reaches back to, and the resampler computes the output from them.
+//! Each device cycle, `unisono_core::receiver::Receiver` returns a [`Plan`]
+//! giving the starting fractional stream position and per-sample step.
+//! [`Pump`] advances the receiver playhead strictly monotonically, pulls
+//! available frames from [`Store`], synthesizes missing frames via
+//! [`Concealment`], maintains the FIR resampler lookbehind window, and renders
+//! output samples via [`Resampler`].
 //!
-//! A plan can start where the cycle before did not end: the receiver jumps
-//! when its position is too far from the schedule. Then the kept frames are
-//! dropped. Ahead, the frames in between are skipped. Back, nothing is
-//! played twice: frames behind the playhead are never given again, so the
-//! pump plays silence until the position has reached the playhead.
+//! On a discontinuous jump (`plan.jumped`), the resampler window is flushed:
+//! jumping forward skips intervening frames; jumping backward outputs silence
+//! until the position catches up to the monotonic playhead so frames are never
+//! replayed twice.
 //!
-//! [`ReceiverPlayback`] ties a receiver, its store and its pump together
-//! behind the [`Playback`] interface of an audio device.
+//! [`ReceiverPlayback`] wraps `Receiver`, `Store`, and `Pump` behind the
+//! real-time [`Playback`] trait.
 
 use unisono_core::device::Device;
 use unisono_core::needs::Needs;

@@ -2,17 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The relation between a device's count of frames and the host's clock.
+//! Ordinary least-squares regression mapping audio device frame counts to
+//! host clock timestamps.
 //!
-//! An audio system reports, cycle by cycle, a position of its device and the
-//! reading of the host's clock that belongs to it. A report can be early or
-//! late, so the relation is the line that fits the last reports best: the
-//! one with the smallest sum of squared distances to them. It says when a
-//! frame leaves the device, and how long a cycle takes.
-//!
-//! The sums are whole numbers and exact. Positions are taken relative to the
-//! newest report, and times relative to what the nominal rate gives, so that
-//! the numbers stay small.
+//! Fits a line through recent `(frame_position, host_time_ns)` callback
+//! reports using exact integer sums anchored at the newest sample and nominal
+//! frame spacing so accumulators stay bounded and jitter-smoothed.
 
 use crate::fixed::{div_floor, div_floor_wide, saturate};
 

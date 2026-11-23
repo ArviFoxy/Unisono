@@ -2,34 +2,31 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A proxy that delays, drops, pauses, reorders and duplicates datagrams.
+//! Deterministic UDP impairment proxy for testing delay, jitter, loss,
+//! link pauses, reordering, and packet duplication.
 //!
-//! It is equipment for tests: two programs that would talk over a network
-//! talk through a [`Proxy`] on one host, and the proxy does to their
-//! datagrams what a network might. What it does to each datagram is decided
-//! by a seed and by the order in which the datagrams arrive, so a test that
-//! fails can be run again and fails the same way.
+//! Sits between two UDP endpoints on loopback and applies per-direction
+//! [`Impairment`] schedules driven by a seeded PRNG so failing integration
+//! tests reproduce deterministically.
 //!
-//! # What happens to a datagram
+//! # Packet Impairment Pipeline
 //!
-//! Each direction has an [`Impairment`] and a sequence of random numbers of
-//! its own. For every datagram that arrives, [`Direction::fate`] draws the
-//! same count of numbers and decides, in this order:
+//! Each direction owns an [`Impairment`] profile and an independent PRNG
+//! stream. For each arriving datagram, [`Direction::fate`] draws a fixed
+//! number of random variates and evaluates in order:
 //!
-//! - whether the datagram starts a **pause** of the direction, which lasts
-//!   `pause_length` from its arrival. A datagram that arrives while a pause
-//!   lasts, the one that started it included, is delivered at the end of the
-//!   pause at the earliest;
-//! - whether it is **lost**, and then nothing more happens;
-//! - when it is delivered: `delay` after its arrival, plus up to `jitter`,
-//!   plus `held_back` if it is one of those to be **reordered**, which lets
-//!   the datagrams that arrive within that time overtake it;
-//! - whether it is **duplicated**, and then a second copy is delivered with
-//!   a jitter of its own.
+//! 1. **Pause:** whether this datagram starts a link pause of duration
+//!    `pause_length` from its arrival. All datagrams arriving during a pause
+//!    (including the trigger) are held until at least the end of the pause.
+//! 2. **Loss:** whether the datagram is dropped.
+//! 3. **Delivery time:** arrival time plus `delay`, uniform jitter up to
+//!    `jitter`, and `held_back` when selected for **reordering** (allowing
+//!    later packets to overtake it).
+//! 4. **Duplication:** whether a second copy is scheduled with independent
+//!    jitter.
 //!
-//! The proxy delivers a datagram no earlier than the decided time, and as
-//! soon after it as the host's timers allow, which is within a millisecond
-//! or two on an idle host.
+//! Datagrams are released no earlier than their scheduled delivery time,
+//! subject to host OS timer resolution (typically 1-2 ms on an idle host).
 
 use std::cmp::Reverse;
 use std::collections::BinaryHeap;

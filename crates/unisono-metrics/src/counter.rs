@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A number that only grows.
+//! Lock-free monotonic `u64` counter.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

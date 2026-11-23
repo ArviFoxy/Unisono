@@ -2,13 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Simulated links in one direction.
+//! One-way network link impairment model.
 //!
-//! A packet's delay is the link's smallest delay plus an excess that is never
-//! negative. Most packets pass with a small excess; some meet a queue and a
-//! larger one. Now and then the link pauses: nothing arrives until the pause
-//! ends, and then everything held back arrives at once. A link can also hold
-//! up single packets without the packets after them, which then arrive first.
+//! Models minimum propagation delay plus non-negative queueing jitter
+//! (baseline and bursty modes), link pauses that buffer packets until release,
+//! and per-packet reordering delays.
 
 use crate::TrueTime;
 use crate::random::Generator;

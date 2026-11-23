@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The pieces of the Prometheus text format: names, escaping and numbers.
+//! Prometheus text exposition format 0.0.4 validation, escaping, and number
+//! formatting helpers.
 
 use std::fmt::{self, Display, Formatter};
 

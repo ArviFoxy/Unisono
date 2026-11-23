@@ -2,13 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Which way of protecting a stream against lost packets suits which path.
-//!
-//! Each way is run over the same outages of a path, and what the stream
-//! then costs at its best level is held against the others, with the
-//! weights that the program takes when none are given: a gap costs as much
-//! as a millisecond of level held for ten minutes, and a millisecond of
-//! frames missed as much as a millisecond of level held for one minute.
+//! Loss-protection strategy comparison tests over simulated burst outages
+//! using default objective weights (1 discontinuity = 1 ms latency for 10 min;
+//! 1 ms missed audio = 1 ms latency for 1 min).
 
 use unisono_sim::protection::{Path, Run, Scheme, Verdict, evaluate, simulate};
 use unisono_sim::random::Generator;

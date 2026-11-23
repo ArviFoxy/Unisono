@@ -2,77 +2,45 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Signal processing for unisono: the resampler that corrects clock drift,
-//! the sample formats of a packet, and the concealment of gaps.
+//! Real-time DSP primitives for `unisono`: arbitrary-rate resampling, PCM
+//! sample format conversion, and packet-loss concealment.
 //!
-//! Everything here is a function of its inputs. Nothing allocates after
-//! construction, reads a clock or keeps state that the caller cannot see,
-//! and the same input gives the same output bit for bit on one platform.
+//! Deterministic, allocation-free after construction, and free of hidden
+//! global state or clock reads.
 //!
-//! # The resampler
+//! # Resampler
 //!
-//! Two hosts count time with different clocks, so a receiver must play a
-//! stream slightly faster or slower than one frame for each frame of its
-//! device. [`Resampler`] computes the stream's frames at positions that the
-//! caller chooses. A [`Position`] is the index of a frame and a fraction of
-//! a frame in units of 2^-64, and a [`Step`], the distance from one output
-//! frame to the next, is one frame plus an offset in the same units. They
-//! are added as whole numbers, so output frame `i` of a call is taken at
-//! exactly `start + i * step`, and positions do not drift however long a
-//! stream lasts. One part per billion of rate is about 1.8e10 units.
+//! [`Resampler`] evaluates the input stream at arbitrary fractional positions
+//! to compensate for clock drift. [`Position`] stores a `u64` frame index and
+//! `u64` fractional part (`2^-64` frame units), and [`Step`] stores `1 + offset`
+//! in the same fixed-point units so `start + i * step` accumulates with zero
+//! rounding drift (1 ppb ≈ 1.8e10 units).
 //!
-//! The resampler holds no samples and no position. The caller gives it a
-//! [`Window`] of the stream and a starting position at every call, so a
-//! jump to another position needs nothing but the next call.
+//! The resampler is stateless across calls: callers supply a [`Window`] of
+//! input frames and a starting [`Position`] each block, making discontinuities
+//! trivial.
 //!
-//! ## The filter and its delay
+//! ## Filter Design and Lookahead
 //!
-//! The value at a position is a weighted sum of the frames around it, with
-//! the weights of the ideal interpolation, `sin(pi t) / (pi t)` at distance
-//! `t`, shaped by a Kaiser window ([`Filter`]). The weights are symmetric
-//! about the position, so the output is not shifted with respect to the
-//! position it was taken at, at any frequency. What the filter costs in
-//! time is the frames after the position that it needs: the value at a
-//! position can be computed once the frame [`Filter::ahead`] frames after
-//! it has arrived, which is half the number of taps, exactly.
+//! [`Filter`] tabulates a symmetric Kaiser-windowed sinc kernel (zero group
+//! delay distortion) requiring [`Filter::ahead`] (`taps / 2`) lookahead frames.
+//! [`Filter::design`] sizes the filter to pass 20 kHz and suppress images
+//! above `rate - 20 kHz`. For -110 dB target error (1024-phase table, `f64`
+//! accumulation):
 //!
-//! The error of the interpolation, for a sinusoid of frequency `f`, is made
-//! of the sinusoid's images at the sample rate minus `f` and beyond, to the
-//! extent the filter lets them through. To keep everything up to 20 kHz
-//! the filter must therefore pass 20 kHz and stop the sample rate minus
-//! 20 kHz, and the narrower that band is, the longer the filter. The length
-//! is computed from the rate and from the error asked for
-//! ([`Filter::design`]). For an error 110 dB below a sinusoid:
-//!
-//! | Frames per second | Taps | Delay in frames | Delay | Error | Ripple to 20 kHz | Stopped from | by |
+//! | Sample rate (Hz) | Taps | Lookahead (frames) | Delay | Worst error | Passband ripple (<= 20 kHz) | Stopband | Attenuation |
 //! |---|---|---|---|---|---|---|---|
-//! | 44 100 | 88 | 44 | 1.00 ms | -114 dB | 0.000 01 dB | 24.1 kHz | 120 dB |
-//! | 48 000 | 48 | 24 | 0.50 ms | -111 dB | 0.000 02 dB | 28 kHz | 117 dB |
-//! | 88 200 and more | 16 | 8 | 0.09 ms or less | -116 dB or less | | | |
+//! | 44 100 | 88 | 44 | 1.00 ms | -114 dB | 0.000 01 dB | >= 24.1 kHz | 120 dB |
+//! | 48 000 | 48 | 24 | 0.50 ms | -111 dB | 0.000 02 dB | >= 28 kHz | 117 dB |
+//! | >= 88 200 | 16 | 8 | <= 0.09 ms | <= -116 dB | | | |
 //!
-//! The error is the largest difference between the value the filter gives a
-//! sinusoid of unit amplitude at or below 20 kHz and the sinusoid's true
-//! value, over frequencies and over fractions of a frame. It holds for
-//! every step, because each output frame is computed from its position
-//! alone. It includes the rounding of the weights to single precision and
-//! the linear interpolation between the 1024 tabulated fractions of a
-//! frame; with twice as many fractions it would be less than half a decibel
-//! smaller. The sum over the taps is taken in double precision and rounded
-//! once.
+//! Unity rate on integer frame positions passes samples through bit-for-bit.
 //!
-//! A stream that is played at its own rate and on its own frames comes out
-//! bit for bit as it went in.
+//! # Sample Formats & Concealment
 //!
-//! # Sample formats
-//!
-//! [`mod@format`] reads and writes the signed 16-bit and 24-bit samples of a
-//! packet. Both fit a single-precision number exactly.
-//!
-//! # Gaps
-//!
-//! [`Concealment`] replaces missing frames by a continuation of the sound
-//! before them, which fades out, and fades arriving frames in. See
-//! [`conceal`] for the method and its limits.
+//! - [`mod@format`]: little-endian signed 16-bit and 24-bit PCM conversion.
+//! - [`Concealment`] ([`conceal`]): Burg AR gap extrapolation and raised-cosine
+//!   crossfades.
 
 #![forbid(unsafe_code)]
 

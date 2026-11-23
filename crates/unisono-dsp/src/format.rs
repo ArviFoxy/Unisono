@@ -2,17 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Samples as a packet carries them, and as the processing uses them.
+//! Wire PCM sample encoding and decoding (little-endian signed 16-bit and
+//! 24-bit integers <-> normalized `f32` in `[-1.0, 1.0)`).
 //!
-//! A packet carries signed whole numbers of 16 or 24 binary digits, least
-//! significant byte first. The processing uses single-precision numbers in
-//! which the whole number `v` of `b` digits is `v / 2^(b - 1)`, so that all
-//! samples lie from -1 to just below 1. Both formats fit a single-precision
-//! number exactly, so reading a sample and writing it again returns it.
-//!
-//! Writing rounds to the nearest whole number, to the even one when two are
-//! equally near, and brings values outside the range to its nearest end. It
-//! adds no dither.
+//! Both integer widths map losslessly into `f32` (`v / 2^(b - 1)`), so
+//! decode -> encode round-trips bit-for-bit. Encoding rounds ties to even and
+//! clamps out-of-range floats without dither.
 
 /// Reads signed 16-bit samples from `bytes` into `samples`, and returns how
 /// many: the number of whole samples in `bytes`, or the length of `samples`

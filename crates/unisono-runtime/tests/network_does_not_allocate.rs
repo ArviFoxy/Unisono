@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The network turns of both `SenderNetwork` and `ReceiverNetwork` allocate
-//! and free no memory after setup—including during adaptive `Chooser` level
-//! computation, large capture gaps, multi-receiver sends, report answers,
-//! retransmission requests, and `Asking` run splits.
+//! Verifies that `SenderNetwork` and `ReceiverNetwork` turns allocate and
+//! free zero heap memory after setup, including during adaptive `Chooser`
+//! level computation, large capture gaps, multi-receiver sends, report echoes,
+//! retransmission requests, and `RetransmissionTracker` gap splits.
 //!
 //! This file is a test binary of its own because it replaces the global
 //! allocator with a counting allocator (seccomp alone does not catch

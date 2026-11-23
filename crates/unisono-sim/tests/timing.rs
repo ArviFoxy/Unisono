@@ -2,21 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Playback timing of receivers against a simulated sender, links, clocks
-//! and devices.
+//! End-to-end playback timing accuracy tests under large clock offsets,
+//! oscillator drift (up to 120 ppm), and link jitter, paired with
+//! fault-injection controls.
 //!
-//! Clocks differ by hours and by tens of parts per million, devices by up to
-//! 120 parts per million from their hosts' clocks, and all of them wander.
-//! Each test names the assumptions about the links it runs under and the
-//! largest timing error it accepts. Two tests seed a fault and show that the
-//! error then leaves the bound.
-//!
-//! What these tests assume besides the links: stamps of departure and
-//! arrival are exact, every receiver knows the true time of its device's
-//! cycles on its own clock, and, except where a test says otherwise, the
-//! smallest delay of its link. They show that the estimate of the sender's
-//! clock, the schedule and the regulator fit together; they do not show what
-//! a real device and a real network allow.
+//! Assumes exact packet departure/arrival timestamps and exact device cycle
+//! timestamps on each host's local clock; validates integration of clock
+//! estimation, scheduling, and playback regulation under the named link
+//! assumptions.
 
 use unisono_core::player::Regulation;
 use unisono_sim::TrueTime;

@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono receive`: a receiver that plays a stream on a playback device,
-//! and can keep what it played in a file.
+//! `unisono receive` subcommand: receives a stream, synchronizes playback, and
+//! optionally records virtual-device output to a file.
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
@@ -19,10 +19,10 @@ use unisono_runtime::receive::{
     self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
 };
 use unisono_runtime::socket::Socket;
-use unisono_runtime::software::{Device, Output};
+use unisono_runtime::virtual_device::{Device, Output};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Server, Tally};
+use crate::metrics::{Metrics, Server, Tally};
 use crate::options::{Options, Wrong};
 use crate::{MAX_CYCLE, System, sleep_until, validate_drift};
 

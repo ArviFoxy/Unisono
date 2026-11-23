@@ -1,6 +1,6 @@
 [package]
 name = "unisono-sim"
-description = "A deterministic simulation of clocks, links and hosts, for testing unisono without hardware."
+description = "Deterministic discrete-event simulator of clocks, network links, and hosts for unisono."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -2,32 +2,30 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The two threads of a sender, and what passes between them.
+//! Sender capture/network thread bridge, packetization, and transmission.
 //!
-//! The **capture thread** is the audio system's: once in each cycle of the
-//! capture device it hands over the frames of the cycle with the device's
-//! count of the first frame and the time the device reports for it, and
-//! nothing else. The **network thread** owns everything else: the core's
-//! sender, the line through the capture device's reports, and the socket. It
-//! cuts the frames into packets, stamps each with the capture time of its
-//! first frame, sends it to every receiver, takes in when packets left, and
-//! answers reports. From the needs that the reports carry it chooses the
-//! level, if it is set up to (see [`crate::level`]), and moves the level
-//! there at a set slope.
+//! Splits sender execution across two threads:
+//! - The **capture thread** (owned by the audio backend) copies each captured
+//!   block plus its device frame counter and timestamp into a preallocated
+//!   ring buffer without locking or allocating.
+//! - The **network thread** owns `unisono_core::sender::Sender`, the capture
+//!   device clock regressor, the UDP socket, the retransmission ring, and the
+//!   adaptive latency controller ([`crate::level`]). It packetizes audio,
+//!   transmits to all configured receivers, records TX departure timestamps,
+//!   answers receiver reports with echoes, and serves retransmission requests.
 //!
-//! The frames cross in buffers that are made once and go round, as in
-//! [`crate::receive`]. When the network thread does not hand buffers back,
-//! the capture thread has none to fill, drops the cycle and counts it.
+//! Audio buffers are preallocated once and recycled through SPSC rings as in
+//! [`crate::receive`]. If the network thread falls behind and no spare buffer
+//! is available, the capture thread drops the cycle and increments its drop
+//! counter.
 //!
-//! # The index and the device's count
+//! # Stream Index vs. Device Frame Counter
 //!
-//! A timeline's index counts the frames of the capture device from where the
-//! timeline began, so the index of a frame is its count minus the count at
-//! that start. When the capture thread drops cycles, the frames of those
-//! cycles are sent as silence, so that the index stays the device's count and
-//! the receivers go on. When the count goes back, or jumps further than
-//! [`LONGEST_GAP`] frames ahead, the device started anew, and so does the
-//! timeline.
+//! Timeline frame indices count frames relative to the device counter at
+//! timeline start. Dropped capture cycles are zero-filled so the timeline
+//! index stays aligned with the device counter. If the device counter moves
+//! backwards or jumps ahead by more than [`LONGEST_GAP`] frames, a new
+//! timeline is started.
 
 use std::io;
 use std::net::SocketAddr;

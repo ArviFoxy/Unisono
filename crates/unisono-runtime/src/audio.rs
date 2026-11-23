@@ -2,21 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! What an audio system and unisono ask of each other.
+//! Real-time audio backend callback traits ([`Capture`] and [`Playback`]).
 //!
-//! An audio device works in cycles: it takes or gives a block of frames at a
-//! time, and it counts the frames that pass. A backend for an audio system
-//! calls one of the two traits here once for each cycle, on the thread that
-//! the audio system runs the cycle on. Besides the frames it says which frame
-//! of the device the block begins with, and when that frame passes the
-//! device on the host's clock. Nothing else crosses the boundary, so a
-//! backend is small, and the code behind the traits knows no audio system.
+//! Each audio backend invokes [`Capture::cycle`] or [`Playback::cycle`] once
+//! per device period on its real-time audio thread, passing interleaved `f32`
+//! frames, the device's running frame counter for the first frame in the
+//! block, and the corresponding raw monotonic host timestamp (`CLOCK_MONOTONIC_RAW`,
+//! in nanoseconds).
 //!
-//! Frames are interleaved: the samples of one frame side by side, one for
-//! each channel. The host's clock is the raw monotonic clock, in nanoseconds.
-//!
-//! An implementation is called where audio must not wait: it takes no lock,
-//! allocates nothing and does not block.
+//! Implementations execute in a hard real-time context and must not block,
+//! allocate, or acquire locks.
 
 /// What a playback device plays: it is asked for the frames of each cycle.
 pub trait Playback {

@@ -2,36 +2,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The two threads of a receiver, and what passes between them.
+//! Receiver network/audio thread bridge and lock-free ring transport.
 //!
-//! A receiver runs on two threads. The **network thread** owns the socket:
-//! it waits for datagrams, has them stamped on arrival, sends the receiver's
-//! reports and learns when they left. The **audio thread** owns everything
-//! else: the receiver of the core, the frames it holds and the pump, in a
-//! [`ReceiverPlayback`]. The core is not divided between the threads, so what
-//! is proved about it holds as it is; the threads only pass it its inputs.
+//! A receiver splits work across two threads:
+//! - The **network thread** owns the UDP socket, parses incoming datagrams
+//!   with kernel arrival timestamps, sends reports and retransmission
+//!   requests, and collects TX departure timestamps.
+//! - The **audio thread** owns `unisono_core::receiver::Receiver`, the sample
+//!   store, and the resampler pump inside [`ReceiverPlayback`]. Keeping the
+//!   core state machine single-threaded preserves all Lean proof invariants.
 //!
-//! What crosses goes through rings ([`crate::ring`]), which neither end
-//! waits at:
+//! Preallocated SPSC rings ([`crate::ring`]) pass messages without locks or
+//! heap allocations after startup:
+//! - network -> audio: [`Incoming`] audio packets, report echoes, and TX
+//!   departure timestamps;
+//! - audio -> network: [`Outgoing`] reports and need summaries;
+//! - audio -> network: recycled packet buffers.
 //!
-//! - to the audio thread, [`Incoming`] items: audio packets with the time of
-//!   their arrival, the sender's answers to reports, and when reports left;
-//! - to the network thread, the reports to send;
-//! - back to the network thread, the buffers that audio packets came in.
-//!
-//! The buffers are made once, when the two ends are made, and go round: the
-//! network thread receives a datagram into one and hands it over, and the
-//! audio thread takes the samples out and hands it back. Neither thread
-//! allocates or frees memory afterwards. When the audio thread does not hand
-//! buffers back, as when its device stopped, the network thread has none to
-//! receive into, and drops what arrives and counts it.
-//!
-//! The audio thread takes in at most a set number of items at the start of
-//! each cycle, so the work of a cycle has a bound: that number times the
-//! work of a packet, which `crates/cycle-cost` counts. A frame is played at
-//! the earliest in the cycle after it arrived either way, because a cycle's
-//! frames are planned at its start; taking packets in at the start of a
-//! cycle loses nothing.
+//! Each audio callback drains at most a bounded number of incoming items so
+//! per-cycle execution time remains strictly bounded (verified by
+//! `crates/cycle-cost`).
 
 use std::io;
 use std::net::SocketAddr;
@@ -43,11 +33,11 @@ use unisono_core::packet::{
     write_needs, write_report, write_request,
 };
 
-use crate::asking::Asking;
 use crate::audio::Playback;
 use crate::clock;
 use crate::network_thread::NetworkLoop;
 use crate::pump::ReceiverPlayback;
+use crate::retransmission::RetransmissionTracker;
 use crate::ring::{Consumer, Producer, ring};
 use crate::socket::{Socket, canonical_addr, is_restricted_send_error, is_transient_send_error};
 
@@ -79,15 +69,16 @@ impl Confirmed {
 }
 
 /// Candidate sender metadata cached while waiting for the audio thread to
-/// confirm a newly observed timeline, including its own [`Asking`] tracker so
-/// contiguous packets arriving before adoption do not trigger spurious
-/// retransmission requests while genuinely missing frames are still tracked.
+/// confirm a newly observed timeline, including its own
+/// [`RetransmissionTracker`] so contiguous packets arriving before adoption do
+/// not trigger spurious retransmission requests while missing frames are still
+/// tracked.
 #[derive(Clone, Copy)]
 struct PendingSender {
     timeline: u64,
     from: SocketAddr,
     length: usize,
-    asking: Asking,
+    retransmission: RetransmissionTracker,
 }
 
 /// What the network thread hands to the audio thread.
@@ -264,14 +255,14 @@ pub struct ReceiverNetwork {
     length: usize,
     /// Sender metadata of the most recent unconfirmed timeline candidate.
     pending: Option<PendingSender>,
-    /// The frames that are missing and asked for.
-    asking: Asking,
+    /// Missing-frame retransmission tracker for the active timeline.
+    retransmission: RetransmissionTracker,
     counts: NetworkCounts,
 }
 
 impl ReceiverNetwork {
-    /// The network thread of a receiver of `stream` that receives on
-    /// `socket`, at the network end of a link of `sizes`.
+    /// Creates a receiver network worker for `stream` bound to `socket` and
+    /// paired with `end`.
     #[must_use]
     pub fn new(socket: Socket, end: NetworkEnd, stream: u16, sizes: Sizes) -> ReceiverNetwork {
         ReceiverNetwork {
@@ -285,18 +276,18 @@ impl ReceiverNetwork {
             sender_timeline: None,
             length: 0,
             pending: None,
-            asking: Asking::new(),
+            retransmission: RetransmissionTracker::new(),
             counts: NetworkCounts::default(),
         }
     }
 
-    /// What it has done so far.
+    /// Returns cumulative network counters.
     #[must_use]
     pub fn counts(&self) -> NetworkCounts {
         self.counts
     }
 
-    /// The socket.
+    /// Returns a reference to the underlying UDP socket.
     #[must_use]
     pub fn socket(&self) -> &Socket {
         &self.socket
@@ -318,7 +309,7 @@ impl ReceiverNetwork {
             self.sender = Some(pending.from);
             self.sender_timeline = Some(timeline);
             self.length = pending.length;
-            self.asking = pending.asking;
+            self.retransmission = pending.retransmission;
             self.pending = None;
         }
     }
@@ -331,7 +322,7 @@ impl ReceiverNetwork {
             return 0;
         }
         if self.sender.is_some()
-            && let Some(due_ns) = self.asking.next_due(clock::raw())
+            && let Some(due_ns) = self.retransmission.next_due(clock::raw())
         {
             let due_ms = i32::try_from(due_ns.saturating_add(999_999).max(0) / 1_000_000)
                 .unwrap_or(i32::MAX);
@@ -344,14 +335,13 @@ impl ReceiverNetwork {
         milliseconds
     }
 
-    /// Waits up to `milliseconds` for something to do (or less when reports or
-    /// retransmission requests are due), and does all there is: takes in the
-    /// datagrams that arrived, hands over the departures of reports, and sends
-    /// the reports that the audio thread made.
+    /// Runs one network loop iteration: polls the socket up to `milliseconds`,
+    /// drains incoming datagrams and TX departure timestamps, transmits queued
+    /// reports, and sends any due retransmission requests.
     ///
     /// # Errors
     ///
-    /// A fatal error of the socket.
+    /// Returns a fatal socket I/O error.
     pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
         self.sync_confirmed();
         let wait_ms = self.wait_timeout(milliseconds);
@@ -374,22 +364,21 @@ impl ReceiverNetwork {
         while let Some(outgoing) = self.end.reports.take() {
             self.send(&outgoing)?;
         }
-        self.ask()
+        self.send_retransmit_requests()
     }
 
-    /// Asks the sender for the frames that are missing and due to be asked
-    /// for.
-    fn ask(&mut self) -> io::Result<()> {
+    /// Sends all due retransmission requests to the active sender.
+    fn send_retransmit_requests(&mut self) -> io::Result<()> {
         let Some(to) = self.sender else {
             return Ok(());
         };
         let now = clock::raw();
-        while let Some(wanted) = self.asking.due(now) {
+        while let Some(req) = self.retransmission.due(now) {
             let request = Request {
                 stream: self.stream,
-                timeline: wanted.timeline,
-                first: wanted.first,
-                frames: wanted.frames,
+                timeline: req.timeline,
+                first: req.first,
+                frames: req.frames,
             };
             let Some(length) = write_request(&request, &mut self.outgoing) else {
                 break;
@@ -397,7 +386,7 @@ impl ReceiverNetwork {
             let bytes = self.outgoing.get(..length).unwrap_or(&[]);
             match self.socket.send_untagged(bytes, to) {
                 Ok(_) => self.counts.requests += 1,
-                // It is asked again in ten milliseconds.
+                // Transient send failure; the tracker retries in 10 ms.
                 Err(error) if is_transient_send_error(&error) => {
                     self.record_unsent(&error);
                     break;
@@ -408,17 +397,16 @@ impl ReceiverNetwork {
         Ok(())
     }
 
-    /// Updates `sender`, `length`, and `asking` for an accepted audio packet,
-    /// gating state changes on audio-thread confirmation when an audio end is
-    /// attached so single stray packets cannot hijack reports or wipe missing
-    /// runs.
+    /// Updates `sender`, `length`, and `retransmission` for an accepted audio
+    /// packet, gating state changes on audio-thread confirmation when an audio
+    /// end is attached so stray packets cannot hijack reports or clear gaps.
     fn record_audio(&mut self, header: &Audio, from: SocketAddr, length: usize, arrival: i64) {
         self.sync_confirmed();
         if !self.end.confirmed.attached.load(Ordering::Acquire) {
             self.sender = Some(from);
             self.sender_timeline = Some(header.timeline);
             self.length = length;
-            self.asking.arrived(header, arrival);
+            self.retransmission.arrived(header, arrival);
             return;
         }
         let active = self.end.confirmed.active.load(Ordering::Acquire);
@@ -428,32 +416,32 @@ impl ReceiverNetwork {
                 self.sender = Some(from);
                 self.sender_timeline = Some(confirmed);
                 self.length = length;
-                self.asking.arrived(header, arrival);
+                self.retransmission.arrived(header, arrival);
             } else if self
                 .sender
                 .is_some_and(|known| canonical_addr(known) == canonical_addr(from))
             {
                 self.length = length;
-                self.asking.arrived(header, arrival);
+                self.retransmission.arrived(header, arrival);
             }
         } else {
-            // Unconfirmed timeline: track arriving packets in `pending.asking`
+            // Unconfirmed timeline: track arriving packets in `pending`
             // without disturbing the active sender or retransmission tracker.
             match &mut self.pending {
                 Some(pending) if pending.timeline == header.timeline => {
                     if canonical_addr(pending.from) == canonical_addr(from) {
                         pending.length = length;
-                        pending.asking.arrived(header, arrival);
+                        pending.retransmission.arrived(header, arrival);
                     }
                 }
                 _ => {
-                    let mut asking = Asking::new();
-                    asking.arrived(header, arrival);
+                    let mut retransmission = RetransmissionTracker::new();
+                    retransmission.arrived(header, arrival);
                     self.pending = Some(PendingSender {
                         timeline: header.timeline,
                         from,
                         length,
-                        asking,
+                        retransmission,
                     });
                 }
             }

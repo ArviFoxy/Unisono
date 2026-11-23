@@ -2,10 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Reference estimators, in floating point.
-//!
-//! These are what the estimators of the core are measured against. They are
-//! not used outside tests.
+//! Floating-point reference estimators used to validate fixed-point
+//! implementations in `unisono_core` (test-only).
 
 /// The Kalman filter for an offset whose rate is a random walk.
 ///

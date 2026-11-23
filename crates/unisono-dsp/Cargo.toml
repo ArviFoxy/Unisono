@@ -1,6 +1,6 @@
 [package]
 name = "unisono-dsp"
-description = "Signal processing for unisono: the resampler that corrects clock drift, sample formats, fades and the concealment of gaps."
+description = "Real-time audio DSP for unisono: Kaiser-sinc resampling, PCM sample conversion, and Burg AR concealment."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

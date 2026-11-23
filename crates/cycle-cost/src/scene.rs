@@ -2,12 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A sender, a link and a receiver with its device, brought to the state
-//! that a case measures.
-//!
-//! Times are whole nanoseconds. The receiver's clock is an hour ahead of the
-//! sender's, a packet leaves half a millisecond after its last frame was
-//! captured and takes a millisecond, and the receivers hold 20 ms.
+//! Deterministic benchmark fixture constructing a sender, simulated link, and
+//! receiver with a 1-hour clock offset, 0.5 ms handoff, 1 ms transit delay,
+//! and 20 ms playout level.
 
 use unisono_core::device::Device;
 use unisono_core::packet::{Audio, Format};
