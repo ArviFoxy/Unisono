@@ -22,8 +22,9 @@
 use unisono_core::device::Device;
 use unisono_core::needs::Needs;
 use unisono_core::packet::{Audio, Echo, RECENT, Recent, Report};
-use unisono_core::player::{Plan, Regulation};
+use unisono_core::player::{ModalRegulation, Plan, Regulation};
 use unisono_core::receiver::{self, Heard, Receiver};
+use unisono_core::sync::SyncSnapshot;
 use unisono_core::timing;
 use unisono_dsp::{Concealment, Filter, Parameters, Position, Resampler, Step, Window};
 
@@ -588,8 +589,13 @@ pub struct Settings {
     /// The largest slope of the receiver's estimate of the sender's clock,
     /// in nanoseconds per second.
     pub slope_limit: i64,
-    /// The settings of the receiver's regulator.
+    /// The settings of the receiver's single-mode regulator (used in legacy
+    /// lower-hull mode and as the fallback when `modal_regulation` is `None`).
     pub regulation: Regulation,
+    /// Optional two-mode (`ModalPlayer`) regulation used when [`SyncSnapshot`]
+    /// clock estimation is enabled (`--sync peer`, default). `None` selects the
+    /// legacy one-way lower-hull clock estimator (`--sync hull`).
+    pub modal_regulation: Option<ModalRegulation>,
     /// The sizes of the concealment.
     pub concealment: Parameters,
     /// The most output frames that are computed in one go.
@@ -628,6 +634,13 @@ impl Settings {
                 "regulator jump threshold must be at least 1 frame",
             ));
         }
+        if let Some(modal) = self.modal_regulation
+            && modal.jump == 0
+        {
+            return Err(InvalidSettings::new(
+                "modal regulator jump threshold must be at least 1 frame",
+            ));
+        }
         if self.block == 0 {
             return Err(InvalidSettings::new("pump block size must be at least 1"));
         }
@@ -654,8 +667,8 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     device: Device<W>,
     /// How far its rate may be from the nominal one, in parts per billion.
     device_range: u32,
-    /// Whether the delay of the path was told, so that it is not measured.
-    told: bool,
+    /// Explicit fixed path delay override (`--path`), if configured.
+    told_path: Option<i64>,
     /// Whether at least one playback cycle has played frames on the current
     /// timeline (so `playhead` tracks the schedule rather than the initial
     /// adoption index).
@@ -671,6 +684,7 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     carried: i64,
     rate: u32,
     channels: u8,
+    last_plan: Plan,
     last: Played,
     totals: Totals,
 }
@@ -680,14 +694,18 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     #[must_use]
     pub fn new(settings: &Settings) -> Self {
         let channels = usize::from(settings.channels);
+        let mut receiver = Receiver::new(receiver::Settings {
+            stream: settings.stream,
+            identity: settings.identity,
+            silence: settings.silence,
+            limit: settings.slope_limit,
+            regulation: settings.regulation,
+        });
+        if let Some(modal) = settings.modal_regulation {
+            receiver.enable_sync(modal);
+        }
         ReceiverPlayback {
-            receiver: Receiver::new(receiver::Settings {
-                stream: settings.stream,
-                identity: settings.identity,
-                silence: settings.silence,
-                limit: settings.slope_limit,
-                regulation: settings.regulation,
-            }),
+            receiver,
             store: Store::for_stretch(N, channels),
             pump: Pump::new(
                 Filter::for_rate(settings.rate),
@@ -698,7 +716,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             needs: Needs::new(),
             device: Device::new(settings.rate),
             device_range: settings.device_range,
-            told: false,
+            told_path: None,
             timeline_played: false,
             revisions: Revisions::default(),
             expected: None,
@@ -706,6 +724,15 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             carried: 0,
             rate: settings.rate,
             channels: settings.channels,
+            last_plan: Plan {
+                frames: 0,
+                start: timing::Position {
+                    frame: 0,
+                    fraction: 0,
+                },
+                step: timing::Step::UNITY,
+                jumped: false,
+            },
             last: Played::default(),
             totals: Totals::default(),
         }
@@ -729,12 +756,27 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         &self.receiver
     }
 
+    /// Enables [`unisono_core::sync::Sync`]-driven playback regulation with
+    /// `regulation`.
+    pub fn enable_sync(&mut self, regulation: ModalRegulation) {
+        self.receiver.enable_sync(regulation);
+    }
+
+    /// Applies an O(1) clock synchronization snapshot published from the
+    /// network thread, preserving any explicit fixed path delay override.
+    pub fn apply_sync(&mut self, snapshot: SyncSnapshot) {
+        self.receiver.apply_sync(snapshot);
+        if let Some(path) = self.told_path {
+            self.receiver.path(path);
+        }
+    }
+
     /// Tells the receiver the smallest delay of a packet from the sender, in
     /// nanoseconds. A receiver that is told it keeps it: the sender's
     /// answers to its reports are no longer taken in.
     pub fn path(&mut self, path: i64) {
         self.receiver.path(path);
-        self.told = true;
+        self.told_path = Some(path);
     }
 
     /// Makes the next report to send back to the sender, or `None` when no
@@ -759,7 +801,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     /// Takes in the sender's answer to a report, from which the delay of
     /// the path is measured, unless that delay was told.
     pub fn echo(&mut self, echo: &Echo) {
-        if !self.told {
+        if self.told_path.is_none() {
             self.receiver.echo(echo);
         }
     }
@@ -786,12 +828,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         {
             return None;
         }
-        let heard = self.receiver.packet(header, arrival);
-        if heard.adopted || heard.restarted {
-            self.needs.clear();
-            self.timeline_played = false;
-        }
-        self.observe_need(header, &heard);
+        let heard = self.accept_header(header, arrival);
         if !heard.ignored {
             let receiver = &self.receiver;
             self.store
@@ -800,6 +837,28 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
                 });
         }
         Some(heard)
+    }
+
+    /// Processes an audio packet header without decoding or storing PCM
+    /// samples. Shares the exact core state transition, timeline adoption,
+    /// presence marking, and need tracking with [`ReceiverPlayback::packet`].
+    pub fn packet_header_only(&mut self, header: &Audio, arrival: i64) -> Option<Heard> {
+        if header.rate != self.rate || header.channels != self.channels {
+            return None;
+        }
+        Some(self.accept_header(header, arrival))
+    }
+
+    /// Common header ingestion shared by [`Self::packet`] and
+    /// [`Self::packet_header_only`].
+    fn accept_header(&mut self, header: &Audio, arrival: i64) -> Heard {
+        let heard = self.receiver.packet(header, arrival);
+        if heard.adopted || heard.restarted {
+            self.needs.clear();
+            self.timeline_played = false;
+        }
+        self.observe_need(header, &heard);
+        heard
     }
 
     /// Takes in the need of the first frame of a packet that the receiver
@@ -905,6 +964,74 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         let start = if usable { fitted_start } else { time };
         (start, duration)
     }
+    /// Most recent playback [`Plan`] produced by a cycle.
+    #[must_use]
+    pub fn last_plan(&self) -> Plan {
+        self.last_plan
+    }
+
+    /// Runs one playback cycle's device-clock fitting, core schedule planning,
+    /// and monotonic playhead advancement without running the FIR resampler or
+    /// concealment DSP. Returns the exact [`Plan`] produced by `Receiver::cycle`.
+    pub fn cycle_plan_only(&mut self, position: u64, time: i64, count: u32) -> Plan {
+        let plan = self.plan_cycle(position, time, count);
+        let done = self.advance_playhead_for_plan(&plan, count);
+        self.last = done;
+        if self.last.played > 0 {
+            self.timeline_played = true;
+        }
+        self.totals.add(&self.last);
+        plan
+    }
+
+    /// Common cycle planning shared by [`Playback::cycle`] and
+    /// [`Self::cycle_plan_only`].
+    fn plan_cycle(&mut self, position: u64, time: i64, count: u32) -> Plan {
+        let (start, duration) = self.step_device(position, time, count);
+        let due = self.receiver.due_at(start);
+        let plan = self.receiver.cycle(start, duration, count);
+        self.revise(due, plan.jumped);
+        self.expected = self.receiver.due_at(start.saturating_add(duration));
+        self.last_plan = plan;
+        plan
+    }
+
+    /// Advances the core receiver playhead for `plan` identically to
+    /// [`Pump::play`] without rendering audio samples.
+    fn advance_playhead_for_plan(&mut self, plan: &Plan, cycle: u32) -> Played {
+        let mut done = Played::default();
+        let wanted = plan.frames.min(cycle);
+        if wanted > 0 {
+            done.jumped = plan.jumped;
+            let before = self.pump.filter().before() as u64;
+            let ahead = self.pump.filter().ahead() as u64;
+            if let Some(last) = plan.start.advance(plan.step, u64::from(wanted) - 1) {
+                let first_needed = plan.start.frame().saturating_sub(before);
+                let end_exclusive = last.frame().saturating_add(ahead).saturating_add(1);
+                if first_needed > self.receiver.playhead() {
+                    done.skipped = done
+                        .skipped
+                        .saturating_add(self.receiver.skip(first_needed));
+                }
+                while self.receiver.playhead() < end_exclusive {
+                    let rem =
+                        u32::try_from(end_exclusive - self.receiver.playhead()).unwrap_or(u32::MAX);
+                    let seg = self.receiver.take(rem);
+                    if seg.frames == 0 {
+                        break;
+                    }
+                    if seg.held {
+                        done.held = done.held.saturating_add(seg.frames);
+                    } else {
+                        done.concealed = done.concealed.saturating_add(seg.frames);
+                    }
+                }
+                done.played = wanted;
+            }
+        }
+        done.silent = cycle.saturating_sub(done.played);
+        done
+    }
 }
 
 impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
@@ -916,11 +1043,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
 
     fn cycle(&mut self, frames: &mut [f32], position: u64, time: i64) {
         let count = narrow(frames.len() / usize::from(self.channels).max(1));
-        let (start, duration) = self.step_device(position, time, count);
-        let due = self.receiver.due_at(start);
-        let plan = self.receiver.cycle(start, duration, count);
-        self.revise(due, plan.jumped);
-        self.expected = self.receiver.due_at(start.saturating_add(duration));
+        let plan = self.plan_cycle(position, time, count);
         self.last = self
             .pump
             .play(&mut self.receiver, &self.store, &plan, frames);
@@ -952,6 +1075,7 @@ mod tests {
                 limit: 1_000_000,
                 jump: 240,
             },
+            modal_regulation: None,
             concealment: Parameters::for_rate(rate),
             block: 256,
             device_range: 10_000_000,
@@ -1077,6 +1201,7 @@ mod tests {
                 limit: 1_000_000,
                 jump: 240,
             },
+            modal_regulation: None,
             concealment: Parameters::for_rate(48_000),
             block: 256,
             device_range: 10_000_000,

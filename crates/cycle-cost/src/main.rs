@@ -72,6 +72,18 @@ const CASES: &[Case] = &[
         prepare: || Scene::running(|_| false),
         call: Scene::device,
     },
+    Case {
+        name: "a cycle with modal peer sync",
+        budget: 590_000,
+        prepare: Scene::running_modal,
+        call: Scene::cycle,
+    },
+    Case {
+        name: "applying a sync snapshot",
+        budget: 200,
+        prepare: Scene::running_modal,
+        call: Scene::apply_sync,
+    },
 ];
 
 /// The median time of the call of a case over `runs` runs, in nanoseconds.

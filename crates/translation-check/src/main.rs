@@ -1460,6 +1460,7 @@ fn fixed_v2_cases(out: &mut impl Write) -> io::Result<()> {
 }
 
 /// Wire round-trips and rejection cases for `PeerProbe`, `PeerEcho`, and `PeerRelay`.
+#[allow(clippy::too_many_lines)]
 fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
     let mut seq = Sequence(15);
     for _ in 0..80 {
@@ -1850,6 +1851,7 @@ fn modal_player_cases(out: &mut impl Write) -> io::Result<()> {
 }
 
 /// End-to-end Star & Peer sequences on `sync::Sync`.
+#[allow(clippy::too_many_lines)]
 fn sync_cases(out: &mut impl Write) -> io::Result<()> {
     let mut seq = Sequence(20);
     for case in 0..30 {

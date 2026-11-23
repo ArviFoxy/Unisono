@@ -180,6 +180,68 @@ pub struct Sent {
     pub before: i64,
 }
 
+/// Outcome of one outbound datagram transmission attempt from a network engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SendStatus {
+    /// Datagram was handed to the transport.
+    Sent,
+    /// Transient transport failure; the datagram was dropped.
+    Transient {
+        /// Whether caused by per-destination policy (`EPERM`) or address
+        /// availability (`EADDRNOTAVAIL`).
+        restricted: bool,
+    },
+}
+
+/// Outbound datagram transport sink used by pure network engines.
+///
+/// Production network shells implement this over [`Socket`] via [`SocketSink`];
+/// deterministic simulators implement it by routing serialized wire bytes into
+/// simulated links. Neither path allocates.
+pub trait DatagramSink {
+    /// Fatal transport error type (`io::Error` for sockets, `Infallible` for
+    /// in-memory simulations).
+    type Error;
+
+    /// Transmits `bytes` to `to`, optionally attaching a TX departure `tag`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a fatal transport error that should stop the caller.
+    fn send(
+        &mut self,
+        to: SocketAddr,
+        bytes: &[u8],
+        tag: Option<u64>,
+    ) -> Result<SendStatus, Self::Error>;
+}
+
+/// [`DatagramSink`] adapter wrapping a mutable [`Socket`].
+pub struct SocketSink<'a>(pub &'a mut Socket);
+
+impl DatagramSink for SocketSink<'_> {
+    type Error = io::Error;
+
+    fn send(
+        &mut self,
+        to: SocketAddr,
+        bytes: &[u8],
+        tag: Option<u64>,
+    ) -> Result<SendStatus, io::Error> {
+        let result = match tag {
+            Some(tag) => self.0.send_to(bytes, to, tag),
+            None => self.0.send_untagged(bytes, to),
+        };
+        match result {
+            Ok(_) => Ok(SendStatus::Sent),
+            Err(error) if is_transient_send_error(&error) => Ok(SendStatus::Transient {
+                restricted: is_restricted_send_error(&error),
+            }),
+            Err(error) => Err(error),
+        }
+    }
+}
+
 /// The departure of a datagram that was sent earlier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Departure {

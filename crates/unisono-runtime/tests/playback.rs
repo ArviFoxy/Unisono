@@ -669,7 +669,10 @@ fn report_and_echo_exchange_measures_path_delay_on_receiver_playback() {
                     let departure = line.receiver_clock(sender_now);
                     listener.reported(report.sequence, departure);
                     let arrival_at_sender = sender_now + line.delay;
-                    if let Some(echo) = line.sender.answer(&report, arrival_at_sender) {
+                    if let Some(echo) =
+                        line.sender
+                            .answer(&report, arrival_at_sender, arrival_at_sender)
+                    {
                         listener.echo(&echo);
                     }
                 }

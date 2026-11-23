@@ -408,7 +408,8 @@ impl Scene {
 
     /// Lets the sender answer a report that arrives at true time `at`.
     fn answer(&mut self, receiver: usize, report: &Report, at: TrueTime) {
-        let Some(echo) = self.sender.answer(report, self.clock.read(at)) else {
+        let reading = self.clock.read(at);
+        let Some(echo) = self.sender.answer(report, reading, reading) else {
             return;
         };
         let host = self

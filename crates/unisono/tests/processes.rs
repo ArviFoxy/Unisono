@@ -16,9 +16,10 @@
 //! more than the 200 Hz audio stream; end-to-end RTT path-delay estimation is
 //! covered separately in `crates/unisono-runtime/tests/threads.rs`.
 
-use std::io::{BufRead, BufReader, Read};
-use std::net::SocketAddr;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use unisono_runtime::proxy::{Impairment, Proxy};
 use unisono_runtime::virtual_device::Device;
@@ -73,7 +74,7 @@ fn receiver(
 ) -> (Child, SocketAddr) {
     let listen = listen.map_or_else(|| "127.0.0.1:0".to_owned(), |address| address.to_string());
     let mut child = program()
-        .args(["receive", "--listen", &listen])
+        .args(["receive", "--listen", &listen, "--sync", "hull"])
         .args(["--path", &path.to_string()])
         .args([
             "--drift",
@@ -493,14 +494,70 @@ fn invalid_and_duplicate_cli_options_are_rejected() {
         ],
         &["receive", "--listen", "127.0.0.1:0", "--seconds", "-1"],
         &["receive", "--listen", "127.0.0.1:0", "--report-period", "0"],
+        &["receive", "--listen", "127.0.0.1:0", "--path", "1000"],
         &[
             "receive",
             "--listen",
             "127.0.0.1:0",
+            "--sync",
+            "hull",
             "--path",
             "1000",
             "--path",
             "2000",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--sync",
+            "hull",
+            "--peer",
+            "2@127.0.0.1:5002",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--sync",
+            "hull",
+            "--link-weight",
+            "sender=2.0",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--identity",
+            "2",
+            "--peer",
+            "2@127.0.0.1:5002",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--peer",
+            "2@127.0.0.1:5002",
+            "--peer",
+            "3@127.0.0.1:5002",
+        ],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--link-weight",
+            "99=2.0",
+        ],
+        &["receive", "--listen", "127.0.0.1:0", "--common-gain", "0"],
+        &["receive", "--listen", "127.0.0.1:0", "--sync", "invalid"],
+        &["receive", "--listen", "127.0.0.1:0", "--mode", "invalid"],
+        &[
+            "receive",
+            "--listen",
+            "127.0.0.1:0",
+            "--clock-prior",
+            "atomic",
         ],
         &[
             "receive",
@@ -548,4 +605,217 @@ fn sigterm_stops_receiver_cleanly_with_summary() {
         out.contains("received packets "),
         "expected summary on SIGTERM, got: {out}"
     );
+}
+
+#[test]
+fn two_receivers_in_peer_sync_play_together_and_expose_metrics() {
+    patiently(two_peer_receivers_cli);
+}
+
+fn free_udp_addr() -> SocketAddr {
+    let sock = UdpSocket::bind("127.0.0.1:0").expect("bind ephemeral udp");
+    sock.local_addr().expect("udp local addr")
+}
+
+fn free_tcp_addr() -> SocketAddr {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind ephemeral tcp");
+    listener.local_addr().expect("tcp local addr")
+}
+
+fn scrape_metrics(addr: SocketAddr) -> Option<String> {
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(500)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    stream
+        .write_all(b"GET /metrics HTTP/1.1\r\nHost: localhost\r\n\r\n")
+        .ok()?;
+    let mut body = String::new();
+    stream.read_to_string(&mut body).ok()?;
+    Some(body)
+}
+
+struct PeerReceiverSpec<'a> {
+    listen: SocketAddr,
+    identity: u64,
+    peer_arg: &'a str,
+    clock: Clock,
+    drift: i64,
+    seconds: u32,
+    record: &'a str,
+    metrics: Option<SocketAddr>,
+}
+
+fn spawn_peer_receiver(spec: &PeerReceiverSpec<'_>) -> Child {
+    let mut cmd = program();
+    cmd.args([
+        "receive",
+        "--listen",
+        &spec.listen.to_string(),
+        "--identity",
+        &spec.identity.to_string(),
+        "--peer",
+        spec.peer_arg,
+        "--drift",
+        &spec.drift.to_string(),
+        "--seconds",
+        &spec.seconds.to_string(),
+        "--record",
+        spec.record,
+    ])
+    .args(spec.clock.arguments());
+    if let Some(addr) = spec.metrics {
+        cmd.args(["--metrics", &addr.to_string()]);
+    }
+    let mut child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn peer receiver");
+    let mut line = String::new();
+    let stdout = child.stdout.take().expect("stdout");
+    let mut lines = BufReader::new(stdout);
+    lines.read_line(&mut line).expect("listening line");
+    assert!(
+        line.starts_with("listening "),
+        "unexpected receiver first line: {line}"
+    );
+    child.stdout = Some(lines.into_inner());
+    child
+}
+
+#[allow(clippy::too_many_lines)]
+fn two_peer_receivers_cli() {
+    let directory = std::env::temp_dir().join(format!("unisono-peer-cli-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("dir");
+    let records = [
+        directory.join("peer1.raw").to_string_lossy().into_owned(),
+        directory.join("peer2.raw").to_string_lossy().into_owned(),
+    ];
+
+    let addr1 = free_udp_addr();
+    let addr2 = free_udp_addr();
+    let metrics_addr = free_tcp_addr();
+
+    let clocks = [
+        Clock {
+            offset: 3_600_000_000_000,
+            skew: 30_000,
+        },
+        Clock {
+            offset: -1_000_000_000,
+            skew: -20_000,
+        },
+    ];
+    let drifts = [60_000, -50_000];
+
+    let peer_for_1 = format!("2@{addr2}");
+    let peer_for_2 = format!("1@{addr1}");
+    let rx1 = spawn_peer_receiver(&PeerReceiverSpec {
+        listen: addr1,
+        identity: 1,
+        peer_arg: &peer_for_1,
+        clock: clocks[0],
+        drift: drifts[0],
+        seconds: 8,
+        record: &records[0],
+        metrics: Some(metrics_addr),
+    });
+    let rx2 = spawn_peer_receiver(&PeerReceiverSpec {
+        listen: addr2,
+        identity: 2,
+        peer_arg: &peer_for_2,
+        clock: clocks[1],
+        drift: drifts[1],
+        seconds: 8,
+        record: &records[1],
+        metrics: None,
+    });
+
+    let two_ms = Impairment {
+        delay: 2_000_000,
+        ..Impairment::NONE
+    };
+    let proxy1 = Proxy::start(addr1, two_ms, two_ms, 41).expect("proxy1");
+    let proxy2 = Proxy::start(addr2, two_ms, two_ms, 42).expect("proxy2");
+    let own = Clock {
+        offset: 50_000_000,
+        skew: 0,
+    };
+    let (tx, tx_start) = sender(&[proxy1.near(), proxy2.near()], own, 40_000, 7);
+
+    // Wait for peer sync to engage, then scrape Prometheus metrics live.
+    std::thread::sleep(Duration::from_millis(2_500));
+    let mut scraped = String::new();
+    for _ in 0..20 {
+        if let Some(body) = scrape_metrics(metrics_addr)
+            && body.contains("unisono_receiver_sync_peer_active 1\n")
+        {
+            scraped = body;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    assert!(
+        scraped.contains("unisono_receiver_sync_valid 1\n"),
+        "missing sync_valid in metrics: {scraped}"
+    );
+    assert!(
+        scraped.contains("unisono_receiver_sync_peer_active 1\n"),
+        "missing sync_peer_active in metrics: {scraped}"
+    );
+    assert!(
+        scraped.contains("unisono_receiver_sync_active_peers 1\n"),
+        "missing sync_active_peers in metrics: {scraped}"
+    );
+    assert!(
+        scraped.contains("unisono_receiver_peer_probes_sent_total "),
+        "missing peer_probes_sent_total in metrics: {scraped}"
+    );
+    assert!(
+        scraped.contains("unisono_receiver_peer_relays_sent_total "),
+        "missing peer_relays_sent_total in metrics: {scraped}"
+    );
+
+    let tx_out = finish(tx);
+    let outs = [finish(rx1), finish(rx2)];
+    assert!(tx_out.contains("restarts 0"), "{tx_out}");
+    for (idx, out) in outs.iter().enumerate() {
+        assert!(
+            out.contains("active_peers 1"),
+            "receiver {idx} missing active_peers 1: {out}"
+        );
+    }
+
+    let capture = Capture::new(own, tx_start, 40_000);
+    #[allow(clippy::cast_precision_loss)]
+    let began = own.host(tx_start as f64);
+    let mut medians = [0.0f64; 2];
+    for place in 0..2 {
+        let played = read_record(&records[place]);
+        let errs = errors(
+            &played,
+            clocks[place],
+            &capture,
+            began + 4.5e9,
+            began + 6.5e9,
+        );
+        assert!(
+            errs.len() > 80_000,
+            "receiver {place}: {} frames, {}",
+            errs.len(),
+            outs[place]
+        );
+        medians[place] = errs[errs.len() / 2];
+        let (low, high) = spread(&errs, 0.02);
+        assert!(
+            low > -150e-6 && high < 150e-6,
+            "receiver {place}: from {low} to {high}; {}",
+            outs[place]
+        );
+    }
+    let diff = (medians[0] - medians[1]).abs();
+    assert!(
+        diff < 60e-6,
+        "peer receivers misaligned by {diff} s (medians={medians:?})"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
 }

@@ -91,6 +91,35 @@ void unisono_sender_capture(unisono_sender *sender, const float *frames,
 /* Stops a sender and frees it. */
 void unisono_sender_stop(unisono_sender *sender);
 
+/* Receiver clock synchronization mode. */
+enum {
+    UNISONO_SYNC_PEER = 0,
+    UNISONO_SYNC_HULL = 1
+};
+
+/* Modal playback gain preset in peer sync mode. */
+enum {
+    UNISONO_MODE_LIPSYNC = 0,
+    UNISONO_MODE_LOW_LATENCY = 1
+};
+
+/* Oscillator process-noise prior preset in peer sync mode. */
+enum {
+    UNISONO_CLOCK_CONSUMER = 0,
+    UNISONO_CLOCK_TCXO = 1,
+    UNISONO_CLOCK_WANDERING = 2
+};
+
+/* One direct peer receiver entry in `unisono_receiver_settings.peers`. */
+typedef struct unisono_peer {
+    /* Non-zero unique receiver identity of the peer. */
+    uint64_t identity;
+    /* Peer receiver UDP socket address as "address:port". */
+    const char *address;
+    /* Optional Q16 static BLUE link weight (65536 = 1.0); 0 uses unity. */
+    uint32_t weight_q16;
+} unisono_peer;
+
 /* What a receiver is set up with. */
 typedef struct unisono_receiver_settings {
     /* Where to receive, as "address:port"; with port 0 the system chooses
@@ -103,13 +132,31 @@ typedef struct unisono_receiver_settings {
     /* Frames per second (1 to 1000000), and samples in a frame (at least 1). */
     uint32_t rate;
     uint8_t channels;
+    /* UNISONO_SYNC_PEER (0, default) or UNISONO_SYNC_HULL (1). */
+    uint8_t sync_mode;
+    /* UNISONO_MODE_LIPSYNC (0, default) or UNISONO_MODE_LOW_LATENCY (1). */
+    uint8_t mode;
+    /* UNISONO_CLOCK_CONSUMER (0), UNISONO_CLOCK_TCXO (1), or
+     * UNISONO_CLOCK_WANDERING (2) for receiver and sender host clocks. */
+    uint8_t clock_prior;
+    uint8_t sender_clock_prior;
+    /* Optional modal regulator gain overrides in Q16 s^-1 (0 uses mode default). */
+    uint32_t star_gain_q16;
+    uint32_t common_gain_q16;
+    uint32_t diff_gain_q16;
+    /* Optional Q16 static BLUE link weight for the sender link (0 uses unity). */
+    uint32_t sender_weight_q16;
+    /* Optional static peer allowlist (at most 15 entries; peer sync only). */
+    const unisono_peer *peers;
+    size_t peer_count;
 } unisono_receiver_settings;
 
 /* A receiver that runs. */
 typedef struct unisono_receiver unisono_receiver;
 
-/* Fills `settings` with stream 1, identity 1, 48000 frames a second and two
- * channels. No address. */
+/* Fills `settings` with stream 1, identity 1, 48000 frames a second, two
+ * channels, peer/star synchronization in lipsync mode with consumer quartz
+ * priors, and no peers. No listen address. */
 void unisono_receiver_defaults(unisono_receiver_settings *settings);
 
 /* Starts a receiver. NULL on failure, with the reason in `error` as for a

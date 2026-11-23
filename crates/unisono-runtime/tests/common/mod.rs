@@ -12,7 +12,7 @@
 #![allow(dead_code)]
 
 use unisono_core::packet::{Audio, Format};
-use unisono_core::player::Regulation;
+use unisono_core::player::{ModalRegulation, Regulation};
 use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::Parameters;
 use unisono_dsp::format::to_signed24;
@@ -146,9 +146,24 @@ pub(crate) fn settings(rate: u32, concealment: Parameters) -> Settings {
             limit: 1_000_000,
             jump: 240,
         },
+        modal_regulation: None,
         concealment,
         block: 256,
         device_range: 10_000_000,
+    }
+}
+
+/// Settings of a peer/star synchronized receiver with modal regulation.
+pub(crate) fn peer_settings(
+    rate: u32,
+    concealment: Parameters,
+    identity: u64,
+    modal: ModalRegulation,
+) -> Settings {
+    Settings {
+        identity,
+        modal_regulation: Some(modal),
+        ..settings(rate, concealment)
     }
 }
 
