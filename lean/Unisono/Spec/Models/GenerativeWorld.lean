@@ -402,13 +402,14 @@ def laws (m : GenerativeWorld H R) : Member H R → RandomWorlds H R :=
   fun f _ _ P world => m.Holds f P world
 
 /-- **The solutions that are compared.** The solutions whose cost is a
-measurable function of what is drawn: for each member there is a measurable
-function `F` of the draw such that, in every random world of the member, the
-cost of the solution is `F` of the draw in almost every outcome. The weights
-`c` and the lookahead are those for which the cost is taken. -/
-def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (lookahead : ℕ+) (c : Weights) :
-    SolutionClass H R :=
-  fun _ τ => ∀ f : Member H R, ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
+measurable function of what is drawn: for each member in `members` there is
+a measurable function `F` of the draw such that, in every random world of the
+member, the cost of the solution is `F` of the draw in almost every outcome.
+`members` are the members that the comparison is about. The weights `c` and
+the lookahead are those for which the cost is taken. -/
+def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (members : Member H R → Prop)
+    (lookahead : ℕ+) (c : Weights) : SolutionClass H R :=
+  fun _ τ => ∀ f : Member H R, members f → ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
     ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H)
       (world : Ω' → World H R),
       m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →

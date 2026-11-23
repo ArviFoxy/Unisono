@@ -61,6 +61,18 @@ simulation and integration tests (see `PRINCIPLES.md`):
   - A star solution's costs in a world and in the same world with the links
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
+  - The baseline is optimal among star solutions within a known margin
+    (`Unisono.Solutions.FixedDelay.optimalWithin` in
+    `lean/Unisono/Solutions/FixedDelay/Optimal.lean`). A star solution is one
+    whose hosts exchange messages only with the sender. In every noiseless
+    member of `GenerativeWorld` within the baseline's delivery margin, with
+    any number of hosts and speakers, the expected cost of
+    `Unisono.Solutions.FixedDelay` exceeds that of no compared star solution
+    (`GenerativeWorld.StarSolutions`) by more than the sum of the weights of
+    synchronization and tracking times `ρ³ / (4 Θ)`, where `ρ` is the sum
+    over the speakers of the least round-trip time between the sender and the
+    speaker's host and `Θ` bounds the clock offsets. The theorem needs zero
+    weights on latency and roughness and no speaker on the sender's host.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
@@ -74,8 +86,12 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `Unisono.Spec.Objectives` in any model (including `IdealConstantWorld`,
     `World.WithinBounds`, `StationaryNetworkDisturbances`,
     `SecondOrderMoments`, `StochasticWorld`, and `GenerativeWorld`).
-  - No solution is proved optimal in expected cost (`OptimalWithin`) under
-    `GenerativeWorld`, and no lower bound on expected cost is proved under it.
+  - No solution is proved optimal among all solutions under `GenerativeWorld`.
+    The proved optimality compares only solutions whose hosts exchange
+    messages with the sender alone, in noiseless members; with two or more
+    receiving hosts, a solution that also uses links between them can do
+    better. No lower bound on expected cost is proved for such solutions, or
+    for members with other traffic or clock wander.
     Random worlds are constructed for every noiseless member and for one
     member with random mean clock rates; random worlds with other traffic or
     with clock wander are not yet constructed in Lean. The expectation that a solution loses nothing in the long run by

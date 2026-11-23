@@ -35,16 +35,23 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.Core
+public import Unisono.Solutions.FixedDelay.Arrivals
 public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
+public import Unisono.Solutions.FixedDelay.Optimal
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeNoiseless
+public import Unisono.Spec.Models.GenerativeReflection
+public import Unisono.Spec.Models.GenerativeStar
+public import Unisono.Spec.Models.GenerativeTies
+public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
@@ -1181,6 +1188,370 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.exists_holds_of_noiseless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.exists_holds_of_noiseless
+
+/-- info: 'Unisono.Spec.Clock.ext_read' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Clock.ext_read
+
+/-- info: 'Unisono.Spec.CaptureDevice.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.ext_fields
+
+/-- info: 'Unisono.Spec.PlaybackDevice.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.ext_fields
+
+/-- info: 'Unisono.Spec.Network.ext_deliver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Network.ext_deliver
+
+/-- info: 'Unisono.Spec.World.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.ext_fields
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.ext_fields
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.unique
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Component.measurable_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Component.measurable_scalar
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.coordinates_eq_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.coordinates_eq_scalar
+
+/-- info: 'Unisono.Spec.GenerativeWorld.canonicalDraw_coordinates' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.canonicalDraw_coordinates
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_canonicalDraw_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_canonicalDraw_split
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_canonicalDraw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_canonicalDraw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.coordinates_law' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.coordinates_law
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_eq_canonicalDraw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_eq_canonicalDraw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_eq_canonicalWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_eq_canonicalWorld
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_of_ae_canonicalDraw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_of_ae_canonicalDraw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_of_ae_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_of_ae_canonical
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_eq_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_eq_canonical
+
+/-- info: 'Unisono.Spec.updatePair_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.updatePair_right
+
+/-- info: 'Unisono.Spec.updatePair_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.updatePair_left
+
+/-- info: 'Unisono.Spec.updatePair_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.updatePair_of_ne
+
+/-- info: 'Unisono.Spec.measurable_updatePair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_updatePair
+
+/-- info: 'Unisono.Spec.measurePreserving_updatePair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurePreserving_updatePair
+
+/-- info: 'Unisono.Spec.measurePreserving_restrict_of_eqOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurePreserving_restrict_of_eqOn
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectPair_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectPair_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_reflectPair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_reflectPair
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurePreserving_reflectPair' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurePreserving_reflectPair
+
+/-- info: 'Unisono.Spec.GenerativeWorld.idealWorld_shiftStarKeepPeers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.idealWorld_shiftStarKeepPeers
+
+/-- info: 'Unisono.Spec.GenerativeWorld.senderSplit_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.senderSplit_injective
+
+/-- info: 'Unisono.Spec.GenerativeWorld.senderSplit_ne_offset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.senderSplit_ne_offset
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectList_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectList_of_ne
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectList_apply' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectList_apply
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurePreserving_reflectHost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurePreserving_reflectHost
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurePreserving_reflectList' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurePreserving_reflectList
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurePreserving_reflect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurePreserving_reflect
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflect_apply' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflect_apply
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflect_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflect_of_ne
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectShift_sender' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectShift_sender
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflect_split_sender' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflect_split_sender
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflect_split_peer' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflect_split_peer
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflect_delay_star' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflect_delay_star
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectShift_star' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectShift_star
+
+/-- info: 'Unisono.Spec.GenerativeWorld.canonicalWorld_reflect' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.canonicalWorld_reflect
+
+/-- info: 'Unisono.Spec.GenerativeWorld.almostSurely_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.almostSurely_iff
+
+/-- info: 'Unisono.Spec.GenerativeWorld.aemeasurable_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.aemeasurable_cost
+
+/-- info: 'Unisono.Spec.GenerativeWorld.expectedCost_eq_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.expectedCost_eq_canonical
+
+/-- info: 'Unisono.Spec.GenerativeWorld.capture_unbounded_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.capture_unbounded_canonical
+
+/-- info: 'Unisono.Spec.GenerativeWorld.StarSolutions.le_canonical' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.StarSolutions.le_canonical
+
+/-- info: 'Unisono.Spec.GenerativeWorld.StarSolutions.le_expectedCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.StarSolutions.le_expectedCost
+
+/-- info: 'Unisono.Spec.cond_volume_singleton' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.cond_volume_singleton
+
+/-- info: 'Unisono.Spec.measure_pi_graph_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measure_pi_graph_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.canonicalDraw_split_update' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.canonicalDraw_split_update
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_requestArrival' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_requestArrival
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_requestArrival_ne_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_requestArrival_ne_of_ne
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_requestArrival_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_requestArrival_ne
+
+/-- info: 'Unisono.Spec.GenerativeWorld.canonicalWorld_deliver_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.canonicalWorld_deliver_request
+
+/-- info: 'Unisono.Spec.meanFin_const_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.meanFin_const_add
+
+/-- info: 'Unisono.Spec.varFin_const_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.varFin_const_add
+
+/-- info: 'Unisono.Spec.frameCost_const_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.frameCost_const_add
+
+/-- info: 'Unisono.Spec.shiftCost_neg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.shiftCost_neg
+
+/-- info: 'Unisono.Spec.shiftCost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.shiftCost_le
+
+/-- info: 'Unisono.Spec.ofReal_shiftCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ofReal_shiftCost
+
+/-- info: 'Unisono.Spec.World.PlaysAtLatencies.exists_covers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.PlaysAtLatencies.exists_covers
+
+/-- info: 'Unisono.Spec.World.PlaysAtLatencies.exists_playTime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.PlaysAtLatencies.exists_playTime
+
+/-- info: 'Unisono.Spec.World.frameCost_le_cost_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.frameCost_le_cost_of_exact
+
+/-- info: 'Unisono.Spec.Solution.handled_asked_time' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_asked_time
+
+/-- info: 'Unisono.Solutions.FixedDelay.act_sends' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.act_sends
+
+/-- info: 'Unisono.Solutions.FixedDelay.inFlight_provenance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.inFlight_provenance
+
+/-- info: 'Unisono.Solutions.FixedDelay.noCrossOriginCollision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.noCrossOriginCollision
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.Holds.out_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.Holds.out_unbounded
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.Holds.capture_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.Holds.capture_unbounded
+
+/-- info: 'Unisono.Solutions.FixedDelay.playsAtLatencies_of_ideal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.playsAtLatencies_of_ideal
+
+/-- info: 'Unisono.Solutions.FixedDelay.playTime_of_ideal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.playTime_of_ideal
+
+/-- info: 'Unisono.Solutions.FixedDelay.cost_eq_of_ideal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.cost_eq_of_ideal
+
+/-- info: 'Unisono.Spec.measurable_shiftCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_shiftCost
+
+/-- info: 'Unisono.Spec.cond_volume_Icc_compl_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.cond_volume_Icc_compl_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.measurable_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.measurable_split
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.measurable_asymmetry' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.measurable_asymmetry
+
+/-- info: 'Unisono.Spec.GenerativeWorld.abs_asymmetry_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.abs_asymmetry_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectScale_mul' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectScale_mul
+
+/-- info: 'Unisono.Spec.GenerativeWorld.reflectShift_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.reflectShift_of_mem
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measure_reflect_out_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measure_reflect_out_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.lintegral_asymmetry_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.lintegral_asymmetry_le
+
+/-- info: 'Unisono.Solutions.FixedDelay.asymmetry_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.asymmetry_idealWorld
+
+/-- info: 'Unisono.Solutions.FixedDelay.margin_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.margin_idealWorld
+
+/-- info: 'Unisono.Solutions.FixedDelay.noCollision_canonicalWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.noCollision_canonicalWorld
+
+/-- info: 'Unisono.Solutions.FixedDelay.ae_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.ae_idealWorld
+
+/-- info: 'Unisono.Solutions.FixedDelay.ae_cost_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.ae_cost_eq
+
+/-- info: 'Unisono.Solutions.FixedDelay.starSolutions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.starSolutions
+
+/-- info: 'Unisono.Solutions.FixedDelay.optimalWithin' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.optimalWithin
+
+/-- info: 'Unisono.Solutions.FixedDelay.optimalWithin_conditions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.optimalWithin_conditions
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

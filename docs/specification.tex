@@ -1088,16 +1088,132 @@ its cost in almost every outcome, and such a solution can appear better than
 every solution whose cost is measurable. Optimality under the generative
 world therefore compares the solutions whose cost is a measurable function
 of what is drawn (\lean{GenerativeWorld.\allowbreak measurableCost}): for
-each member there is a measurable function of the draw that equals the cost
-of the solution in almost every outcome, in every random world of the
-member. A speaker that does not play a frame adds
+each member that the statement is about, there is a measurable function of
+the draw that equals the cost of the solution in almost every outcome, in
+every random world of the member. A speaker that does not play a frame adds
 nothing to that frame's synchronization and tracking costs, so with
 $w_M = 0$ a solution that plays nothing has cost zero and is optimal. A
 statement about synchronization and tracking alone therefore needs either
 $w_M > 0$ or a class of solutions that play every frame.
 \end{remark}
 
-No solution is proved optimal in this sense yet.
+\subsection{The baseline among solutions through the sender}\label{sec:star-optimal}
+
+One statement of this kind is proved. It concerns the noiseless members of
+the generative world, and it compares the baseline
+(\path{docs/fixed-playout-delay.tex}) with the \emph{star solutions}: the
+solutions whose hosts exchange messages only with the sender
+(\lean{Solution.IsStar}).
+
+Write $h_*$ for the sender's host and $h_r$ for the host of speaker $r$. In
+an outcome, the \emph{asymmetry} of a host $h$ is
+\[
+  \zeta_h = \bigl(u_{h_* h} - \tfrac12\bigr)\,\tau_{h_* h},
+\]
+how far the least delay from the sender to $h$ exceeds half the least
+round-trip time between the two (\lean{Draw.asymmetry}). Here
+$\tau_{ij}$ is the least round-trip time of the hosts $i$ and $j$, and the
+split $u_{ij}$ is the share of it that the direction from $i$ to $j$ takes
+(Section~\ref{sec:generative}). A round-trip
+estimate of the sender's clock at $h$ is off by $\zeta_h$, and no exchange
+with the sender reveals it. The \emph{shift cost} of numbers
+$x_1, \dots, x_R$, one for each speaker, is
+\[
+  S(x) = w_S \cdot \frac1R \sum_r (x_r - \bar x)^2
+       + w_\Theta \cdot \frac1R \sum_r x_r^2,
+  \qquad \bar x = \frac1R \sum_r x_r
+\]
+(\lean{shiftCost}). It is the weighted synchronization and tracking cost of
+a frame that every speaker $r$ plays $x_r$ later than the target latency.
+
+\begin{definition}[The compared star solutions]
+For a set of members, a lookahead and weights, the compared star solutions
+are the star solutions with the following properties, for every member of
+the set (\lean{GenerativeWorld.\allowbreak StarSolutions}).
+\begin{itemize}
+\item The cost is a measurable function of what is drawn
+  (\lean{measurableCost}).
+\item In almost every outcome of every random world of the member, the run
+  has an event after every true time, no two messages from different hosts
+  arrive at one host at the same time, and from some frame on every speaker
+  plays every frame.
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[The baseline among star solutions]\label{thm:star-optimal}
+Consider a generative world in which no speaker is on the sender's host, and
+weights with $w_\Lambda = w_V = 0$. Let the baseline play at the target
+latency $L^*$, send the stream to every speaker's host, send each message at
+least once, and have a slew between zero and one. Consider the noiseless
+members in which, for every speaker $r$,
+\[
+  L^* > \frac{a + 2(m - 1)}{\rho} + \frac{\tau_{h_* h_r}}{2} + \lambda
+\]
+(\lean{NoiselessWithMargin}). For this set of members the baseline is a
+compared star solution, and it is optimal among the compared star solutions
+within the margin
+\[
+  \varepsilon(f) = (w_S + w_\Theta)\,\frac{\tau_\Sigma^3}{4\,\theta_{\max}},
+  \qquad \tau_\Sigma = \sum_r \tau_{h_* h_r},
+\]
+for any number of hosts and speakers (\lean{optimalWithin} in
+\path{lean/Unisono/Solutions/FixedDelay/Optimal.lean}; the margin is
+\lean{starMargin}). Here $a$ is the resampler's lookahead in frames, $m$
+the number of frames in a block, $\rho$ the nominal rate, $\lambda$ the
+request lead, and $\theta_{\max}$ the bound of the clock offsets. The
+conditions can be met (\lean{optimalWithin\_conditions}).
+\end{theorem}
+
+The proof has three parts.
+\begin{itemize}
+\item \emph{The baseline's cost.} In almost every outcome the baseline's
+  cost is $S(\zeta_{h_1}, \dots, \zeta_{h_R})$, the shift cost of the
+  asymmetries of the speakers' hosts (\lean{ae\_cost\_eq}): each speaker
+  plays every frame late by the asymmetry of its host.
+\item \emph{A lower bound.} Pair each outcome with its \emph{reflection}:
+  the outcome in which, for every receiving host $h$, the two least delays
+  between the sender and $h$ are exchanged and the offset of the clock of
+  $h$ is moved by $2\zeta_h$ (\lean{reflect}). A host that exchanges
+  messages only with the sender observes the same in the worlds of the two
+  outcomes. A star solution therefore plays the same in both, and its costs
+  in the two add up to at least twice the shift cost of the asymmetries
+  (\lean{Solution.\allowbreak cost\_shiftStarKeepPeers\_add\_ge}). The
+  reflection keeps the law of the outcomes
+  (\lean{measurePreserving\_reflect}), because the law of the split is
+  symmetric and the law of the offset is uniform. The two costs therefore
+  have the same mean, and the mean cost of every compared star solution is
+  at least the mean of the shift cost
+  (\lean{StarSolutions.\allowbreak le\_expectedCost}).
+\item \emph{The margin.} The offset of a clock is uniform on
+  $[-\theta_{\max}, \theta_{\max}]$, and a reflection could move it out of
+  this range. The reflection therefore leaves a host as it is when its
+  offset would leave the range, which has probability at most
+  $\tau_{h_* h}/\theta_{\max}$. The margin bounds the cost of the
+  asymmetries in those outcomes (\lean{lintegral\_asymmetry\_le}).
+\end{itemize}
+Two facts about every noiseless member carry the comparison from one
+probability space to all. Every random world of the member agrees with one
+concrete random world in almost every outcome
+(\lean{Prior.\allowbreak ae\_eq\_canonicalWorld}), so the expected cost of a
+solution with measurable cost is the same in all of them
+(\lean{expectedCost\_eq\_canonical}).
+
+\begin{remark}[What the theorem does not say]
+The theorem compares the baseline with star solutions only. With two or more
+receiving hosts, a solution whose receiving hosts also exchange messages
+with each other can have a lower expected cost, so the baseline is not
+optimal among all solutions. The theorem covers noiseless members only:
+members with other traffic or with clock wander are not covered. The
+compared solutions leave out every solution in whose run two messages from
+different hosts arrive at one host at the same time with positive
+probability. The run handles such messages in the order in which they were
+sent (Section~\ref{sec:solutions}), and that order could tell a host what it
+cannot otherwise observe. The margin
+is small when the offsets of the clocks are spread over a range much larger
+than the round-trip times, as for clocks that nothing has synchronized; it
+is not small otherwise. No solution is proved optimal among all solutions,
+in any member.
+\end{remark}
 
 \section{Communication topologies and fundamental limits}\label{sec:limits}
 

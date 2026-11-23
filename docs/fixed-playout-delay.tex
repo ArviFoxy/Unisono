@@ -398,6 +398,35 @@ sound captured exactly $L + \alpha_{h(r)}$ before the sample leaves
 simultaneous arrivals is needed because the run breaks such ties by the
 order of sending, which the shift can change.
 
+The bound of Theorem~\ref{thm:exact} is attained: under the same conditions
+the cost of the baseline equals it (\lean{cost\_eq\_of\_ideal}). From some
+frame on, every speaker $r$ plays every frame exactly $L + \alpha_{h(r)}$
+after its capture (\lean{playTime\_of\_ideal}). Two of the baseline's
+messages from different hosts can arrive at one host at the same time only
+at the sender, and only when two clock queries do. A host sends a query only
+when one of its playback devices requests a block
+(\lean{inFlight\_provenance}, \lean{noCrossOriginCollision} in
+\path{lean/Unisono/Solutions/FixedDelay/Arrivals.lean}).
+
+\subsection{The baseline under the generative world}
+
+The generative world of the specification draws at random the offset of each
+clock and how the least round-trip time of each pair of hosts divides
+between its two directions. In its noiseless members, almost every outcome
+is an ideal constant world, and two requests of playback devices on
+different hosts reach the sender at the same time with probability zero
+(\lean{ae\_requestArrival\_ne}). The conditions of Theorem~\ref{thm:exact}
+therefore hold in almost every outcome, and the baseline's expected cost is
+the mean of that cost over the outcomes.
+
+Among the solutions whose hosts exchange messages only with the sender, no
+compared solution has an expected cost that is lower by more than a known
+margin (\lean{optimalWithin} in
+\path{lean/Unisono/Solutions/FixedDelay/Optimal.lean}). The specification
+states the theorem, its conditions and what it does not cover. In
+particular, a solution whose receiving hosts also exchange messages with
+each other can do better than the baseline.
+
 The offset estimate $\hat\theta$ can err by up to half the largest asymmetry
 between the query and answer delays. When every link's delays lie within
 the same interval $[d_{\min}, d_{\max}]$, that is $(d_{\max} - d_{\min})/2$,

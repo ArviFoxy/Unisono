@@ -6,7 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Progress
-public import Unisono.Spec.ExactLatency
+public import Unisono.Spec.ExactCost
 
 /-!
 # The baseline's exact cost in an ideal constant world
@@ -48,6 +48,25 @@ amount. -/
 def IdealConstantWorld.asymmetry (m : IdealConstantWorld H R) (h : H) : ℝ :=
   (m.delay m.sender h - m.delay h m.sender) / 2
 
+/-- In an ideal constant world, the output samples of every speaker leave
+after every true time. -/
+theorem IdealConstantWorld.Holds.out_unbounded {m : IdealConstantWorld H R} {w : World H R}
+    (hw : m.Holds w) (r : Fin R) (T : Time) : ∃ k, T ≤ (w.speaker r).out k := by
+  obtain ⟨t₀, ht⟩ := hw.speaker_out r
+  obtain ⟨k, hk⟩ := exists_nat_ge ((T - t₀) * m.rate)
+  refine ⟨k, ?_⟩
+  rw [ht, ← sub_le_iff_le_add', le_div_iff₀ m.rate_pos]
+  exact hk
+
+/-- In an ideal constant world, frames are captured after every true time. -/
+theorem IdealConstantWorld.Holds.capture_unbounded {m : IdealConstantWorld H R}
+    {w : World H R} (hw : m.Holds w) (T : Time) : ∃ n, T ≤ w.source.capture n := by
+  obtain ⟨t₀, ht⟩ := hw.capture
+  obtain ⟨n, hn⟩ := exists_nat_ge ((T - t₀) * m.rate)
+  refine ⟨n, ?_⟩
+  rw [ht, ← sub_le_iff_le_add', le_div_iff₀ m.rate_pos]
+  exact hn
+
 end Unisono.Spec
 
 namespace Unisono.Solutions.FixedDelay
@@ -64,24 +83,17 @@ theorem latencyError_ideal (m : IdealConstantWorld H R) (rate d : ℝ) :
     latencyError p m.toBounds rate d d = 0 := by
   simp [latencyError, targetError, IdealConstantWorld.toBounds]
 
-/-- **The baseline's cost in an ideal constant world.** Consider an ideal
+/-- **How the baseline plays in an ideal constant world.** Consider an ideal
 constant world in which no speaker is on the sender's host. Let the baseline
 send the stream to every speaker's host and play at the target latency, with
 at least one copy of each message and a slew between zero and one. Let the
-target latency exceed, for every speaker, the delivery margin: the spans of
-the resampler's lookahead and of two blocks, half the round trip between the
-sender and the speaker's host, and the request lead. Suppose that no two
-messages from different hosts arrive at one host at the same time. When the
-weights of latency and of roughness are zero, the baseline's cost is at most
-
-* the weight of synchronization times the sum, over the pairs of speakers,
-  of the squares of the differences of their hosts' asymmetries, divided by
-  the square of the number of speakers, plus
-* the weight of tracking times the mean, over the speakers, of the square of
-  the host's asymmetry. -/
-theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Holds w)
-    (hnos : ∀ r, m.host r ≠ m.sender) (lookahead : ℕ+) (c : Weights)
-    (hcl : c.latency = 0) (hcr : c.roughness = 0)
+target latency exceed, for every speaker, the delivery margin. Suppose that
+no two messages from different hosts arrive at one host at the same time.
+Then, from some output sample on, every output sample of each speaker plays
+the sound captured exactly the target latency plus the asymmetry of the
+speaker's host before the sample leaves. -/
+theorem playsAtLatencies_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Holds w)
+    (hnos : ∀ r, m.host r ≠ m.sender) (lookahead : ℕ+)
     (hps : p.sender = m.sender) (hpr : p.rate = m.rate) (hpsp : ∀ r, m.host r ∈ p.speakers)
     (hnodup : p.speakers.Nodup) (hpl : p.latency = m.targetLatency) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
@@ -89,12 +101,8 @@ theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
       + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
         < m.targetLatency)
     (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
-    (solution p : Solution H R Payload).cost w lookahead c
-      ≤ c.sync * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-              ENNReal.ofReal ((m.asymmetry (m.host q.1) - m.asymmetry (m.host q.2)) ^ 2))
-        + c.tracking
-          * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (m.asymmetry (m.host r) ^ 2)) := by
+    ∃ K, w.PlaysAtLatencies ((solution p : Solution H R Payload).plays w lookahead)
+      (fun r => p.latency + m.asymmetry (m.host r)) K := by
   classical
   set σ : Solution H R Payload := solution p with hσ
   set Δ : H → ℝ := fun h => if h = m.sender then 0 else m.asymmetry h with hΔ
@@ -202,6 +210,43 @@ theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
     have h0 := abs_nonpos_iff.mp hE
     rw [hout, hcap, hhr, Pi.neg_apply, hΔh _ (hnos r)] at h0
     linarith
+  exact ⟨_, hKw⟩
+
+/-- **The baseline's cost in an ideal constant world.** Consider an ideal
+constant world in which no speaker is on the sender's host. Let the baseline
+send the stream to every speaker's host and play at the target latency, with
+at least one copy of each message and a slew between zero and one. Let the
+target latency exceed, for every speaker, the delivery margin: the spans of
+the resampler's lookahead and of two blocks, half the round trip between the
+sender and the speaker's host, and the request lead. Suppose that no two
+messages from different hosts arrive at one host at the same time. When the
+weights of latency and of roughness are zero, the baseline's cost is at most
+
+* the weight of synchronization times the sum, over the pairs of speakers,
+  of the squares of the differences of their hosts' asymmetries, divided by
+  the square of the number of speakers, plus
+* the weight of tracking times the mean, over the speakers, of the square of
+  the host's asymmetry. -/
+theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Holds w)
+    (hnos : ∀ r, m.host r ≠ m.sender) (lookahead : ℕ+) (c : Weights)
+    (hcl : c.latency = 0) (hcr : c.roughness = 0)
+    (hps : p.sender = m.sender) (hpr : p.rate = m.rate) (hpsp : ∀ r, m.host r ∈ p.speakers)
+    (hnodup : p.speakers.Nodup) (hpl : p.latency = m.targetLatency) (hcopies : 0 < p.copies)
+    (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
+    (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
+      + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
+        < m.targetLatency)
+    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
+    (solution p : Solution H R Payload).cost w lookahead c
+      ≤ c.sync * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+              ENNReal.ofReal ((m.asymmetry (m.host q.1) - m.asymmetry (m.host q.2)) ^ 2))
+        + c.tracking
+          * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (m.asymmetry (m.host r) ^ 2)) := by
+  classical
+  set σ : Solution H R Payload := solution p with hσ
+  obtain ⟨K₀, hKw⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup hpl
+    hcopies hperiod hslew0 hslew1 hlat hcoll
   -- The cost of playing at exact latencies.
   obtain ⟨t₀, hcap⟩ := hw.captured_eq
   have htrack := w.tracking_le_of_exact (σ.plays w lookahead) hKw hcap hw.target_eq
@@ -223,5 +268,56 @@ theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
     _ ≤ c.sync * w.sync (σ.plays w lookahead) + c.tracking * w.tracking (σ.plays w lookahead) :=
         hcost
     _ ≤ _ := by gcongr
+
+/-- **The baseline plays every frame at a known time in an ideal constant
+world.** Under the conditions of `playsAtLatencies_of_ideal`, from some
+frame on every speaker plays every frame, exactly the target latency plus the
+asymmetry of its host after the frame's capture. -/
+theorem playTime_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Holds w)
+    (hnos : ∀ r, m.host r ≠ m.sender) (lookahead : ℕ+)
+    (hps : p.sender = m.sender) (hpr : p.rate = m.rate) (hpsp : ∀ r, m.host r ∈ p.speakers)
+    (hnodup : p.speakers.Nodup) (hpl : p.latency = m.targetLatency) (hcopies : 0 < p.copies)
+    (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
+    (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
+      + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
+        < m.targetLatency)
+    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
+    ∃ N : ℕ, ∀ n, N ≤ n → ∀ r,
+      w.playTime ((solution p : Solution H R Payload).plays w lookahead) r n
+        = some (w.source.capture n + (p.latency + m.asymmetry (m.host r))) := by
+  obtain ⟨K, hK⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup hpl
+    hcopies hperiod hslew0 hslew1 hlat hcoll
+  obtain ⟨t₀, hcap⟩ := hw.captured_eq
+  exact hK.exists_playTime m.rate_pos hcap hw.out_unbounded
+
+/-- **The baseline's exact cost in an ideal constant world.** Under the
+conditions of `cost_le_of_ideal`, the baseline's cost is the shift cost of
+the asymmetries of the speakers' hosts: the weight of synchronization times
+their variance across the speakers, plus the weight of tracking times the
+mean of their squares. -/
+theorem cost_eq_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Holds w)
+    (hnos : ∀ r, m.host r ≠ m.sender) (lookahead : ℕ+) (c : Weights)
+    (hcl : c.latency = 0) (hcr : c.roughness = 0)
+    (hps : p.sender = m.sender) (hpr : p.rate = m.rate) (hpsp : ∀ r, m.host r ∈ p.speakers)
+    (hnodup : p.speakers.Nodup) (hpl : p.latency = m.targetLatency) (hcopies : 0 < p.copies)
+    (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
+    (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
+      + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
+        < m.targetLatency)
+    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead)
+    (hR : 0 < R) :
+    (solution p : Solution H R Payload).cost w lookahead c
+      = ENNReal.ofReal (shiftCost c fun r => m.asymmetry (m.host r)) := by
+  refine le_antisymm ?_ ?_
+  · rw [ofReal_shiftCost c hR]
+    exact cost_le_of_ideal p m w hw hnos lookahead c hcl hcr hps hpr hpsp hnodup hpl hcopies
+      hperiod hslew0 hslew1 hlat hcoll
+  · obtain ⟨K, hK⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup
+      hpl hcopies hperiod hslew0 hslew1 hlat hcoll
+    obtain ⟨t₀, hcap⟩ := hw.captured_eq
+    have h := w.frameCost_le_cost_of_exact _ c hK m.rate_pos hcap hw.target_eq hw.out_unbounded
+      hR hw.capture_unbounded
+    rw [hpl, frameCost_const_add c hR] at h
+    exact h
 
 end Unisono.Solutions.FixedDelay
