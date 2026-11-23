@@ -1025,7 +1025,7 @@ Section~\ref{sec:sim}.
   re-anchor the common and differential filters cleanly without step transients.
 \item \emph{Bumpless two-mode playback regulation (\lean{ModalPlayer}).}
   In Star mode (\lean{peer\_active = false}), \lean{ModalPlayer} runs
-  single-mode \lean{Regulation.law} at \texttt{--gain}. In Peer mode, it splits
+  single-mode \lean{Regulation.law} at \texttt{--star-gain}. In Peer mode, it splits
   the current pace bumplessly on transition and regulates common and
   differential modes separately at \texttt{--common-gain} and
   \texttt{--diff-gain} (default $(0.5\,\text{s}^{-1}, 4.0\,\text{s}^{-1})$ for
