@@ -13,7 +13,14 @@ public import Unisono.Spec.Models.SecondOrder
 /-!
 # Spectral factorization and steady-state filter identities
 
-In the time domain, `Unisono.Solutions.Optimal.ModalControl` analyzes applying
+> **Status (supplementary component / oracle analysis):** This module proves
+> algebraic and stochastic properties in a simplified component or oracle
+> setting as a supplement to `Unisono.Spec`. Per `PRINCIPLES.md`, results
+> here do **not** replace end-to-end proofs on `Unisono.Spec.Solution` and
+> `Unisono.Spec.Objectives` under a named model class in `Unisono.Spec.Models`.
+
+
+In the time domain, `Unisono.Analysis.ModalControl` analyzes applying
 `Unisono.Model.Regulation.law` to the conditional-mean state in each decoupled
 mode (common and differential). This module records the companion
 frequency-domain and steady-state algebraic identities:
@@ -40,12 +47,12 @@ frequency-domain and steady-state algebraic identities:
   `q₀ = c.whiteVarianceRate` and `q₂ = c.walkVarianceRate`, the 2×2 matrix
   formula `Q(dt)` for `dt ≥ 0` is positive semidefinite. (This proves matrix
   semidefiniteness rather than constructing a stochastic process or proving
-  `Q(dt)` is the increment covariance of a `SecondOrderModel`.)
+  `Q(dt)` is the increment covariance of a `SecondOrderMoments`.)
 -/
 
 @[expose] public noncomputable section
 
-namespace Unisono.Solutions.Optimal
+namespace Unisono.Analysis
 
 open Unisono.Model.Regulation
 open Unisono.Spec
@@ -234,4 +241,4 @@ theorem clockProcessCov_nonneg (c : ClockNoise) (dt : ℝ) (hdt : 0 ≤ dt) (u v
   rw [hdecomp]
   positivity
 
-end Unisono.Solutions.Optimal
+end Unisono.Analysis

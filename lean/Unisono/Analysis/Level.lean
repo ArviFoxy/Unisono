@@ -10,6 +10,13 @@ public import Mathlib.MeasureTheory.Integral.Bochner.Set
 /-!
 # Playout latency margin under a continuous-time Campbell pause model
 
+> **Status (supplementary component / oracle analysis):** This module proves
+> algebraic and stochastic properties in a simplified component or oracle
+> setting as a supplement to `Unisono.Spec`. Per `PRINCIPLES.md`, results
+> here do **not** replace end-to-end proofs on `Unisono.Spec.Solution` and
+> `Unisono.Spec.Objectives` under a named model class in `Unisono.Spec.Models`.
+
+
 This module analyzes a standalone continuous-time approximation to the playout
 buffer-level problem. It does not import `Unisono.Spec.Objectives`; its
 objective `J(m)` is a continuous-time Campbell-formula model with the following
@@ -74,7 +81,7 @@ discontinuities per second.
 
 @[expose] public noncomputable section
 
-namespace Unisono.Solutions.Optimal
+namespace Unisono.Analysis
 
 open MeasureTheory Finset
 
@@ -293,4 +300,4 @@ theorem discontinuity_nonconvex_example {wΛ wM wD lam h₀ : ℝ}
   have h2 : 0 ≤ wΛ * h₀ := by positivity
   constructor <;> linarith
 
-end Unisono.Solutions.Optimal
+end Unisono.Analysis

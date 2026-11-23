@@ -417,4 +417,377 @@ theorem step_from_parts_per_billion_total (parts : Std.I64) :
   unfold timing.Step.from_parts_per_billion
   run
 
+/-! ## Parallel two-mode modal regulator (`ModalPlayer`) -/
+
+/-- The largest pace offset for a `limit` in parts per billion, capped at
+three in a thousand, in units of `2^-64` frame per output frame. -/
+def reachOf (limit : Std.U32) : ℤ := (min limit.val 3000000 : ℕ) * 2^64 / 10^9
+
+theorem reachOf_bounds (limit : Std.U32) : 0 ≤ reachOf limit ∧ reachOf limit ≤ 55340232221128654 := by
+  unfold reachOf
+  have h : (min limit.val 3000000 : ℕ) ≤ 3000000 := Nat.min_le_right _ _
+  constructor
+  · positivity
+  · omega
+
+@[step]
+theorem modal_regulation_from_single_total (reg : player.Regulation) :
+    player.ModalRegulation.from_single reg ⦃ _ => True ⦄ := by
+  unfold player.ModalRegulation.from_single
+  simp
+
+@[step]
+theorem modal_new_total (reg : player.ModalRegulation) :
+    player.ModalPlayer.new reg ⦃ _ => True ⦄ := by
+  unfold player.ModalPlayer.new
+  simp
+
+@[step]
+theorem modal_stop_total (p : player.ModalPlayer) :
+    player.ModalPlayer.stop p ⦃ _ => True ⦄ := by
+  unfold player.ModalPlayer.stop
+  simp
+
+@[step]
+theorem ns_to_frames_q32_total (schedule : timing.Schedule) (delta : Std.I64) :
+    player.ns_to_frames_q32 schedule delta ⦃ _ => True ⦄ := by
+  unfold player.ns_to_frames_q32
+  run
+
+@[step]
+theorem gains_for_total (gain : Std.U32) (duration : Std.I64) :
+    player.gains_for gain duration ⦃ _ => True ⦄ := by
+  unfold player.gains_for
+  run
+
+@[step]
+theorem regulate_for_total (gain : Std.U32) (behind ahead duration : Std.I64) :
+    player.regulate_for gain behind ahead duration ⦃ _ => True ⦄ := by
+  unfold player.regulate_for
+  run
+
+@[step]
+theorem carry_slope_total (read : Std.I128) (prev slope : Std.I32) :
+    player.carry_slope read prev slope ⦃ _ => True ⦄ := by
+  unfold player.carry_slope
+  run
+
+@[step]
+theorem reach_for_spec (limit : Std.U32) :
+    player.reach_for limit ⦃ r => r.val = reachOf limit ⦄ := by
+  unfold player.reach_for
+  have hbillion : player.BILLION.val = 10^9 := by simp [player.BILLION]
+  have hframe : player.FRAME.val = 2^64 := by simp [player.FRAME]
+  have hlargest : player.LARGEST_LIMIT.val = 3000000 := by simp [player.LARGEST_LIMIT]
+  split
+  · rename_i hgt
+    step as ⟨i, hi⟩
+    step as ⟨i1, hi1⟩
+    have hiv : i.val = 3000000 := by rw [hi, U32.hcast_I128_val, hlargest]; rfl
+    have hi1v : i1.val = 3000000 * 2^64 := by
+      rw [hi1, I128.wrapping_mul_val _ _ (by rw [hiv, hframe]; norm_num), hiv, hframe]
+    step as ⟨r, hr, _⟩
+    rw [hr (by rw [hbillion]; norm_num), hi1v, hbillion]
+    unfold reachOf
+    have : min limit.val 3000000 = 3000000 := by scalar_tac
+    rw [this]
+    norm_num
+  · rename_i hle
+    simp only [bind_ok]
+    step as ⟨i, hi⟩
+    step as ⟨i1, hi1⟩
+    have hlim : limit.val ≤ 3000000 := by scalar_tac
+    have hiv : i.val = limit.val := by rw [hi, U32.hcast_I128_val]
+    have hi1v : i1.val = limit.val * 2^64 := by
+      rw [hi1, I128.wrapping_mul_val _ _ (by rw [hiv, hframe]; omega), hiv, hframe]
+    step as ⟨r, hr, _⟩
+    rw [hr (by rw [hbillion]; norm_num), hi1v, hbillion]
+    unfold reachOf
+    have : min limit.val 3000000 = limit.val := by omega
+    rw [this]
+
+theorem clamp_sym_i128_spec (x hi : Std.I128) (hhi : 0 ≤ hi.val) (hfit : hi.val < 2^127) :
+    player.clamp_sym_i128 x hi ⦃ r => -hi.val ≤ r.val ∧ r.val ≤ hi.val ⦄ := by
+  unfold player.clamp_sym_i128
+  have h0 : (0#i128).val = 0 := rfl
+  step as ⟨lo, hlo⟩
+  have hlov : lo.val = -hi.val := by
+    rw [hlo, I128.wrapping_sub_val _ _ (by rw [h0]; omega), h0]; omega
+  split
+  · rw [WP.spec_ok]; omega
+  · rename_i hle
+    have hle' : x.val ≤ hi.val := by scalar_tac
+    split
+    · rw [WP.spec_ok, hlov]; omega
+    · rename_i hge
+      have hge' : -hi.val ≤ x.val := by rw [← hlov]; scalar_tac
+      rw [WP.spec_ok]; omega
+
+@[step]
+theorem clamp_sym_i128_total (x hi : Std.I128) :
+    player.clamp_sym_i128 x hi ⦃ _ => True ⦄ := by
+  unfold player.clamp_sym_i128
+  run
+
+@[step]
+theorem step_for_limit_spec (limit : Std.U32) (wanted : Std.I64) (frames : Std.U32)
+    (scheduled : Std.I64) :
+    player.step_for_limit limit wanted frames scheduled
+      ⦃ s => -reachOf limit ≤ s.offset.val ∧ s.offset.val ≤ reachOf limit ⦄ := by
+  unfold player.step_for_limit
+  have hb := reachOf_bounds limit
+  step as ⟨reach1, hreach⟩
+  step as ⟨i, _⟩
+  step as ⟨i1, _⟩
+  step as ⟨i2, _⟩
+  step as ⟨i3, _⟩
+  step as ⟨i4, _⟩
+  step as ⟨i5, _⟩
+  step as ⟨beyond, _⟩
+  step as ⟨i6, _⟩
+  step as ⟨i7, _⟩
+  step as ⟨st, _, _⟩
+  step with clamp_sym_i128_spec st reach1 (by omega) (by omega) as ⟨cl, hcl_lo, hcl_hi⟩
+  step with Fixed.saturate_spec cl as ⟨sat, hsat⟩
+  step with step_clamped_spec sat as ⟨s, hs, _, _⟩
+  rw [hreach] at hcl_lo hcl_hi
+  simp only [Fixed.clamp64] at hsat
+  omega
+
+@[step]
+theorem modal_jumps_total (p : player.ModalPlayer) (now : timing.Position) :
+    player.ModalPlayer.jumps p now ⦃ _ => True ⦄ := by
+  unfold player.ModalPlayer.jumps
+  run
+
+/-- Planning a cycle with `ModalPlayer` always returns, preserves its
+regulation settings, and takes a step strictly within `reachOf` (and therefore
+within `±2^56`, the resampler's safe step band). -/
+@[step]
+theorem modal_cycle_spec (p : player.ModalPlayer) (now later : timing.Position) (frames : Std.U32)
+    (duration : Std.I64) (schedule : timing.Schedule) (peer_active : Bool) (epoch : Std.U32)
+    (com_now com_then : Std.I64) :
+    player.ModalPlayer.cycle p now later frames duration schedule peer_active epoch com_now com_then
+      ⦃ r => -reachOf p.regulation.limit ≤ r.1.step.offset.val
+        ∧ r.1.step.offset.val ≤ reachOf p.regulation.limit
+        ∧ r.2.regulation = p.regulation ⦄ := by
+  unfold player.ModalPlayer.cycle
+  have hb := reachOf_bounds p.regulation.limit
+  have hu : timing.Step.UNITY.offset.val = 0 := by simp [timing.Step.UNITY]
+  step as ⟨scheduled⟩
+  split
+  · simp only [WP.spec_ok]; refine ⟨?_, ?_, trivial⟩ <;> (rw [hu]; omega)
+  · split
+    · simp only [WP.spec_ok]; refine ⟨?_, ?_, trivial⟩ <;> (rw [hu]; omega)
+    · step as ⟨jumped⟩
+      cases jumped
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        cases peer_active
+        · simp only [Bool.false_eq_true, ↓reduceIte]
+          apply WP.spec_bind (Pₘ := fun _ => True)
+          · cases p.was_peer <;> simp [lift]
+          · intro ⟨_, _, _, _, _⟩ _
+            step*
+        · simp only [↓reduceIte]
+          apply WP.spec_bind (Pₘ := fun _ => True)
+          · repeat' (first | split | step*)
+          · intro ⟨_, _, _, _, _⟩ _
+            step*
+      · simp only [↓reduceIte]
+        step as ⟨st, hlo, hhi⟩
+        cases peer_active
+        · simp only [Bool.false_eq_true, ↓reduceIte]
+          step*
+        · simp only [↓reduceIte]
+          step*
+
+/-- The step of every `ModalPlayer` plan stays strictly within `±2^56`, the
+resampler's permitted band. -/
+theorem modal_cycle_step_small (p : player.ModalPlayer) (now later : timing.Position)
+    (frames : Std.U32) (duration : Std.I64) (schedule : timing.Schedule)
+    (peer_active : Bool) (epoch : Std.U32) (com_now com_then : Std.I64) :
+    player.ModalPlayer.cycle p now later frames duration schedule peer_active epoch com_now com_then
+      ⦃ r => -2^56 < r.1.step.offset.val ∧ r.1.step.offset.val < 2^56 ⦄ := by
+  have hb := reachOf_bounds p.regulation.limit
+  apply WP.spec_mono
+    (modal_cycle_spec p now later frames duration schedule peer_active epoch com_now com_then)
+  intro r hr
+  omega
+
+/-- Helper: `player.gains_for` equals `Player.gains` for the same gain. -/
+theorem gains_for_eq_player_gains (p : player.Player) (duration : Std.I64) :
+    player.gains_for p.regulation.gain duration = player.Player.gains p duration := by
+  unfold player.gains_for player.Player.gains player.Player.gain
+  simp only [lift, bind_ok, Std.bind_assoc]
+
+/-- Helper: `player.regulate_for` equals `Player.regulate` for the same gain. -/
+theorem regulate_for_eq_player_regulate (p : player.Player) (behind ahead duration : Std.I64) :
+    player.regulate_for p.regulation.gain behind ahead duration =
+      player.Player.regulate p behind ahead duration := by
+  unfold player.regulate_for player.Player.regulate
+  rw [gains_for_eq_player_gains]
+
+/-- Helper: `player.reach_for` equals `Player.reach` for the same limit. -/
+theorem reach_for_eq_player_reach (p : player.Player) :
+    player.reach_for p.regulation.limit = player.Player.reach p := by
+  unfold player.reach_for player.Player.reach
+  rfl
+
+/-- Helper: `player.step_for_limit` equals `Player.step` for the same limit. -/
+theorem step_for_limit_eq_player_step (p : player.Player) (wanted : Std.I64)
+    (frames : Std.U32) (scheduled : Std.I64) :
+    player.step_for_limit p.regulation.limit wanted frames scheduled =
+      player.Player.step p wanted frames scheduled := by
+  unfold player.step_for_limit player.Player.step player.clamp_sym_i128
+  rw [← reach_for_eq_player_reach p]
+  simp only [lift, bind_ok]
+  congr 1; funext reach1
+  congr 1; funext step
+  split
+  · simp only [bind_ok]
+  · split <;> simp only [bind_ok]
+
+private theorem exists_ok_of_spec {α : Type} {r : Result α} {P : α → Prop}
+    (h : r ⦃ P ⦄) : ∃ x, r = ok x ∧ P x := by
+  cases r with
+  | ret x => exact ⟨x, rfl, by simpa [WP.spec_ok] using h⟩
+  | vis _ _ => simp [WP.spec_vis] at h
+  | div => simp [WP.spec_div] at h
+
+private theorem regulate_for_zero (gain : Std.U32) (duration : Std.I64) :
+    player.regulate_for gain 0#i64 0#i64 duration = ok 0#i64 := by
+  have h : player.regulate_for gain 0#i64 0#i64 duration ⦃ r => r = 0#i64 ⦄ := by
+    unfold player.regulate_for
+    step as ⟨g⟩
+    have hz : (IScalar.cast .I128 0#i64).val = 0 := by
+      rw [I64.cast_I128_val]; rfl
+    have hm1 : (core.num.I128.wrapping_mul g.ahead (IScalar.cast .I128 0#i64)).val = 0 := by
+      rw [I128.wrapping_mul_val _ _ (by rw [hz]; norm_num), hz, mul_zero]
+    have hm2 : (core.num.I128.wrapping_mul g.behind (IScalar.cast .I128 0#i64)).val = 0 := by
+      rw [I128.wrapping_mul_val _ _ (by rw [hz]; norm_num), hz, mul_zero]
+    have hs1 : (core.num.I128.wrapping_shr
+        (core.num.I128.wrapping_mul g.ahead (IScalar.cast .I128 0#i64)) 32#u32).val = 0 := by
+      rw [I128.wrapping_shr_val _ _ (by decide), hm1]; norm_num
+    have hs2 : (core.num.I128.wrapping_shr
+        (core.num.I128.wrapping_mul g.behind (IScalar.cast .I128 0#i64)) 32#u32).val = 0 := by
+      rw [I128.wrapping_shr_val _ _ (by decide), hm2]; norm_num
+    have ha : (core.num.I128.wrapping_add
+        (core.num.I128.wrapping_shr
+          (core.num.I128.wrapping_mul g.ahead (IScalar.cast .I128 0#i64)) 32#u32)
+        (core.num.I128.wrapping_shr
+          (core.num.I128.wrapping_mul g.behind (IScalar.cast .I128 0#i64)) 32#u32)).val = 0 := by
+      rw [I128.wrapping_add_val _ _ (by rw [hs1, hs2]; norm_num), hs1, hs2]
+      norm_num
+    step as ⟨i, hi⟩
+    step as ⟨i1, hi1⟩
+    step as ⟨kept, hkept⟩
+    step as ⟨i2, hi2⟩
+    step as ⟨i3, hi3⟩
+    step as ⟨added, hadded⟩
+    step as ⟨i4, hi4⟩
+    step with Fixed.saturate_spec i4 as ⟨r, hr⟩
+    apply IScalar.eq_of_val_eq
+    have hi4v : i4.val = 0 := by rw [hi4, hkept, hadded, hi1, hi3, hi, hi2]; exact ha
+    rw [hr, hi4v]
+    simp [Fixed.clamp64]
+  obtain ⟨r, hr, h0⟩ := exists_ok_of_spec h
+  rw [hr, h0]
+
+/-- **Exact Star degeneration of `ModalPlayer`:** when `peer_active = false`
+(and `was_peer = false`), `ModalPlayer.cycle` produces the exact same `Plan`
+and next playback `(running, position, pace, slope)` as single-mode
+`Player.cycle` at `star_gain`. -/
+theorem modal_star_matches_player (m : player.ModalPlayer) (p : player.Player)
+    (now later : timing.Position) (frames : Std.U32) (duration : Std.I64)
+    (schedule : timing.Schedule) (epoch : Std.U32) (com_now com_then : Std.I64)
+    (hgain : m.regulation.star_gain = p.regulation.gain)
+    (hlim : m.regulation.limit = p.regulation.limit)
+    (hjump : m.regulation.jump = p.regulation.jump)
+    (hrun : m.running = p.running)
+    (hpos : m.position = p.position)
+    (hpace : m.diff_pace = p.pace)
+    (hslope : m.slope = p.slope)
+    (hwp : m.was_peer = false) :
+    (do
+      let rm ← player.ModalPlayer.cycle m now later frames duration schedule false epoch com_now com_then
+      let rp ← player.Player.cycle p now later frames duration schedule.level_slope
+      ok (rm, rp))
+      ⦃ pair =>
+        pair.1.1 = pair.2.1
+        ∧ pair.1.2.running = pair.2.2.running
+        ∧ pair.1.2.position = pair.2.2.position
+        ∧ pair.1.2.diff_pace = pair.2.2.pace
+        ∧ pair.1.2.slope = pair.2.2.slope
+        ∧ pair.1.2.was_peer = false ⦄ := by
+  have hjumps_eq : player.ModalPlayer.jumps m now = player.Player.jumps p now := by
+    unfold player.ModalPlayer.jumps player.Player.jumps
+    rw [hrun, hpos, hjump]
+  obtain ⟨scheduled, hsched, -⟩ := exists_ok_of_spec (distance_total now later)
+  unfold player.ModalPlayer.cycle player.Player.cycle
+  simp only [hgain, hlim, hrun, hpos, hpace, hslope, hwp, Bool.false_eq_true, ↓reduceIte,
+    hsched, bind_ok, hjumps_eq]
+  split
+  · simp [hrun, hpos, hpace, hslope, hwp]
+  · split
+    · simp [hrun, hpos, hpace, hslope, hwp]
+    · obtain ⟨jumped, hjumped, -⟩ := exists_ok_of_spec (jumps_total p now)
+      simp only [hjumped, bind_ok]
+      cases jumped
+      · simp only [Bool.false_eq_true, ↓reduceIte]
+        obtain ⟨behind, hbeh, -⟩ := exists_ok_of_spec (distance_total p.position now)
+        set read :=
+          core.num.I128.wrapping_add
+            (core.num.I128.wrapping_mul (UScalar.hcast .I128 frames) player.FRAME_IN_CORRECTIONS)
+            (core.num.I128.wrapping_shr
+              (core.num.I128.wrapping_mul (UScalar.hcast .I128 frames) (IScalar.cast .I128 p.pace))
+              16#u32)
+        obtain ⟨carried, hcarried, -⟩ :=
+          exists_ok_of_spec (carry_slope_total read p.slope schedule.level_slope)
+        obtain ⟨ahead, hahead_sat, -⟩ :=
+          exists_ok_of_spec (Fixed.saturate_spec
+            (core.num.I128.wrapping_sub carried
+              (core.num.I128.wrapping_mul (IScalar.cast .I128 scheduled) player.SIXTEEN_BITS)))
+        have hahead : player.Player.ahead p frames scheduled schedule.level_slope = ok ahead := by
+          unfold player.Player.ahead
+          simp only [lift, bind_ok]
+          have hcarried' := hcarried
+          unfold player.carry_slope at hcarried'
+          simp only [lift, bind_ok] at hcarried'
+          rw [show (if (p.slope != schedule.level_slope) = true then
+              if core.num.I128.wrapping_add (IScalar.cast .I128 player.BILLION) (IScalar.cast .I128 p.slope) > 0#i128 then
+                if core.num.I128.wrapping_add (IScalar.cast .I128 player.BILLION) (IScalar.cast .I128 schedule.level_slope) > 0#i128 then
+                  fixed.div_floor_wide
+                    (core.num.I128.wrapping_mul read
+                      (core.num.I128.wrapping_add (IScalar.cast .I128 player.BILLION) (IScalar.cast .I128 p.slope)))
+                    (core.num.I128.wrapping_add (IScalar.cast .I128 player.BILLION) (IScalar.cast .I128 schedule.level_slope))
+                else ok read
+              else ok read
+            else ok read) = ok carried from hcarried']
+          simpa [bind_ok] using hahead_sat
+        obtain ⟨wanted, hwanted, -⟩ :=
+          exists_ok_of_spec (regulate_for_total p.regulation.gain behind ahead duration)
+        obtain ⟨st, hst, -⟩ :=
+          exists_ok_of_spec (step_for_limit_spec p.regulation.limit wanted frames scheduled)
+        obtain ⟨adv, hadv, -⟩ :=
+          exists_ok_of_spec (position_advance_total p.position st (UScalar.cast .U64 frames))
+        unfold player.Player.play
+        simp only [hbeh, bind_ok, lift, hahead, timing.Step.impl.offset, Std.uncurry]
+        rw [hcarried]
+        simp only [bind_ok, hahead_sat, ← regulate_for_eq_player_regulate,
+          ← step_for_limit_eq_player_step]
+        simp only [hwanted, bind_ok, hst, hadv]
+        cases adv <;> simp
+      · simp only [↓reduceIte, bind_ok]
+        have hreg0 := regulate_for_zero p.regulation.gain duration
+        obtain ⟨st, hst, -⟩ :=
+          exists_ok_of_spec (step_for_limit_spec p.regulation.limit 0#i64 frames scheduled)
+        obtain ⟨adv, hadv, -⟩ :=
+          exists_ok_of_spec (position_advance_total now st (UScalar.cast .U64 frames))
+        unfold player.Player.play
+        simp only [lift, bind_ok, ← regulate_for_eq_player_regulate,
+          ← step_for_limit_eq_player_step, timing.Step.impl.offset, Std.uncurry]
+        rw [hreg0]
+        simp only [bind_ok, hst, hadv]
+        cases adv <;> simp
+
 end Unisono.Player

@@ -169,6 +169,7 @@ theorem renew_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
   unfold receiver.Receiver.renew
   step as ⟨p, hpb, hph⟩
   step with Unisono.Player.stop_total as ⟨p1⟩
+  step with Unisono.Player.modal_stop_total as ⟨mp1⟩
   step as ⟨e1, hlatest, hwindow, hkept⟩
   step as ⟨i, hi⟩
   have hiv : i.val = h.frames.val := by rw [hi]; exact U16.cast_U32_val h.frames
@@ -249,7 +250,8 @@ theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       ∧ (out.1.restarted = false →
           ∃ p1 : presence.Presence N,
             r.presence.base.val ≤ p1.base.val
-            ∧ (r.clock.line ≠ none → p1 = r.presence)
+            ∧ (r.use_sync = false → r.clock.line ≠ none → p1 = r.presence)
+            ∧ (r.use_sync = true → r.sync_snapshot.valid = true → p1 = r.presence)
             ∧ (h.index.val ≤ r.presence.base.val → p1 = r.presence)
             ∧ (AllLate p1 h.index.val h.frames.val ↔ AllLate r.presence h.index.val h.frames.val)
             ∧ Arrived p1 h.index.val h.frames.val out.2.presence out.1.marked)
@@ -259,11 +261,20 @@ theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       ∧ (out.1.restarted = false → OnlyLate out.1.marked →
           out.2.fresh = freshBy r t) ⦄ := by
   unfold receiver.Receiver.accept
-  step as ⟨r0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, sbase, sline, snoop, sbound⟩
+  step as ⟨r0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, sus, ssnap, sbase, sline, ssync, snoop,
+    sbound⟩
   have hall_iff : AllLate r0.presence h.index.val h.frames.val
       ↔ AllLate r.presence h.index.val h.frames.val :=
     allLate_slide_iff (fun hle => by rw [snoop hle]) sbound
-  step as ⟨r1, hs1, hsched1⟩
+  have hmeas :
+      (if r0.use_sync = true then ok r0 else receiver.Receiver.measure r0 h t)
+        ⦃ r1 => SameStream r1 r0 ⦄ := by
+    split
+    · simp [SameStream]
+    · apply WP.spec_mono (measure_spec r0 h t)
+      intro r1 hr1; exact hr1.1
+  apply WP.spec_bind hmeas
+  intro r1 hs1
   obtain ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11⟩ := hs1
   step as ⟨i, hi⟩
   have hiv : i.val = h.frames.val := by rw [hi]; exact U16.cast_U32_val h.frames
@@ -312,7 +323,8 @@ theorem accept_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       d9.trans (b10.trans (a10.trans s10)),
       hrestarts, fun _ => ?_, fun hc => (by cases hc), fun _ hlate => ?_⟩
     · refine ⟨r0.presence, sbase,
-        fun hl => by rw [sline hl],
+        fun hu hl => by rw [sline hu hl],
+        fun hu hv => by rw [ssync hu hv],
         fun hle => by rw [snoop hle],
         hall_iff, ?_⟩
       rw [d10, b11]
@@ -365,7 +377,8 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
           ∧ (out.1.restarted = false →
               ∃ p1 : presence.Presence N,
                 r.presence.base.val ≤ p1.base.val
-                ∧ (r.clock.line ≠ none → p1 = r.presence)
+                ∧ (r.use_sync = false → r.clock.line ≠ none → p1 = r.presence)
+                ∧ (r.use_sync = true → r.sync_snapshot.valid = true → p1 = r.presence)
                 ∧ (h.index.val ≤ r.presence.base.val → p1 = r.presence)
                 ∧ (AllLate p1 h.index.val h.frames.val
                     ↔ AllLate r.presence h.index.val h.frames.val)
@@ -409,7 +422,7 @@ theorem packet_spec (r : receiver.Receiver N M K) (h : packet.Audio) (t : Std.I6
       refine ⟨d2.trans hyes, d1, d4.trans c2, d5.trans c3, d6.trans c4, d7.trans c5, d9, ?_⟩
       cases hre : out.1.restarted with
       | false =>
-        obtain ⟨p1, _, _, hnoop, _, harr⟩ := d13 hre
+        obtain ⟨p1, _, _, _, hnoop, _, harr⟩ := d13 hre
         have hp1 : p1 = r1.presence := hnoop (by rw [c10])
         rw [hp1] at harr
         exact ⟨r1.presence, c10, c11, harr⟩

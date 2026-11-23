@@ -5,6 +5,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 import all Aeneas.Std.Scalar.CheckedOps.Div
+import all Aeneas.Std.Scalar.CheckedOps.Mul
 import all Aeneas.Std.Scalar.CheckedOps.Rem
 public import Aeneas
 import all Aeneas.Std.Scalar.SaturatingOps
@@ -27,6 +28,10 @@ namespace Unisono
 theorem I64.max_val : (core.num.I64.MAX).val = 2^63 - 1 := by rfl
 
 theorem I64.min_val : (core.num.I64.MIN).val = -2^63 := by rfl
+
+theorem I128.max_val : (core.num.I128.MAX).val = 2^127 - 1 := by rfl
+
+theorem I128.min_val : (core.num.I128.MIN).val = -2^127 := by rfl
 
 theorem U32.wrapping_sub_val (x y : U32) (h : y.val ≤ x.val) :
     (core.num.U32.wrapping_sub x y).val = x.val - y.val := by
@@ -159,6 +164,9 @@ theorem I128.checked_div_eq (x y : I128) :
 
 theorem I128.checked_rem_eq (x y : I128) :
     I128.checked_rem x y = core.num.checked_rem_IScalar x y := by rfl
+
+theorem I128.checked_mul_eq (x y : I128) :
+    I128.checked_mul x y = core.num.checked_mul_IScalar x y := by rfl
 
 theorem I64.wrapping_sub_val (x y : I64)
     (h : -2^63 ≤ x.val - y.val ∧ x.val - y.val < 2^63) :

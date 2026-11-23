@@ -375,13 +375,13 @@ theorem restart_spec (s : sender.Sender) (timeline : Std.U64) :
       <;> omega
 
 /-- The answer to a report of the sender's stream names the receiver and the
-number of the report and gives the time at which the report arrived. A report
-of another stream gets no answer. -/
-theorem answer_spec (s : sender.Sender) (report : packet.Report) (arrival : Std.I64) :
-    sender.Sender.answer s report arrival ⦃ out =>
+number of the report and gives the times at which the report arrived and the
+echo left. A report of another stream gets no answer. -/
+theorem answer_spec (s : sender.Sender) (report : packet.Report) (arrival departure : Std.I64) :
+    sender.Sender.answer s report arrival departure ⦃ out =>
       (report.stream ≠ s.settings.stream → out = none)
       ∧ (report.stream = s.settings.stream →
-          out = some ⟨report.stream, report.receiver, report.sequence, arrival⟩) ⦄ := by
+          out = some ⟨report.stream, report.receiver, report.sequence, arrival, departure⟩) ⦄ := by
   unfold sender.Sender.answer
   split
   · rename_i h

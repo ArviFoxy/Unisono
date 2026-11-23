@@ -44,14 +44,16 @@ dropped (`Unisono.Spec.Models.Delays`).
   `E[(Δ²_τ φ)²] ≤ 4 τ² ∫ S_y(f) df` for every lag `τ`. For the in-band white
   and random-walk components, the state-space phase and frequency diffusion
   variance rates are `white / 2` and `2 π² * walk`.
-* **Link jitter (`JitterNoise`, `HasMoments`).** Each directed link `(i, j)`
-  splits its jitter into three stationary components: sender-side shared jitter
-  `tx i` (common to links leaving host `i`), receiver-side shared jitter `rx j`
-  (common to links arriving at host `j`), and link-specific jitter `own i j`.
-  Link-specific components `own` are mutually uncorrelated across distinct
-  links and with `tx`/`rx`, while correlations among `tx` and `rx` (same-host
-  uplink–downlink coupling and cross-station shared wireless access-point
-  contention) are left unconstrained.
+* **Link jitter (`JitterNoise`, `PacketJitterNoise`, `HasMoments`, `HasPacketMoments`).**
+  Each directed link `(i, j)`—covering both hosts' network stacks as well as
+  the physical/wireless path between them—splits its per-packet jitter at
+  release time `u` and message index `q` into three stationary components:
+  sender-side shared jitter `tx i u` (common to links leaving host `i`),
+  receiver-side shared jitter `rx j u` (common to links arriving at host `j`),
+  and link-specific per-packet jitter `own i j u q`. Link-specific components
+  `own` are mutually uncorrelated across distinct links and with `tx`/`rx`,
+  while correlations among `tx` and `rx` (same-host network-stack coupling and
+  cross-station shared wireless access-point contention) are left unconstrained.
 * **Audio devices (`devicePhase`, `FollowsNoiseOnGrid`, `WhiteErrors`).** The
   capture device and each playback device have phase `times k - k / rate`
   relative to true time following band-limited power-law frequency noise on the
@@ -375,6 +377,50 @@ def UncorrelatedPhaseJitter (P : Measure Ω) (φ : Ω → ℝ → ℝ) (x : Ω �
 def UncorrelatedGridJitter (P : Measure Ω) (ψ : Ω → ℕ → ℝ) (x : Ω → Time → ℝ) : Prop :=
   ∀ k j s, ∫ ω, gridDifference (ψ ω) k j * (x ω s - ∫ ω', x ω' s ∂P) ∂P = 0
 
+/-- First and second moments of a stationary per-packet jitter process indexed
+by `(release_time, message_number)`. -/
+structure PacketJitterNoise where
+  /-- Mean jitter, in seconds. -/
+  mean : ℝ
+  /-- Covariance of jitter between two messages released `Δt` seconds apart
+  and `Δq` message indices apart, in `s²`. -/
+  covariance : ℝ → ℤ → ℝ
+
+/-- A random per-packet jitter process `x : Ω → Time → ℕ → ℝ` is
+square-integrable with mean `n.mean` and lag covariance `n.covariance`. -/
+def HasPacketMoments (P : Measure Ω) (x : Ω → Time → ℕ → ℝ) (n : PacketJitterNoise) : Prop :=
+  (∀ s q, MemLp (fun ω => x ω s q) 2 P) ∧
+  (∀ s q, ∫ ω, x ω s q ∂P = n.mean) ∧
+    ∀ s q u q',
+      ∫ ω, (x ω s q - n.mean) * (x ω u q' - n.mean) ∂P
+        = n.covariance (u - s) ((q' : ℤ) - (q : ℤ))
+
+/-- Two per-packet jitter processes have zero cross-covariance at every pair of
+release times and message indices. -/
+def UncorrelatedPacketJitter (P : Measure Ω) (x y : Ω → Time → ℕ → ℝ) : Prop :=
+  ∀ s q u q',
+    ∫ ω, (x ω s q - ∫ ω', x ω' s q ∂P) * (y ω u q' - ∫ ω', y ω' u q' ∂P) ∂P = 0
+
+/-- A per-packet jitter process and a time-indexed jitter process have zero
+cross-covariance. -/
+def UncorrelatedPacketTimeJitter (P : Measure Ω) (x : Ω → Time → ℕ → ℝ) (y : Ω → Time → ℝ) :
+    Prop :=
+  ∀ s q u,
+    ∫ ω, (x ω s q - ∫ ω', x ω' s q ∂P) * (y ω u - ∫ ω', y ω' u ∂P) ∂P = 0
+
+/-- A clock phase process and a per-packet jitter process are uncorrelated. -/
+def UncorrelatedPhasePacketJitter (P : Measure Ω) (φ : Ω → ℝ → ℝ) (x : Ω → Time → ℕ → ℝ) :
+    Prop :=
+  ∀ t τ s q,
+    ∫ ω, secondDifference (φ ω) t τ * (x ω s q - ∫ ω', x ω' s q ∂P) ∂P = 0
+
+/-- A discrete device phase process and a per-packet jitter process are
+uncorrelated. -/
+def UncorrelatedGridPacketJitter (P : Measure Ω) (ψ : Ω → ℕ → ℝ) (x : Ω → Time → ℕ → ℝ) :
+    Prop :=
+  ∀ k j s q,
+    ∫ ω, gridDifference (ψ ω) k j * (x ω s q - ∫ ω', x ω' s q ∂P) ∂P = 0
+
 /-- Capture device timestamp error on block `b`: reported timestamp minus the
 sender's clock reading when the block's first frame was captured. -/
 def captureError {H : Type} {R : ℕ} (w : World H R) (b : ℕ) : ℝ :=
@@ -412,8 +458,15 @@ def UncorrelatedGridError (P : Measure Ω) (ψ : Ω → ℕ → ℝ) (e : Ω →
 def UncorrelatedJitterError (P : Measure Ω) (x : Ω → Time → ℝ) (e : Ω → ℕ → ℝ) : Prop :=
   ∀ s b, ∫ ω, (x ω s - ∫ ω', x ω' s ∂P) * e ω b ∂P = 0
 
-/-- Parameters of the second-order noise model for hosts `H` and `R` speakers. -/
-structure SecondOrderModel (H : Type) (R : ℕ) where
+/-- A per-packet jitter process and a zero-mean timestamp error sequence are
+uncorrelated. -/
+def UncorrelatedPacketJitterError (P : Measure Ω) (x : Ω → Time → ℕ → ℝ) (e : Ω → ℕ → ℝ) :
+    Prop :=
+  ∀ s q b, ∫ ω, (x ω s q - ∫ ω', x ω' s q ∂P) * e ω b ∂P = 0
+
+/-- Parameters of the second-order moment model class for hosts `H` and `R`
+speakers. -/
+structure SecondOrderMoments (H : Type) (R : ℕ) where
   /-- Common nominal sample rate of all realizations, in frames per second. -/
   rate : ℝ
   rate_pos : 0 < rate
@@ -423,12 +476,14 @@ structure SecondOrderModel (H : Type) (R : ℕ) where
   host : Fin R → H
   /-- Frequency noise of each host's clock relative to true time. -/
   clock : H → ClockNoise
-  /-- Shared outgoing jitter for all links leaving host `i`. -/
+  /-- Shared outgoing jitter for all links leaving host `i` (e.g. host TX
+  network stack and shared medium contention). -/
   txJitter : H → JitterNoise
-  /-- Shared incoming jitter for all links arriving at host `j`. -/
+  /-- Shared incoming jitter for all links arriving at host `j` (e.g. host RX
+  network stack and shared medium contention). -/
   rxJitter : H → JitterNoise
-  /-- Link-specific jitter for each directed link `(i, j)`. -/
-  ownJitter : H → H → JitterNoise
+  /-- Link-specific per-packet jitter for each directed link `(i, j)`. -/
+  ownJitter : H → H → PacketJitterNoise
   /-- Frequency noise of the capture device oscillator relative to true time. -/
   capture : ClockNoise
   /-- Frequency noise of each speaker's playback oscillator relative to true
@@ -442,17 +497,17 @@ structure SecondOrderModel (H : Type) (R : ℕ) where
   playbackTimestampVariance_nonneg : ∀ r, 0 ≤ playbackTimestampVariance r
 
 /-- A random world `world` under probability measure `P`, with links `d`,
-satisfies the second-order noise model `m`:
+belongs to the second-order moment model class `m`:
 
 * `P` is a probability measure and every modeled second difference, jitter
   sample, and timestamp error is square-integrable (`MemLp · 2 P`).
 * Every host clock follows `m.clock i` (band-limited to `[lowFreq, highFreq]`),
   and distinct host clocks have uncorrelated second differences.
-* Every link's jitter decomposes into `tx i + rx j + own i j` with the
-  specified stationary means and covariances. Link-specific components `own`
-  are uncorrelated across distinct links and with `tx`/`rx`; correlations among
-  `tx` and `rx` (same-host uplink–downlink coupling and cross-station wireless
-  access-point contention) are left unconstrained.
+* Every link's per-packet jitter decomposes into `tx i u + rx j u + own i j u q`
+  with the specified stationary means and covariances. Link-specific per-packet
+  components `own` are uncorrelated across distinct links and with `tx`/`rx`,
+  while correlations among `tx` and `rx` (same-host network-stack coupling and
+  cross-station shared wireless access-point contention) are left unconstrained.
 * The capture and playback devices share a deterministic nominal rate `rate`
   and follow their grid noise spectra relative to true time. Each device is
   uncorrelated with clocks and devices on *other* hosts, while remaining free
@@ -461,9 +516,11 @@ satisfies the second-order noise model `m`:
 * Capture and playback timestamp errors are white with their per-device
   variances and uncorrelated across devices, clocks, devices, and jitter.
 
-Network pauses, outages, and packet drops are not constrained here; combine
-this structure with `DelayModel.Holds` when modeling losses and pauses. -/
-structure SecondOrderModel.Holds {H : Type} {R : ℕ} (m : SecondOrderModel H R)
+Network pauses, outages, packet drops, block sizes, handoff delay, and request
+lead are not constrained here; combine this structure with
+`StationaryNetworkDisturbances.Holds` and device/blocking bounds in
+`StochasticWorld` for a full-world probabilistic model class. -/
+structure SecondOrderMoments.Holds {H : Type} {R : ℕ} (m : SecondOrderMoments H R)
     (P : Measure Ω) (world : Ω → World H R) (d : Ω → H → H → Link) : Prop where
   /-- `P` is a probability measure. -/
   prob : IsProbabilityMeasure P
@@ -481,45 +538,46 @@ structure SecondOrderModel.Holds {H : Type} {R : ℕ} (m : SecondOrderModel H R)
   clocks_uncorrelated : ∀ i j, i ≠ j →
     Uncorrelated P (fun ω t => ((world ω).clock i).read t - t)
       (fun ω t => ((world ω).clock j).read t - t)
-  /-- Link jitter splits into sender-common, receiver-common, and link-specific
-  stationary components. Link-specific jitter `own` is uncorrelated across
-  distinct links and with `tx`/`rx`, while correlations among `tx` and `rx` are
-  left unconstrained for shared wireless media. All jitter components are
-  uncorrelated with clocks, device oscillators, and timestamp errors. -/
+  /-- Link jitter splits into sender-common `tx`, receiver-common `rx`, and
+  link-specific per-packet `own` stationary components. Link-specific jitter
+  `own` is uncorrelated across distinct links and with `tx`/`rx`, while
+  correlations among `tx` and `rx` are left unconstrained for shared host
+  stacks and wireless media. All jitter components are uncorrelated with
+  clocks, device oscillators, and timestamp errors. -/
   jitter : ∃ tx : Ω → H → Time → ℝ, ∃ rx : Ω → H → Time → ℝ,
-      ∃ own : Ω → H → H → Time → ℝ,
-    (∀ ω i j u, (d ω i j).jitter u = tx ω i u + rx ω j u + own ω i j u)
+      ∃ own : Ω → H → H → Time → ℕ → ℝ,
+    (∀ ω i j u q, (d ω i j).jitter u q = tx ω i u + rx ω j u + own ω i j u q)
       ∧ (∀ i, HasMoments P (fun ω => tx ω i) (m.txJitter i))
       ∧ (∀ j, HasMoments P (fun ω => rx ω j) (m.rxJitter j))
-      ∧ (∀ i j, HasMoments P (fun ω => own ω i j) (m.ownJitter i j))
-      ∧ (∀ i j i', UncorrelatedJitter P (fun ω => own ω i j) (fun ω => tx ω i'))
-      ∧ (∀ i j j', UncorrelatedJitter P (fun ω => own ω i j) (fun ω => rx ω j'))
+      ∧ (∀ i j, HasPacketMoments P (fun ω => own ω i j) (m.ownJitter i j))
+      ∧ (∀ i j i', UncorrelatedPacketTimeJitter P (fun ω => own ω i j) (fun ω => tx ω i'))
+      ∧ (∀ i j j', UncorrelatedPacketTimeJitter P (fun ω => own ω i j) (fun ω => rx ω j'))
       ∧ (∀ i j i' j', (i, j) ≠ (i', j') →
-          UncorrelatedJitter P (fun ω => own ω i j) (fun ω => own ω i' j'))
+          UncorrelatedPacketJitter P (fun ω => own ω i j) (fun ω => own ω i' j'))
       ∧ (∀ h i, UncorrelatedPhaseJitter P (fun ω t => ((world ω).clock h).read t - t)
           (fun ω => tx ω i))
       ∧ (∀ h j, UncorrelatedPhaseJitter P (fun ω t => ((world ω).clock h).read t - t)
           (fun ω => rx ω j))
-      ∧ (∀ h i j, UncorrelatedPhaseJitter P (fun ω t => ((world ω).clock h).read t - t)
+      ∧ (∀ h i j, UncorrelatedPhasePacketJitter P (fun ω t => ((world ω).clock h).read t - t)
           (fun ω => own ω i j))
       ∧ (∀ i, UncorrelatedGridJitter P (fun ω => devicePhase (world ω).source.capture m.rate)
           (fun ω => tx ω i))
       ∧ (∀ j, UncorrelatedGridJitter P (fun ω => devicePhase (world ω).source.capture m.rate)
           (fun ω => rx ω j))
-      ∧ (∀ i j, UncorrelatedGridJitter P (fun ω => devicePhase (world ω).source.capture m.rate)
+      ∧ (∀ i j, UncorrelatedGridPacketJitter P (fun ω => devicePhase (world ω).source.capture m.rate)
           (fun ω => own ω i j))
       ∧ (∀ r i, UncorrelatedGridJitter P (fun ω => devicePhase ((world ω).speaker r).out m.rate)
           (fun ω => tx ω i))
       ∧ (∀ r j, UncorrelatedGridJitter P (fun ω => devicePhase ((world ω).speaker r).out m.rate)
           (fun ω => rx ω j))
-      ∧ (∀ r i j, UncorrelatedGridJitter P (fun ω => devicePhase ((world ω).speaker r).out m.rate)
+      ∧ (∀ r i j, UncorrelatedGridPacketJitter P (fun ω => devicePhase ((world ω).speaker r).out m.rate)
           (fun ω => own ω i j))
       ∧ (∀ i, UncorrelatedJitterError P (fun ω => tx ω i) (fun ω => captureError (world ω)))
       ∧ (∀ j, UncorrelatedJitterError P (fun ω => rx ω j) (fun ω => captureError (world ω)))
-      ∧ (∀ i j, UncorrelatedJitterError P (fun ω => own ω i j) (fun ω => captureError (world ω)))
+      ∧ (∀ i j, UncorrelatedPacketJitterError P (fun ω => own ω i j) (fun ω => captureError (world ω)))
       ∧ (∀ r i, UncorrelatedJitterError P (fun ω => tx ω i) (fun ω => playbackError (world ω) r))
       ∧ (∀ r j, UncorrelatedJitterError P (fun ω => rx ω j) (fun ω => playbackError (world ω) r))
-      ∧ (∀ r i j, UncorrelatedJitterError P (fun ω => own ω i j)
+      ∧ (∀ r i j, UncorrelatedPacketJitterError P (fun ω => own ω i j)
           (fun ω => playbackError (world ω) r))
   /-- The capture device oscillator follows its power-law noise against true time. -/
   capture : FollowsNoiseOnGrid P

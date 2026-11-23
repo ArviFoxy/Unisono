@@ -305,4 +305,160 @@ theorem shift_rounds {W : Std.Usize} (d : device.Device W) (b : Std.I128) (kept 
     simp only [h0]
     omega
 
+/-! ## Fixed-point scaling, sliding minimum-RTT, and peer lookup -/
+
+/-- The binary long-division loop of `fixed.scale_div_pow2` takes at most
+`shift + 1` rounds. -/
+theorem scale_div_pow2_rounds (den : Std.I128) (shift : Std.U32) (rem frac : Std.I128) :
+    EndsWithin
+      (fun x : Std.I128 × Std.I128 × Std.U32 =>
+        fixed.scale_div_pow2_loop.body den shift x.1 x.2.1 x.2.2)
+      (shift.val + 1) (rem, frac, 0#u32) := by
+  apply endsWithin_of_measure
+    (measure := fun x : Std.I128 × Std.I128 × Std.U32 => shift.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨r, f, bit⟩ -
+    unfold fixed.scale_div_pow2_loop.body
+    simp only
+    split
+    · have hlt : bit.val < shift.val := by scalar_tac
+      have hs : shift.val ≤ U32.max := by scalar_tac
+      step as ⟨f1⟩; step as ⟨hu⟩
+      have hbr : (if r >= hu then do
+          let rem2 ← lift (core.num.I128.wrapping_sub r hu)
+          let frac3 ← lift (core.num.I128.wrapping_add f1 1#i128)
+          ok (rem2, frac3)
+        else do
+          let rem2 ← lift (core.num.I128.wrapping_add r r)
+          ok (rem2, f1)) ⦃ _ => True ⦄ := by split <;> step*
+      step with hbr as ⟨r1, f2⟩
+      step as ⟨bit1, hbit1⟩
+      have hv : bit1.val = bit.val + 1 := by
+        rw [hbit1]; exact U32.saturating_add_one_val bit shift.val hlt hs
+      omega
+    · simp
+  · trivial
+  · have h0 : (0#u32).val = 0 := by rfl
+    simp only [h0]; omega
+
+/-- Scanning the sliding minimum-RTT window takes one round per slot up to `limit`. -/
+theorem best_in_window_rounds {W : Std.Usize} (a : Array min_rtt.Slot W) (limit : Std.Usize) :
+    EndsWithin
+      (fun x : Option min_rtt.Sampled × Std.Usize =>
+        min_rtt.SlidingMinRtt.best_in_window_loop.body a limit x.1 x.2)
+      (limit.val + 1) (none, 0#usize) := by
+  apply endsWithin_of_measure
+    (measure := fun x : Option min_rtt.Sampled × Std.Usize => limit.val - x.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨best, i⟩ -
+    unfold min_rtt.SlidingMinRtt.best_in_window_loop.body
+    simp only
+    split
+    · have hlt : i.val < limit.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i 1#usize).val = i.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨s⟩
+      have hget : core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice min_rtt.Slot) s i
+          ⦃ _ => True ⦄ := by simp [core.slice.Slice.get, core.slice.index.Usize.get]
+      step with hget as ⟨o⟩
+      apply WP.spec_bind (Pₘ := fun _ => True)
+      · cases o with
+        | none => simp
+        | some slot =>
+          dsimp only
+          split
+          · apply WP.spec_bind (Pₘ := fun _ => True)
+            · cases best with
+              | none => simp
+              | some cur =>
+                dsimp only
+                apply WP.spec_bind (Pₘ := fun _ => True)
+                · split <;> (try split) <;> simp
+                · intro _ _; simp
+            · rintro ⟨_, pick⟩ -; cases pick <;> simp
+          · simp
+      · intro _ _
+        step as ⟨i1, hi1⟩
+        rw [hi1, hnext]; omega
+    · simp
+  · trivial
+  · have h0 : (0#usize).val = 0 := by rfl
+    simp only [h0]; omega
+
+/-- Scanning the minimum-RTT history windows takes at most `MIN_RTT_WINDOWS + 1` rounds. -/
+theorem min_rtt_ns_rounds (a : Array min_rtt.RttWindow 8#usize) (newest : Std.I64)
+    (oldest : Std.I128) :
+    EndsWithin
+      (fun x : Option Std.I64 × Std.Usize =>
+        min_rtt.SlidingMinRtt.min_rtt_ns_loop.body a newest oldest x.1 x.2)
+      (min_rtt.MIN_RTT_WINDOWS.val + 1) (none, 0#usize) := by
+  apply endsWithin_of_measure
+    (measure := fun x : Option Std.I64 × Std.Usize => min_rtt.MIN_RTT_WINDOWS.val - x.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨best, i⟩ -
+    unfold min_rtt.SlidingMinRtt.min_rtt_ns_loop.body
+    simp only
+    split
+    · have hlt : i.val < min_rtt.MIN_RTT_WINDOWS.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i 1#usize).val = i.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨s⟩
+      have hget : core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice min_rtt.RttWindow) s i
+          ⦃ _ => True ⦄ := by simp [core.slice.Slice.get, core.slice.index.Usize.get]
+      step with hget as ⟨o⟩
+      apply WP.spec_bind (Pₘ := fun _ => True)
+      · cases o with
+        | none => simp
+        | some slot =>
+          dsimp only
+          split
+          · step as ⟨_⟩
+            split
+            · split
+              · apply WP.spec_bind (Pₘ := fun _ => True)
+                · cases best with
+                  | none => simp
+                  | some prev => dsimp only; split <;> simp
+                · intro _ _; simp
+              · simp
+            · simp
+          · simp
+      · intro _ _
+        step as ⟨i1, hi1⟩
+        rw [hi1, hnext]; omega
+    · simp
+  · trivial
+  · have h0 : (0#usize).val = 0 := by rfl
+    simp only [h0]; omega
+
+/-- Looking up a peer in the static peer table takes at most `peer_count + 1` rounds. -/
+theorem find_peer_rounds (s : sync.Sync) (identity : Std.U64) :
+    EndsWithin (fun i : Std.Usize => sync.Sync.find_peer_loop.body s identity i)
+      (s.peer_count.val + 1) 0#usize := by
+  apply endsWithin_of_measure
+    (measure := fun i : Std.Usize => s.peer_count.val - i.val) (inv := fun _ => True)
+  · rintro i -
+    unfold sync.Sync.find_peer_loop.body
+    split
+    · have hlt : i.val < s.peer_count.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i 1#usize).val = i.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step as ⟨sl⟩
+      have hget : core.slice.Slice.get (core.slice.index.SliceIndexUsizeSlice sync.PeerSlot) sl i
+          ⦃ _ => True ⦄ := by simp [core.slice.Slice.get, core.slice.index.Usize.get]
+      step with hget as ⟨o⟩
+      cases o with
+      | none => dsimp only; step as ⟨i1, hi1⟩; rw [hi1, hnext]; omega
+      | some p =>
+        dsimp only
+        split
+        · split
+          · simp
+          · step as ⟨i1, hi1⟩; rw [hi1, hnext]; omega
+        · step as ⟨i1, hi1⟩; rw [hi1, hnext]; omega
+    · simp
+  · trivial
+  · have h0 : (0#usize).val = 0 := by rfl
+    simp only [h0]; omega
+
 end Unisono.Rounds

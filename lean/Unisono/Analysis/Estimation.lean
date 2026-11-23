@@ -15,6 +15,13 @@ public import Mathlib.Tactic.Ring
 /-!
 # Clock-offset estimation for star and peer (receiver–receiver) topologies
 
+> **Status (supplementary component / oracle analysis):** This module proves
+> algebraic and stochastic properties in a simplified component or oracle
+> setting as a supplement to `Unisono.Spec`. Per `PRINCIPLES.md`, results
+> here do **not** replace end-to-end proofs on `Unisono.Spec.Solution` and
+> `Unisono.Spec.Objectives` under a named model class in `Unisono.Spec.Models`.
+
+
 This module records algebraic and `L²` identities for linear clock-offset
 estimation in both communication topologies:
 
@@ -81,7 +88,7 @@ estimation in both communication topologies:
 
 @[expose] public noncomputable section
 
-namespace Unisono.Solutions.Optimal
+namespace Unisono.Analysis
 
 open MeasureTheory Finset
 
@@ -717,4 +724,4 @@ theorem triangle_blue_bias {vW vP : ℝ} (hvW : 0 < vW) (hvP : 0 < vP)
 
 end GraphBlue
 
-end Unisono.Solutions.Optimal
+end Unisono.Analysis

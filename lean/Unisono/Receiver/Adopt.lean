@@ -253,6 +253,7 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     step as ⟨p, hpb, hph⟩
     step as ⟨a, ha⟩
     step with Unisono.Player.stop_total as ⟨p1⟩
+    step with Unisono.Player.modal_stop_total as ⟨mp1⟩
     split
     · rename_i hclk
       have hclk' : h.clock = r.clock_id := by simpa using hclk
@@ -283,6 +284,7 @@ theorem adopt_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
     step as ⟨p, hpb, hph⟩
     step as ⟨a, ha⟩
     step with Unisono.Player.stop_total as ⟨p1⟩
+    step with Unisono.Player.modal_stop_total as ⟨mp1⟩
     simp only [Bool.false_eq_true, ↓reduceIte]
     step as ⟨i1⟩
     step as ⟨e, _, _, _, _, he_len, _, _, he_line⟩
@@ -304,17 +306,42 @@ theorem keep_newest_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
       ∧ r'.clock_id = r.clock_id ∧ r'.has_candidate = r.has_candidate
       ∧ r'.candidate = r.candidate ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh
       ∧ r'.silence = r.silence ∧ r'.limit = r.limit ∧ r'.clock = r.clock
+      ∧ r'.use_sync = r.use_sync ∧ r'.sync_snapshot = r.sync_snapshot
       ∧ r.presence.base.val ≤ r'.presence.base.val
-      ∧ (r.clock.line ≠ none → r' = r)
+      ∧ (r.use_sync = false → r.clock.line ≠ none → r' = r)
+      ∧ (r.use_sync = true → r.sync_snapshot.valid = true → r' = r)
       ∧ (h.index.val ≤ r.presence.base.val → r' = r)
       ∧ (r.presence.base.val < h.index.val → r'.presence.base.val ≤ h.index.val) ⦄ := by
   unfold receiver.Receiver.keep_newest relation.Estimator.impl.line
-  simp only [bind_ok]
-  cases hline : r.clock.line with
-  | some line =>
-    simp [core.option.Option.is_some]; omega
-  | none =>
-    simp only [core.option.Option.is_some, Option.isSome, Bool.false_eq_true, ↓reduceIte]
+  have hbody :
+      (do
+        let width ← presence.Presence.width r.presence
+        if width = 0#u64 then ok r
+        else do
+          let base ← presence.Presence.impl.base r.presence
+          let i ← lift (UScalar.cast .U64 h.frames)
+          let end_ ← lift (core.num.U64.saturating_add h.index i)
+          let stretch_end ← lift (core.num.U64.saturating_add base width)
+          let limit ← lift (core.num.U64.saturating_add stretch_end width)
+          if h.index > base then
+            if end_ > stretch_end then
+              if h.index <= limit then do
+                let target ← lift (core.num.U64.saturating_sub end_ width)
+                let new_base ← if target < h.index then ok target else ok h.index
+                let p ← presence.Presence.advance r.presence new_base
+                ok { r with presence := p }
+              else ok r
+            else ok r
+          else ok r)
+        ⦃ r' =>
+          r'.stream = r.stream ∧ r'.following = r.following ∧ r'.timeline = r.timeline
+          ∧ r'.clock_id = r.clock_id ∧ r'.has_candidate = r.has_candidate
+          ∧ r'.candidate = r.candidate ∧ r'.heard = r.heard ∧ r'.fresh = r.fresh
+          ∧ r'.silence = r.silence ∧ r'.limit = r.limit ∧ r'.clock = r.clock
+          ∧ r'.use_sync = r.use_sync ∧ r'.sync_snapshot = r.sync_snapshot
+          ∧ r.presence.base.val ≤ r'.presence.base.val
+          ∧ (h.index.val ≤ r.presence.base.val → r' = r)
+          ∧ (r.presence.base.val < h.index.val → r'.presence.base.val ≤ h.index.val) ⦄ := by
     step as ⟨width, hwidth⟩
     split
     · simp; omega
@@ -340,11 +367,37 @@ theorem keep_newest_spec (r : receiver.Receiver N M K) (h : packet.Audio) :
               subst new_base
               split <;> scalar_tac
             step as ⟨p, hpb, _⟩
-            refine ⟨by omega, fun hne => absurd rfl hne, fun hle => by omega,
-              fun _ => by omega⟩
+            refine ⟨by omega, fun hle => by omega, fun _ => by omega⟩
           · simp; omega
         · simp; omega
       · simp; omega
+  cases hus : r.use_sync with
+  | true =>
+    simp only [↓reduceIte]
+    cases hval : r.sync_snapshot.valid with
+    | true =>
+      simp [hus]
+      omega
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      rw [hus] at hbody
+      apply WP.spec_mono hbody
+      rintro r' ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16⟩
+      exact ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14,
+        fun hc _ => (by cases hc), fun _ hc => (by cases hc), a15, a16⟩
+  | false =>
+    simp only [Bool.false_eq_true, ↓reduceIte, bind_ok]
+    cases hline : r.clock.line with
+    | some line =>
+      simp [core.option.Option.is_some, hus]
+      omega
+    | none =>
+      simp only [core.option.Option.is_some, Option.isSome, Bool.false_eq_true, ↓reduceIte]
+      rw [hus] at hbody
+      apply WP.spec_mono hbody
+      rintro r' ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15, a16⟩
+      exact ⟨a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14,
+        fun _ hne => absurd rfl hne, fun hc _ => (by cases hc), a15, a16⟩
 
 
 end Unisono.Receiver

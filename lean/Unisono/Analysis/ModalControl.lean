@@ -10,6 +10,13 @@ public import Unisono.Spec.Topologies
 /-!
 # Multi-speaker modal control for a per-cycle linear-quadratic approximation
 
+> **Status (supplementary component / oracle analysis):** This module proves
+> algebraic and stochastic properties in a simplified component or oracle
+> setting as a supplement to `Unisono.Spec`. Per `PRINCIPLES.md`, results
+> here do **not** replace end-to-end proofs on `Unisono.Spec.Solution` and
+> `Unisono.Spec.Objectives` under a named model class in `Unisono.Spec.Models`.
+
+
 This module analyzes a discrete-time, per-cycle linear-quadratic approximation
 to the playback control problem of `Unisono.Spec.Objectives`.
 
@@ -107,13 +114,13 @@ These theorems assume:
 3. Uniform cycle length `Δt` aligned across speakers, with linear speed ramps
    within cycles so `(Δn)²` matches per-sample roughness up to `1 / (ρ² Δt³)`.
 4. Martingale expected increments, which are assumed rather than derived from
-   `Unisono.Spec.SecondOrderModel` and do not hold under flicker frequency
+   `Unisono.Spec.SecondOrderMoments` and do not hold under flicker frequency
    noise, varying block sizes, or changes of target latency.
 -/
 
 @[expose] public noncomputable section
 
-namespace Unisono.Solutions.Optimal
+namespace Unisono.Analysis
 
 open MeasureTheory Unisono.Model.Regulation Unisono.Model.RegulationRandom Unisono.Spec
 
@@ -2357,4 +2364,4 @@ theorem consensus_one_hot_var (hR : 0 < R) (r₀ : Fin R) (Δ : ℝ) :
 
 end MultiSpeaker
 
-end Unisono.Solutions.Optimal
+end Unisono.Analysis
