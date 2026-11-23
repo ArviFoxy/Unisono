@@ -1686,6 +1686,7 @@ private theorem exampleDraw_prior :
     simp
   wander_continuous := fun _ _ => continuous_const
   traffic_monotone := fun _ _ _ => monotone_const
+  traffic_zero := fun _ _ _ => rfl
   traffic_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
   traffic_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
   traffic_law := fun i j s t _ => by

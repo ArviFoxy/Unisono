@@ -82,7 +82,7 @@ All of the following are independent of one another.
 * The **other traffic** of each directed link: packets arrive at the instants
   of a Poisson process of rate `trafficRate`, and each brings an
   exponentially distributed amount of work with mean `trafficWork`. The draw
-  records the work that has arrived up to each true time (`trafficLaw`).
+  records the work that has arrived since true time zero (`trafficLaw`).
 
 ## The world built from a draw (`GenerativeWorld.Builds`)
 
@@ -101,6 +101,13 @@ All of the following are independent of one another.
 
 A random world belongs to a member when it is built, for every outcome, from
 a draw that has the law above.
+
+## The solutions that are compared (`GenerativeWorld.measurableCost`)
+
+Optimality under this model compares the solutions whose cost is, in almost
+every outcome, a measurable function of what is drawn. A solution outside
+this class has a cost that is not a random variable, and its expected cost,
+a lower integral, can lie below its cost in almost every outcome.
 
 ## What the model leaves out
 
@@ -208,9 +215,10 @@ structure Draw (H : Type) where
   /-- The wander of each host's clock at each true time: the logarithm of its
   rate minus `logRate`. -/
   wander : H → Time → ℝ
-  /-- The work that other traffic has brought to the link from `i` to `j` up
-  to each true time, in seconds; the work that arrives between true times `s`
-  and `t` is the difference of the values at `t` and at `s`. -/
+  /-- The work that other traffic has brought to the link from `i` to `j`
+  between true time zero and each true time, in seconds; the work that
+  arrives between true times `s` and `t` is the difference of the values at
+  `t` and at `s`. -/
   traffic : H → H → Time → ℝ
 
 /-- What the clock of host `h` reads at true time `t`: its offset plus the
@@ -236,6 +244,13 @@ def trafficLaw (count : ℝ≥0) (work : ℝ) : Measure ℝ :=
   Measure.sum fun n : ℕ =>
     poissonMeasure count {n} •
       (if n = 0 then Measure.dirac 0 else gammaMeasure (n : ℝ) (1 / work))
+
+/-- The measurable sets of draws: those that the values of the splits, the
+offsets, the mean rates, the wander and the traffic determine. A function of
+a draw is measurable when it is a measurable function of these values. -/
+instance : MeasurableSpace (Draw H) :=
+  MeasurableSpace.comap
+    (fun d : Draw H => (d.split, d.offset, d.logRate, d.wander, d.traffic)) inferInstance
 
 /-- The components of a draw: the parts that are drawn independently of one another: the
 split of each pair of distinct hosts, the offset and the mean rate of each
@@ -315,6 +330,8 @@ structure Prior (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
   wander_continuous : ∀ ω h, Continuous ((D ω).wander h)
   /-- The work that has arrived never decreases. -/
   traffic_monotone : ∀ ω i j, Monotone ((D ω).traffic i j)
+  /-- The work is counted from true time zero. -/
+  traffic_zero : ∀ ω i j, (D ω).traffic i j 0 = 0
   /-- Work that arrives at an instant counts from that instant on. -/
   traffic_rightContinuous : ∀ ω i j t,
     ContinuousWithinAt ((D ω).traffic i j) (Set.Ici t) t
@@ -383,6 +400,19 @@ def Holds (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
 /-- The family of laws of the model: the random worlds of each member. -/
 def laws (m : GenerativeWorld H R) : Member H R → RandomWorlds H R :=
   fun f _ _ P world => m.Holds f P world
+
+/-- **The solutions that are compared.** The solutions whose cost is a
+measurable function of what is drawn: for each member there is a measurable
+function `F` of the draw such that, in every random world of the member, the
+cost of the solution is `F` of the draw in almost every outcome. The weights
+`c` and the lookahead are those for which the cost is taken. -/
+def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (lookahead : ℕ+) (c : Weights) :
+    SolutionClass H R :=
+  fun _ τ => ∀ f : Member H R, ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
+    ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H)
+      (world : Ω' → World H R),
+      m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →
+        ∀ᵐ ω ∂P, τ.cost (world ω) lookahead c = F (D ω)
 
 /-! ## Checks of the definitions -/
 

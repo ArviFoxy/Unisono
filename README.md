@@ -39,8 +39,10 @@ simulation and integration tests (see `PRINCIPLES.md`):
     plus end-to-end objective bounds for the abstract real-valued reference
     `Unisono.Solutions.FixedDelay` under `World.WithinBounds`.
   - The definition of optimality in expected cost (`OptimalWithin` in
-    `lean/Unisono/Spec/Optimality.lean`) and the generative model
-    `GenerativeWorld`, with checks of its definitions and a random world that
+    `lean/Unisono/Spec/Optimality.lean`), the class of solutions that it
+    compares under the generative model (`GenerativeWorld.measurableCost`:
+    those whose cost is a measurable function of what is drawn), and the
+    generative model `GenerativeWorld`, with checks of its definitions and a random world that
     satisfies it (a member with no other traffic and no clock wander).
   - In a member of `GenerativeWorld` with no other traffic, no clock wander and
     no spread of clock rates, almost every outcome is an ideal constant world

@@ -880,8 +880,9 @@ The following are drawn at random, all independently of one another
 \item For each direction from $i$ to $j$, the other traffic of the link.
   Packets arrive at the instants of a Poisson process of rate $\mu_{ij}$,
   and each brings an independent, exponentially distributed amount of work
-  with mean $\beta_{ij}$. Write $W_{ij}(t)$ for the work that has arrived up
-  to true time $t$ (\lean{traffic}, \lean{trafficLaw}).
+  with mean $\beta_{ij}$. Write $W_{ij}(t)$ for the work that has arrived
+  between true time zero and true time $t$ (\lean{traffic},
+  \lean{trafficLaw}).
 \end{itemize}
 \end{definition}
 
@@ -1081,9 +1082,12 @@ smaller class has to name it. The expected cost is a lower integral
 (\lean{Solution.\allowbreak expectedCost}). When the cost of a solution is
 not a measurable function of the outcome, its lower integral can lie below
 its cost in almost every outcome, and such a solution can appear better than
-every solution whose cost is measurable. A statement of optimality therefore
-has to restrict the class to solutions whose cost is a measurable function
-of what is drawn; this class is not yet defined in Lean. A speaker that does not play a frame adds
+every solution whose cost is measurable. Optimality under the generative
+world therefore compares the solutions whose cost is a measurable function
+of what is drawn (\lean{GenerativeWorld.\allowbreak measurableCost}): for
+each member there is a measurable function of the draw that equals the cost
+of the solution in almost every outcome, in every random world of the
+member. A speaker that does not play a frame adds
 nothing to that frame's synchronization and tracking costs, so with
 $w_M = 0$ a solution that plays nothing has cost zero and is optimal. A
 statement about synchronization and tracking alone therefore needs either

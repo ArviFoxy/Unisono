@@ -54,7 +54,8 @@ measurable function of the outcome, its lower integral can lie below its cost
 in almost every outcome, so such a solution can appear better than every
 solution whose cost is measurable. A statement of optimality therefore has
 to restrict the class of solutions to those whose cost is a measurable
-function of what is drawn. That class is not defined here yet.
+function of what is drawn. For the generative world that class is
+`GenerativeWorld.measurableCost`.
 -/
 
 @[expose] public noncomputable section
