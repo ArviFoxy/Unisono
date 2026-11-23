@@ -1524,6 +1524,7 @@ fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
             stream: seq.next() as u16,
             sender: seq.next(),
             sequence: seq.next(),
+            sender_clock_id: seq.next() as u32,
             count,
             edges,
         };
@@ -1531,8 +1532,8 @@ fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
         let rsize = packet::write_peer_relay(&relay, &mut rbuf).unwrap_or(0);
         write!(
             out,
-            "write_peer_relay {} {} {} {count}",
-            relay.stream, relay.sender, relay.sequence
+            "write_peer_relay {} {} {} {} {count}",
+            relay.stream, relay.sender, relay.sequence, relay.sender_clock_id
         )?;
         for edge in relay.edges.iter().take(usize::from(count)) {
             write!(
@@ -1615,6 +1616,7 @@ fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
                         i128::from(rel.stream),
                         i128::from(rel.sender),
                         i128::from(rel.sequence),
+                        i128::from(rel.sender_clock_id),
                         i128::from(rel.count),
                     ];
                     for edge in rel.edges.iter().take(usize::from(rel.count)) {
@@ -1630,7 +1632,7 @@ fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
                 }
                 Err(r) => {
                     let [c, d] = rejection(r);
-                    vec![c, d, 0, 0, 0]
+                    vec![c, d, 0, 0, 0, 0]
                 }
             };
             writeln!(

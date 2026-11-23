@@ -25,14 +25,28 @@ public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.AtLatency
 
 /-!
-# End-to-end `Unisono.Spec.Solution` wrapper for the translated `unisono-core`
+# `Unisono.Spec.Solution` harness wrapping the translated `unisono-core`
 
-This module wraps the Aeneas-translated Rust production core (`UnisonoCore`:
+This module composes the Aeneas-translated Rust core functions (`UnisonoCore`:
 `sender.Sender`, `sync.Sync`, `receiver.Receiver`, `player.ModalPlayer`, and
-the v2 wire headers in `packet`) directly into a genuine
-`Unisono.Spec.Solution H R CoreMsg`, with no toy re-implementation.
+the v2 wire headers in `packet`) into an event-driven
+`Unisono.Spec.Solution H R CoreMsg`.
 
-## End-to-end theorems proved directly on `Core.solution`
+## Scope and differences from `unisono-runtime`
+
+Because `unisono-runtime` is not translated to Lean, `stepHost` is a Lean
+composition of the translated core functions rather than a proof about the
+shipped runtime threads. In particular, `stepHost` differs from
+`crates/unisono-runtime` in four ways:
+- it does not fit an audio-device clock line (`Device`);
+- it sends reports and peer probes only at playback-block requests rather than
+  on independent timers;
+- it constructs echo replies directly with `departure = arrival` (`T3 = T2`);
+- it does not schedule `Timer` events.
+
+All properties proved on `Core.solution` below refer to this Lean composition.
+
+## Theorems proved in this module
 
 1. **Causality:** `Core.solution` has type `Unisono.Spec.Solution H R CoreMsg`,
    depending strictly on each host's local event view and local clock readings.
@@ -50,24 +64,26 @@ the v2 wire headers in `packet`) directly into a genuine
 4. **Non-Zeno progress & request liveness (`progress`, `request_step`):**
    In every world satisfying `World.WithinBounds B`, the run advances past
    every true time `T` and handles every playback request `(r, b)`.
-5. **Speed safety (`plan_step_bound`, `withinBlock_speed_bound`,
-   `boundary_step_bound`, `withinSpeed_before_overflow`):**
+5. **Within-block speed and conditional boundary-step bounds
+   (`withinBlock_speed_bound`, `boundary_step_safe`):**
    Every block planned by `Core.solution` has pace offset within
    `±reachOf limit / 2^64 ≤ 3/1000`, yielding the exact `World.speed` bound
-   within every block unconditionally in every `BoundedWorld`, and across block
-   boundaries whenever `regulation.jump ≥ 3`, `Position.advance` does not
-   saturate `U64.MAX` (~12M years at 48 kHz), and no silence restart occurred
-   between adjacent blocks.
-6. **Exact `IdealConstantWorld.Symmetric` recovery & unity playback
-   (`ideal_ntp_exchange_exact`, `ideal_kalman_sync_exact`,
-   `ideal_snapshot_sender_time_exact`, `ideal_modal_cycle_unity`):**
-   On a symmetric `IdealConstantWorld` within the 64-bit nanosecond/frame
-   range (honestly bounded by `i64` nanoseconds ≈ 292 years), `ntp_exchange`
-   recovers the exact host clock offset `Δc`, `KalmanFilter` remains at the
-   exact zero-innovation fixed point `(Δc, 0)`, `SyncSnapshot.sender_time`
-   maps local time to exact sender time `t + Δc`, and `ModalPlayer.cycle`
-   plans `timing.Step.UNITY` at exact target latency `m.targetLatency` with
-   zero skew and zero roughness.
+   between consecutive samples inside every block unconditionally in every
+   world satisfying `World.WithinBounds B`, and a per-sample advance bound
+   across adjacent non-empty block boundaries whenever `regulation.jump ≥ 3`,
+   `Position.advance` does not saturate `U64.MAX`, and no silence restart
+   occurred. Full `Solution.WithinSpeed` across all boundaries is open.
+6. **Component-level ideal-world exactness and trajectory check
+   (`ideal_ntp_exchange_exact`, `ideal_kalman_and_sender_time_exact`,
+   `ideal_modal_cycle_unity`, `ideal_zero_cost_objectives`):**
+   Within the 64-bit nanosecond/frame range, `ntp_exchange` recovers exact host
+   clock offset `Δc`, `KalmanFilter` preserves the zero-innovation fixed point
+   `(Δc, 0)` and `SyncSnapshot.sender_time` maps local time to exact sender
+   time `t + Δc`, and `ModalPlayer.cycle` plans `timing.Step.UNITY`.
+   `ideal_zero_cost_objectives` verifies that any playback trajectory already
+   on the ideal unity-step schedule has zero objective costs; connecting a full
+   run of `Core.solution` to any of the six `Unisono.Spec.Objectives` remains
+   open in every model.
 -/
 
 @[expose] public noncomputable section

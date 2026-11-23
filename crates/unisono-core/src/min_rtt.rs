@@ -400,12 +400,32 @@ impl<const W: usize> SlidingMinRtt<W> {
         best
     }
 
+    /// Uncalibrated variance bound before 4 exchanges populate the window:
+    /// a single exchange of round-trip time `best_rtt_ns` has worst-case
+    /// one-way delay uncertainty `best_rtt_ns / 2`, preventing a slow first
+    /// exchange from anchoring the Kalman filter with an overconfident small
+    /// prior and spiking frequency.
+    fn uncalibrated_variance(&self, best_rtt_ns: i64) -> u64 {
+        let base = self.variance_ns2();
+        let half = if best_rtt_ns <= 0 {
+            0i64
+        } else {
+            let h = best_rtt_ns.wrapping_shr(1);
+            if h > MAX_EXCESS_NS { MAX_EXCESS_NS } else { h }
+        };
+        let rtt_var = clamp_var(
+            (half as i128).wrapping_mul(half as i128),
+            self.floor_var_ns2,
+        );
+        if rtt_var > base { rtt_var } else { base }
+    }
+
     /// Updates the online measurement-variance EWMA from the median excess RTT
     /// above `best_rtt_ns` across the kept window.
     fn update_variance(&mut self, best_rtt_ns: i64) -> u64 {
         let limit = if self.len < W { self.len } else { W };
         if limit < 2 {
-            return self.variance_ns2();
+            return self.uncalibrated_variance(best_rtt_ns);
         }
         let mut excesses = [0i64; W];
         let mut count = 0usize;
@@ -430,7 +450,7 @@ impl<const W: usize> SlidingMinRtt<W> {
             i = i.saturating_add(1);
         }
         if count < 4 {
-            return self.variance_ns2();
+            return self.uncalibrated_variance(best_rtt_ns);
         }
         // Insertion sort on `excesses[..count]`.
         let mut a = 1usize;
@@ -597,5 +617,60 @@ mod tests {
             }
         }
         assert_eq!(sel.path_ns(), 90_000);
+    }
+
+    #[test]
+    fn slow_first_exchange_scales_initial_variance_and_avoids_kalman_frequency_spike() {
+        // Defect 2: a 55 ms / 5 ms asymmetric first exchange followed by clean
+        // 5 ms / 5 ms exchanges must NOT drive the Kalman frequency estimate to
+        // ±5000 ppm or leave hundreds of microseconds of error for seconds.
+        use crate::kalman::{DEFAULT_JUMP_NS, KalmanFilter, LINE_RUN, NoisePrior};
+
+        let mut sel: SlidingMinRtt<8> =
+            SlidingMinRtt::new(4, DEFAULT_INITIAL_VARIANCE_NS2, DEFAULT_VARIANCE_FLOOR_NS2);
+        let prior = NoisePrior::CONSUMER_QUARTZ.combine(NoisePrior::CONSUMER_QUARTZ);
+        let mut kf = KalmanFilter::new(prior, DEFAULT_JUMP_NS);
+
+        // Exchange 1: 55 ms forward, 5 ms backward (60 ms RTT, +25 ms offset error).
+        let m1 = sel
+            .observe(Exchange {
+                id: 1,
+                t1: 0,
+                t2: 55_000_000,
+                t3: 55_000_000,
+                t4: 60_000_000,
+            })
+            .expect("first exchange emits");
+        assert!(
+            m1.variance_ns2 >= 900_000_000_000_000,
+            "first slow exchange variance should reflect (rtt/2)^2, got {}",
+            m1.variance_ns2
+        );
+        kf.update(m1.midpoint_ns, m1.offset_ns, m1.variance_ns2);
+
+        // Exchanges 2..=8 at 4 Hz: clean symmetric 5 ms / 5 ms (true offset = 0).
+        for id in 2..=8u64 {
+            let t1 = i64::try_from(id - 1).unwrap_or(0) * 250_000_000;
+            if let Some(m) = sel.observe(Exchange {
+                id,
+                t1,
+                t2: t1 + 5_000_000,
+                t3: t1 + 5_000_000,
+                t4: t1 + 10_000_000,
+            }) {
+                kf.update(m.midpoint_ns, m.offset_ns, m.variance_ns2);
+            }
+        }
+
+        let freq_ppm = (i128::from(kf.freq_q48()).abs() * 1_000_000) / i128::from(LINE_RUN);
+        assert!(
+            freq_ppm < 50,
+            "slow first exchange spiked Kalman frequency to {freq_ppm} ppm"
+        );
+        let est_ns = kf.predict_offset_ns(2_000_000_000).expect("anchored");
+        assert!(
+            est_ns.abs() < 5_000,
+            "offset error after clean window should be < 5 us, got {est_ns} ns"
+        );
     }
 }

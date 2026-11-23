@@ -273,6 +273,19 @@ theorem offset_variance_ns2_total (k : kalman.KalmanFilter) :
   step*
 
 @[step]
+theorem p11_q80_total (k : kalman.KalmanFilter) :
+    kalman.KalmanFilter.p11_q80 k ⦃ p => p = k.p11 ⦄ := by
+  unfold kalman.KalmanFilter.p11_q80; simp
+
+@[step]
+theorem offset_ns_total (k : kalman.KalmanFilter) :
+    kalman.KalmanFilter.offset_ns k ⦃ _ => True ⦄ := by
+  unfold kalman.KalmanFilter.offset_ns
+  split
+  · step*
+  · simp
+
+@[step]
 theorem covariance_raw_total (k : kalman.KalmanFilter) :
     kalman.KalmanFilter.covariance_raw k ⦃ r => r = (k.p00, k.p01, k.p11) ⦄ := by
   unfold kalman.KalmanFilter.covariance_raw; simp
@@ -312,23 +325,36 @@ theorem recenter_spec (k : kalman.KalmanFilter) :
   · simp
 
 @[step]
+theorem anchor_with_freq_spec (k : kalman.KalmanFilter) (time_ns offset_ns freq_q48 : Std.I64)
+    (variance_ns2 : Std.U64) :
+    kalman.KalmanFilter.anchor_with_freq k time_ns offset_ns freq_q48 variance_ns2 ⦃ k' =>
+      k'.anchored = true ∧ IsPsd k'.p00 k'.p01 k'.p11 ⦄ := by
+  have hmax0 : 0 ≤ kalman.MAX_P00.val := by unfold kalman.MAX_P00; decide
+  have hinit1 : 0 ≤ kalman.INIT_P11.val := by unfold kalman.INIT_P11; decide
+  unfold kalman.KalmanFilter.anchor_with_freq
+  step as ⟨i⟩
+  step as ⟨i1⟩
+  step with clamp_nonneg_spec i1 kalman.MAX_P00 hmax0 as ⟨meas_q16, hm0, _⟩
+  have hinit :
+      (if meas_q16 > 0#i128 then ok meas_q16 else ok kalman.INIT_P00)
+        ⦃ p0 => 0 ≤ p0.val ⦄ := by
+    split
+    · rw [WP.spec_ok]; exact hm0
+    · rw [WP.spec_ok]; unfold kalman.INIT_P00; decide
+  apply WP.spec_bind hinit
+  intro init_p00 hp0
+  step as ⟨i2⟩
+  refine ⟨hp0, hinit1, ?_⟩
+  have hz : (0#i128).val = 0 := rfl
+  rw [hz]; nlinarith
+
+@[step]
 theorem anchor_spec (k : kalman.KalmanFilter) (time_ns offset_ns : Std.I64)
     (variance_ns2 : Std.U64) :
     kalman.KalmanFilter.anchor k time_ns offset_ns variance_ns2 ⦃ k' =>
       k'.anchored = true ∧ IsPsd k'.p00 k'.p01 k'.p11 ⦄ := by
-  have hmax0 : 0 ≤ kalman.MAX_P00.val := by unfold kalman.MAX_P00; decide
-  have hinit1 : 0 ≤ kalman.INIT_P11.val := by unfold kalman.INIT_P11; decide
   unfold kalman.KalmanFilter.anchor
-  step as ⟨i⟩
-  step as ⟨i1⟩
-  step with clamp_nonneg_spec i1 kalman.MAX_P00 hmax0 as ⟨meas_q16, hm0, _⟩
-  split
-  · rw [WP.spec_ok]
-    refine ⟨rfl, hm0, hinit1, ?_⟩
-    have hz : (0#i128).val = 0 := rfl
-    rw [hz]; nlinarith
-  · rw [WP.spec_ok]
-    exact ⟨rfl, init_psd⟩
+  exact anchor_with_freq_spec k time_ns offset_ns 0#i64 variance_ns2
 
 /-- **Time-update PSD preservation:** `predict` always terminates, preserves
 `anchored`, and maintains `IsPsd` whenever `k` already satisfies `IsPsd`. -/
@@ -345,46 +371,55 @@ theorem predict_psd (k : kalman.KalmanFilter) (dt_ns : Std.I64) :
     simp only [↓reduceIte]
     split
     · simp [hanch]
-    · have hdt : (if dt_ns > kalman.MAX_DT_NS then ok kalman.MAX_DT_NS else ok dt_ns)
-          ⦃ _ => True ⦄ := by
-        split <;> simp
-      apply WP.spec_bind hdt
-      intro dt _
-      step as ⟨dt128⟩
-      step as ⟨i⟩
-      step as ⟨i1⟩
-      step as ⟨d_theta⟩
-      step as ⟨i2⟩
-      step as ⟨i3⟩
-      step as ⟨i4⟩
-      step as ⟨i5⟩
-      step with enforce_psd_spec k.p00 k.p01 k.p11 as ⟨p00, p01, p11, _, _, _⟩
-      step with clamp_nonneg_spec k.prior.q0_q16_ns2_per_s kalman.MAX_P00 hmax0 as ⟨q0_rate⟩
-      step with clamp_nonneg_spec k.prior.q2_q80_per_s kalman.MAX_P11 hmax1 as ⟨q2_rate⟩
-      step as ⟨i6⟩
-      step as ⟨q11⟩
-      step as ⟨q2_dt2⟩
-      step as ⟨q01⟩
-      step as ⟨i7⟩
-      step as ⟨q00_walk⟩
-      step as ⟨i8⟩
-      step as ⟨q00_white⟩
-      step as ⟨p11_dt⟩
-      step as ⟨p11_dt2⟩
-      step as ⟨p01_dt⟩
-      step as ⟨i9⟩
-      step as ⟨i10⟩
-      step as ⟨i11⟩
-      step as ⟨i12⟩
-      step as ⟨next_p00⟩
-      step as ⟨i13⟩
-      step as ⟨next_p01⟩
-      step as ⟨next_p11⟩
-      step with enforce_psd_spec next_p00 next_p01 next_p11 as ⟨fp00, fp01, fp11, hpsd, _, _⟩
-      step with recenter_spec as ⟨k', ha, _, _, hp0, hp01, hp1⟩
-      refine ⟨ha, fun _ => ?_⟩
-      rw [hp0, hp01, hp1]
-      exact hpsd
+    · split
+      · step as ⟨i⟩; step as ⟨i1⟩; step as ⟨d_theta⟩; step as ⟨d_whole⟩
+        step as ⟨i2⟩; step as ⟨d_frac⟩; step as ⟨i3⟩; step as ⟨i4⟩; step as ⟨i5⟩
+        step as ⟨i6⟩; step as ⟨i7⟩; step as ⟨i8⟩; step as ⟨i9⟩
+        have hp11 :
+            (if k.p11 > kalman.INIT_P11 then ok k.p11 else ok kalman.INIT_P11) ⦃ _ => True ⦄ := by
+          split <;> simp
+        apply WP.spec_bind hp11
+        intro p11_floor _
+        step with enforce_psd_spec kalman.MAX_P00 0#i128 p11_floor as ⟨fp00, fp01, fp11, hpsd, _, _⟩
+        step with recenter_spec as ⟨k', ha, _, _, hp0, hp01, hp1⟩
+        refine ⟨ha, fun _ => ?_⟩
+        rw [hp0, hp01, hp1]
+        exact hpsd
+      · step as ⟨dt128⟩
+        step as ⟨i⟩
+        step as ⟨i1⟩
+        step as ⟨d_theta⟩
+        step as ⟨i2⟩
+        step as ⟨i3⟩
+        step as ⟨i4⟩
+        step as ⟨i5⟩
+        step with enforce_psd_spec k.p00 k.p01 k.p11 as ⟨p00, p01, p11, _, _, _⟩
+        step with clamp_nonneg_spec k.prior.q0_q16_ns2_per_s kalman.MAX_P00 hmax0 as ⟨q0_rate⟩
+        step with clamp_nonneg_spec k.prior.q2_q80_per_s kalman.MAX_P11 hmax1 as ⟨q2_rate⟩
+        step as ⟨i6⟩
+        step as ⟨q11⟩
+        step as ⟨q2_dt2⟩
+        step as ⟨q01⟩
+        step as ⟨i7⟩
+        step as ⟨q00_walk⟩
+        step as ⟨i8⟩
+        step as ⟨q00_white⟩
+        step as ⟨p11_dt⟩
+        step as ⟨p11_dt2⟩
+        step as ⟨p01_dt⟩
+        step as ⟨i9⟩
+        step as ⟨i10⟩
+        step as ⟨i11⟩
+        step as ⟨i12⟩
+        step as ⟨next_p00⟩
+        step as ⟨i13⟩
+        step as ⟨next_p01⟩
+        step as ⟨next_p11⟩
+        step with enforce_psd_spec next_p00 next_p01 next_p11 as ⟨fp00, fp01, fp11, hpsd, _, _⟩
+        step with recenter_spec as ⟨k', ha, _, _, hp0, hp01, hp1⟩
+        refine ⟨ha, fun _ => ?_⟩
+        rw [hp0, hp01, hp1]
+        exact hpsd
 
 /-- **Measurement-update PSD preservation:** `update` always terminates, anchors
 the filter, and preserves `IsPsd` on every branch (anchor, jump-reanchor,
@@ -509,6 +544,32 @@ private theorem ite_t {α : Type _} {p : Prop} [Decidable p] {a b : α} (h : p) 
 private theorem ite_f {α : Type _} {p : Prop} [Decidable p] {a b : α} (h : ¬ p) :
     (if p then a else b) = b := by simp only [h, ↓reduceIte]
 
+private theorem mul_shr_safe_zero_left (b : Std.I128) (shift : Std.U32) :
+    kalman.mul_shr_safe 0#i128 b shift ⦃ r => r = 0#i128 ⦄ := by
+  unfold kalman.mul_shr_safe
+  have hs : (if shift > 64#u32 then ok 64#u32 else ok shift) ⦃ _ => True ⦄ := by
+    split <;> simp
+  apply WP.spec_bind hs
+  intro s _
+  have hcm := I128.checked_mul_bv_spec 0#i128 b
+  have h0 : (0#i128 : Std.I128).val = 0 := rfl
+  have hcm_eq : I128.checked_mul 0#i128 b = some 0#i128 := by
+    rw [I128.checked_mul_eq]
+    cases h : core.num.checked_mul_IScalar 0#i128 b with
+    | none =>
+      rw [h] at hcm
+      exfalso; apply hcm
+      rw [h0, zero_mul]
+      simp only [I128.min, I128.max, I128.numBits]
+      exact ⟨by decide, by decide⟩
+    | some z =>
+      rw [h] at hcm
+      congr 1; apply IScalar.eq_of_val_eq
+      rw [hcm.2.2.1, h0, zero_mul]
+  rw [show lift (I128.checked_mul 0#i128 b) = ok (some 0#i128) from congrArg ok hcm_eq, bind_ok]
+  rw [WP.spec_ok]
+  exact i128_wrapping_shr_zero s
+
 private theorem mul_shr_safe_zero_right (a : Std.I128) (shift : Std.U32) :
     kalman.mul_shr_safe a 0#i128 shift ⦃ r => r = 0#i128 ⦄ := by
   unfold kalman.mul_shr_safe
@@ -587,49 +648,110 @@ theorem predict_zero_fixed_point (k : kalman.KalmanFilter) (dt_ns : Std.I64)
   simp only [hanch, ↓reduceIte]
   split
   · rw [WP.spec_ok]; exact ⟨hanch, rfl, ht, hf, hpsd⟩
-  · have hdt : (if dt_ns > kalman.MAX_DT_NS then ok kalman.MAX_DT_NS else ok dt_ns) ⦃ _ => True ⦄ := by
-      split <;> simp
-    apply WP.spec_bind hdt; intro dt _
-    step as ⟨dt128⟩
-    step as ⟨i, hi⟩
-    have hi0 : i = 0#i128 := by
-      rw [hi, hf]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
-    subst hi0
-    step as ⟨i1, hi1⟩
-    have hi10 : i1 = 0#i128 := by
-      rw [hi1]; apply IScalar.eq_of_val_eq
-      rw [I128.wrapping_mul_val 0#i128 dt128 ⟨by simp, by simp⟩]; simp
-    subst hi10
-    step as ⟨d_theta, hd_theta⟩
-    have hd_theta0 : d_theta = 0#i128 := by rw [hd_theta]; exact i128_wrapping_shr_zero 32#u32
-    subst hd_theta0
-    step as ⟨i2, hi2⟩
-    have hi20 : i2 = 0#i128 := by
-      rw [hi2, ht]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
-    subst hi20
-    step as ⟨i3, hi3⟩
-    have hi30 : i3 = 0#i128 := by
-      rw [hi3]; apply IScalar.eq_of_val_eq
-      rw [I128.wrapping_add_val 0#i128 0#i128 ⟨by simp, by simp⟩]; simp
-    subst hi30
-    step with Fixed.saturate_spec 0#i128 as ⟨i4, hi4⟩
-    have hi40 : i4 = 0#i64 := by apply IScalar.eq_of_val_eq; rw [hi4, Fixed.clamp64]; simp
-    subst hi40
-    step as ⟨i5⟩
-    step with enforce_psd_spec k.p00 k.p01 k.p11 as ⟨p00, p01, p11, _, _, _⟩
-    step with clamp_nonneg_spec k.prior.q0_q16_ns2_per_s kalman.MAX_P00 hmax0 as ⟨q0_rate⟩
-    step with clamp_nonneg_spec k.prior.q2_q80_per_s kalman.MAX_P11 hmax1 as ⟨q2_rate⟩
-    step as ⟨i6⟩; step as ⟨q11⟩; step as ⟨q2_dt2⟩; step as ⟨q01⟩
-    step as ⟨i7⟩; step as ⟨q00_walk⟩; step as ⟨i8⟩; step as ⟨q00_white⟩
-    step as ⟨p11_dt⟩; step as ⟨p11_dt2⟩; step as ⟨p01_dt⟩
-    step as ⟨i9⟩; step as ⟨i10⟩; step as ⟨i11⟩; step as ⟨i12⟩; step as ⟨next_p00⟩
-    step as ⟨i13⟩; step as ⟨next_p01⟩; step as ⟨next_p11⟩
-    step with enforce_psd_spec next_p00 next_p01 next_p11 as ⟨fp00, fp01, fp11, hpsd', _, _⟩
-    step with recenter_zero
-      { k with anchored := true, last_time_ns := i5, theta_q16 := 0#i64, p00 := fp00, p01 := fp01, p11 := fp11 } rfl
-      as ⟨k', hk'⟩
-    rw [hk']
-    exact ⟨rfl, rfl, rfl, hf, hpsd'⟩
+  · split
+    · step as ⟨i, hi⟩
+      have hi0 : i = 0#i128 := by
+        rw [hi, hf]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
+      subst hi0
+      step as ⟨i1⟩
+      step with mul_shr_safe_zero_left i1 32#u32 as ⟨d_theta, hd_theta⟩
+      subst hd_theta
+      step with Fixed.div_floor_wide_spec 0#i128 65536#i128 as ⟨d_whole, hdw, _⟩
+      have hdw0 : d_whole = 0#i128 := by
+        apply IScalar.eq_of_val_eq; rw [hdw (by decide)]; rfl
+      subst hdw0
+      step with Fixed.saturating_mul_i128_spec 0#i128 65536#i128 as ⟨i2, hi2⟩
+      have hi20 : i2 = 0#i128 := by
+        apply IScalar.eq_of_val_eq; rw [hi2]; simp [Fixed.clamp128]
+      subst hi20
+      step as ⟨d_frac, hdf⟩
+      have hdf0 : d_frac = 0#i128 := by
+        rw [hdf]; apply IScalar.eq_of_val_eq
+        rw [I128.wrapping_sub_val 0#i128 0#i128 ⟨by simp, by simp⟩]; simp
+      subst hdf0
+      step as ⟨i3, hi3⟩
+      step as ⟨i4, hi4⟩
+      have hbounds : -2^63 ≤ k.base_offset_ns.val ∧ k.base_offset_ns.val ≤ 2^63 - 1 := by
+        have hb := k.base_offset_ns.hBounds
+        change -2^63 ≤ k.base_offset_ns.val ∧ k.base_offset_ns.val < 2^63 at hb
+        omega
+      have hi4_eq : i4 = IScalar.cast .I128 k.base_offset_ns := by
+        rw [hi4, hi3]; apply IScalar.eq_of_val_eq
+        have hc : (IScalar.cast .I128 k.base_offset_ns).val = k.base_offset_ns.val := I64.cast_I128_val _
+        rw [I128.saturating_add_val, hc]
+        change max (-2^127) (min (2^127 - 1) (k.base_offset_ns.val + 0)) = k.base_offset_ns.val; omega
+      clear hi4; subst hi4_eq
+      step with Fixed.saturate_spec (IScalar.cast .I128 k.base_offset_ns) as ⟨i5, hi5⟩
+      have hi5_eq : i5 = k.base_offset_ns := by
+        apply IScalar.eq_of_val_eq
+        have hc : (IScalar.cast .I128 k.base_offset_ns).val = k.base_offset_ns.val := I64.cast_I128_val _
+        rw [hi5, hc, Fixed.clamp64]; omega
+      subst hi5_eq
+      step as ⟨i6, hi6⟩
+      have hi60 : i6 = 0#i128 := by
+        rw [hi6, ht]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
+      subst hi60
+      step as ⟨i7, hi7⟩
+      have hi70 : i7 = 0#i128 := by
+        rw [hi7]; apply IScalar.eq_of_val_eq
+        rw [I128.saturating_add_val]; change max (-2^127) (min (2^127 - 1) ((0 : ℤ) + 0)) = 0; omega
+      subst hi70
+      step with Fixed.saturate_spec 0#i128 as ⟨i8, hi8⟩
+      have hi80 : i8 = 0#i64 := by apply IScalar.eq_of_val_eq; rw [hi8, Fixed.clamp64]; simp
+      subst hi80
+      step as ⟨i9⟩
+      have hp11 :
+          (if k.p11 > kalman.INIT_P11 then ok k.p11 else ok kalman.INIT_P11) ⦃ _ => True ⦄ := by
+        split <;> simp
+      apply WP.spec_bind hp11
+      intro p11_floor _
+      step with enforce_psd_spec kalman.MAX_P00 0#i128 p11_floor as ⟨fp00, fp01, fp11, hpsd', _, _⟩
+      step with recenter_zero
+        { k with anchored := true, base_offset_ns := k.base_offset_ns, last_time_ns := i9,
+                 theta_q16 := 0#i64, p00 := fp00, p01 := fp01, p11 := fp11 } rfl
+        as ⟨k', hk'⟩
+      rw [hk']
+      exact ⟨rfl, rfl, rfl, hf, hpsd'⟩
+    · step as ⟨dt128⟩
+      step as ⟨i, hi⟩
+      have hi0 : i = 0#i128 := by
+        rw [hi, hf]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
+      subst hi0
+      step as ⟨i1, hi1⟩
+      have hi10 : i1 = 0#i128 := by
+        rw [hi1]; apply IScalar.eq_of_val_eq
+        rw [I128.wrapping_mul_val 0#i128 dt128 ⟨by simp, by simp⟩]; simp
+      subst hi10
+      step as ⟨d_theta, hd_theta⟩
+      have hd_theta0 : d_theta = 0#i128 := by rw [hd_theta]; exact i128_wrapping_shr_zero 32#u32
+      subst hd_theta0
+      step as ⟨i2, hi2⟩
+      have hi20 : i2 = 0#i128 := by
+        rw [hi2, ht]; apply IScalar.eq_of_val_eq; exact I64.cast_I128_val 0#i64
+      subst hi20
+      step as ⟨i3, hi3⟩
+      have hi30 : i3 = 0#i128 := by
+        rw [hi3]; apply IScalar.eq_of_val_eq
+        rw [I128.wrapping_add_val 0#i128 0#i128 ⟨by simp, by simp⟩]; simp
+      subst hi30
+      step with Fixed.saturate_spec 0#i128 as ⟨i4, hi4⟩
+      have hi40 : i4 = 0#i64 := by apply IScalar.eq_of_val_eq; rw [hi4, Fixed.clamp64]; simp
+      subst hi40
+      step as ⟨i5⟩
+      step with enforce_psd_spec k.p00 k.p01 k.p11 as ⟨p00, p01, p11, _, _, _⟩
+      step with clamp_nonneg_spec k.prior.q0_q16_ns2_per_s kalman.MAX_P00 hmax0 as ⟨q0_rate⟩
+      step with clamp_nonneg_spec k.prior.q2_q80_per_s kalman.MAX_P11 hmax1 as ⟨q2_rate⟩
+      step as ⟨i6⟩; step as ⟨q11⟩; step as ⟨q2_dt2⟩; step as ⟨q01⟩
+      step as ⟨i7⟩; step as ⟨q00_walk⟩; step as ⟨i8⟩; step as ⟨q00_white⟩
+      step as ⟨p11_dt⟩; step as ⟨p11_dt2⟩; step as ⟨p01_dt⟩
+      step as ⟨i9⟩; step as ⟨i10⟩; step as ⟨i11⟩; step as ⟨i12⟩; step as ⟨next_p00⟩
+      step as ⟨i13⟩; step as ⟨next_p01⟩; step as ⟨next_p11⟩
+      step with enforce_psd_spec next_p00 next_p01 next_p11 as ⟨fp00, fp01, fp11, hpsd', _, _⟩
+      step with recenter_zero
+        { k with anchored := true, last_time_ns := i5, theta_q16 := 0#i64, p00 := fp00, p01 := fp01, p11 := fp11 } rfl
+        as ⟨k', hk'⟩
+      rw [hk']
+      exact ⟨rfl, rfl, rfl, hf, hpsd'⟩
 
 /-- **Zero-innovation fixed point of `KalmanFilter.update`:** if `k` is anchored
 at `base_offset_ns = offset` with `theta_q16 = 0` and `freq_q48 = 0`, then

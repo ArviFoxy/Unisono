@@ -699,17 +699,22 @@ impl ReceiverNetEngine {
     }
 
     /// Updates the confirmed sender clock identity, resetting sender-side sync
-    /// state (while preserving direct peer links) if the sender rebooted.
+    /// state (while preserving direct peer links) if the sender rebooted, and
+    /// updating `Sync`'s `sender_clock_id` so incoming `PeerRelay` sender edges
+    /// are fenced to the active sender clock.
     fn update_sender_clock_id(&mut self, clock_id: u32) {
         if self.sender_clock_id == Some(clock_id) {
             return;
         }
         let rebooted = self.sender_clock_id.is_some();
         self.sender_clock_id = Some(clock_id);
-        if rebooted {
-            if let Some(sync) = self.sync.as_mut() {
+        if let Some(sync) = self.sync.as_mut() {
+            if rebooted {
                 sync.reset_sender_clock();
             }
+            sync.set_sender_clock_id(clock_id);
+        }
+        if rebooted {
             self.relay_backoff_until = None;
             self.pending_snapshot = None;
             self.last_published_snapshot = None;
@@ -2375,5 +2380,110 @@ mod tests {
     #[test]
     fn sync_mode_default_is_peer() {
         assert_eq!(SyncMode::default(), SyncMode::Peer);
+    }
+
+    #[test]
+    fn sender_clock_id_change_resets_sync_and_fences_stale_relays() {
+        // Mutation 5: dropping `sync.reset_sender_clock()` on sender reboot
+        // leaves the old sender clock snapshot active and accepts old-clock
+        // relayed sender edges.
+        let mut cfg = NetConfig::peer(3, 101, 2_048);
+        let sender_addr: SocketAddr = "127.0.0.1:41000".parse().expect("sender");
+        let peer_addr: SocketAddr = "127.0.0.1:41001".parse().expect("peer");
+        cfg.peers.push(PeerConfig {
+            identity: 102,
+            address: peer_addr,
+            weight_q16: WEIGHT_UNITY_Q16,
+        });
+        let mut engine = ReceiverNetEngine::new(&cfg);
+        let mut sink = RecordingSink::new();
+
+        // Confirm timeline 10 on sender clock_id = 1.
+        let confirmed1 = ConfirmedState {
+            attached: true,
+            active: true,
+            timeline: 10,
+            clock_id: 1,
+            rate: 48_000,
+            channels: 2,
+        };
+        let audio1 = audio_packet(3, 10, 0, 48_000, 240);
+        let _ = engine.on_datagram(
+            sender_addr,
+            &audio1,
+            1_000_000,
+            1_000_000,
+            confirmed1,
+            true,
+            &mut sink,
+        );
+        // Feed one sender report departure + echo on clock_id 1 (offset +50 s).
+        let _ = engine.on_departure(1, 100_000_000);
+        let mut echo_buf = [0u8; packet::ECHO];
+        let echo_len = packet::write_echo(
+            &Echo {
+                stream: 3,
+                receiver: 101,
+                sequence: 1,
+                arrival: 50_100_100_000,
+                departure: 50_100_100_000,
+            },
+            &mut echo_buf,
+        )
+        .expect("echo");
+        let _ = engine.on_datagram(
+            sender_addr,
+            &echo_buf[..echo_len],
+            100_200_000,
+            100_200_000,
+            confirmed1,
+            true,
+            &mut sink,
+        );
+        assert!(engine.sync_snapshot().is_some_and(|s| s.valid));
+        assert!(engine.take_sync_update().is_some());
+
+        // Sender reboots with clock_id = 2 -> sync_confirmed must reset sync
+        // immediately so the old +50 s snapshot is invalidated.
+        let confirmed2 = ConfirmedState {
+            clock_id: 2,
+            timeline: 11,
+            ..confirmed1
+        };
+        engine.sync_confirmed(confirmed2);
+        assert!(
+            engine.sync_snapshot().is_some_and(|s| !s.valid),
+            "sender clock_id change must reset Sync snapshot"
+        );
+        // A stale PeerRelay tagged with old sender_clock_id = 1 must NOT
+        // re-inject old sender offset edges.
+        let mut stale = packet::PeerRelay::EMPTY;
+        stale.stream = 3;
+        stale.sender = 102;
+        stale.sequence = 1;
+        stale.sender_clock_id = 1;
+        stale.count = 1;
+        stale.edges[0] = packet::RelayEdge {
+            from_id: 0,
+            to_id: 102,
+            offset_ns: -50_000_000_000,
+            variance_ns2: 25_000_000,
+            age_ns: 1_000_000,
+        };
+        let mut relay_buf = [0u8; packet::PEER_RELAY_MAX];
+        let relay_len = write_peer_relay(&stale, &mut relay_buf).expect("relay");
+        let _ = engine.on_datagram(
+            peer_addr,
+            &relay_buf[..relay_len],
+            200_000_000,
+            200_000_000,
+            confirmed2,
+            true,
+            &mut sink,
+        );
+        assert!(
+            engine.sync_snapshot().is_some_and(|s| !s.valid),
+            "stale PeerRelay with old sender_clock_id must be ignored after reboot"
+        );
     }
 }

@@ -61,10 +61,10 @@ pub const MAX_RELAY_EDGES: usize = 16;
 pub const RELAY_EDGE: usize = 36;
 
 /// The size of the fixed header of a peer relay packet, in bytes.
-pub const PEER_RELAY_HEADER: usize = 25;
+pub const PEER_RELAY_HEADER: usize = 29;
 
-/// The maximum size of a peer relay packet (`25 + 16 * 36`), in bytes.
-pub const PEER_RELAY_MAX: usize = 601;
+/// The maximum size of a peer relay packet (`29 + 16 * 36`), in bytes.
+pub const PEER_RELAY_MAX: usize = 605;
 
 /// The protection against loss in which the sender sends a packet again to a
 /// receiver that asks for its frames.
@@ -521,6 +521,9 @@ pub struct PeerRelay {
     pub sender: u64,
     /// Monotonic relay sequence number.
     pub sequence: u64,
+    /// Sender clock identifier (`Audio::clock`) associated with any relayed
+    /// sender edge (`from_id == 0`), fencing stale relays across sender reboots.
+    pub sender_clock_id: u32,
     /// Number of valid entries in `edges`; at most [`MAX_RELAY_EDGES`].
     pub count: u8,
     /// Relayed link measurements in `edges[..count]`.
@@ -533,6 +536,7 @@ impl PeerRelay {
         stream: 0,
         sender: 0,
         sequence: 0,
+        sender_clock_id: 0,
         count: 0,
         edges: [RelayEdge::ZERO; MAX_RELAY_EDGES],
     };
@@ -962,11 +966,12 @@ pub fn parse_peer_relay(bytes: &[u8]) -> Result<PeerRelay, Rejected> {
     if found != KIND_PEER_RELAY {
         return Err(Rejected::Kind(found));
     }
-    let (Some(stream), Some(sender), Some(sequence), Some(count)) = (
+    let (Some(stream), Some(sender), Some(sequence), Some(sender_clock_id), Some(count)) = (
         read(bytes, 6, 2),
         read(bytes, 8, 8),
         read(bytes, 16, 8),
-        read(bytes, 24, 1),
+        read(bytes, 24, 4),
+        read(bytes, 28, 1),
     ) else {
         return Err(Rejected::TooShort);
     };
@@ -985,6 +990,7 @@ pub fn parse_peer_relay(bytes: &[u8]) -> Result<PeerRelay, Rejected> {
     relay.stream = stream as u16;
     relay.sender = sender;
     relay.sequence = sequence;
+    relay.sender_clock_id = sender_clock_id as u32;
     relay.count = count as u8;
     let mut i = 0usize;
     while i < count_usize {
@@ -1030,7 +1036,8 @@ pub fn write_peer_relay(relay: &PeerRelay, bytes: &mut [u8]) -> Option<usize> {
     written &= write(bytes, 6, 2, relay.stream as u64);
     written &= write(bytes, 8, 8, relay.sender);
     written &= write(bytes, 16, 8, relay.sequence);
-    written &= write(bytes, 24, 1, relay.count as u64);
+    written &= write(bytes, 24, 4, relay.sender_clock_id as u64);
+    written &= write(bytes, 28, 1, relay.count as u64);
     let mut i = 0usize;
     while i < count {
         let edge = match relay.edges.get(i) {
@@ -1369,6 +1376,7 @@ mod tests {
         relay.stream = 9;
         relay.sender = 101;
         relay.sequence = 55;
+        relay.sender_clock_id = 0x1234_5678;
         relay.count = 2;
         relay.edges[0] = RelayEdge {
             from_id: 0,
@@ -1403,7 +1411,7 @@ mod tests {
         let mut bad = relay;
         bad.count = 17;
         assert_eq!(write_peer_relay(&bad, &mut relay_bytes), None);
-        relay_bytes[24] = 17;
+        relay_bytes[28] = 17;
         assert_eq!(
             parse_peer_relay(&relay_bytes[..written]),
             Err(Rejected::Length)

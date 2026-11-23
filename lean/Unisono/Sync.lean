@@ -257,15 +257,16 @@ theorem link_relay_obs_total (filter : kalman.KalmanFilter) (rtt_var : Std.U64)
     (last : min_rtt.Measurement) (now_ns age_ns : Std.I64) (floor_ns2 : Std.U64) :
     sync.link_relay_obs filter rtt_var last now_ns age_ns floor_ns2 ⦃ _ => True ⦄ := by
   unfold sync.link_relay_obs
-  step as ⟨pred⟩; step as ⟨_⟩
-  cases pred <;> step*
+  step as ⟨f_off⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
+  cases f_off <;> step*
 
 @[step]
 theorem link_step_obs_total (filter : kalman.KalmanFilter) (rtt_var : Std.U64)
-    (last : min_rtt.Measurement) (now_ns age_ns : Std.I64) (floor_ns2 : Std.U64) :
-    sync.link_step_obs filter rtt_var last now_ns age_ns floor_ns2 ⦃ _ => True ⦄ := by
+    (last : min_rtt.Measurement) (now_ns age_ns : Std.I64) (floor_ns2 : Std.U64)
+    (pair_prior : kalman.NoisePrior) :
+    sync.link_step_obs filter rtt_var last now_ns age_ns floor_ns2 pair_prior ⦃ _ => True ⦄ := by
   unfold sync.link_step_obs
-  step as ⟨pred⟩; step as ⟨_⟩; step as ⟨_⟩
+  step as ⟨pred⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
   cases pred <;> step*
 
 /-! ## `Sync` public method totality -/
@@ -471,6 +472,14 @@ theorem reset_sender_clock_total (self : sync.Sync) :
     sync.Sync.reset_sender_clock self ⦃ _ => True ⦄ := by
   unfold sync.Sync.reset_sender_clock
   step*
+
+@[step]
+theorem set_sender_clock_id_total (self : sync.Sync) (clock_id : Std.U32) :
+    sync.Sync.set_sender_clock_id self clock_id ⦃ _ => True ⦄ := by
+  unfold sync.Sync.set_sender_clock_id
+  split
+  · split <;> step*
+  · simp
 
 @[step]
 theorem report_departed_total (self : sync.Sync) (seq : Std.U64) (t1_ns : Std.I64) :
@@ -877,6 +886,12 @@ theorem find_matching_relayed_total (self : sync.Sync) (from_id to_id : Std.U64)
     sync.Sync.find_matching_relayed self from_id to_id ⦃ _ => True ⦄ :=
   find_matching_relayed_loop_total self from_id to_id 0#usize
 
+local macro "prove_relay_slope_tail" : tactic => `(tactic| (
+  step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
+  apply WP.spec_bind (Pₘ := fun _ => True)
+  · split <;> step*
+  · rintro ⟨_, _⟩ -; simp))
+
 @[step]
 theorem ingest_relayed_edge_total (self : sync.Sync) (from_id to_id : Std.U64)
     (meas_time_ns rx_ns offset_ns : Std.I64) (variance_ns2 : Std.U64) :
@@ -910,19 +925,32 @@ theorem ingest_relayed_edge_total (self : sync.Sync) (from_id to_id : Std.U64)
           · split <;> simp
           · intro abs_diff _
             apply WP.spec_bind (Pₘ := fun _ => True)
-            · split
-              · step as ⟨i3⟩
+            · by_cases hjm : self.settings.jump_ns > 0#i64
+              · simp only [hjm, ↓reduceIte]
+                step as ⟨i5⟩
                 split
                 · simp
-                · split
-                  · step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
-                    split <;> step*
+                · step as ⟨ref_dt⟩
+                  split
+                  · step as ⟨_⟩; step as ⟨_⟩; step as ⟨ref_diff⟩
+                    apply WP.spec_bind (Pₘ := fun _ => True)
+                    · split <;> simp
+                    · intro abs_ref _
+                      step as ⟨_⟩
+                      split
+                      · simp
+                      · prove_relay_slope_tail
                   · simp
-              · split
-                · step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
-                  split <;> step*
+              · simp only [hjm, ↓reduceIte]
+                step as ⟨ref_dt⟩
+                split
+                · step as ⟨_⟩; step as ⟨_⟩; step as ⟨ref_diff⟩
+                  apply WP.spec_bind (Pₘ := fun _ => True)
+                  · split <;> simp
+                  · intro abs_ref _
+                    prove_relay_slope_tail
                 · simp
-            · rintro ⟨b, i2⟩ -
+            · rintro ⟨i2, i3, b, i4⟩ -
               apply WP.spec_bind (Pₘ := fun _ => True)
               · split
                 · simp
@@ -931,6 +959,22 @@ theorem ingest_relayed_edge_total (self : sync.Sync) (from_id to_id : Std.U64)
                 split <;> simp
       · simp
 
+private theorem spec_ok_true {α : Type} (x : α) : ok x ⦃ _ => True ⦄ := by
+  rw [WP.spec_ok]; trivial
+
+private theorem spec_ite_true {α : Type} {c : Prop} [Decidable c]
+    {a b : Result α} (ha : a ⦃ _ => True ⦄) (hb : b ⦃ _ => True ⦄) :
+    (if c then a else b) ⦃ _ => True ⦄ := by
+  by_cases h : c <;> simp only [h, ↓reduceIte] <;> assumption
+
+local macro "prove_on_peer_relay_ingest" : tactic => `(tactic| (
+  step as ⟨_⟩; step as ⟨transit⟩
+  refine spec_ite_true ?_ (spec_ok_true _)
+  step as ⟨mt⟩; step as ⟨b, s2⟩
+  apply WP.spec_bind (Pₘ := fun _ => True)
+  · exact spec_ite_true (spec_ok_true _) (spec_ok_true _)
+  · intro _ _; exact spec_ok_true _))
+
 local macro "prove_on_peer_relay_loop_body" k:ident cnt:ident hlt:ident : tactic => `(tactic| (
   have hk : ($k).val < ($cnt).val := $hlt
   have hnext := usize_sat_add_one_val $k $cnt hk
@@ -938,47 +982,34 @@ local macro "prove_on_peer_relay_loop_body" k:ident cnt:ident hlt:ident : tactic
   step with slice_get_ok s $k as ⟨o⟩
   apply WP.spec_bind (Pₘ := fun _ => True)
   · cases o with
-    | none => simp
+    | none => exact spec_ok_true _
     | some re =>
       dsimp only
-      split
-      · split
-        · split
-          · split
-            · apply WP.spec_bind (Pₘ := fun _ => True)
-              · split
-                · simp
-                · step*
-              · rintro ⟨c_from, c_to, c_off⟩ -
-                apply WP.spec_bind (Pₘ := fun _ => True)
-                · split <;> step*
-                · intro fk _
-                  apply WP.spec_bind (Pₘ := fun _ => True)
-                  · split <;> step*
-                  · intro tk _
-                    split
-                    · split
-                      · step as ⟨_⟩; step as ⟨transit⟩
-                        split
-                        · step as ⟨mt⟩; step as ⟨b, s2⟩
-                          apply WP.spec_bind (Pₘ := fun _ => True)
-                          · split <;> simp
-                          · intro _ _; simp
-                        · simp
-                      · simp
-                    · simp
-            · simp
-          · simp
-        · simp
-      · simp
+      refine spec_ite_true (spec_ite_true (spec_ite_true (spec_ite_true ?_ (spec_ok_true _)) (spec_ok_true _)) (spec_ok_true _)) (spec_ok_true _)
+      apply WP.spec_bind (Pₘ := fun _ => True)
+      · refine spec_ite_true (spec_ok_true _) ?_
+        step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
+      · rintro ⟨c_from, c_to, c_off⟩ -
+        apply WP.spec_bind (Pₘ := fun _ => True)
+        · refine spec_ite_true (spec_ok_true _) ?_
+          step as ⟨_⟩
+        · intro fk _
+          apply WP.spec_bind (Pₘ := fun _ => True)
+          · refine spec_ite_true (spec_ok_true _) ?_
+            step as ⟨_⟩
+          · intro tk _
+            refine spec_ite_true (spec_ite_true (spec_ite_true ?_ (spec_ite_true ?_ (spec_ok_true _))) (spec_ok_true _)) (spec_ok_true _)
+            · prove_on_peer_relay_ingest
+            · prove_on_peer_relay_ingest
   · rintro ⟨s1, acc1⟩ -
     step as ⟨e1, he1⟩
     rw [he1, hnext]; omega))
 
 @[step]
-theorem on_peer_relay_loop0_total (self : sync.Sync) (a : Array packet.RelayEdge 16#usize)
+theorem on_peer_relay_loop0_total (self : sync.Sync) (i : Std.U32)
+    (a : Array packet.RelayEdge 16#usize)
     (rx_ns relayer_path_ns : Std.I64) (count accepted e : Std.Usize) :
-    sync.Sync.on_peer_relay_loop0 self a rx_ns relayer_path_ns count accepted e ⦃ _ => True ⦄ := by
+    sync.Sync.on_peer_relay_loop0 self i a rx_ns relayer_path_ns count accepted e ⦃ _ => True ⦄ := by
   unfold sync.Sync.on_peer_relay_loop0
   apply loop_of_measure (measure := fun p : sync.Sync × Std.Usize × Std.Usize => count.val - p.2.2.val)
     (inv := fun _ => True) (n := count.val) (x := (self, accepted, e))
@@ -991,9 +1022,10 @@ theorem on_peer_relay_loop0_total (self : sync.Sync) (a : Array packet.RelayEdge
   · omega
 
 @[step]
-theorem on_peer_relay_loop1_total (self : sync.Sync) (a : Array packet.RelayEdge 16#usize)
+theorem on_peer_relay_loop1_total (self : sync.Sync) (i : Std.U32)
+    (a : Array packet.RelayEdge 16#usize)
     (rx_ns relayer_path_ns : Std.I64) (count accepted e : Std.Usize) :
-    sync.Sync.on_peer_relay_loop1 self a rx_ns relayer_path_ns count accepted e ⦃ _ => True ⦄ := by
+    sync.Sync.on_peer_relay_loop1 self i a rx_ns relayer_path_ns count accepted e ⦃ _ => True ⦄ := by
   unfold sync.Sync.on_peer_relay_loop1
   apply loop_of_measure (measure := fun p : sync.Sync × Std.Usize × Std.Usize => count.val - p.2.2.val)
     (inv := fun _ => True) (n := count.val) (x := (self, accepted, e))
@@ -1123,14 +1155,15 @@ theorem publish_star_spec (self : sync.Sync) :
           p.1.valid = true ∧ p.1.common_line = line) ⦄ := by
   unfold sync.Sync.publish_star
   have hpa : (if self.peer_active then do
-        let i3 ← lift (core.num.U32.wrapping_add self.epoch 1#u32)
-        ok (false, 0#u32, 0#u32, i3)
-      else ok (self.peer_active, self.last_active_mask, self.last_sender_relay_mask, self.epoch))
+        let i4 ← lift (core.num.U32.wrapping_add self.epoch 1#u32)
+        ok (false, 0#u32, 0#u32, 0#u32, i4)
+      else ok (self.peer_active, self.last_direct_mask, self.last_active_mask,
+               self.last_sender_relay_mask, self.epoch))
       ⦃ q => q.1 = false ⦄ := by
     split
     · step*
     · rename_i h; rw [WP.spec_ok]; cases hb : self.peer_active <;> simp_all
-  step with hpa as ⟨b, i, i1, i2, hb⟩
+  step with hpa as ⟨b, i, i1, i2, i3, hb⟩
   have htl := Kalman.to_line_spec self.sender_filter
   cases ho : kalman.KalmanFilter.to_line self.sender_filter with
   | div => rw [ho] at htl; simp [WP.spec_div] at htl
@@ -1157,21 +1190,141 @@ theorem publish_star_spec (self : sync.Sync) :
       exact ⟨rfl, heq⟩
 
 @[step]
+theorem initial_peer_frequencies_loop_total (self : sync.Sync) (a : Array Bool 17#usize)
+    (sum_peer_freq : Std.I128) (i : Std.Usize) :
+    sync.Sync.initial_peer_frequencies_loop self a sum_peer_freq i ⦃ _ => True ⦄ := by
+  unfold sync.Sync.initial_peer_frequencies_loop
+  apply loop_of_measure (measure := fun p : Std.I128 × Std.Usize => self.peer_count.val - p.2.val)
+    (inv := fun _ => True) (n := self.peer_count.val) (x := (sum_peer_freq, i))
+  · rintro ⟨spf, k⟩ _
+    unfold sync.Sync.initial_peer_frequencies_loop.body; dsimp only
+    by_cases hlt : k < self.peer_count
+    · rw [ite_t hlt]
+      have hk : k.val < self.peer_count.val := hlt
+      have hnext := usize_sat_add_one_val k self.peer_count hk
+      step as ⟨h⟩; step as ⟨s⟩; step as ⟨b⟩
+      apply WP.spec_bind (Pₘ := fun _ => True)
+      · split
+        · step as ⟨s1⟩
+          step with slice_get_ok s1 k as ⟨o⟩
+          cases o with
+          | none => simp
+          | some p => dsimp only; split <;> step*
+        · simp
+      · intro _ _
+        step as ⟨k1, hk1⟩
+        rw [hk1, hnext]; omega
+    · rw [ite_f hlt, WP.spec_ok]; trivial
+  · trivial
+  · omega
+
+@[step]
+theorem initial_peer_frequencies_total (self : sync.Sync) (solved : blue.BlueResult) :
+    sync.Sync.initial_peer_frequencies self solved ⦃ _ => True ⦄ := by
+  unfold sync.Sync.initial_peer_frequencies
+  step as ⟨dim⟩
+  split
+  · step*
+  · step as ⟨kf, spf⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨b⟩
+    split <;> step*
+
+local macro "prove_reanchor_both_modes" : tactic => `(tactic| (
+  step as ⟨x⟩
+  rcases x with ⟨_, _⟩
+  step*))
+
+local macro "prove_reanchor_common_shift_diff" : tactic => `(tactic| (
+  step as ⟨_⟩; step as ⟨o⟩
+  apply WP.spec_bind (Pₘ := fun _ => True)
+  · cases o with
+    | none => simp
+    | some _ => step*
+  · intro _ _; simp))
+
+@[step]
+theorem update_modal_filters_total (self : sync.Sync) (now_ns : Std.I64)
+    (solved : blue.BlueResult) (direct_mask reachable_mask sender_relay_mask : Std.U32) :
+    sync.Sync.update_modal_filters self now_ns solved direct_mask reachable_mask sender_relay_mask
+      ⦃ _ => True ⦄ := by
+  unfold sync.Sync.update_modal_filters
+  step as ⟨dim⟩; step as ⟨np⟩; step as ⟨com_prior⟩; step as ⟨i⟩; step as ⟨diff_prior⟩
+  step as ⟨kf⟩; step as ⟨kf1⟩
+  apply WP.spec_bind (Pₘ := fun _ => True)
+  · split
+    · split <;> simp
+    · simp
+  · intro amc _
+    apply WP.spec_bind (Pₘ := fun _ => True)
+    · by_cases hamc : amc = true
+      · simp only [hamc, ↓reduceIte]
+        step as ⟨i4⟩
+        apply WP.spec_bind (Pₘ := fun _ => True)
+        · by_cases hpa : self.peer_active = true
+          · simp only [hpa, ↓reduceIte]
+            by_cases hsr : (sender_relay_mask != self.last_sender_relay_mask) = true
+            · simp only [hsr, ↓reduceIte]
+              apply WP.spec_bind (Pₘ := fun _ => True)
+              · step as ⟨b4⟩
+                by_cases hb4 : b4 = true
+                · simp only [hb4, ↓reduceIte]
+                  step as ⟨b5⟩
+                  apply WP.spec_bind (Pₘ := fun _ => True)
+                  · split <;> step*
+                  · intro c_freq _; prove_reanchor_common_shift_diff
+                · simp only [hb4, Bool.false_eq_true, ↓reduceIte]; prove_reanchor_both_modes
+              · rintro ⟨_, _, _, _, _⟩ -; simp
+            · simp only [hsr, Bool.false_eq_true, ↓reduceIte]
+              step as ⟨b3⟩
+              by_cases hb3 : b3 = true
+              · simp only [hb3, ↓reduceIte]
+                step as ⟨b4⟩
+                by_cases hb4 : b4 = true
+                · simp only [hb4, ↓reduceIte]
+                  step as ⟨o⟩
+                  apply WP.spec_bind (Pₘ := fun _ => True)
+                  · cases o with
+                    | none => simp
+                    | some _ => step*
+                  · rintro ⟨_, _⟩ -; simp
+                · simp only [hb4, Bool.false_eq_true, ↓reduceIte]
+                  prove_reanchor_both_modes
+              · simp only [hb3, Bool.false_eq_true, ↓reduceIte]
+                prove_reanchor_both_modes
+          · simp only [hpa, Bool.false_eq_true, ↓reduceIte]
+            prove_reanchor_both_modes
+        · rintro ⟨_, _, _, _, _, _⟩ -; simp
+      · simp only [hamc, Bool.false_eq_true, ↓reduceIte, WP.spec_ok]
+    · rintro ⟨kf2, kf3, b, i1, i2, i3, ac, ad⟩ -
+      apply WP.spec_bind (Pₘ := fun _ => True)
+      · split
+        · simp
+        · step*
+      · intro kf4 _
+        split
+        · simp
+        · step*
+
+@[step]
 theorem step_loop0_total
     (ss : sync.SyncSettings) (b : Bool) (i : Std.I64) (i1 : Std.U32)
     (a : arrivals.Arrivals 8#usize) (smr : min_rtt.SlidingMinRtt 8#usize)
-    (kf : kalman.KalmanFilter) (b1 : Bool) (m : min_rtt.Measurement)
-    (i2 : Std.Usize) (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
-    (i3 : Std.U64) (b2 : Bool) (i4 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
-    (b3 : Bool) (i5 i6 i7 : Std.U32) (b4 b5 : Bool) (i8 : Std.I64) (ss1 : sync.SyncSnapshot)
-    (now_ns : Std.I64) (active_mask sender_relay_mask : Std.U32) (sr : Std.Usize) :
-    sync.Sync.step_loop0 ss b i i1 a smr kf b1 m i2 a1 a2 i3 b2 i4 kf1 kf2 b3 i5 i6 i7 b4 b5 i8
-      ss1 now_ns active_mask sender_relay_mask sr ⦃ _ => True ⦄ := by
+    (kf : kalman.KalmanFilter) (b1 : Bool) (i2 : Std.U64) (i3 i4 i5 : Std.I64) (i6 : Std.U64)
+    (i7 : Std.U32) (b2 : Bool) (i8 : Std.Usize)
+    (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
+    (i9 : Std.U64) (b3 : Bool) (i10 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
+    (b4 : Bool) (i11 i12 i13 i14 : Std.U32) (b5 b6 : Bool) (i15 : Std.I64)
+    (ss1 : sync.SyncSnapshot) (now_ns : Std.I64) (sender_relay_mask : Std.U32)
+    (has_relayed_sender : Bool) (sr : Std.Usize) :
+    sync.Sync.step_loop0 ss b i i1 a smr kf b1 i2 i3 i4 i5 i6 i7 b2 i8 a1 a2 i9 b3 i10 kf1 kf2
+      b4 i11 i12 i13 i14 b5 b6 i15 ss1 now_ns sender_relay_mask has_relayed_sender sr
+      ⦃ _ => True ⦄ := by
   unfold sync.Sync.step_loop0
-  apply loop_of_measure (measure := fun p : sync.SyncSettings × Std.U32 × Std.Usize =>
-      sync.MAX_RELAY_TABLE.val - p.2.2.val)
-    (inv := fun _ => True) (n := sync.MAX_RELAY_TABLE.val) (x := (ss, sender_relay_mask, sr))
-  · rintro ⟨ss2, srm, k⟩ _
+  apply loop_of_measure
+    (measure := fun p : sync.SyncSettings × Std.U32 × Bool × Std.Usize =>
+      sync.MAX_RELAY_TABLE.val - p.2.2.2.val)
+    (inv := fun _ => True) (n := sync.MAX_RELAY_TABLE.val)
+    (x := (ss, sender_relay_mask, has_relayed_sender, sr))
+  · rintro ⟨ss2, srm, hrs, k⟩ _
     unfold sync.Sync.step_loop0.body; dsimp only
     by_cases hlt : k < sync.MAX_RELAY_TABLE
     · rw [ite_t hlt]
@@ -1194,14 +1347,13 @@ theorem step_loop0_total
                     cases o1 with
                     | none => simp
                     | some p_idx =>
-                      dsimp only; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
-                      split <;> step*
+                      dsimp only; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩; step as ⟨_⟩
                   · simp
-                · intro _ _; simp
+                · rintro ⟨_, _⟩ -; simp
               · simp
             · simp
           · simp
-      · rintro ⟨_, _⟩ -
+      · rintro ⟨_, _, _⟩ -
         step as ⟨k1, hk1⟩
         rw [hk1, hnext]; omega
     · rw [ite_f hlt, WP.spec_ok]; trivial
@@ -1238,8 +1390,9 @@ local macro "prove_step_peer_edges_body" k:ident i1:ident ec:ident hlt:ident : t
 @[step]
 theorem step_loop1_total (i : Std.U64) (i1 : Std.Usize) (a : Array sync.PeerSlot 15#usize)
     (now_ns : Std.I64) (active_mask : Std.U32) (host_count : Std.Usize)
-    (edges : Array blue.EdgeObs 136#usize) (edge_count i2 : Std.Usize) :
-    sync.Sync.step_loop1 i i1 a now_ns active_mask host_count edges edge_count i2
+    (edges : Array blue.EdgeObs 136#usize) (edge_count : Std.Usize)
+    (peer_pair_prior : kalman.NoisePrior) (i2 : Std.Usize) :
+    sync.Sync.step_loop1 i i1 a now_ns active_mask host_count edges edge_count peer_pair_prior i2
       ⦃ _ => True ⦄ := by
   unfold sync.Sync.step_loop1
   apply loop_of_measure (measure := fun p : Array blue.EdgeObs 136#usize × Std.Usize × Std.Usize =>
@@ -1259,8 +1412,9 @@ theorem step_loop1_total (i : Std.U64) (i1 : Std.Usize) (a : Array sync.PeerSlot
 @[step]
 theorem step_loop4_total (i : Std.U64) (i1 : Std.Usize) (a : Array sync.PeerSlot 15#usize)
     (now_ns : Std.I64) (active_mask : Std.U32) (host_count : Std.Usize)
-    (edges : Array blue.EdgeObs 136#usize) (edge_count i2 : Std.Usize) :
-    sync.Sync.step_loop4 i i1 a now_ns active_mask host_count edges edge_count i2
+    (edges : Array blue.EdgeObs 136#usize) (edge_count : Std.Usize)
+    (peer_pair_prior : kalman.NoisePrior) (i2 : Std.Usize) :
+    sync.Sync.step_loop4 i i1 a now_ns active_mask host_count edges edge_count peer_pair_prior i2
       ⦃ _ => True ⦄ := by
   unfold sync.Sync.step_loop4
   apply loop_of_measure (measure := fun p : Array blue.EdgeObs 136#usize × Std.Usize × Std.Usize =>
@@ -1330,15 +1484,17 @@ theorem step_loop2_total
     (i2 i3 : Std.U64) (i4 i5 i6 i7 i8 i9 : Std.I64)
     (b : Bool) (i10 : Std.I64) (i11 : Std.U32)
     (a : arrivals.Arrivals 8#usize) (smr : min_rtt.SlidingMinRtt 8#usize)
-    (kf : kalman.KalmanFilter) (b1 : Bool) (m : min_rtt.Measurement)
-    (i12 : Std.Usize) (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
-    (i13 : Std.U64) (b2 : Bool) (i14 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
-    (b3 : Bool) (i15 i16 i17 : Std.U32) (b4 b5 : Bool) (i18 : Std.I64) (ss : sync.SyncSnapshot)
-    (now_ns : Std.I64) (host_count : Std.Usize) (edges : Array blue.EdgeObs 136#usize)
-    (edge_count : Std.Usize) (sender_pair_prior peer_pair_prior : kalman.NoisePrior) (r : Std.Usize) :
-    sync.Sync.step_loop2 i i1 np np1 i2 i3 i4 i5 i6 i7 i8 i9 b i10 i11 a smr kf b1 m i12 a1 a2
-      i13 b2 i14 kf1 kf2 b3 i15 i16 i17 b4 b5 i18 ss now_ns host_count edges edge_count
-      sender_pair_prior peer_pair_prior r ⦃ _ => True ⦄ := by
+    (kf : kalman.KalmanFilter) (b1 : Bool) (i12 : Std.U64) (i13 i14 i15 : Std.I64) (i16 : Std.U64)
+    (i17 : Std.U32) (b2 : Bool) (i18 : Std.Usize)
+    (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
+    (i19 : Std.U64) (b3 : Bool) (i20 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
+    (b4 : Bool) (i21 i22 i23 i24 : Std.U32) (b5 b6 : Bool) (i25 : Std.I64)
+    (ss : sync.SyncSnapshot) (now_ns : Std.I64) (host_count : Std.Usize)
+    (edges : Array blue.EdgeObs 136#usize) (edge_count : Std.Usize)
+    (sender_pair_prior peer_pair_prior : kalman.NoisePrior) (r : Std.Usize) :
+    sync.Sync.step_loop2 i i1 np np1 i2 i3 i4 i5 i6 i7 i8 i9 b i10 i11 a smr kf b1 i12 i13 i14 i15
+      i16 i17 b2 i18 a1 a2 i19 b3 i20 kf1 kf2 b4 i21 i22 i23 i24 b5 b6 i25 ss now_ns host_count
+      edges edge_count sender_pair_prior peer_pair_prior r ⦃ _ => True ⦄ := by
   unfold sync.Sync.step_loop2
   apply loop_of_measure (measure := fun p : Array blue.EdgeObs 136#usize × Std.Usize × Std.Usize =>
       sync.MAX_RELAY_TABLE.val - p.2.2.val)
@@ -1360,15 +1516,17 @@ theorem step_loop5_total
     (i2 i3 : Std.U64) (i4 i5 i6 i7 i8 i9 : Std.I64)
     (b : Bool) (i10 : Std.I64) (i11 : Std.U32)
     (a : arrivals.Arrivals 8#usize) (smr : min_rtt.SlidingMinRtt 8#usize)
-    (kf : kalman.KalmanFilter) (b1 : Bool) (m : min_rtt.Measurement)
-    (i12 : Std.Usize) (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
-    (i13 : Std.U64) (b2 : Bool) (i14 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
-    (b3 : Bool) (i15 i16 i17 : Std.U32) (b4 b5 : Bool) (i18 : Std.I64) (ss : sync.SyncSnapshot)
-    (now_ns : Std.I64) (host_count : Std.Usize) (edges : Array blue.EdgeObs 136#usize)
-    (edge_count : Std.Usize) (sender_pair_prior peer_pair_prior : kalman.NoisePrior) (r : Std.Usize) :
-    sync.Sync.step_loop5 i i1 np np1 i2 i3 i4 i5 i6 i7 i8 i9 b i10 i11 a smr kf b1 m i12 a1 a2
-      i13 b2 i14 kf1 kf2 b3 i15 i16 i17 b4 b5 i18 ss now_ns host_count edges edge_count
-      sender_pair_prior peer_pair_prior r ⦃ _ => True ⦄ := by
+    (kf : kalman.KalmanFilter) (b1 : Bool) (i12 : Std.U64) (i13 i14 i15 : Std.I64) (i16 : Std.U64)
+    (i17 : Std.U32) (b2 : Bool) (i18 : Std.Usize)
+    (a1 : Array sync.PeerSlot 15#usize) (a2 : Array sync.RelayedSlot 128#usize)
+    (i19 : Std.U64) (b3 : Bool) (i20 : Std.I64) (kf1 kf2 : kalman.KalmanFilter)
+    (b4 : Bool) (i21 i22 i23 i24 : Std.U32) (b5 b6 : Bool) (i25 : Std.I64)
+    (ss : sync.SyncSnapshot) (now_ns : Std.I64) (host_count : Std.Usize)
+    (edges : Array blue.EdgeObs 136#usize) (edge_count : Std.Usize)
+    (sender_pair_prior peer_pair_prior : kalman.NoisePrior) (r : Std.Usize) :
+    sync.Sync.step_loop5 i i1 np np1 i2 i3 i4 i5 i6 i7 i8 i9 b i10 i11 a smr kf b1 i12 i13 i14 i15
+      i16 i17 b2 i18 a1 a2 i19 b3 i20 kf1 kf2 b4 i21 i22 i23 i24 b5 b6 i25 ss now_ns host_count
+      edges edge_count sender_pair_prior peer_pair_prior r ⦃ _ => True ⦄ := by
   unfold sync.Sync.step_loop5
   apply loop_of_measure (measure := fun p : Array blue.EdgeObs 136#usize × Std.Usize × Std.Usize =>
       sync.MAX_RELAY_TABLE.val - p.2.2.val)
@@ -1424,39 +1582,15 @@ theorem step_loop6_total (i : Std.Usize) (a : Array Bool 17#usize)
   · trivial
   · omega
 
-local macro "prove_membership_reanchor" s1:ident srm:ident : tactic => `(tactic| (
-  by_cases hpa : ($s1).peer_active = true
-  · simp only [hpa, ↓reduceIte]
-    by_cases hsr : (($srm) != ($s1).last_sender_relay_mask) = true
-    · simp only [hsr, ↓reduceIte]
-      step as ⟨b1⟩
-      by_cases hb1 : b1 = true
-      · simp only [hb1, ↓reduceIte]
-        step as ⟨_⟩; step as ⟨_⟩; step as ⟨o⟩
-        apply WP.spec_bind (Pₘ := fun _ => True)
-        · cases o with
-          | none => simp
-          | some _ => repeat (first | step | simp)
-        · intro _ _; simp
-      · simp only [hb1, Bool.false_eq_true, ↓reduceIte]; repeat (first | step | simp)
-    · simp only [hsr, Bool.false_eq_true, ↓reduceIte]
-      step as ⟨b1⟩
-      by_cases hb1 : b1 = true
-      · simp only [hb1, ↓reduceIte]
-        step as ⟨b2⟩
-        by_cases hb2 : b2 = true
-        · simp only [hb2, ↓reduceIte]
-          step as ⟨o⟩
-          apply WP.spec_bind (Pₘ := fun _ => True)
-          · cases o with
-            | none => simp
-            | some _ => repeat (first | step | simp)
-          · rintro ⟨_, _⟩ -; simp
-        · simp only [hb2, Bool.false_eq_true, ↓reduceIte]; repeat (first | step | simp)
-      · simp only [hb1, Bool.false_eq_true, ↓reduceIte]; repeat (first | step | simp)
-  · simp only [hpa, Bool.false_eq_true, ↓reduceIte]; repeat (first | step | simp)))
+local macro "prove_sender_edge_insert" : tactic => `(tactic| (
+  step as ⟨_⟩; step as ⟨_, _⟩; step as ⟨_⟩
+  step as ⟨s, back⟩
+  step with slice_get_mut_ok s 0#usize as ⟨o, gb⟩
+  cases o with
+  | none => simp
+  | some _ => step*))
 
-local macro "prove_step_fuse_branch" s1:ident srm:ident : tactic => `(tactic| (
+local macro "prove_step_fuse_branch" : tactic => `(tactic| (
   step as ⟨hc⟩
   apply WP.spec_bind (Pₘ := fun _ => True)
   · split <;> simp
@@ -1465,44 +1599,26 @@ local macro "prove_step_fuse_branch" s1:ident srm:ident : tactic => `(tactic| (
     step as ⟨spp⟩; step as ⟨ppp⟩
     apply WP.spec_bind (Pₘ := fun _ => True)
     · split
-      · step as ⟨age⟩; step as ⟨_⟩; step as ⟨_, _⟩; step as ⟨_⟩
-        step as ⟨s, back⟩
-        step with slice_get_mut_ok s 0#usize as ⟨o, gb⟩
-        apply WP.spec_bind (Pₘ := fun _ => True)
-        · cases o with
-          | none => simp
-          | some _ => step*
-        · rintro ⟨_, _⟩ -; simp
+      · split
+        · prove_sender_edge_insert
+        · split
+          · simp
+          · prove_sender_edge_insert
       · simp
-    · rintro ⟨m, e1, ec⟩ -
+    · rintro ⟨e1, ec⟩ -
       step as ⟨e2, ec1⟩; step as ⟨e3, ec2⟩; step as ⟨s⟩; step as ⟨solved⟩
       by_cases hle : solved.active_count ≤ 1#usize
       · rw [ite_t hle]; step*
       · rw [ite_f hle]
         step as ⟨rm⟩
-        step as ⟨dim⟩; step as ⟨np⟩; step as ⟨com_prior⟩; step as ⟨i⟩; step as ⟨diff_prior⟩
-        step as ⟨kf⟩; step as ⟨kf1⟩
-        apply WP.spec_bind (Pₘ := fun _ => True)
-        · split
-          · split <;> simp
-          · simp
-        · intro amc _
-          apply WP.spec_bind (Pₘ := fun _ => True)
-          · split
-            · step as ⟨i4⟩
-              apply WP.spec_bind (Pₘ := fun _ => True)
-              · prove_membership_reanchor $s1 $srm
-              · rintro ⟨_, _, _, _⟩ -; simp
-            · simp
-          · rintro ⟨kf2, kf3, b, i1, i2, i3⟩ -
-            step as ⟨_, kf4⟩; step as ⟨_, kf5⟩
-            step as ⟨o⟩; step as ⟨o1⟩
-            cases o with
-            | none => step*
-            | some _ =>
-              cases o1 with
-              | none => step*
-              | some _ => step*))
+        step as ⟨self2⟩
+        step as ⟨o⟩; step as ⟨o1⟩
+        cases o with
+        | none => step*
+        | some _ =>
+          cases o1 with
+          | none => step*
+          | some _ => step*))
 
 @[step]
 theorem step_total (self : sync.Sync) (now_ns : Std.I64) :
@@ -1513,31 +1629,37 @@ theorem step_total (self : sync.Sync) (now_ns : Std.I64) :
   by_cases ham : active_mask = 0#u32
   · rw [ite_t ham]; step*
   · rw [ite_f ham]
+    step as ⟨sender_age⟩
     apply WP.spec_bind (Pₘ := fun _ => True)
     · split
-      · step as ⟨_⟩; split <;> simp
+      · split <;> simp
       · simp
-    · intro srm0 _
-      step as ⟨ss, srm1⟩
+    · rintro ⟨ss, sf⟩ -
       apply WP.spec_bind (Pₘ := fun _ => True)
       · split
-        · split <;> simp
+        · step as ⟨_⟩; split <;> simp
         · simp
-      · intro mc _
+      · intro srm0 _
+        step as ⟨ss1, srm1, hrs⟩
         apply WP.spec_bind (Pₘ := fun _ => True)
         · split
-          · step*
+          · split <;> simp
           · simp
-        · intro fd _
-          by_cases hmc : mc = true
-          · rw [ite_t hmc]; prove_step_fuse_branch self1 srm1
-          · rw [ite_f hmc]
-            by_cases hdir : self1.dirty = true
-            · rw [ite_t hdir]
-              by_cases hfd : fd = true
-              · rw [ite_t hfd]; prove_step_fuse_branch self1 srm1
-              · rw [ite_f hfd, WP.spec_ok]; trivial
-            · rw [ite_f hdir, WP.spec_ok]; trivial
+        · intro mc _
+          apply WP.spec_bind (Pₘ := fun _ => True)
+          · split
+            · step*
+            · simp
+          · intro fd _
+            by_cases hmc : mc = true
+            · rw [ite_t hmc]; prove_step_fuse_branch
+            · rw [ite_f hmc]
+              by_cases hdir : self1.dirty = true
+              · rw [ite_t hdir]
+                by_cases hfd : fd = true
+                · rw [ite_t hfd]; prove_step_fuse_branch
+                · rw [ite_f hfd, WP.spec_ok]; trivial
+              · rw [ite_f hdir, WP.spec_ok]; trivial
 
 /-! ## Exact Star degeneration (`peer_count = 0`) -/
 

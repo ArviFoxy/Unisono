@@ -240,6 +240,16 @@ pub extern "C" fn realtime_sync_build_relay(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_set_sender_clock_id(sync: &mut Sync, clock_id: u32) {
+    sync.set_sender_clock_id(clock_id);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_reset_sender_clock(sync: &mut Sync) {
+    sync.reset_sender_clock();
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn realtime_sync_step(sync: &mut Sync, now_ns: i64) -> SyncSnapshot {
     sync.step(now_ns)
 }

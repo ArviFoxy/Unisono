@@ -684,6 +684,31 @@ theorem update_variance_loop1_total (excesses : Array Std.I64 W) (count a : Std.
     · simp
   · trivial
 
+/-- `uncalibrated_variance` is total and never drops below
+`min floor_var_ns2 MAX_VAR_NS2`. -/
+@[step]
+theorem uncalibrated_variance_spec (s : min_rtt.SlidingMinRtt W) (best_rtt_ns : Std.I64) :
+    min_rtt.SlidingMinRtt.uncalibrated_variance s best_rtt_ns ⦃ v =>
+      min s.floor_var_ns2.val min_rtt.MAX_VAR_NS2.val ≤ v.val ⦄ := by
+  unfold min_rtt.SlidingMinRtt.uncalibrated_variance
+  step with variance_ns2_spec s as ⟨base, hbase⟩
+  have hhalf :
+      (if best_rtt_ns <= 0#i64 then ok 0#i64
+       else do
+         let h ← lift (core.num.I64.wrapping_shr best_rtt_ns 1#u32)
+         if h > min_rtt.MAX_EXCESS_NS then ok min_rtt.MAX_EXCESS_NS else ok h)
+        ⦃ _ => True ⦄ := by
+    split
+    · simp
+    · step as ⟨h⟩; split <;> simp
+  apply WP.spec_bind hhalf
+  intro half _
+  step as ⟨i⟩; step as ⟨i1⟩; step as ⟨i2⟩
+  step with clamp_var_spec i2 s.floor_var_ns2 as ⟨rtt_var, hrtt_lo, _⟩
+  split
+  · rw [WP.spec_ok]; exact hrtt_lo
+  · rw [WP.spec_ok]; exact le_trans (Nat.min_le_left _ _) hbase
+
 @[step]
 theorem update_variance_spec (s : min_rtt.SlidingMinRtt W) (best_rtt_ns : Std.I64) :
     min_rtt.SlidingMinRtt.update_variance s best_rtt_ns ⦃ out =>
@@ -696,12 +721,12 @@ theorem update_variance_spec (s : min_rtt.SlidingMinRtt W) (best_rtt_ns : Std.I6
   apply WP.spec_bind hlim
   intro lim _
   split
-  · step with variance_ns2_spec s as ⟨v, hv⟩
-    exact le_trans (Nat.min_le_left _ _) hv
+  · step with uncalibrated_variance_spec s best_rtt_ns as ⟨v, hv⟩
+    exact hv
   · step as ⟨ex1, count⟩
     split
-    · step with variance_ns2_spec s as ⟨v, hv⟩
-      exact le_trans (Nat.min_le_left _ _) hv
+    · step with uncalibrated_variance_spec s best_rtt_ns as ⟨v, hv⟩
+      exact hv
     · step as ⟨ex2⟩
       step as ⟨mid⟩
       step as ⟨s_sl⟩

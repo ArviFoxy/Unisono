@@ -322,6 +322,25 @@ impl KalmanFilter {
         (self.p00, self.p01, self.p11)
     }
 
+    /// Posterior frequency variance `p11` in Q80 dimensionless units.
+    #[must_use]
+    pub fn p11_q80(&self) -> i128 {
+        self.p11
+    }
+
+    /// Posterior offset estimate at `last_time_ns`, in nanoseconds, without
+    /// forward extrapolation.
+    #[must_use]
+    pub fn offset_ns(&self) -> Option<i64> {
+        if !self.anchored {
+            return None;
+        }
+        let whole_ns = div_floor_wide(self.theta_q16 as i128, 65_536);
+        Some(saturate(
+            (self.base_offset_ns as i128).saturating_add(whole_ns),
+        ))
+    }
+
     /// Shifts the filter's offset estimate cleanly by `delta_ns` without
     /// perturbing its frequency estimate or covariance (used for bumpless
     /// common/differential transfer when peer membership changes).
@@ -335,13 +354,25 @@ impl KalmanFilter {
     /// Anchors the filter directly at `(time_ns, offset_ns)` with initial
     /// measurement variance `variance_ns2` and zero frequency estimate.
     fn anchor(&mut self, time_ns: i64, offset_ns: i64, variance_ns2: u64) {
+        self.anchor_with_freq(time_ns, offset_ns, 0, variance_ns2);
+    }
+
+    /// Anchors the filter at `(time_ns, offset_ns)` while preserving a prior
+    /// frequency estimate `freq_q48` (clamped to `±MAX_FREQ_Q48`).
+    pub fn anchor_with_freq(
+        &mut self,
+        time_ns: i64,
+        offset_ns: i64,
+        freq_q48: i64,
+        variance_ns2: u64,
+    ) {
         let meas_q16 = clamp_nonneg((variance_ns2 as i128).wrapping_shl(16), MAX_P00);
         let init_p00 = if meas_q16 > 0 { meas_q16 } else { INIT_P00 };
         self.anchored = true;
         self.base_offset_ns = offset_ns;
         self.last_time_ns = time_ns;
         self.theta_q16 = 0;
-        self.freq_q48 = 0;
+        self.freq_q48 = clamp_sym_i64(freq_q48, MAX_FREQ_Q48);
         self.p00 = init_p00;
         self.p01 = 0;
         self.p11 = INIT_P11;
@@ -365,17 +396,38 @@ impl KalmanFilter {
     }
 
     /// Advances the stored posterior forward by `dt_ns >= 0` using the exact
-    /// integrated Brownian-motion covariance `Q(dt)`.
+    /// integrated Brownian-motion covariance `Q(dt)`. For silences exceeding
+    /// `MAX_DT_NS` (1000 s), advances `last_time_ns` and phase across the full
+    /// `dt_ns` and saturates phase uncertainty to `MAX_P00` with zero
+    /// phase-frequency correlation so the next measurement snaps cleanly.
     pub fn predict(&mut self, dt_ns: i64) {
         if !self.anchored || dt_ns <= 0 {
             return;
         }
-        let dt = if dt_ns > MAX_DT_NS { MAX_DT_NS } else { dt_ns };
-        let dt128 = dt as i128;
+        if dt_ns > MAX_DT_NS {
+            let d_theta = mul_shr_safe(self.freq_q48 as i128, dt_ns as i128, 32);
+            let d_whole = div_floor_wide(d_theta, 65_536);
+            let d_frac = d_theta.wrapping_sub(saturating_mul_i128(d_whole, 65_536));
+            self.base_offset_ns = saturate((self.base_offset_ns as i128).saturating_add(d_whole));
+            self.theta_q16 = saturate((self.theta_q16 as i128).saturating_add(d_frac));
+            self.last_time_ns = self.last_time_ns.saturating_add(dt_ns);
+            let p11_floor = if self.p11 > INIT_P11 {
+                self.p11
+            } else {
+                INIT_P11
+            };
+            let (fp00, fp01, fp11) = enforce_psd(MAX_P00, 0, p11_floor);
+            self.p00 = fp00;
+            self.p01 = fp01;
+            self.p11 = fp11;
+            self.recenter();
+            return;
+        }
+        let dt128 = dt_ns as i128;
         // `Q48 * ns >> 32 = Q16 ns`.
         let d_theta = (self.freq_q48 as i128).wrapping_mul(dt128).wrapping_shr(32);
         self.theta_q16 = saturate((self.theta_q16 as i128).wrapping_add(d_theta));
-        self.last_time_ns = self.last_time_ns.saturating_add(dt);
+        self.last_time_ns = self.last_time_ns.saturating_add(dt_ns);
 
         let (p00, p01, p11) = enforce_psd(self.p00, self.p01, self.p11);
         let q0_rate = clamp_nonneg(self.prior.q0_q16_ns2_per_s, MAX_P00);
@@ -616,5 +668,69 @@ mod tests {
         // 500 ms jump triggers clean re-anchor.
         assert!(kf.update(2_000_000_000, 500_000_500, 25_000_000));
         assert_eq!(kf.predict_offset_ns(2_000_000_000), Some(500_000_500));
+    }
+
+    #[test]
+    fn predict_and_update_after_long_silence_exceeding_1000s_stays_accurate() {
+        // Defect 1: after a silence > 1000 s (e.g. 25 min or 1 hr), `predict`
+        // must advance `last_time_ns` across the full gap and snap cleanly on
+        // the first fresh measurement instead of falling behind by >17 ms.
+        let prior = NoisePrior::CONSUMER_QUARTZ.combine(NoisePrior::CONSUMER_QUARTZ);
+        let mut kf = KalmanFilter::new(prior, DEFAULT_JUMP_NS);
+        let skew_ns_per_s = 35_000i64; // +35 ppm
+        let var = 25_000_000u64; // (5 us)^2
+        for sec in 0..20i64 {
+            let t = sec * 1_000_000_000;
+            assert!(kf.update(t, sec * skew_ns_per_s, var));
+        }
+
+        // 25-minute silence (1500 s > MAX_DT_NS = 1000 s), with +2 ppm rate shift.
+        let t_25m = 1_520 * 1_000_000_000i64;
+        let true_25m = 20 * skew_ns_per_s + 1_500 * (skew_ns_per_s + 2_000);
+        assert!(kf.update(t_25m, true_25m, var));
+        assert_eq!(kf.last_time_ns(), t_25m);
+        let est_25m = kf.predict_offset_ns(t_25m).expect("anchored");
+        assert!(
+            (est_25m - true_25m).abs() < 5_000,
+            "25m silence first-estimate error too large: err={} ns",
+            est_25m - true_25m
+        );
+
+        // 1-hour silence (3600 s > MAX_DT_NS) with +15 ppm rate shift (54 ms < 100 ms jump).
+        let t_1h = t_25m + 3_600 * 1_000_000_000i64;
+        let true_1h = true_25m + 3_600 * (skew_ns_per_s + 17_000);
+        assert!(kf.update(t_1h, true_1h, var));
+        assert_eq!(kf.last_time_ns(), t_1h);
+        let est_1h = kf.predict_offset_ns(t_1h).expect("anchored");
+        assert!(
+            (est_1h - true_1h).abs() < 5_000,
+            "1h silence first-estimate error too large: err={} ns",
+            est_1h - true_1h
+        );
+    }
+
+    #[test]
+    fn predict_includes_q2_off_diagonal_coupling() {
+        // Catches mutation dropping `q01 = q2 * dt^2 / 2` from predicted `p01`.
+        let prior = NoisePrior {
+            q0_q16_ns2_per_s: 0,
+            q2_q80_per_s: NoisePrior::WANDERING_QUARTZ.q2_q80_per_s,
+        };
+        let mut kf = KalmanFilter::new(prior, DEFAULT_JUMP_NS);
+        kf.anchor_with_freq(0, 0, 0, 25_000_000);
+        // Zero `p11` so the ONLY source of `p01` growth over 10 s is `q01 = q2 * dt^2 / 2`.
+        kf.p11 = 0;
+        kf.p01 = 0;
+        let dt_ns = 10_000_000_000i64;
+        kf.predict(dt_ns);
+        let (_, p01, p11) = kf.covariance_raw();
+        let expected_q11 = prior.q2_q80_per_s * 10;
+        let expected_q01 = ((expected_q11 * i128::from(dt_ns)) >> 32) >> 1;
+        assert_eq!(p11, expected_q11);
+        assert_eq!(
+            p01, expected_q01,
+            "p01 must include q2*dt^2/2 coupling: got {p01}, expected {expected_q01}"
+        );
+        assert!(p01 > 0);
     }
 }

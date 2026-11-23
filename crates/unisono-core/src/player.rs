@@ -1388,4 +1388,66 @@ mod tests {
             plan_com.step.offset()
         );
     }
+
+    #[test]
+    fn modal_player_star_path_uses_star_gain_exclusively() {
+        // Catches mutation using `common_gain` or `diff_gain` on the Star path.
+        use super::ModalRegulation;
+        use crate::timing::{Schedule, due};
+
+        let sched = Schedule {
+            index: 0,
+            capture: 0,
+            rate: 48_000,
+            drift: 0,
+            level: 0,
+            level_slope: 0,
+        };
+        let reg = ModalRegulation {
+            star_gain: 2 << 16,
+            common_gain: 1 << 14, // 0.25 / s
+            diff_gain: 8 << 16,
+            limit: 1_000_000,
+            jump: 240,
+        };
+        let mut modal = super::ModalPlayer::new(reg);
+        let mut p_star = Player::new(Regulation {
+            gain: reg.star_gain,
+            limit: reg.limit,
+            jump: reg.jump,
+        });
+        let mut p_com = Player::new(Regulation {
+            gain: reg.common_gain,
+            limit: reg.limit,
+            jump: reg.jump,
+        });
+        let mut p_diff = Player::new(Regulation {
+            gain: reg.diff_gain,
+            limit: reg.limit,
+            jump: reg.jump,
+        });
+
+        let t0 = 1_000_000_000i64;
+        let now0 = due(&sched, t0).expect("due");
+        let then0 = due(&sched, t0 + DURATION).expect("due");
+        modal.cycle(now0, then0, FRAMES, DURATION, &sched, false, 0, 0, 0);
+        p_star.cycle(now0, then0, FRAMES, DURATION, sched.level_slope);
+        p_com.cycle(now0, then0, FRAMES, DURATION, sched.level_slope);
+        p_diff.cycle(now0, then0, FRAMES, DURATION, sched.level_slope);
+
+        let t1 = t0 + DURATION + 200_000;
+        let now1 = due(&sched, t1).expect("due");
+        let then1 = due(&sched, t1 + DURATION).expect("due");
+        let m_plan = modal.cycle(now1, then1, FRAMES, DURATION, &sched, false, 0, 0, 0);
+        let s_plan = p_star.cycle(now1, then1, FRAMES, DURATION, sched.level_slope);
+        let c_plan = p_com.cycle(now1, then1, FRAMES, DURATION, sched.level_slope);
+        let d_plan = p_diff.cycle(now1, then1, FRAMES, DURATION, sched.level_slope);
+
+        assert_eq!(m_plan, s_plan, "Star path must match Player at star_gain");
+        assert_ne!(
+            m_plan.step, c_plan.step,
+            "Star path must not use common_gain"
+        );
+        assert_ne!(m_plan.step, d_plan.step, "Star path must not use diff_gain");
+    }
 }

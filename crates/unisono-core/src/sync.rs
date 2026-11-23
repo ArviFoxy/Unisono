@@ -24,7 +24,7 @@
 //! and exports a compact [`SyncSnapshot`] for O(1) audio-thread playback.
 
 use crate::arrivals::Arrivals;
-use crate::blue::{EdgeObs, MAX_EDGES, MAX_HOSTS, solve_blue};
+use crate::blue::{BlueResult, EdgeObs, MAX_EDGES, MAX_HOSTS, solve_blue};
 use crate::fixed::{
     div_floor_wide, saturate, saturating_mul_i64, saturating_mul_i128, scale_div_pow2,
 };
@@ -304,6 +304,11 @@ struct RelayedSlot {
     offset_ns: i64,
     /// Variance of `offset_ns` at `meas_time_ns`, in square nanoseconds.
     variance_ns2: u64,
+    /// Reference timestamp and offset for per-edge slope estimation; only
+    /// advances when `meas_time_ns - slope_ref_time_ns >= MIN_RELAY_SLOPE_DT_NS`
+    /// so relays arriving faster than 500 ms still accumulate slope baselines.
+    slope_ref_time_ns: i64,
+    slope_ref_offset_ns: i64,
     /// Whether a per-edge slope estimate has been initialized.
     has_freq: bool,
     /// Smoothed relative fractional frequency of `clock(to_id) - clock(from_id)`
@@ -320,6 +325,8 @@ impl RelayedSlot {
         last_rx_ns: 0,
         offset_ns: 0,
         variance_ns2: 0,
+        slope_ref_time_ns: 0,
+        slope_ref_offset_ns: 0,
         has_freq: false,
         freq_q48: 0,
     };
@@ -349,8 +356,10 @@ fn link_variance_ns2(filter_var: u64, rtt_var: u64, floor_ns2: u64) -> u64 {
 }
 
 /// Evaluates a direct link's `(offset_ns, variance_ns2, age_ns)` for a
-/// [`PeerRelay`] message from its Kalman filter, sliding min-RTT variance,
-/// and latest measurement.
+/// [`PeerRelay`] message at the filter's actual observation timestamp
+/// (`filter.last_time_ns()`), reporting the true measurement age on the
+/// relaying host's clock so receiving peers can accurately extrapolate and
+/// grow variance across age and reject stale relays.
 fn link_relay_obs(
     filter: &KalmanFilter,
     rtt_var: u64,
@@ -359,16 +368,22 @@ fn link_relay_obs(
     age_ns: i64,
     floor_ns2: u64,
 ) -> (i64, u64, u32) {
-    let pred = filter.predict_offset_ns(now_ns);
+    let f_off = filter.offset_ns();
     let f_var = filter.offset_variance_ns2();
-    match pred {
-        Some(filtered) => (filtered, link_variance_ns2(f_var, rtt_var, floor_ns2), 0u32),
+    let obs_age = now_ns.saturating_sub(filter.last_time_ns());
+    match f_off {
+        Some(filtered) => (
+            filtered,
+            link_variance_ns2(f_var, rtt_var, floor_ns2),
+            age_to_u32(obs_age),
+        ),
         None => (last.offset_ns, last.variance_ns2, age_to_u32(age_ns)),
     }
 }
 
 /// Evaluates a direct link's `(offset_ns, variance_ns2)` for BLUE graph
-/// assembly in [`Sync::step`].
+/// assembly in [`Sync::step`], growing its variance across the observation's
+/// age using `pair_prior` consistently with relayed edges.
 fn link_step_obs(
     filter: &KalmanFilter,
     rtt_var: u64,
@@ -376,15 +391,21 @@ fn link_step_obs(
     now_ns: i64,
     age_ns: i64,
     floor_ns2: u64,
+    pair_prior: NoisePrior,
 ) -> (i64, u64) {
     let pred = filter.predict_offset_ns(now_ns);
     let f_var = filter.offset_variance_ns2();
     let fq = filter.freq_q48();
+    let obs_age = now_ns.saturating_sub(filter.last_time_ns());
     match pred {
-        Some(filtered) => (filtered, link_variance_ns2(f_var, rtt_var, floor_ns2)),
+        Some(filtered) => {
+            let base = link_variance_ns2(f_var, rtt_var, floor_ns2);
+            let var_eff = inflate_variance(base, obs_age, pair_prior, 0);
+            (filtered, var_eff)
+        }
         None => (
             extrapolate_offset(last.offset_ns, fq, age_ns),
-            last.variance_ns2,
+            inflate_variance(last.variance_ns2, age_ns, pair_prior, 0),
         ),
     }
 }
@@ -504,6 +525,8 @@ pub struct Sync {
     sender_filter: KalmanFilter,
     sender_has_meas: bool,
     sender_last_meas: Measurement,
+    sender_clock_id: u32,
+    has_sender_clock: bool,
 
     // Direct peers (`1..=peer_count`).
     peer_count: usize,
@@ -519,6 +542,7 @@ pub struct Sync {
     common_filter: KalmanFilter,
     diff_filter: KalmanFilter,
     peer_active: bool,
+    last_direct_mask: u32,
     last_active_mask: u32,
     last_sender_relay_mask: u32,
     epoch: u32,
@@ -556,6 +580,8 @@ impl Sync {
                 rtt_ns: 0,
                 variance_ns2: settings.initial_variance_ns2,
             },
+            sender_clock_id: 0,
+            has_sender_clock: false,
             peer_count: 0,
             peers: [empty_peer; MAX_DIRECT_PEERS],
             relayed: [RelayedSlot::EMPTY; MAX_RELAY_TABLE],
@@ -565,6 +591,7 @@ impl Sync {
             common_filter: KalmanFilter::new(sender_pair_prior, settings.jump_ns),
             diff_filter: KalmanFilter::new(settings.local_prior, settings.jump_ns),
             peer_active: false,
+            last_direct_mask: 0,
             last_active_mask: 0,
             last_sender_relay_mask: 0,
             epoch: 0,
@@ -686,6 +713,17 @@ impl Sync {
         }
     }
 
+    /// Sets the active sender clock identifier (`Audio::clock`). If a different
+    /// clock identifier was previously active, resets sender-clock state and
+    /// purges relayed sender edges while preserving direct peer-to-peer links.
+    pub fn set_sender_clock_id(&mut self, clock_id: u32) {
+        if self.has_sender_clock && self.sender_clock_id != clock_id {
+            self.reset_sender_clock();
+        }
+        self.has_sender_clock = true;
+        self.sender_clock_id = clock_id;
+    }
+
     /// Resets sender-clock state (for example when the sender reboots and
     /// changes its `clock_id`), preserving direct peer-to-peer estimates.
     pub fn reset_sender_clock(&mut self) {
@@ -693,6 +731,8 @@ impl Sync {
         self.sender_min_rtt.reset();
         self.sender_filter.reset();
         self.sender_has_meas = false;
+        self.has_sender_clock = false;
+        self.sender_clock_id = 0;
         self.common_filter.reset();
         // Drop relayed sender edges `(0, peer)` since sender clock epoch changed.
         let mut i = 0usize;
@@ -705,7 +745,10 @@ impl Sync {
             }
             i = i.saturating_add(1);
         }
+        self.last_direct_mask = 0;
+        self.last_active_mask = 0;
         self.last_sender_relay_mask = 0;
+        self.peer_active = false;
         self.epoch = self.epoch.wrapping_add(1);
         self.snapshot = SyncSnapshot::EMPTY;
         self.has_fused = false;
@@ -928,6 +971,7 @@ impl Sync {
         let mut relay = PeerRelay::EMPTY;
         relay.stream = self.settings.stream;
         relay.sender = self.settings.identity;
+        relay.sender_clock_id = self.sender_clock_id;
         let mut count = 0usize;
 
         if self.sender_has_meas && self.sender_min_rtt.len() >= 4 {
@@ -1055,10 +1099,15 @@ impl Sync {
                         saturate(0i128.wrapping_sub(re.offset_ns as i128)),
                     )
                 };
-                // Only accept endpoints we know (`0` or a configured peer).
+                // Only accept endpoints we know (`0` or a configured peer), and
+                // fence relayed sender edges (`c_from == 0`) by `sender_clock_id`
+                // so stale relays from a previous sender clock are rejected.
                 let from_known = c_from == 0 || self.find_peer(c_from).is_some();
                 let to_known = c_to == 0 || self.find_peer(c_to).is_some();
-                if from_known && to_known {
+                if from_known
+                    && to_known
+                    && (c_from != 0 || relay.sender_clock_id == self.sender_clock_id)
+                {
                     let transit = (re.age_ns as i64).saturating_add(relayer_path_ns);
                     if transit <= self.settings.peer_stale_ns {
                         let meas_time_ns = rx_ns.saturating_sub(transit);
@@ -1168,23 +1217,42 @@ impl Sync {
                 diff
             };
             if jump_limit > 0 && abs_diff > jump_limit as i128 {
-                // Clock step on relayed edge: reset slope cleanly.
+                // Clock step on relayed edge: reset slope and reference anchor cleanly.
                 slot.has_freq = false;
                 slot.freq_q48 = 0;
-            } else if dt >= MIN_RELAY_SLOPE_DT_NS {
-                let raw_q48 = clamp_i64(
-                    saturate(scale_div_pow2(diff, 48, dt as i128)),
-                    MAX_RELAY_FREQ_Q48,
-                );
-                if slot.has_freq {
-                    let blended = (slot.freq_q48 as i128)
-                        .wrapping_mul(7)
-                        .wrapping_add(raw_q48 as i128);
-                    slot.freq_q48 =
-                        clamp_i64(saturate(div_floor_wide(blended, 8)), MAX_RELAY_FREQ_Q48);
-                } else {
-                    slot.freq_q48 = raw_q48;
-                    slot.has_freq = true;
+                slot.slope_ref_time_ns = meas_time_ns;
+                slot.slope_ref_offset_ns = offset_ns;
+            } else {
+                let ref_dt = meas_time_ns.saturating_sub(slot.slope_ref_time_ns);
+                if ref_dt >= MIN_RELAY_SLOPE_DT_NS {
+                    let ref_diff =
+                        (offset_ns as i128).wrapping_sub(slot.slope_ref_offset_ns as i128);
+                    let abs_ref = if ref_diff < 0 {
+                        0i128.wrapping_sub(ref_diff)
+                    } else {
+                        ref_diff
+                    };
+                    if jump_limit > 0 && abs_ref > jump_limit as i128 {
+                        slot.has_freq = false;
+                        slot.freq_q48 = 0;
+                    } else {
+                        let raw_q48 = clamp_i64(
+                            saturate(scale_div_pow2(ref_diff, 48, ref_dt as i128)),
+                            MAX_RELAY_FREQ_Q48,
+                        );
+                        if slot.has_freq {
+                            let blended = (slot.freq_q48 as i128)
+                                .wrapping_mul(7)
+                                .wrapping_add(raw_q48 as i128);
+                            slot.freq_q48 =
+                                clamp_i64(saturate(div_floor_wide(blended, 8)), MAX_RELAY_FREQ_Q48);
+                        } else {
+                            slot.freq_q48 = raw_q48;
+                            slot.has_freq = true;
+                        }
+                    }
+                    slot.slope_ref_time_ns = meas_time_ns;
+                    slot.slope_ref_offset_ns = offset_ns;
                 }
             }
             let changed = dt >= MIN_RELAY_SLOPE_DT_NS
@@ -1206,6 +1274,8 @@ impl Sync {
             last_rx_ns: rx_ns,
             offset_ns,
             variance_ns2,
+            slope_ref_time_ns: meas_time_ns,
+            slope_ref_offset_ns: offset_ns,
             has_freq: false,
             freq_q48: 0,
         };
@@ -1264,6 +1334,7 @@ impl Sync {
     fn publish_star(&mut self) -> SyncSnapshot {
         if self.peer_active {
             self.peer_active = false;
+            self.last_direct_mask = 0;
             self.last_active_mask = 0;
             self.last_sender_relay_mask = 0;
             self.epoch = self.epoch.wrapping_add(1);
@@ -1288,6 +1359,136 @@ impl Sync {
         self.snapshot
     }
 
+    /// Estimates initial `(common_freq_q48, diff_freq_q48)` when entering Peer
+    /// mode from Star, using the direct sender and peer Kalman filters so
+    /// drifting clocks do not jump across the Star-to-Peer transition.
+    fn initial_peer_frequencies(&self, solved: &BlueResult) -> (i64, i64) {
+        let dim = solved.active_count as i128;
+        if dim <= 1 {
+            return (self.sender_filter.freq_q48(), 0);
+        }
+        let mut sum_peer_freq = 0i128;
+        let mut i = 0usize;
+        while i < self.peer_count {
+            let h = i.saturating_add(2);
+            if get_bool(&solved.reachable, h)
+                && let Some(p) = self.peers.get(i)
+                && p.has_meas
+            {
+                sum_peer_freq = sum_peer_freq.saturating_add(p.filter.freq_q48() as i128);
+            }
+            i = i.saturating_add(1);
+        }
+        let diff_freq = saturate(div_floor_wide(sum_peer_freq, dim));
+        let com_freq = if self.sender_filter.is_anchored() {
+            saturate((self.sender_filter.freq_q48() as i128).wrapping_sub(diff_freq as i128))
+        } else {
+            0
+        };
+        (com_freq, diff_freq)
+    }
+
+    /// Applies a [`BlueResult`] to `common_filter` and `diff_filter`, handling
+    /// Star-to-Peer initialization (preserving learned frequencies), peer
+    /// membership changes (bumpless transfer), and sender-edge set changes.
+    fn update_modal_filters(
+        &mut self,
+        now_ns: i64,
+        solved: &BlueResult,
+        direct_mask: u32,
+        reachable_mask: u32,
+        sender_relay_mask: u32,
+    ) {
+        #[allow(clippy::cast_possible_wrap)]
+        let dim = solved.active_count as i64;
+        let com_prior = self
+            .settings
+            .sender_prior
+            .combine(self.settings.local_prior.scale(1, dim));
+        let diff_prior = self.settings.local_prior.scale(dim.saturating_sub(1), dim);
+        self.common_filter.set_prior(com_prior);
+        self.diff_filter.set_prior(diff_prior);
+
+        let sender_relays_changed = sender_relay_mask != self.last_sender_relay_mask;
+        let actual_membership_changed =
+            !self.peer_active || reachable_mask != self.last_active_mask || sender_relays_changed;
+        let mut anchored_common = false;
+        let mut anchored_diff = false;
+        if actual_membership_changed {
+            self.epoch = self.epoch.wrapping_add(1);
+            if self.peer_active
+                && !sender_relays_changed
+                && self.common_filter.is_anchored()
+                && self.diff_filter.is_anchored()
+            {
+                // Bumpless peer-to-peer membership transfer: shift `diff_filter`
+                // by `d_new - d_old` and `common_filter` by `-(d_new - d_old)`
+                // so the sum `common + diff` is strictly continuous.
+                if let Some(d_old) = self.diff_filter.predict_offset_ns(now_ns) {
+                    let shift =
+                        saturate((solved.self_diff_offset_ns as i128).wrapping_sub(d_old as i128));
+                    let neg_shift = saturate(0i128.wrapping_sub(shift as i128));
+                    self.diff_filter.shift_offset_ns(shift);
+                    self.common_filter.shift_offset_ns(neg_shift);
+                }
+            } else if self.peer_active && sender_relays_changed && self.diff_filter.is_anchored() {
+                // Set of sender edges `(0, self)` / `(0, peer)` changed:
+                // re-anchor `common_filter` on the new full-graph BLUE common
+                // estimate while preserving its learned frequency, and shift
+                // `diff_filter` to the new differential offset.
+                let c_freq = if self.common_filter.is_anchored() {
+                    self.common_filter.freq_q48()
+                } else {
+                    0
+                };
+                self.common_filter.anchor_with_freq(
+                    now_ns,
+                    solved.common_offset_ns,
+                    c_freq,
+                    solved.common_var_ns2,
+                );
+                anchored_common = true;
+                if let Some(d_old) = self.diff_filter.predict_offset_ns(now_ns) {
+                    let d_shift =
+                        saturate((solved.self_diff_offset_ns as i128).wrapping_sub(d_old as i128));
+                    self.diff_filter.shift_offset_ns(d_shift);
+                }
+            } else {
+                // Entering Peer mode from Star or startup: anchor modal filters
+                // on the BLUE common/differential decomposition while preserving
+                // the learned sender and peer clock frequencies.
+                let (com_freq, diff_freq) = self.initial_peer_frequencies(solved);
+                self.common_filter.anchor_with_freq(
+                    now_ns,
+                    solved.common_offset_ns,
+                    com_freq,
+                    solved.common_var_ns2,
+                );
+                self.diff_filter.anchor_with_freq(
+                    now_ns,
+                    solved.self_diff_offset_ns,
+                    diff_freq,
+                    solved.self_diff_var_ns2,
+                );
+                anchored_common = true;
+                anchored_diff = true;
+            }
+            self.peer_active = true;
+            self.last_active_mask = reachable_mask;
+            self.last_sender_relay_mask = sender_relay_mask;
+        }
+        self.last_direct_mask = direct_mask;
+
+        if !anchored_common {
+            self.common_filter
+                .update(now_ns, solved.common_offset_ns, solved.common_var_ns2);
+        }
+        if !anchored_diff {
+            self.diff_filter
+                .update(now_ns, solved.self_diff_offset_ns, solved.self_diff_var_ns2);
+        }
+    }
+
     /// Advances synchronization state to `now_ns` and returns the latest
     /// [`SyncSnapshot`].
     ///
@@ -1305,15 +1506,18 @@ impl Sync {
             return self.publish_star();
         }
 
-        // Compute the bitmask of sender edges `(0, self)` (bit 0) and fresh
-        // relayed `(0, peer)` edges (bit `p_idx + 1`) so BLUE re-anchors
-        // cleanly whenever the set of sender edges contributing to the graph
-        // changes, preventing single-sender startup bias from turning into a
-        // huge Kalman frequency spike.
+        let sender_age = now_ns.saturating_sub(self.sender_last_meas.midpoint_ns);
+        let sender_fresh =
+            self.sender_has_meas && sender_age >= 0 && sender_age <= self.settings.peer_stale_ns;
+
+        // Compute the bitmask of fresh sender edges: `(0, self)` (bit 0, gated
+        // on calibrated RTT variance `len >= 4`) and fresh relayed `(0, peer)`
+        // edges (bit `p_idx + 1`).
         let mut sender_relay_mask = 0u32;
-        if self.sender_has_meas && self.sender_min_rtt.len() >= 4 {
+        if sender_fresh && self.sender_min_rtt.len() >= 4 {
             sender_relay_mask = 1u32;
         }
+        let mut has_relayed_sender = false;
         let mut sr = 0usize;
         while sr < MAX_RELAY_TABLE {
             if let Some(slot) = self.relayed.get(sr)
@@ -1325,20 +1529,17 @@ impl Sync {
                     && age <= self.settings.peer_stale_ns
                     && let Some(p_idx) = self.find_peer(slot.to_id)
                 {
+                    has_relayed_sender = true;
                     #[allow(clippy::cast_possible_truncation)]
-                    let active_bit = 1u32.wrapping_shl(p_idx as u32);
-                    if (active_mask & active_bit) != 0 {
-                        #[allow(clippy::cast_possible_truncation)]
-                        let relay_bit = 1u32.wrapping_shl(p_idx.saturating_add(1) as u32);
-                        sender_relay_mask |= relay_bit;
-                    }
+                    let relay_bit = 1u32.wrapping_shl(p_idx.saturating_add(1) as u32);
+                    sender_relay_mask |= relay_bit;
                 }
             }
             sr = sr.saturating_add(1);
         }
 
         let membership_changed = !self.peer_active
-            || active_mask != self.last_active_mask
+            || active_mask != self.last_direct_mask
             || sender_relay_mask != self.last_sender_relay_mask;
         let fusion_due = !self.has_fused
             || now_ns.saturating_sub(self.last_fuse_ns) >= self.fusion_interval_ns(now_ns);
@@ -1362,19 +1563,20 @@ impl Sync {
             .combine(self.settings.local_prior);
         let peer_pair_prior = self.settings.local_prior.combine(self.settings.local_prior);
 
-        // 1. Direct sender edge `0 -> 1` (`clock(self) - clock(0) = -sender_offset`),
-        // evaluated at `now_ns` from the link's Kalman state with its
-        // weight-adjusted measurement variance so graph weights stay symmetric
-        // across probe phases.
-        if self.sender_has_meas {
-            let age = now_ns.saturating_sub(self.sender_last_meas.midpoint_ns);
+        // 1. Direct sender edge `0 -> 1` (`clock(self) - clock(0) = -sender_offset`).
+        // Included while fresh (`sender_age <= peer_stale_ns`), or as a fallback
+        // if no peer currently relays a fresh `(0, peer)` path to the sender;
+        // once stale past `peer_stale_ns` with fresh peer paths available, it
+        // ages out completely so a dead report path cannot drag peer sync.
+        if self.sender_has_meas && (sender_fresh || !has_relayed_sender) {
             let (extrap_sender_minus_self, raw_var) = link_step_obs(
                 &self.sender_filter,
                 self.sender_min_rtt.variance_ns2(),
                 self.sender_last_meas,
                 now_ns,
-                age,
+                sender_age,
                 self.settings.variance_floor_ns2,
+                sender_pair_prior,
             );
             let base_var = apply_weight_q16(raw_var, self.sender_weight_q16);
             if let Some(dst) = edges.get_mut(edge_count) {
@@ -1405,6 +1607,7 @@ impl Sync {
                     now_ns,
                     age,
                     self.settings.variance_floor_ns2,
+                    peer_pair_prior,
                 );
                 let base_var = apply_weight_q16(raw_var, p.weight_q16);
                 let to_host = i.saturating_add(2);
@@ -1480,68 +1683,13 @@ impl Sync {
             p_idx = p_idx.saturating_add(1);
         }
 
-        // Update modal process-noise priors for active receiver count `dim`.
-        #[allow(clippy::cast_possible_wrap)]
-        let dim = solved.active_count as i64;
-        let com_prior = self
-            .settings
-            .sender_prior
-            .combine(self.settings.local_prior.scale(1, dim));
-        let diff_prior = self.settings.local_prior.scale(dim.saturating_sub(1), dim);
-        self.common_filter.set_prior(com_prior);
-        self.diff_filter.set_prior(diff_prior);
-
-        let sender_relays_changed = sender_relay_mask != self.last_sender_relay_mask;
-        let actual_membership_changed =
-            !self.peer_active || reachable_mask != self.last_active_mask || sender_relays_changed;
-        if actual_membership_changed {
-            self.epoch = self.epoch.wrapping_add(1);
-            if self.peer_active
-                && !sender_relays_changed
-                && self.common_filter.is_anchored()
-                && self.diff_filter.is_anchored()
-            {
-                // Bumpless peer-to-peer membership transfer: shift `diff_filter`
-                // by `d_new - d_old` and `common_filter` by `-(d_new - d_old)`
-                // so the sum `common + diff` is strictly continuous.
-                if let Some(d_old) = self.diff_filter.predict_offset_ns(now_ns) {
-                    let shift =
-                        saturate((solved.self_diff_offset_ns as i128).wrapping_sub(d_old as i128));
-                    let neg_shift = saturate(0i128.wrapping_sub(shift as i128));
-                    self.diff_filter.shift_offset_ns(shift);
-                    self.common_filter.shift_offset_ns(neg_shift);
-                }
-            } else if self.peer_active && sender_relays_changed && self.diff_filter.is_anchored() {
-                // Set of sender edges `(0, self)` / `(0, peer)` changed:
-                // re-anchor `common_filter` cleanly on the new full-graph BLUE
-                // common estimate and shift `diff_filter` to the new
-                // differential offset while preserving its peer frequency.
-                self.common_filter.reset();
-                self.common_filter.set_prior(com_prior);
-                if let Some(d_old) = self.diff_filter.predict_offset_ns(now_ns) {
-                    let d_shift =
-                        saturate((solved.self_diff_offset_ns as i128).wrapping_sub(d_old as i128));
-                    self.diff_filter.shift_offset_ns(d_shift);
-                }
-            } else {
-                // Entering Peer mode from Star or startup: anchor modal filters
-                // directly on the BLUE common/differential decomposition.
-                // `ModalPlayer` recenters its common anchor on `epoch` change so
-                // playback stays continuous without Star bias carryover.
-                self.common_filter.reset();
-                self.diff_filter.reset();
-                self.common_filter.set_prior(com_prior);
-                self.diff_filter.set_prior(diff_prior);
-            }
-            self.peer_active = true;
-            self.last_active_mask = reachable_mask;
-            self.last_sender_relay_mask = sender_relay_mask;
-        }
-
-        self.common_filter
-            .update(now_ns, solved.common_offset_ns, solved.common_var_ns2);
-        self.diff_filter
-            .update(now_ns, solved.self_diff_offset_ns, solved.self_diff_var_ns2);
+        self.update_modal_filters(
+            now_ns,
+            &solved,
+            active_mask,
+            reachable_mask,
+            sender_relay_mask,
+        );
         self.has_fused = true;
         self.last_fuse_ns = now_ns;
         self.dirty = false;
@@ -1571,7 +1719,7 @@ impl Sync {
 
 #[cfg(test)]
 mod tests {
-    use super::{Sync, SyncSettings, WEIGHT_UNITY_Q16};
+    use super::{LINE_RUN, PeerEcho, PeerRelay, RelayEdge, Sync, SyncSettings, WEIGHT_UNITY_Q16};
     use crate::packet::Echo;
 
     #[test]
@@ -1711,5 +1859,543 @@ mod tests {
         assert!(s1_fallback.valid);
         assert!(!s1_fallback.peer_active);
         assert_eq!(s1_fallback.active_peers, 0);
+    }
+
+    #[test]
+    fn build_relay_reports_true_measurement_age_not_zero() {
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        r1.add_peer(102, WEIGHT_UNITY_Q16).expect("peer");
+        r1.set_sender_clock_id(77);
+
+        // Feed 4 sender echoes at t = 0..0.75 s (midpoint of last echo ~0.7501 s).
+        for step in 0..4i64 {
+            let t1 = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            r1.report_departed(seq, t1);
+            r1.on_sender_echo(
+                &Echo {
+                    stream: 1,
+                    receiver: 101,
+                    sequence: seq,
+                    arrival: t1 + 100_000,
+                    departure: t1 + 100_000,
+                },
+                t1 + 200_000,
+            );
+        }
+
+        // Build relay 2.0 s after the last measurement midpoint: age must reflect
+        // the real elapsed time (~2.0 s), not 0!
+        let last_mid = r1.sender_filter.last_time_ns();
+        let t_send = last_mid + 2_000_000_000;
+        let relay = r1.build_relay(t_send).expect("relay");
+        assert_eq!(relay.sender_clock_id, 77);
+        assert_eq!(relay.count, 1);
+        assert_eq!(relay.edges[0].age_ns, 2_000_000_000);
+    }
+
+    #[test]
+    fn relayed_edge_slope_estimated_at_250ms_cadence_survives_relay_blackout() {
+        // Defect 3 + relay-age extrapolation + measurement-time age subtraction:
+        // Relays arrive every 250 ms with clocks drifting at +40 ppm. Even though
+        // 250 ms < MIN_RELAY_SLOPE_DT_NS (500 ms), the relayed edge must learn
+        // the slope and stay accurate across a 4.5 s relay blackout.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("peer");
+        r1.set_sender_clock_id(55);
+
+        // Clock 0 (sender) = t; clock 101 = t; clock 102 = t + 40 ppm * t.
+        let skew_ns_per_s = 40_000i64;
+        for step in 0..20i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            // Direct peer exchange 101 <-> 102.
+            let off12 = (t * skew_ns_per_s) / 1_000_000_000;
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: t + off12 + 100_000,
+                    departure: t + off12 + 100_000,
+                },
+                t + 200_000,
+            );
+            // Relay from 102 carrying edge (0 -> 102) with realistic 150 ms age.
+            let edge_age = 150_000_000u32;
+            let meas_t = t - i64::from(edge_age);
+            let off02_at_meas = (meas_t * skew_ns_per_s) / 1_000_000_000;
+            let mut relay = PeerRelay::EMPTY;
+            relay.stream = 1;
+            relay.sender = 102;
+            relay.sequence = seq;
+            relay.sender_clock_id = 55;
+            relay.count = 1;
+            relay.edges[0] = RelayEdge {
+                from_id: 0,
+                to_id: 102,
+                offset_ns: off02_at_meas,
+                variance_ns2: 25_000_000,
+                age_ns: edge_age,
+            };
+            let accepted = r1.on_peer_relay(&relay, t + 100_000);
+            assert_eq!(accepted, 1);
+            r1.step(t + 200_000);
+        }
+
+        // Verify the relayed (0, 102) slot learned the +40 ppm slope accurately.
+        let slot_idx = r1.find_matching_relayed(0, 102).expect("relayed slot");
+        let slot = r1.relayed_at(slot_idx);
+        assert!(
+            slot.has_freq,
+            "relayed edge must estimate slope at 250 ms cadence"
+        );
+        let learned_ppm = (i128::from(slot.freq_q48) * 1_000_000) / i128::from(LINE_RUN);
+        assert!(
+            (learned_ppm - 40).abs() <= 2,
+            "learned slope should be ~40 ppm, got {learned_ppm} ppm"
+        );
+
+        // Keep direct peer link fresh for 4.5 s while relays from 102 are blacked out
+        // (and r1 has no direct sender link, so r1 relies solely on extrapolated (0, 102)!).
+        let t_blackout_end = 19 * 250_000_000 + 4_200_000_000;
+        let off12_end = (t_blackout_end * skew_ns_per_s) / 1_000_000_000;
+        for k in 0..4u64 {
+            let t = t_blackout_end - i64::try_from(3 - k).unwrap_or(0) * 250_000_000;
+            let off12 = (t * skew_ns_per_s) / 1_000_000_000;
+            let seq = 100 + k;
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: t + off12 + 100_000,
+                    departure: t + off12 + 100_000,
+                },
+                t + 200_000,
+            );
+        }
+        let _ = off12_end;
+        let snap = r1.step(t_blackout_end + 300_000);
+        assert!(snap.valid && snap.peer_active);
+        let est_sender = snap.sender_time(t_blackout_end + 300_000);
+        let err_ns = (est_sender - (t_blackout_end + 300_000)).abs();
+        assert!(
+            err_ns < 5_000,
+            "extrapolated relay during blackout erred by {err_ns} ns (would be ~170 us without slope)"
+        );
+    }
+
+    #[test]
+    fn stale_direct_sender_edge_ages_out_in_peer_mode() {
+        // Defect 4: when r1's direct report path to the sender stops answering
+        // and the sender frequency shifts by +1 ppm, r1 must age out the stale
+        // direct sender edge and follow peer r2's fresh path without drifting.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let mut r2 = Sync::new(SyncSettings::standard(1, 102));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("p12");
+        let p21 = r2.add_peer(101, WEIGHT_UNITY_Q16).expect("p21");
+        r1.set_sender_clock_id(10);
+        r2.set_sender_clock_id(10);
+
+        // Sender clock = t for t <= 10 s; then +5 ppm shift for t > 10 s.
+        let sender_clock = |t: i64| -> i64 {
+            if t <= 10_000_000_000 {
+                t
+            } else {
+                t + ((t - 10_000_000_000) * 5) / 1_000_000
+            }
+        };
+
+        for step in 0..120i64 {
+            let t = step * 250_000_000; // 0..30 s
+            let seq = u64::try_from(step).unwrap_or(0);
+            let s_t = sender_clock(t + 100_000);
+
+            // Direct sender echo for r1 ONLY for t < 10 s; then r1's report path fails!
+            if t < 10_000_000_000 {
+                r1.report_departed(seq, t);
+                r1.on_sender_echo(
+                    &Echo {
+                        stream: 1,
+                        receiver: 101,
+                        sequence: seq,
+                        arrival: s_t,
+                        departure: s_t,
+                    },
+                    t + 200_000,
+                );
+            }
+            // r2 keeps receiving fresh sender echoes throughout.
+            r2.report_departed(seq, t);
+            r2.on_sender_echo(
+                &Echo {
+                    stream: 1,
+                    receiver: 102,
+                    sequence: seq,
+                    arrival: s_t,
+                    departure: s_t,
+                },
+                t + 200_000,
+            );
+
+            // Direct peer exchanges between r1 and r2.
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                t + 200_000,
+            );
+            r2.peer_probe_departed(p21, seq, t);
+            r2.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 102,
+                    responder: 101,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                t + 200_000,
+            );
+
+            if let Some(rel2) = r2.build_relay(t + 500_000) {
+                r1.on_peer_relay(&rel2, t + 600_000);
+            }
+            r1.step(t + 700_000);
+            r2.step(t + 700_000);
+        }
+
+        // At t = 29.75 s (nearly 20 s after r1's report path died and +5 ppm shift = 100 us drift):
+        let t_check = 119 * 250_000_000 + 700_000;
+        let true_s = sender_clock(t_check);
+        let est_r1 = r1.snapshot().sender_time(t_check);
+        let err_ns = (est_r1 - true_s).abs();
+        assert!(
+            err_ns < 5_000,
+            "stale direct sender edge dragged r1 off by {err_ns} ns (true={true_s}, est={est_r1})"
+        );
+    }
+
+    #[test]
+    fn entering_peer_mode_preserves_learned_frequency_without_jump() {
+        // Defect 5: two receivers running in Star mode at ±40 ppm learn their
+        // clock frequencies, then enable peer exchanges. The Star->Peer
+        // transition must preserve frequency and NOT jump ~69 us apart.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let mut r2 = Sync::new(SyncSettings::standard(1, 102));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("p12");
+        let p21 = r2.add_peer(101, WEIGHT_UNITY_Q16).expect("p21");
+        r1.set_sender_clock_id(1);
+        r2.set_sender_clock_id(1);
+        let clk1 = |t: i64| t + (t * 40) / 1_000_000;
+        let clk2 = |t: i64| t - (t * 40) / 1_000_000;
+        let feed_sender = |s: &mut Sync, id: u64, seq: u64, t: i64, clk: &dyn Fn(i64) -> i64| {
+            s.report_departed(seq, clk(t));
+            s.on_sender_echo(
+                &Echo {
+                    stream: 1,
+                    receiver: id,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                clk(t + 200_000),
+            );
+        };
+
+        // Phase 1 (0..10 s): Star only (no peer traffic), both learn ±40 ppm.
+        for step in 0..40i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            feed_sender(&mut r1, 101, seq, t, &clk1);
+            feed_sender(&mut r2, 102, seq, t, &clk2);
+            r1.step(clk1(t + 300_000));
+            r2.step(clk2(t + 300_000));
+        }
+        assert!(!r1.snapshot().peer_active && !r2.snapshot().peer_active);
+
+        // Phase 2 (10..15 s): Peer probes and relays turn on; measure spread on
+        // the immediate Star->Peer entry step, peak across transition, and once
+        // the new peer link calibrates.
+        let mut entry_spread_ns = 0i64;
+        let mut max_spread_ns = 0i64;
+        let mut settled_spread_ns = 0i64;
+        for step in 40..60i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            feed_sender(&mut r1, 101, seq, t, &clk1);
+            feed_sender(&mut r2, 102, seq, t, &clk2);
+            r1.peer_probe_departed(p12, seq, clk1(t));
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: clk2(t + 100_000),
+                    departure: clk2(t + 100_000),
+                },
+                clk1(t + 200_000),
+            );
+            r2.peer_probe_departed(p21, seq, clk2(t));
+            r2.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 102,
+                    responder: 101,
+                    sequence: seq,
+                    arrival: clk1(t + 100_000),
+                    departure: clk1(t + 100_000),
+                },
+                clk2(t + 200_000),
+            );
+            if let Some(rel1) = r1.build_relay(clk1(t + 500_000)) {
+                r2.on_peer_relay(&rel1, clk2(t + 600_000));
+            }
+            if let Some(rel2) = r2.build_relay(clk2(t + 500_000)) {
+                r1.on_peer_relay(&rel2, clk1(t + 600_000));
+            }
+            r1.step(clk1(t + 700_000));
+            r2.step(clk2(t + 700_000));
+            let t_mid = t + 200_000_000;
+            let s1 = r1.snapshot().sender_time(clk1(t_mid));
+            let s2 = r2.snapshot().sender_time(clk2(t_mid));
+            let spread = (s1 - s2).abs();
+            if step == 40 {
+                entry_spread_ns = spread;
+            }
+            max_spread_ns = max_spread_ns.max(spread);
+            if step >= 52 {
+                settled_spread_ns = settled_spread_ns.max(spread);
+            }
+        }
+        assert!(r1.snapshot().peer_active && r2.snapshot().peer_active);
+        assert!(
+            entry_spread_ns < 2_000 && max_spread_ns < 15_000 && settled_spread_ns < 2_000,
+            "Star->Peer transition spread too large: entry={entry_spread_ns} ns, max={max_spread_ns} ns, settled={settled_spread_ns} ns (zeroed frequency jumps ~69 us)"
+        );
+    }
+
+    #[test]
+    fn on_peer_relay_subtracts_relay_age_from_measurement_time() {
+        // Mutation 4: ignoring `re.age_ns` when computing `meas_time_ns` causes
+        // a 1.5 s-old relayed edge on a +40 ppm drifting clock to miss 60 us of
+        // drift extrapolation at fusion time.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("p12");
+        r1.set_sender_clock_id(1);
+        let clk2 = |t: i64| t + (t * 40) / 1_000_000; // +40 ppm
+
+        for step in 0..8i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: clk2(t + 100_000),
+                    departure: clk2(t + 100_000),
+                },
+                t + 200_000,
+            );
+        }
+
+        // Feed fresh relays to establish the -40 ppm slope of edge (0 -> 102):
+        // offset(0 -> 102) = clk2(t) - t = +40 ppm * t.
+        for step in 0..8i64 {
+            let t = step * 500_000_000;
+            let mut rel = PeerRelay::EMPTY;
+            rel.stream = 1;
+            rel.sender = 102;
+            rel.sequence = u64::try_from(step + 1).unwrap_or(1);
+            rel.sender_clock_id = 1;
+            rel.count = 1;
+            rel.edges[0] = RelayEdge {
+                from_id: 0,
+                to_id: 102,
+                offset_ns: clk2(t) - t,
+                variance_ns2: 25_000_000,
+                age_ns: 0,
+            };
+            r1.on_peer_relay(&rel, t + 100_000);
+        }
+
+        // Now deliver an observation captured at t = 4.0 s when r1 receives it
+        // at rx_ns = 5.5 s (age_ns = 1.5 s). Ignoring age_ns would treat the
+        // 4.0 s offset as valid at 5.5 s and be off by 40 ppm * 1.5 s = 60 us!
+        let mut aged = PeerRelay::EMPTY;
+        aged.stream = 1;
+        aged.sender = 102;
+        aged.sequence = 99;
+        aged.sender_clock_id = 1;
+        aged.count = 1;
+        aged.edges[0] = RelayEdge {
+            from_id: 0,
+            to_id: 102,
+            offset_ns: clk2(4_000_000_000) - 4_000_000_000,
+            variance_ns2: 25_000_000,
+            age_ns: 1_500_000_000,
+        };
+        assert_eq!(r1.on_peer_relay(&aged, 5_500_100_000), 1);
+        let snap = r1.step(5_500_200_000);
+        assert!(snap.valid && snap.peer_active);
+        let err_ns = (snap.sender_time(5_500_200_000) - 5_500_200_000).abs();
+        assert!(
+            err_ns < 10_000,
+            "aged relay failed age subtraction / extrapolation: err={err_ns} ns (ignoring age errs ~60 us)"
+        );
+    }
+
+    #[test]
+    fn peer_relay_rejects_stale_sender_clock_id_and_sender_reboot_resets_sync() {
+        // Defect 6: after switching to a new sender host (clock_id 200) within
+        // 5 s of a peer's last echo on old clock_id 100, a stale PeerRelay
+        // carrying sender_clock_id = 100 must NOT re-inject old-clock sender edges.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("peer");
+        r1.set_sender_clock_id(100);
+
+        // Establish peer link 101 <-> 102 and old sender clock 100 (offset +50 s).
+        for step in 0..4i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            r1.report_departed(seq, t);
+            r1.on_sender_echo(
+                &Echo {
+                    stream: 1,
+                    receiver: 101,
+                    sequence: seq,
+                    arrival: t + 50_000_000_000 + 100_000,
+                    departure: t + 50_000_000_000 + 100_000,
+                },
+                t + 200_000,
+            );
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                t + 200_000,
+            );
+        }
+        r1.step(1_000_000_000);
+        assert!(r1.snapshot().valid);
+
+        // Sender switches to new host with clock_id = 200 (offset = 0).
+        r1.set_sender_clock_id(200);
+        assert!(!r1.snapshot().valid, "clock_id change must reset snapshot");
+
+        // Stale relay from peer 102 still tagged with old sender_clock_id = 100:
+        let mut stale = PeerRelay::EMPTY;
+        stale.stream = 1;
+        stale.sender = 102;
+        stale.sequence = 1;
+        stale.sender_clock_id = 100;
+        stale.count = 1;
+        stale.edges[0] = RelayEdge {
+            from_id: 0,
+            to_id: 102,
+            offset_ns: -50_000_000_000,
+            variance_ns2: 25_000_000,
+            age_ns: 10_000_000,
+        };
+        assert_eq!(
+            r1.on_peer_relay(&stale, 1_500_000_000),
+            0,
+            "stale sender-clock relay edge must be rejected"
+        );
+        // Step must remain invalid (not misled by the stale +50 s relay!).
+        let snap = r1.step(1_600_000_000);
+        assert!(!snap.valid);
+
+        // Relay tagged with new sender_clock_id = 200 IS accepted cleanly.
+        let mut fresh = stale;
+        fresh.sequence = 2;
+        fresh.sender_clock_id = 200;
+        fresh.edges[0].offset_ns = 0;
+        assert_eq!(r1.on_peer_relay(&fresh, 1_700_000_000), 1);
+    }
+
+    #[test]
+    fn relay_only_peer_does_not_bypass_fusion_interval() {
+        // Minor defect: when peer 103 is reachable only through relays from
+        // peer 102, steady steps must NOT treat `membership_changed` as true
+        // on every call and bypass the fusion interval.
+        let mut r1 = Sync::new(SyncSettings::standard(1, 101));
+        let p12 = r1.add_peer(102, WEIGHT_UNITY_Q16).expect("p12");
+        r1.add_peer(103, WEIGHT_UNITY_Q16).expect("p13");
+        r1.set_sender_clock_id(9);
+
+        for step in 0..4i64 {
+            let t = step * 250_000_000;
+            let seq = u64::try_from(step).unwrap_or(0);
+            r1.report_departed(seq, t);
+            r1.on_sender_echo(
+                &Echo {
+                    stream: 1,
+                    receiver: 101,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                t + 200_000,
+            );
+            r1.peer_probe_departed(p12, seq, t);
+            r1.on_peer_echo(
+                &PeerEcho {
+                    stream: 1,
+                    prober: 101,
+                    responder: 102,
+                    sequence: seq,
+                    arrival: t + 100_000,
+                    departure: t + 100_000,
+                },
+                t + 200_000,
+            );
+        }
+        // Peer 102 relays edge (102 -> 103); peer 103 has no direct probes from r1.
+        let mut rel = PeerRelay::EMPTY;
+        rel.stream = 1;
+        rel.sender = 102;
+        rel.sequence = 1;
+        rel.sender_clock_id = 9;
+        rel.count = 1;
+        rel.edges[0] = RelayEdge {
+            from_id: 102,
+            to_id: 103,
+            offset_ns: 0,
+            variance_ns2: 25_000_000,
+            age_ns: 1_000_000,
+        };
+        assert_eq!(r1.on_peer_relay(&rel, 1_000_000_000), 1);
+
+        let s1 = r1.step(1_010_000_000);
+        assert!(s1.peer_active && s1.active_peers == 2);
+        let fuse_t1 = r1.last_fuse_ns;
+
+        // Stepping 10 ms later (well below fusion_interval_ns) with no new inputs
+        // must NOT re-run BLUE or advance `last_fuse_ns` or bump `epoch`.
+        let s2 = r1.step(1_020_000_000);
+        assert_eq!(s2.epoch, s1.epoch);
+        assert_eq!(r1.last_fuse_ns, fuse_t1);
     }
 }

@@ -371,9 +371,10 @@ theorem parse_peer_echo_kind (bytes : Slice Std.U8) :
 
 @[step]
 theorem parse_peer_relay_loop_total (bytes : Slice Std.U8) (count_usize : Std.Usize)
-    (stream : Std.U16) (sender sequence : Std.U64) (count : Std.U8)
+    (stream : Std.U16) (sender sequence : Std.U64) (sender_clock_id : Std.U32) (count : Std.U8)
     (a : Array packet.RelayEdge 16#usize) (i : Std.Usize) :
-    packet.parse_peer_relay_loop bytes count_usize stream sender sequence count a i ⦃ _ => True ⦄ := by
+    packet.parse_peer_relay_loop bytes count_usize stream sender sequence sender_clock_id count a i
+      ⦃ _ => True ⦄ := by
   unfold packet.parse_peer_relay_loop
   apply loop.spec_decr_nat
     (measure := fun x : Array packet.RelayEdge 16#usize × Std.Usize => count_usize.val - x.2.val)

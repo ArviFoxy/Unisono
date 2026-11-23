@@ -487,7 +487,7 @@ def runParsePeerEcho (values : List Int) : Result (List Int) := do
 /-- Writes a `PeerRelay` into 220 zero bytes. -/
 def runWritePeerRelay (args : List Int) : Result (List Int) := do
   match args with
-  | stream :: senderId :: seq :: count :: rest =>
+  | stream :: senderId :: seq :: clockId :: count :: rest =>
     match groups 5 rest with
     | none => pure [-2]
     | some edgeLists =>
@@ -503,7 +503,8 @@ def runWritePeerRelay (args : List Int) : Result (List Int) := do
         let arr : Array packet.RelayEdge 16#usize := Array.from padded h
         let relay : packet.PeerRelay :=
           { stream := unsigned .U16 stream, sender := unsigned .U64 senderId,
-            sequence := unsigned .U64 seq, count := unsigned .U8 count, edges := arr }
+            sequence := unsigned .U64 seq, sender_clock_id := unsigned .U32 clockId,
+            count := unsigned .U8 count, edges := arr }
         let out ← packet.write_peer_relay relay (byteSlice (List.replicate 220 0))
         let written : Int := match out.1 with | some n => n.val | none => 0
         pure (written :: out.2.val.map (·.val))
@@ -515,12 +516,13 @@ def runParsePeerRelay (values : List Int) : Result (List Int) := do
   let parsed ← packet.parse_peer_relay (byteSlice values)
   match parsed with
   | .Ok rel =>
-    let head : List Int := [0, rel.stream.val, rel.sender.val, rel.sequence.val, rel.count.val]
+    let head : List Int := [0, rel.stream.val, rel.sender.val, rel.sequence.val,
+      rel.sender_clock_id.val, rel.count.val]
     let edgeNums : List Int := (rel.edges.val.take rel.count.val).flatMap fun e =>
       [(e.from_id.val : Int), (e.to_id.val : Int), e.offset_ns.val,
         (e.variance_ns2.val : Int), (e.age_ns.val : Int)]
     pure (head ++ edgeNums)
-  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+  | .Err reason => pure (rejection reason ++ [0, 0, 0, 0])
 
 /-- Runs `SlidingMinRtt<8>` over a list of 5-tuples `(id, t1, t2, t3, t4)`. -/
 def runMinRtt (stride initVar floorVar : Int) (ops : List (List Int)) : Result (List Int) := do
@@ -650,7 +652,7 @@ def runSync (withPeers : Int) (ops : List (List Int)) : Result (List Int) := do
         let arr : Array packet.RelayEdge 16#usize := Array.from list (by decide)
         let relay : packet.PeerRelay :=
           { stream := 1#u16, sender := 200#u64, sequence := unsigned .U64 relSeq,
-            count := 2#u8, edges := arr }
+            sender_clock_id := 0#u32, count := 2#u8, edges := arr }
         let (acc, sB) ← sync.Sync.on_peer_relay st.1 relay (signed .I64 now)
         pure (sB, st.2 ++ [(acc.val : Int)])
       | [3, now, _, _, _, _] => do

@@ -24,7 +24,7 @@ Seven datagram kinds are defined in `crates/unisono-core/src/packet.rs`:
 | 4 | `Request` | receiver → sender | `32` (exact) | Selective retransmission request for missing frames |
 | 5 | `PeerProbe` | receiver → peer | `32` (exact) | Direct peer-to-peer clock exchange probe (`T1`) |
 | 6 | `PeerEcho` | peer → receiver | `48` (exact) | Four-timestamp reply (`T2`, `T3`) to a `PeerProbe` |
-| 7 | `PeerRelay` | receiver → peers | `25 + 36 × count` (`25..=601`, `count ≤ 16`) | Broadcast of fresh incident link-offset measurements for graph fusion |
+| 7 | `PeerRelay` | receiver → peers | `29 + 36 × count` (`29..=605`, `count ≤ 16`) | Broadcast of fresh incident link-offset measurements for graph fusion |
 
 **Host identity convention:** within the synchronization protocol, host
 identity `0` denotes the stream sender; non-zero `u64` identities denote
@@ -307,7 +307,7 @@ Upon receiving `PeerEcho` at local timestamp `T4`, the prober looks up `T1` by
 through `ntp_exchange`, estimating `clock(responder) - clock(prober)` via the
 peer's sliding-window minimum-RTT selector and per-peer Kalman filter.
 
-## 8. `PeerRelay` (`kind = 7`, 25-byte header + up to 16 × 36-byte edges, max 601 bytes)
+## 8. `PeerRelay` (`kind = 7`, 29-byte header + up to 16 × 36-byte edges, max 605 bytes)
 
 To give every receiver a full view of the synchronization graph (so each
 receiver can locally solve the graph-Laplacian Best Linear Unbiased Estimator
@@ -315,12 +315,12 @@ receiver can locally solve the graph-Laplacian Best Linear Unbiased Estimator
 fresh incident link measurements to its configured peers in a `PeerRelay`
 datagram.
 
-A `PeerRelay` consists of a 25-byte fixed header (`PEER_RELAY_HEADER = 25`)
+A `PeerRelay` consists of a 29-byte fixed header (`PEER_RELAY_HEADER = 29`)
 followed by `count` entries of `RelayEdge` (`RELAY_EDGE = 36` bytes each), with
 `count ≤ MAX_RELAY_EDGES = 16`, giving a maximum datagram length of
-`25 + 16 × 36 = 601` bytes (`PEER_RELAY_MAX = 601`).
+`29 + 16 × 36 = 605` bytes (`PEER_RELAY_MAX = 605`).
 
-### Fixed header (25 bytes)
+### Fixed header (29 bytes)
 
 | Offset | Bytes | Type | Field | Meaning |
 |---|---|---|---|---|
@@ -330,26 +330,27 @@ followed by `count` entries of `RelayEdge` (`RELAY_EDGE = 36` bytes each), with
 | 6 | 2 | `u16` | `stream` | Stream identifier |
 | 8 | 8 | `u64` | `sender` | Identity of the relaying receiver |
 | 16 | 8 | `u64` | `sequence` | Monotonic relay sequence number |
-| 24 | 1 | `u8` | `count` | Number of `RelayEdge` entries following the header (`0..=16`) |
+| 24 | 4 | `u32` | `sender_clock_id` | Active stream sender `clock` identifier (`Audio.clock`), fencing relayed sender edges (`from_id = 0`) across sender reboots or switches |
+| 28 | 1 | `u8` | `count` | Number of `RelayEdge` entries following the header (`0..=16`) |
 
-### `RelayEdge` entry (36 bytes, entry `i` starts at offset `25 + 36 × i`)
+### `RelayEdge` entry (36 bytes, entry `i` starts at offset `29 + 36 × i`)
 
 | Relative offset | Bytes | Type | Field | Meaning |
 |---|---|---|---|---|
 | +0 | 8 | `u64` | `from_id` | Source host identity (`0` = stream sender; non-zero = receiver) |
 | +8 | 8 | `u64` | `to_id` | Destination host identity (`0` = stream sender; non-zero = receiver) |
-| +16 | 8 | `i64` | `offset_ns` | Estimated clock offset `clock(to_id) - clock(from_id)`, in nanoseconds |
-| +24 | 8 | `u64` | `variance_ns2` | Estimated measurement variance of `offset_ns`, in square nanoseconds (includes any configured static link weight) |
-| +32 | 4 | `u32` | `age_ns` | Age of this measurement on the relaying receiver's clock when the relay was built, in nanoseconds (clock-offset-invariant across hosts) |
+| +16 | 8 | `i64` | `offset_ns` | Estimated clock offset `clock(to_id) - clock(from_id)` at the observation timestamp, in nanoseconds |
+| +24 | 8 | `u64` | `variance_ns2` | Estimated measurement variance of `offset_ns` at the observation timestamp, in square nanoseconds (includes any configured static link weight) |
+| +32 | 4 | `u32` | `age_ns` | True age `now_ns - last_time_ns` of this observation on the relaying receiver's clock when the relay was built, in nanoseconds (clock-offset-invariant across hosts) |
 
 **Validation rules (`parse_peer_relay`, `write_peer_relay`):**
 
-- `bytes.len() < 25` fails with `TooShort`;
+- `bytes.len() < 29` fails with `TooShort`;
 - `count > 16` (`MAX_RELAY_EDGES`) fails with `Length` (and `write_peer_relay`
   returns `None`);
-- `bytes.len() < 25 + 36 × count` fails with `TooShort`;
-- `bytes.len() != 25 + 36 × count` (trailing bytes) fails with `Length`;
-- `count = 0` (25 bytes total) is syntactically valid at the wire layer, though
+- `bytes.len() < 29 + 36 × count` fails with `TooShort`;
+- `bytes.len() != 29 + 36 × count` (trailing bytes) fails with `Length`;
+- `count = 0` (29 bytes total) is syntactically valid at the wire layer, though
   `Sync::build_relay` returns `None` when it has zero fresh edges to broadcast.
 
 **Relay generation and ingestion semantics (`unisono_core::sync::Sync`):**

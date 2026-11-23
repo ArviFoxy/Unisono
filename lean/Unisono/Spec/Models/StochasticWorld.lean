@@ -18,7 +18,7 @@ combining:
    per-packet jitter, pauses, outages, individual packet drops, and joint
    stationarity and mixing.
 2. `SecondOrderMoments`: IEEE 1139 band-limited power-law host clock and audio
-   device spectra, correlated TX/RX plus independent per-packet link jitter
+   device spectra, correlated TX/RX plus uncorrelated per-packet link jitter
    decomposition, and white device timestamp errors.
 3. Deterministic device/blocking bounds (`handoff`, `leadLeast`/`leadMost`,
    `blockLeast`/`blockMost`) so that playback requests and capture handoffs

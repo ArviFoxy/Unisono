@@ -1683,6 +1683,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.MinRtt.variance_ns2_spec
 
+/-- info: 'Unisono.MinRtt.uncalibrated_variance_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.MinRtt.uncalibrated_variance_spec
+
 /-- info: 'Unisono.Kalman.enforce_psd_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Kalman.enforce_psd_spec
@@ -1694,6 +1698,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Kalman.anchor_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Kalman.anchor_spec
+
+/-- info: 'Unisono.Kalman.anchor_with_freq_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Kalman.anchor_with_freq_spec
 
 /-- info: 'Unisono.Kalman.predict_psd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1786,6 +1794,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Sync.step_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Sync.step_total
+
+/-- info: 'Unisono.Sync.set_sender_clock_id_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sync.set_sender_clock_id_total
+
+/-- info: 'Unisono.Sync.reset_sender_clock_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sync.reset_sender_clock_total
+
+/-- info: 'Unisono.Sync.update_modal_filters_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Sync.update_modal_filters_total
 
 /-- info: 'Unisono.Sync.zero_peers_no_peer_traffic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
