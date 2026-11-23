@@ -58,6 +58,7 @@ public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
+public import Unisono.Spec.SameMessages
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Sync
@@ -1552,6 +1553,54 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.optimalWithin_conditions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.optimalWithin_conditions
+
+/-- info: 'Unisono.Spec.State.fields_of_withoutPlays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.fields_of_withoutPlays_eq
+
+/-- info: 'Unisono.Spec.State.sendAll_withoutPlays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.sendAll_withoutPlays
+
+/-- info: 'Unisono.Spec.State.handle_withoutPlays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.handle_withoutPlays_eq
+
+/-- info: 'Unisono.Spec.State.handle_withoutPlays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.handle_withoutPlays
+
+/-- info: 'Unisono.Spec.State.step_withoutPlays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.step_withoutPlays
+
+/-- info: 'Unisono.Spec.Solution.states_withoutPlays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.states_withoutPlays
+
+/-- info: 'Unisono.Spec.Solution.views_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Solution.held_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.held_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Solution.askedNext_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Solution.earliest_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.earliest_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Solution.handled_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Solution.eventTime_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_eq_of_sends_eq
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

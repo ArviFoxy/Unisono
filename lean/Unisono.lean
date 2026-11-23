@@ -58,6 +58,7 @@ public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
+public import Unisono.Spec.SameMessages
 public import Unisono.Spec.Solution
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
