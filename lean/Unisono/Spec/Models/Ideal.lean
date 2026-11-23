@@ -28,7 +28,7 @@ noiseless baseline:
 least one link pair has asymmetric delays (`delay i j ≠ delay j i`), the
 exact setting of the Star-vs-Peer separation results in `Unisono.Spec.Limits`.
 
-Every `IdealConstantWorld` is a special case of `BoundedWorld`
+Every `IdealConstantWorld` satisfies `World.WithinBounds` for its tight `Bounds`
 (`IdealConstantWorld.withinBounds`).
 -/
 

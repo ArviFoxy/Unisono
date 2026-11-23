@@ -1,6 +1,6 @@
 # The theorems
 
-Every theorem indexed below is in `lean/Unisono` and checked in
+All 455 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -53,8 +53,8 @@ argument, whether or not reachable in a run.
 | Theorem | Model | What it says |
 |---|---|---|
 | `Spec.IdealConstantWorld.withinBounds`, `IdealConstantWorld.example_holds` | `IdealConstantWorld` | Every ideal constant world satisfies `World.WithinBounds` for its tight bounds; both symmetric and asymmetric subclasses are non-empty. |
-| `Spec.Bounds.example_within`, `offset_error`, `offset_drift`, `offset_drift_abs`, `Clock.read_sub_near` | `BoundedWorld` (`Bounds`) | `BoundedWorld` is non-empty; a round-trip offset estimate errs by at most half the worst delay asymmetry plus clock rate-error bound `ε_C` times mean maximum delay; two clocks drift apart by at most `2 ε_C` per second. |
-| `Spec.CaptureDevice.capture_sub_mem`, `PlaybackDevice.out_sub_mem`, `World.captured_sub_mem`, `World.exists_captured_eq`, `World.sub_le_of_captured`, `World.captured_lipschitz`, `CaptureDevice.handed_unbounded`, `PlaybackDevice.asked_unbounded` | `BoundedWorld` (`Bounds`) | For nominal sample rate `ρ` and device rate-error bound `ε_D`, device frame and sample spacing stays within `(1 ± ε_D) / ρ`; `World.captured` is bi-Lipschitz and surjective; capture handoffs and playback requests advance past every true time. |
+| `Spec.Bounds.example_within`, `offset_error`, `offset_drift`, `offset_drift_abs`, `Clock.read_sub_near` | `Bounds` (`World.WithinBounds`) | `World.WithinBounds` is non-empty; a round-trip offset estimate errs by at most half the worst delay asymmetry plus clock rate-error bound `ε_C` times mean maximum delay; two clocks drift apart by at most `2 ε_C` per second. |
+| `Spec.CaptureDevice.capture_sub_mem`, `PlaybackDevice.out_sub_mem`, `World.captured_sub_mem`, `World.exists_captured_eq`, `World.sub_le_of_captured`, `World.captured_lipschitz`, `CaptureDevice.handed_unbounded`, `PlaybackDevice.asked_unbounded` | `Bounds` (`World.WithinBounds`) | For nominal sample rate `ρ` and device rate-error bound `ε_D`, device frame and sample spacing stays within `(1 ± ε_D) / ρ`; `World.captured` is bi-Lipschitz and surjective; capture handoffs and playback requests advance past every true time. |
 | `Spec.Link.deliver_after`, `StationaryNetworkDisturbances.example_holds` | `StationaryNetworkDisturbances` | Positive baseline and nonnegative per-packet jitter ensure every delivered message arrives strictly after send time; the model class is non-empty. |
 | `Spec.ClockNoise.density_nonneg`, `secondDifferenceCovariance_integrableOn`, `secondDifferenceCovariance_diag_le`, `SecondOrderMoments.example_holds` | `SecondOrderMoments` | The band-limited IEEE Std 1139-2008 power-law one-sided frequency-noise spectral density `S(f)` is nonnegative and yields convergent phase second-difference covariances bounded by `4 τ² ∫ S(f) df` at every lag `τ`; a three-host witness with nonzero uncorrelated per-packet link jitter proves satisfiability. |
 | `Spec.StochasticWorld.Holds.network_random`, `StochasticWorld.example_holds` | `StochasticWorld` | Every composite stochastic world satisfies `StationaryNetworkDisturbances.Random`; the composite model class is non-empty. |
@@ -71,7 +71,7 @@ argument, whether or not reachable in a run.
 
 | Theorem | What it says |
 |---|---|
-| `Spec.withinSpeed_of_step_bound` | Converts a per-sample frame-advance bound `|y - x - 1| ≤ u` (`0 ≤ u < 1`) into `Solution.WithinSpeed` with bound `(2 ε_D + (1 + ε_D) u) / (1 - ε_D)` in any `BoundedWorld` with device rate-error bound `ε_D`. |
+| `Spec.withinSpeed_of_step_bound` | Converts a per-sample frame-advance bound `|y - x - 1| ≤ u` (`0 ≤ u < 1`) into `Solution.WithinSpeed` with bound `(2 ε_D + (1 + ε_D) u) / (1 - ε_D)` in any world satisfying `World.WithinBounds` with device rate-error bound `ε_D`. |
 | `Spec.fixedDelay_isStar`, `FixedDelay.noCrossOriginCollision_sepBaseWorld` | The abstract `FixedDelay.solution` is a star solution (`IsStar`) and has no cross-origin arrival collisions on `sepBaseWorld`. |
 | `Spec.star_states_eq_of_star_links_eq` | Any star solution (`Solution.IsStar`) has identical run states and playback decisions when receiver-to-receiver links are modified. |
 | `Spec.star_sync_lower_bound_with_symmetric_peers` | On the world pair `(w⁺, w⁻) = (shiftStarKeepPeers w Δ, shiftStarKeepPeers w (-Δ))`, where star links carry opposite asymmetries `±Δ` and direct peer links remain unmodified (including arbitrarily fast, symmetric peer links), every qualifying non-Zeno star solution suffers `max (w⁺.sync) (w⁻.sync) ≥ Var_r (Δ (host r))`, the variance across speakers `r` of their host shifts. |
@@ -82,12 +82,12 @@ argument, whether or not reachable in a run.
 ### 1.5 Abstract fixed-delay reference solution (`Solutions.FixedDelay`)
 
 An abstract, real-valued reference `Unisono.Spec.Solution` (not the Rust
-production core) verified end to end under `BoundedWorld`:
+production core) proved end to end under `World.WithinBounds`:
 
 | Theorem | What it says |
 |---|---|
 | `Solutions.FixedDelay.solution_append`, `block_received`, `block_latest`, `offset_received`, `offset_latest`, `asked_request`, `last_after_request`, `last_none`, `answered_query`, `answered_latest`, `positions_fold`, `lookup_chosen`, `positions_block`, `lastChosen_block`, `chosen_succ`, `chosen_isSome` | Host memory and block-position recursion invariants of the abstract fixed-delay baseline. |
-| `Solutions.FixedDelay.block_arrives`, `origin_inFlight`, `replicate_copies`, `query_inFlight`, `answer_inFlight`, `query_answered`, `answer_reaches`, `offset_sample`, `block_handled`, `block_memory`, `offset_recent`, `exists_block_of_frame`, `frame_held`, `playable_of_captured` | Message delivery, query-answer timing, and frame playability under `BoundedWorld` when message repetition exceeds the consecutive-loss bound `lossRun`. |
+| `Solutions.FixedDelay.block_arrives`, `origin_inFlight`, `replicate_copies`, `query_inFlight`, `answer_inFlight`, `query_answered`, `answer_reaches`, `offset_sample`, `block_handled`, `block_memory`, `offset_recent`, `exists_block_of_frame`, `frame_held`, `playable_of_captured` | Message delivery, query-answer timing, and frame playability under `World.WithinBounds` when message repetition exceeds the consecutive-loss bound `lossRun`. |
 | `Solutions.FixedDelay.progress`, `asked_gap`, `handed_gap`, `request_step`, `last_at_next_request`, `advance_tracks`, `advance_converges`, `target_time_error`, `captured_nominal`, `captured_target`, `target_band`, `exists_last_below`, `exists_block_of_sample`, `trajectory_step`, `plays_eq_chosen`, `targetError_mono`, `late_targets` | Non-Zeno progress, bounded inter-event gaps, clock-estimate freshness, and slew convergence into the target latency band. |
 | `Solutions.FixedDelay.speaker_at_latency`, `plays_at_latency`, `guarantees`, `plays_at_latency_example` | From some output sample onward, every speaker plays continuously within `latencyError` of `L`, yielding zero long-run missed samples and discontinuities and explicit bounds on mean latency, synchronization, and tracking; `plays_at_latency_example` exhibits a two-host world meeting all hypotheses. |
 
@@ -103,10 +103,10 @@ directly on `Unisono.Spec.Solution` and `Unisono.Spec.Objectives`.
 |---|---|---|
 | `Model.Exchange.error_bound` | `Model.Exchange` | A bidirectional packet exchange determines clock offset up to half the minimum-delay asymmetry plus half the excess delays. |
 | `Model.SupportLine.highest`, `estimate_isGreatest`, `excess_le`, `excess_near`, `error_at_centre`, `error_ahead` | `Model.SupportLine` | The lower-hull support line through two samples straddling the mean time is the highest line under all samples, minimizes total excess (maximum likelihood for independent exponential delays, up to rounding), and has explicit error bounds independent of delayed outliers. |
-| `Model.LineFit.cost_le`, `error_bound`, `schedule_invariant` | `Model.LineFit` | Weighted least-squares line optimality, error bound from point errors, and invariance of synchronization to sender-clock offset and rate. |
+| `Model.LineFit.cost_le`, `error_bound`, `schedule_invariant` | `Model.LineFit` | Weighted least-squares line minimization, error bound from point errors, and invariance of synchronization to sender-clock offset and rate. |
 | `Model.Stream.group_misses_iff`, `sum_sq_errors`, `dueTime_position`, `groupNeed_errors`, `group_misses_errors` | `Model.Stream` | Fleet miss condition against group need, squared timing-error decomposition, packet-header due-position formula, and perturbation bound on group need under bounded timing errors. |
-| `Model.Regulation.cost_add_value`, `total_cost_ge`, `total_cost_law`, `value_step`, `distance_from_rest`, `weight_gainFor`, `gain_unique`, `at_limit`, `next_shift` | `Model.Regulation` | Deterministic dynamic-programming optimality, geometric contraction, closed-form unique weight-to-gain relation, and limit behavior for the single-mode quadratic pace regulator. |
-| `Model.RegulationRandom.mean_cost_sum`, `mean_cost_law_le`, `mean_value_law_le`, `mean_cost_rate`, `mean_square_split`, `unforeseen_revision`, `distance_step`, `unforeseen_pace` | `Model.RegulationRandom` | Stochastic separation and long-run optimality of the linear regulation law under arbitrary martingale (unforeseen) schedule revisions. |
+| `Model.Regulation.cost_add_value`, `total_cost_ge`, `total_cost_law`, `value_step`, `distance_from_rest`, `weight_gainFor`, `gain_unique`, `at_limit`, `next_shift` | `Model.Regulation` | Deterministic dynamic-programming minimization, geometric contraction, closed-form unique weight-to-gain relation, and limit behavior for the single-mode quadratic pace regulator. |
+| `Model.RegulationRandom.mean_cost_sum`, `mean_cost_law_le`, `mean_value_law_le`, `mean_cost_rate`, `mean_square_split`, `unforeseen_revision`, `distance_step`, `unforeseen_pace` | `Model.RegulationRandom` | Stochastic separation and long-run cost minimization of the linear regulation law in the single-mode quadratic model under arbitrary martingale (unforeseen) schedule revisions. |
 | `Model.Gains.gains_close`, `gains_of_integers`, `law_close`, `planned`, `cost_of_distance` | `Model.Gains` | Exact closeness bounds between integer floor-rounded gains/planned cycle reads and the real-valued regulation law, plus quadratic cost of deviation from the law. |
 | `Model.Level.measure_largest`, `measure_largest_le`, `integral_predictive`, `volume_missed`, `missed_le`, `missed_ge`, `volume_lasts`, `move_pays_iff` | `Model.Level` | After `N` observed stretches, exchangeable next-stretch exceedance probability is at most `1 / (N + 1)`; predictive cost integral, pause-duration missed-time bounds, and break-even criterion for changing playout level. |
 
@@ -116,16 +116,18 @@ directly on `Unisono.Spec.Solution` and `Unisono.Spec.Objectives`.
 aligned cycles `Δt`, unconstrained real-valued per-cycle reads (omitting
 continuity, speed bounds, and data availability), assumed martingale expected
 increments (not derived from `SecondOrderMoments`), and a centralized shared
-filtration `ℱ`. Centralized optimality theorems serve as lower-bound benchmarks
-that decentralized nodes cannot beat.
+filtration `ℱ`. Centralized minimization theorems serve as lower-bound
+benchmarks on the auxiliary per-cycle cost `multiCycleCost` (not on
+`Unisono.Spec.Objectives`) that decentralized nodes cannot beat within that
+per-cycle model.
 
 | Theorem | What it says |
 |---|---|
 | `Analysis.weight_gainForWeight`, `gainForWeight_unique` | Exact inversion of `Regulation.weight` on `(0, 1)`: `gainForWeight c = gainFor (c^{1/4})` is the unique gain with position weight `c`. |
-| `Analysis.single_cost_split`, `single_law_optimal`, `single_law_unique_ae` | Under a fixed filtration `ℱ` and martingale expected increments, applying `Regulation.law g` to the conditional-mean state uniquely (almost everywhere, a.e.) minimizes finite-horizon expected cost plus terminal value. |
-| `Analysis.multiCycleCost_modal_split`, `multi_lipsync_optimal`, `multi_lipsync_unique_ae`, `multi_lipsync_cost_rate`, `multi_lipsync_law_cost_le` | Centralized full-information lip-sync benchmark: orthogonal modal decomposition into common mode (tracking weight `cΘ`) and differential mode (weight `cS + cΘ`, where `cS` is the synchronization weight), with two-gain `modalRead` as the a.e. unique finite-horizon and long-run minimizer. |
-| `Analysis.multi_lowlatency_optimal`, `multi_lowlatency_unique_ae` | Centralized benchmark when tracking weight `cΘ = 0` and mean-latency/missed-sample costs are omitted: `consensusRead` holds mean pace constant and applies `law gDiff` (with differential-mode gain `gDiff`) to differential mode (requires an additional small common-mode loop in practice to prevent drift). |
-| `Analysis.decentralized_star_cost_eq`, `symmetric_star_cost_split`, `decentralized_star_uncorrelated_optimal`, `consensus_one_hot_var` | Cost decomposition for symmetric pure-star policies across `R` speakers into shared common vs. private uncorrelated components (weighting private errors by `((R - 1) / R) cS + cΘ`), optimality when cross-receiver errors are uncorrelated, and zero-mean projection norm `((R - 1) / R) Δ²` of a single-speaker step `Δ`. |
+| `Analysis.single_cost_split`, `single_law_optimal`, `single_law_unique_ae` | Under a fixed filtration `ℱ` and martingale expected increments, applying `Regulation.law g` to the conditional-mean state uniquely (almost everywhere, a.e.) minimizes finite-horizon expected per-cycle quadratic cost plus terminal value. |
+| `Analysis.multiCycleCost_modal_split`, `multi_lipsync_optimal`, `multi_lipsync_unique_ae`, `multi_lipsync_cost_rate`, `multi_lipsync_law_cost_le` | Centralized full-information lip-sync benchmark on `multiCycleCost`: orthogonal modal decomposition into common mode (tracking weight `cΘ`) and differential mode (weight `cS + cΘ`, where `cS` is the synchronization weight), with two-gain `modalRead` as the a.e. unique finite-horizon and long-run minimizer. |
+| `Analysis.multi_lowlatency_optimal`, `multi_lowlatency_unique_ae` | Centralized `multiCycleCost` benchmark when tracking weight `cΘ = 0` and mean-latency/missed-sample costs are omitted: `consensusRead` holds mean pace constant and applies `law gDiff` (with differential-mode gain `gDiff`) to differential mode (requires an additional small common-mode loop in practice to prevent drift). |
+| `Analysis.decentralized_star_cost_eq`, `symmetric_star_cost_split`, `decentralized_star_uncorrelated_optimal`, `consensus_one_hot_var` | `multiCycleCost` decomposition for symmetric pure-star policies across `R` speakers into shared common vs. private uncorrelated components (weighting private errors by `((R - 1) / R) cS + cΘ`), minimization of `multiCycleCost` when cross-receiver errors are uncorrelated, and zero-mean projection norm `((R - 1) / R) Δ²` of a single-speaker step `Δ`. |
 
 ### 2.3 Spectral factorization and steady-state Riccati algebra (`Analysis.Spectral`)
 
@@ -162,9 +164,9 @@ background jitter tails, and overlapping pauses.
 
 | Theorem | What it says |
 |---|---|
-| `Analysis.margin_best_missed`, `margin_best_tracking` | Global optimality quantile conditions for playout margin `m` under mean-latency plus missed-fraction cost (and with quadratic target-margin tracking). |
+| `Analysis.margin_best_missed`, `margin_best_tracking` | Global minimization quantile conditions for playout margin `m` under Campbell mean-latency plus missed-fraction cost `J_buf(m)` (and with quadratic target-margin tracking). |
 | `Analysis.fleet_average_missed_cost` | Linearity of Campbell missed-audio cost over the fleet-averaged pause intensity measure. |
-| `Analysis.margin_best_exponential_with_clicks`, `discontinuity_nonconvex_example` | Closed-form global optimum `m* = max 0 (h̄ log (λ (w_M + w_D / h̄) / w_Λ))` for a shared exponential pause distribution (mean pause duration `h̄`, pause arrival rate `λ`, and weights `w_M` for missed audio, `w_D` for discontinuities, and `w_Λ` for mean latency), and an atomic-pause counterexample showing discontinuity penalties can break convexity in general. |
+| `Analysis.margin_best_exponential_with_clicks`, `discontinuity_nonconvex_example` | Closed-form global minimizer `m* = max 0 (h̄ log (λ (w_M + w_D / h̄) / w_Λ))` of `J_buf(m)` for a shared exponential pause distribution (mean pause duration `h̄`, pause arrival rate `λ`, and weights `w_M` for missed audio, `w_D` for discontinuities, and `w_Λ` for mean latency), and an atomic-pause counterexample showing discontinuity penalties can break convexity in general. |
 
 ## 3. Production core code (`crates/unisono-core`)
 
@@ -195,7 +197,7 @@ Theorems in both `Unisono.Relation` and `Unisono.Estimate` live in the
 
 | Theorem | What it says |
 |---|---|
-| `Relation.fit_spec`, `mean_time_spec`, `anchor_near_mean`, `through_best`, `through_excess` | `fit` changes only the line, stores a slope-limited support line under all kept samples through two samples straddling the rounded mean time, and matches the optimal support line of Section 2.1 in real numbers. |
+| `Relation.fit_spec`, `mean_time_spec`, `anchor_near_mean`, `through_best`, `through_excess` | `fit` changes only the line, stores a slope-limited support line under all kept samples through two samples straddling the rounded mean time, and matches the excess-minimizing support line of Section 2.1 in real numbers. |
 | `Relation.side_spec`, `is_under_spec`, `bridge_spec`, `slope_within_spec`, `limited_spec`, `eval_spec` | Exact specifications for point-line side test, lower-envelope test, support bridge, slope clamping, and clamped line evaluation. |
 | `Relation.put_spec`, `drop_oldest_spec`, `forget_before_spec`, `new_spec`, `remember_spec`, `reset_window_spec`, `consider_spec`, `overtaken_spec`, `append_spec`, `keep_spec`, `end_window_spec`, `observe_spec`, `observe_later`, `observe_in_order`, `observe_total`, `end_window_total` | Window management, kept-count bound `len ≤ M` (window capacity `M`), rejection of overtaken packets, acceptance of all non-overtaken packets, and totality for all inputs. |
 
@@ -218,13 +220,13 @@ Theorems in both `Unisono.Relation` and `Unisono.Estimate` live in the
 | Theorem | What it says |
 |---|---|
 | `MinRtt.ntp_exchange_spec` | Exact integer specification of a four-timestamp Network Time Protocol (NTP) exchange (`ntp_exchange`, given client transmit `T1`, responder receive `T2`, responder transmit `T3`, and client receive `T4`): rejects negative responder processing time `T3 - T2 < 0` or negative round-trip time (RTT) `(T4 - T1) - (T3 - T2) < 0`, and otherwise returns clamped nonnegative `rtt_ns`, exact `offset_ns = floor(((T2 - T1) + (T3 - T4)) / 2)`, and `midpoint_ns`. |
-| `MinRtt.new_spec`, `reset_spec`, `observe_spec`, `path_ns_spec`, `variance_ns2_spec` | Totality, ring-length invariant `len ≤ W` (sliding window capacity `W`), nonnegative `path_ns`, variance-floor enforcement on every emitted measurement, and strict monotonic deduplication of emitted exchange identifiers. |
+| `MinRtt.new_spec`, `reset_spec`, `observe_spec`, `path_ns_spec`, `variance_ns2_spec`, `uncalibrated_variance_spec` | Totality, ring-length invariant `len ≤ W` (sliding window capacity `W`), nonnegative `path_ns`, variance-floor enforcement on every emitted measurement, inflated variance `(rtt / 2)²` for uncalibrated single-sample windows (`len < 2`), and strict monotonic deduplication of emitted exchange identifiers. |
 
 ### 3.7 Two-state fixed-point Kalman filter (`Kalman`)
 
 | Theorem | What it says |
 |---|---|
-| `Kalman.enforce_psd_spec`, `new_spec`, `anchor_spec`, `predict_psd`, `update_psd`, `to_line_spec` | Totality, 2×2 covariance positive semidefiniteness (diagonal entries `p00 ≥ 0`, `p11 ≥ 0`, off-diagonal `p01² ≤ p00 * p11`) preserved across initialization, anchoring, prediction, and Joseph-form update, and valid `Line` export (`run = LINE_RUN > 0`). |
+| `Kalman.enforce_psd_spec`, `new_spec`, `anchor_spec`, `anchor_with_freq_spec`, `predict_psd`, `update_psd`, `to_line_spec` | Totality, 2×2 covariance positive semidefiniteness (diagonal entries `p00 ≥ 0`, `p11 ≥ 0`, off-diagonal `p01² ≤ p00 * p11`) preserved across initialization, zero- and preserved-frequency anchoring, prediction, and Joseph-form update (enforced by explicit clamping in `enforce_psd`), and valid `Line` export (`run = LINE_RUN > 0`). |
 | `Kalman.predict_zero_fixed_point`, `update_zero_innovation_fixed_point`, `to_line_zero_fixed_point` | Zero-residual, zero-frequency anchored filter state `(base_offset_ns, 0, 0)` is an exact fixed point of `predict` and zero-innovation `update`, exporting the exact constant offset line. |
 
 ### 3.8 Fixed-point graph-Laplacian BLUE solver (`Blue`)
@@ -250,7 +252,7 @@ Theorems in both `Unisono.Relation` and `Unisono.Estimate` live in the
 
 | Theorem | What it says |
 |---|---|
-| `Sync.new_total`, `add_peer_total`, `on_sender_echo_total`, `next_peer_probe_total`, `on_peer_echo_total`, `build_relay_total`, `on_peer_relay_total`, `step_total` | Every public method of `Sync` returns for every state and input. |
+| `Sync.new_total`, `add_peer_total`, `set_sender_clock_id_total`, `reset_sender_clock_total`, `on_sender_echo_total`, `next_peer_probe_total`, `on_peer_echo_total`, `build_relay_total`, `on_peer_relay_total`, `update_modal_filters_total`, `step_total` | Every public method of `Sync` (and its internal modal-filter transition helper) returns for every state and input. |
 | `Sync.on_peer_probe_allowlist` | `Sync.on_peer_probe` replies with `some PeerEcho` only when stream and target match and `probe.prober` is a configured peer in the static peer table; unknown senders always get `none`. |
 | `Sync.publish_star_spec`, `zero_peers_no_peer_traffic`, `step_zero_peers_star` | With `peer_count = 0`, `Sync` emits zero peer probes or relays, rejects incoming peer probes and relays, and `Sync.step` always publishes a Star snapshot (`peer_active = false`, `active_peers = 0`, `diff_var_ns2 = 0`, `fleet_line = ZERO_LINE`, `common_line = sender_filter.to_line`). |
 
@@ -283,31 +285,35 @@ Theorems in both `Unisono.Relation` and `Unisono.Estimate` live in the
 | `Rounds.endsWithin_of_measure` | Any translated loop whose measure strictly decreases at each step terminates within that bound. |
 | `Rounds.mark_rounds`, `run_rounds`, `gap_rounds`, `advance_rounds`, `clear_rounds`, `find_rounds`, `sums_rounds`, `shift_rounds` | Explicit upper bounds on loop iterations for the audio-thread presence, arrival, and device-regression loops. |
 
-### 3.15 End-to-end production-core solution wrapper (`Unisono.Solutions.Core`)
+### 3.15 Production-core `Solution` composition (`Unisono.Solutions.Core`)
 
-Wraps the Aeneas-translated production core (`Sender`, `Sync`, `Receiver`,
-`ModalPlayer`, and version 2 `packet` headers) directly as a
-`Unisono.Spec.Solution` with strictly local observations:
+Composes the Aeneas-translated production core (`Sender`, `Sync`, `Receiver`,
+`ModalPlayer`, and version 2 `packet` headers) into a `Unisono.Spec.Solution`
+with strictly local observations. Because `unisono-runtime` is not translated to
+Lean, `Core.solution` is a Lean composition of the core functions (without
+`Device` line fitting, independent timer events, or separate `T3` send reads)
+rather than a proof about the runtime threads.
 
 | Theorem | Model / Scope | What it says |
 |---|---|---|
 | `Solutions.Core.usesGraph_of_peers`, `isStar_of_no_peers` | Any `World` | Every message sent by `Core.solution` respects the declared sender + peer allowlist graph; when every host's peer list is empty, `Core.solution` satisfies `Solution.IsStar`. |
-| `Solutions.Core.progress`, `request_step` | `BoundedWorld` | In every world satisfying `World.WithinBounds`, the run of `Core.solution` is non-Zeno (advances past every true time) and reaches every speaker block request `(r, b)`. |
+| `Solutions.Core.progress`, `request_step` | `World.WithinBounds` | In every world satisfying `World.WithinBounds`, the run of `Core.solution` is non-Zeno (advances past every true time) and reaches every speaker block request `(r, b)`. |
 | `Solutions.Core.sync_zero_peers_inv`, `star_no_peer_messages`, `star_sync_snapshot_eq_sender_kalman`, `star_modal_player_eq_single_mode` | Any `World` | When `peers h = []`, `Sync.peer_count` stays `0`, zero `peerProbe`/`peerEcho`/`peerRelay` messages are sent, every `Sync.step` exports a Star snapshot (`peer_active = false`, `active_peers = 0`, `diff_var_ns2 = 0`), and `ModalPlayer.cycle` matches single-mode `Player.cycle` at `star_gain`. |
-| `Solutions.Core.modal_cycle_full_spec`, `receiver_cycle_plan_spec`, `rcv_modal_inv`, `withinBlock_speed_bound`, `boundary_step_safe` | `BoundedWorld` | `Core.solution` preserves `use_sync = true` and regulation settings across all events; every consecutive pair inside a playback block unconditionally obeys the `World.speed` bound in every `BoundedWorld`; across adjacent non-empty blocks (without intervening `stop()` or 64-bit unsigned integer `u64::MAX` overflow, and with `jump ≥ 3`), every continuous boundary step obeys `|y - x - 1| ≤ paceBound limit`. |
-| `Solutions.Core.ideal_ntp_exchange_exact`, `ideal_kalman_and_sender_time_exact`, `ideal_modal_cycle_unity`, `ideal_zero_cost_objectives` | `IdealConstantWorld` (Symmetric) | Within the 64-bit nanosecond range, `ntp_exchange` recovers exact offset and RTT, `KalmanFilter` preserves the exact zero-innovation fixed point and `SyncSnapshot.sender_time` maps local time to exact sender time, `ModalPlayer.cycle` plans exact `Step.UNITY`, and any unity-step playback trajectory at `m.targetLatency` achieves `sync = 0`, `tracking = 0`, `roughness = 0`, `missed = 0`, `discontinuities = 0`, and `meanLatency ≤ targetLatency`. |
+| `Solutions.Core.modal_cycle_full_spec`, `receiver_cycle_plan_spec`, `rcv_modal_inv`, `withinBlock_speed_bound`, `boundary_step_safe` | `World.WithinBounds` | `Core.solution` preserves `use_sync = true` and regulation settings across all events; every consecutive pair inside a playback block unconditionally obeys the `World.speed` bound under `World.WithinBounds`; across adjacent non-empty blocks (without intervening `stop()` or 64-bit unsigned integer `u64::MAX` overflow, and with `jump ≥ 3`), every continuous boundary step obeys `|y - x - 1| ≤ paceBound limit`. |
+| `Solutions.Core.ideal_ntp_exchange_exact`, `ideal_kalman_and_sender_time_exact`, `ideal_modal_cycle_unity`, `ideal_zero_cost_objectives` | `IdealConstantWorld` | Within the 64-bit nanosecond range, `ntp_exchange` recovers exact offset and RTT, `KalmanFilter` preserves the exact zero-innovation fixed point and `SyncSnapshot.sender_time` maps local time to exact sender time, `ModalPlayer.cycle` plans exact `Step.UNITY`, and any playback trajectory already on the ideal unity-step schedule at `m.targetLatency` achieves `sync = 0`, `tracking = 0`, `roughness = 0`, `missed = 0`, `discontinuities = 0`, and `meanLatency ≤ targetLatency` (note: `ideal_zero_cost_objectives` takes that trajectory as a hypothesis and does not mention `Core.solution`). |
 
 ## 4. What is not proved (Open)
 
-1. **Noisy-network end-to-end objectives for the production core:**
+1. **No objective bounds for `Core.solution` in any model:**
    `Unisono.Solutions.Core` proves causality, communication-graph membership,
    exact Star degeneration, non-Zeno progress and request liveness under
-   `BoundedWorld`, speed safety (within blocks unconditionally and across block
-   boundaries under the stated non-restart/non-overflow/`jump ≥ 3` conditions),
-   and exact ideal-world component and trajectory behavior. It does **not**
-   prove end-to-end `Unisono.Spec.Objectives` bounds or stochastic optimality
-   under noisy `BoundedWorld`, `StationaryNetworkDisturbances`,
-   `SecondOrderMoments`, or `StochasticWorld`.
+   `World.WithinBounds`, within-block speed bounds unconditionally under
+   `World.WithinBounds` (plus the conditional adjacent-block bound
+   `boundary_step_safe`), and component-level exactness on ideal constant
+   inputs. No theorem currently connects a run of `Core.solution` to any of the
+   six `Unisono.Spec.Objectives` in any model (`IdealConstantWorld`,
+   `World.WithinBounds`, `StationaryNetworkDisturbances`,
+   `SecondOrderMoments`, or `StochasticWorld`).
 2. **Unused stochastic world hypotheses:** no theorem in the repository
    currently takes `SecondOrderMoments` or `StochasticWorld` as a hypothesis;
    constructing a random strictly increasing `Clock` with nonzero `ClockNoise`
@@ -321,12 +327,18 @@ Wraps the Aeneas-translated production core (`Sender`, `Sync`, `Receiver`,
      as its hypothesis; wiring the full event-driven run of `Core.solution`
      from startup lock into that steady-state trajectory on
      `IdealConstantWorld.Symmetric` remains open.
-4. **Finite-precision graph BLUE error bounds:** `Blue.lean` proves totality,
-   variance/count invariants, zero right-hand-side fixed point, and exact
-   single-edge Star recovery (`solve_blue_single_edge_star`), but not
-   finite-precision error bounds comparing integer `LDL^T` against real-valued
-   `Analysis.Estimation.thomson_blue_optimal` on noisy multi-peer graphs or
-   noiseless multi-edge trees.
+4. **Integer-to-real estimator equivalence (`MinRtt`, `Kalman`, `Blue`):**
+   - `MinRtt.lean` proves totality, exact single-exchange NTP arithmetic, ring
+     size, variance floors, and deduplication, but not that `SlidingMinRtt`
+     emits the exact minimum RTT across its window.
+   - `Kalman.lean` proves totality, zero-innovation fixed-point preservation,
+     and PSD preservation via explicit clamping in `enforce_psd`, but not
+     equivalence or error bounds against the real-valued Kalman recursion.
+   - `Blue.lean` proves totality, variance/count invariants, zero right-hand-side
+     fixed point, and exact single-edge Star recovery
+     (`solve_blue_single_edge_star`), but not finite-precision error bounds
+     comparing integer `LDL^T` against real-valued
+     `Analysis.Estimation.thomson_blue_optimal` on multi-peer graphs.
 5. **Other core gaps:** `PeerRelay` byte-level round-trip (totality and kind
    separation are proved; round-trip is covered by Rust unit tests and
    `translation-check`), lower-hull fit existence in `Relation`, cycle-step
@@ -340,7 +352,7 @@ Wraps the Aeneas-translated production core (`Sender`, `Sync`, `Receiver`,
    (`crates/unisono-runtime`), digital signal processing (resampling, sample
    conversion, fades, and gap concealment in `crates/unisono-dsp`), audio
    backends (`unisono-pipewire`, `unisono-alsa`), metrics, the C library, and
-   the command-line program are verified by unit tests, multi-seed true-time
+   the command-line program are checked by unit tests, multi-seed true-time
    simulation (`crates/unisono-sim`), Loom concurrency interleavings,
    machine-code inspection (`crates/reachable`, `crates/cycle-cost`), and
    container tests against PipeWire and Advanced Linux Sound Architecture

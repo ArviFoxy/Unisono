@@ -80,7 +80,7 @@ All properties proved on `Core.solution` below refer to this Lean composition.
    clock offset `Δc`, `KalmanFilter` preserves the zero-innovation fixed point
    `(Δc, 0)` and `SyncSnapshot.sender_time` maps local time to exact sender
    time `t + Δc`, and `ModalPlayer.cycle` plans `timing.Step.UNITY`.
-   `ideal_zero_cost_objectives` verifies that any playback trajectory already
+   `ideal_zero_cost_objectives` proves that any playback trajectory already
    on the ideal unity-step schedule has zero objective costs; connecting a full
    run of `Core.solution` to any of the six `Unisono.Spec.Objectives` remains
    open in every model.
@@ -95,7 +95,7 @@ open unisono_core
 open Unisono.Spec
 open scoped ENNReal
 
-/-! ## 1. Total evaluation of verified Aeneas functions and fixed-point conversions -/
+/-! ## 1. Total evaluation of translated Aeneas functions and fixed-point conversions -/
 
 theorem exists_ok_of_spec {α : Type} {r : Result α} {P : α → Prop}
     (h : r ⦃ P ⦄) : ∃ x, r = ok x ∧ P x := by
@@ -844,7 +844,7 @@ theorem isStar_of_no_peers {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (
   · exact Or.inr h2
   · simp [hno h] at h3
 
-/-! ## 4. Non-Zeno progress & request liveness in every `BoundedWorld` -/
+/-! ## 4. Non-Zeno progress & request liveness under `World.WithinBounds` -/
 
 /-- Message weight for non-Zeno progress: reports and peer probes have weight 2
 (each triggers at most one weight-1 echo); all other messages have weight 1
@@ -925,7 +925,7 @@ private theorem core_no_timers {H : Type} {R : ℕ} [DecidableEq H] (p : Params 
       dsimp only; split_ifs <;> rfl
     | timer => rfl
 
-/-- **Non-Zeno progress of `Core.solution` in every `BoundedWorld`:**
+/-- **Non-Zeno progress of `Core.solution` under `World.WithinBounds`:**
 the run advances past every true time `T`. -/
 theorem progress {H : Type} {R : ℕ} [DecidableEq H] [Fintype H]
     (p : Params H) (N M K : Std.Usize)
@@ -982,7 +982,7 @@ theorem progress {H : Type} {R : ℕ} [DecidableEq H] [Fintype H]
     | peerEcho pe => dsimp only; split_ifs <;> simp [msgWeight]
     | peerRelay rel => dsimp only; split_ifs <;> simp [msgWeight]
 
-/-- **Request liveness of `Core.solution` in every `BoundedWorld`:**
+/-- **Request liveness of `Core.solution` under `World.WithinBounds`:**
 every playback request `(r, b)` of every speaker is handled at some step. -/
 theorem request_step {H : Type} {R : ℕ} [DecidableEq H] [Fintype H]
     (p : Params H) (N M K : Std.Usize)
@@ -1288,7 +1288,7 @@ theorem star_modal_player_eq_single_mode (m : player.ModalPlayer) (pl : player.P
   simp only [bind_ok, WP.spec_ok] at hspec
   exact hspec
 
-/-! ## 6. Speed safety in every `BoundedWorld` -/
+/-! ## 6. Within-block speed and conditional boundary-step bounds under `World.WithinBounds` -/
 
 private theorem receiver_turn_preserves_modal {N M K : Std.Usize} (r : receiver.Receiver N M K) :
     receiver.Receiver.turn r ⦃ r' =>
@@ -1809,8 +1809,9 @@ theorem paceBound_lt_one (limit : Std.U32) : paceBound limit < 1 :=
 
 /-- Local speed-bound lemma: if a continuous step `(k, k + 1)` with
 `plays r k = some x`, `plays r (k + 1) = some y`, `x < y < x + 2` satisfies
-`|y - x - 1| ≤ u` (with `0 ≤ u < 1`), then in any `BoundedWorld` its
-`World.speed` is within `(2 ε + (1 + ε) u) / (1 - ε)` of `1`. -/
+`|y - x - 1| ≤ u` (with `0 ≤ u < 1`), then in any world satisfying
+`World.WithinBounds B` its `World.speed` is within
+`(2 ε + (1 + ε) u) / (1 - ε)` of `1`. -/
 theorem speed_bound_of_step {H : Type} {R : ℕ} (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) {plays : Fin R → ℕ → Option ℝ} {r : Fin R} {k : ℕ}
     {x y u v : ℝ} (hu0 : 0 ≤ u) (hu1 : u < 1)
@@ -1902,10 +1903,11 @@ theorem planPlays_succ_sub (outputs : List ℕ) (plan : player.Plan) {k : ℕ} {
     push_cast
     ring
 
-/-- **Within-block speed safety of `Core.solution` (unconditional, all `k : ℕ`):**
-in every `BoundedWorld`, for every speaker `r` and every consecutive pair
-`(k, k + 1)` belonging to the same playback block `b`, `Core.solution`'s speed
-lies within `(2 ε_D + (1 + ε_D) * paceBound limit) / (1 - ε_D)` of `1`. -/
+/-- **Within-block speed bound of `Core.solution` (unconditional, all `k : ℕ`):**
+in every world satisfying `World.WithinBounds B`, for every speaker `r` and
+every consecutive pair `(k, k + 1)` belonging to the same playback block `b`,
+`Core.solution`'s speed lies within
+`(2 ε_D + (1 + ε_D) * paceBound limit) / (1 - ε_D)` of `1`. -/
 theorem withinBlock_speed_bound {H : Type} {R : ℕ} [DecidableEq H]
     (p : Params H) (N M K : Std.Usize) (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) (lookahead : ℕ+) {r : Fin R} {b k : ℕ} {v : ℝ}

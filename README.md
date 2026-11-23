@@ -12,43 +12,58 @@ Unisono is written in Rust, with its pure protocol and timing core
 [Aeneas](https://github.com/AeneasVerif/aeneas) so that formal proofs target
 the production implementation directly.
 
-## Verification status: proved vs. tested
+## Proof and test status: proved vs. tested
 
-Unisono separates what is formally proved in Lean from what is verified by
+Unisono separates what is formally proved in Lean (in `Unisono.Spec` and on the
+translated core) from supplementary side-model analyses and what is checked by
 simulation and integration tests (see `PRINCIPLES.md`):
 
-- **Formally proved in Lean (on the specification and translated Rust core):**
+- **Formally proved in Lean (on `Unisono.Spec` and the translated Rust core):**
   - Panic-free, overflow-free totality, bounded-loop termination, packet codec
-    round-trips, and arithmetic and state-machine invariants of the translated
-    production core (`lean/Unisono/*.lean`).
-  - End-to-end properties of the translated core wrapped directly as a
-    `Unisono.Spec.Solution` (`lean/Unisono/Solutions/Core.lean`): causality
-    (strictly local observations), communication-graph membership (`UsesGraph`)
-    and exact degeneration to star topology (`IsStar`, zero peer messages, and
-    identical single-mode playback when no peers are configured), non-Zeno
-    progress and playback-request liveness under `BoundedWorld`, playback-speed
-    safety under `BoundedWorld`, and exact zero synchronization, tracking,
-    roughness, missed-sample, and discontinuity cost under symmetric
-    `IdealConstantWorld`.
+    round-trips, exact four-timestamp NTP arithmetic, and state-machine
+    invariants of the translated production core (`lean/Unisono/*.lean`).
+  - Properties of the translated core composed as a `Unisono.Spec.Solution` in
+    `lean/Unisono/Solutions/Core.lean` (a Lean composition of `unisono-core`
+    functions rather than a proof about `unisono-runtime`): causality (strictly
+    local observations), communication-graph membership (`UsesGraph`) and exact
+    degeneration to star topology (`IsStar`, zero peer messages, and identical
+    single-mode playback when no peers are configured), non-Zeno progress and
+    playback-request liveness under `World.WithinBounds`, within-block
+    playback-speed bounds under `World.WithinBounds` (plus a conditional
+    adjacent-block step bound when `jump >= 3`, no silence restart, and no
+    `u64::MAX` overflow), and component-level exactness on noiseless constant
+    inputs (`ntp_exchange`, `KalmanFilter` zero-innovation fixed point,
+    `ModalPlayer.cycle` unity step).
   - Topology-dependent lower bounds and a two-sided Star-vs-Peer asymmetry
-    separation directly in `Unisono.Spec` (`lean/Unisono/Spec/Limits.lean`).
-  - Supplementary component and centralized/oracle benchmark theorems in
-    `lean/Unisono/Model/*` and `lean/Unisono/Analysis/*` (such as centralized
-    full-information linear-quadratic modal control, Thomson's principle for
-    graph-Laplacian Best Linear Unbiased Estimation (BLUE), and
-    continuous-time pause-margin formulas). These serve as analytical
-    references and benchmarks, not end-to-end optimality proofs for the
-    decentralized production system.
+    separation directly in `Unisono.Spec` (`lean/Unisono/Spec/Limits.lean`),
+    plus end-to-end objective bounds for the abstract real-valued reference
+    `Unisono.Solutions.FixedDelay` under `World.WithinBounds`.
+- **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
+  - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
+    `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
+    `multiCycleCost`, Thomson's principle for real-valued graph-Laplacian Best
+    Linear Unbiased Estimation (BLUE) under uncorrelated edge errors, and
+    continuous-time Campbell pause-margin formulas). These serve as analytical
+    references alongside `Unisono.Spec`, never as replacements for end-to-end
+    proofs on `Unisono.Spec.Objectives`.
 - **Open (not formally proved):**
-  - End-to-end bounds on `Unisono.Spec.Objectives` for the production core
-    under noisy `BoundedWorld`, `StationaryNetworkDisturbances`,
-    `SecondOrderMoments`, and `StochasticWorld` remain open.
-  - Finite-precision error bounds comparing the integer square-root-free
-    Cholesky ($LDL^\top$) graph solver against real-valued BLUE on noisy graphs
-    remain open.
-- **Verified by simulation and tests (outside Lean proofs):**
-  - Multi-seed true-time simulation (`crates/unisono-sim`) of oscillator drift,
-    link delay, jitter, pauses, outages, and packet loss.
+  - No theorem currently connects a run of `Core.solution` to any of the six
+    `Unisono.Spec.Objectives` in any model (including `IdealConstantWorld`,
+    `World.WithinBounds`, `StationaryNetworkDisturbances`,
+    `SecondOrderMoments`, and `StochasticWorld`).
+  - Unconditional `Solution.WithinSpeed` across all block boundaries (including
+    silence restarts and arbitrary `jump` values) for `Core.solution` remains
+    open.
+  - Quantitative integer-to-real accuracy bounds linking the fixed-point core
+    estimators (`KalmanFilter`, `SlidingMinRtt`, and the integer `LDL^T` BLUE
+    solver on multi-peer graphs) to real-valued models remain open (`Kalman`
+    positive-semidefiniteness theorems hold via explicit clamping).
+- **Tested by simulation and integration checks (outside Lean proofs):**
+  - Multi-seed true-time simulation (`crates/unisono-sim`) driving the shipped
+    `unisono-runtime` SPSC-ring pipelines over serialized v2 UDP datagrams with
+    oscillator drift, device timestamp jitter, responder send latency, link
+    delay, jitter, pauses, outages, and packet loss, scoring all six
+    `Unisono.Spec.Objectives` strictly from rendered PCM output.
   - Concurrency interleaving checks (Loom) on the lock-free single-producer
     single-consumer (SPSC) rings, machine-code inspection (`crates/reachable`,
     `crates/cycle-cost`) confirming real-time threads perform no syscalls,
@@ -99,7 +114,7 @@ PipeWire devices are tested against PipeWire in containers.
 
 `docs/specification.tex` (`docs/specification.pdf`) and `lean/Unisono/Spec`
 define the formal problem and objectives, `PRINCIPLES.md` states the
-verification principles, `docs/theorems.md` lists what is proved,
+design and proof principles, `docs/theorems.md` lists what is proved,
 `docs/protocol.md` specifies the version 2 wire protocol, and `docs/model.md`
 records earlier design notes.
 
@@ -147,8 +162,8 @@ model classes in `lean/Unisono/Spec/Models` (see `PRINCIPLES.md` and
 
 | Model | Scope | Description | Motivation | File |
 |---|---|---|---|---|
-| `IdealConstantWorld` | Deterministic full-world (special case of `BoundedWorld`) | Unit-rate clocks with arbitrary constant initial offsets, exact nominal-rate devices with fixed block sizes, zero handoff delay, constant request lead, exact timestamps, lossless constant per-link delays (`Symmetric` or `Asymmetric` subclasses), and constant target latency. | Noiseless baseline for exact fixed-point recovery of `Core.solution` and for the two-sided Star-vs-Peer asymmetry separation in `Unisono.Spec.Limits`. | [`lean/Unisono/Spec/Models/Ideal.lean`](lean/Unisono/Spec/Models/Ideal.lean) |
-| `BoundedWorld` (`World.WithinBounds` / `Bounds`) | Deterministic worst-case full-world (plus `AlmostSurelyWithin`) | Uniform bounds on clock and device rate errors, device timestamp errors, capture handoff delay, playback request lead, block sizes, per-link minimum/maximum delays, and consecutive packet drops. | Worst-case guarantees for non-Zeno progress, playback-request liveness, speed-bound safety, and deterministic offset and drift bounds. | [`lean/Unisono/Spec/Models/Bounded.lean`](lean/Unisono/Spec/Models/Bounded.lean) |
+| `IdealConstantWorld` | Deterministic full-world (satisfies `World.WithinBounds`) | Unit-rate clocks with arbitrary constant initial offsets, exact nominal-rate devices with fixed block sizes, zero handoff delay, constant request lead, exact timestamps, lossless constant per-link delays (`Symmetric` or `Asymmetric` subclasses), and constant target latency. | Noiseless baseline for exact fixed-point component checks on `unisono-core` and for the two-sided Star-vs-Peer asymmetry separation in `Unisono.Spec.Limits`. | [`lean/Unisono/Spec/Models/Ideal.lean`](lean/Unisono/Spec/Models/Ideal.lean) |
+| `Bounds` (`World.WithinBounds`) | Deterministic worst-case full-world (plus `AlmostSurelyWithin`) | Uniform bounds on clock and device rate errors, device timestamp errors, capture handoff delay, playback request lead, block sizes, per-link minimum/maximum delays, and consecutive packet drops. | Worst-case guarantees for non-Zeno progress, playback-request liveness, within-block speed bounds, and deterministic offset and drift bounds. | [`lean/Unisono/Spec/Models/Bounded.lean`](lean/Unisono/Spec/Models/Bounded.lean) |
 | `StationaryNetworkDisturbances` | Probabilistic network-only | Per-directed-link $(i, j)$ slow Lipschitz baseline, nonnegative per-packet jitter $(u, q)$ reaching arbitrarily close to zero with exponential upper tails, pause and outage episode arrival rates and finite-mean length distributions, individual drop probabilities $< 1$, and joint stationarity and mixing across all links (no cross-link independence assumed). | Captures tail delays, pauses, outages, and heterogeneous wired/wireless topologies that govern missed samples, discontinuities, and playout latency selection. | [`lean/Unisono/Spec/Models/Delays.lean`](lean/Unisono/Spec/Models/Delays.lean) |
 | `SecondOrderMoments` | Probabilistic moment model (continuous timing noise) | Square-integrable host clocks and audio devices following band-limited IEEE Std 1139-2008 power-law frequency noise (white $h_0$, flicker $h_{-1}/f$, and random-walk $h_{-2}/f^2$ over Fourier frequency $f \in [f_{\mathrm{lo}}, f_{\mathrm{hi}}]$), additive per-packet link jitter ($J^{\mathrm{tx}}_i + J^{\mathrm{rx}}_j + J^{\mathrm{own}}_{ij}$) with unconstrained transmit/receive cross-correlations, and white device timestamp errors. | Captures first- and second-moment structure—including shared host-stack and wireless-medium jitter correlations and co-located oscillators—driving synchronization, tracking, and roughness. | [`lean/Unisono/Spec/Models/SecondOrder.lean`](lean/Unisono/Spec/Models/SecondOrder.lean) |
 | `StochasticWorld` | Probabilistic composite full-world | Combines `StationaryNetworkDisturbances` and `SecondOrderMoments` over a shared per-link decomposition, together with deterministic capture-handoff, playback-request-lead, and block-size bounds across every realization. | Complete probabilistic model class for stating end-to-end expected-cost theorems on `Unisono.Spec.Objectives`. | [`lean/Unisono/Spec/Models/StochasticWorld.lean`](lean/Unisono/Spec/Models/StochasticWorld.lean) |
@@ -175,8 +190,8 @@ simplified setting explicitly and supplements, rather than replaces, proofs in
 | `crates/translation-check` | Prints inputs and results of `unisono-core` functions to compare against the Lean translation |
 | `crates/reachable`, `crates/cycle-cost` | Inspection of the machine code of real-time threads and worst-case cycle instruction counts |
 | `lean/UnisonoCore` | Lean translation of `crates/unisono-core`, generated on demand by `just translate` (gitignored) |
-| `lean/Unisono` | Formal specification (`Spec/`, `Spec/Models/`, `Spec/Limits.lean`), end-to-end production-core wrapper (`Solutions/Core.lean`), code-correctness proofs, and supplementary component/oracle analyses (`Analysis/`, `Model/`) |
-| `lean/TranslationCheck.lean` | Evaluates the Lean translation on the inputs printed by `translation-check` and verifies agreement with Rust |
+| `lean/Unisono` | Formal specification (`Spec/`, `Spec/Models/`, `Spec/Limits.lean`), production-core `Solution` composition (`Solutions/Core.lean`), code-correctness proofs, and supplementary component/oracle analyses (`Analysis/`, `Model/`) |
+| `lean/TranslationCheck.lean` | Evaluates the Lean translation on the inputs printed by `translation-check` and checks agreement with Rust |
 | `containers` | Containers with PipeWire and ALSA for tests against real audio systems |
 | `docs` | Formal specification (`specification.tex`), theorem index (`theorems.md`), wire protocol (`protocol.md`), gap concealment, real-time path, and core Rust subset |
 | `tools` | Scripts that fetch and run Aeneas, the audio test containers, and machine-code inspection |
