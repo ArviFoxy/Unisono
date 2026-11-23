@@ -40,10 +40,12 @@ public import Unisono.Spec.Checks
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.Objectives
+public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.Solution
 public import Unisono.Spec.Topologies

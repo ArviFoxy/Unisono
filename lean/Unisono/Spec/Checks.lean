@@ -7,10 +7,14 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
+public import Mathlib.MeasureTheory.Constructions.Pi
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
+public import Mathlib.Probability.ConditionalProbability
+public import Mathlib.Probability.Distributions.Gaussian.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 public import Mathlib.Tactic.FieldSimp
@@ -52,7 +56,9 @@ build.
 * No model of the world is empty (`Bounds.example_within`,
   `IdealConstantWorld.example_holds`,
   `StationaryNetworkDisturbances.example_holds`,
-  `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`).
+  `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`,
+  `GenerativeWorld.example_holds`). The example of the generative model has
+  no other traffic and no wander.
 -/
 
 @[expose] public noncomputable section
@@ -1317,5 +1323,397 @@ theorem StochasticWorld.example_holds :
         playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
 
 end Further
+
+/-! ## The generative model is not empty -/
+
+section Example
+
+open GenerativeWorld MeasureTheory ProbabilityTheory
+
+variable {Ω : Type} [MeasurableSpace Ω]
+
+/-- Random variables that are constant are independent. -/
+private theorem iIndepFun_of_const {ι : Type} {β : ι → Type} [∀ i, MeasurableSpace (β i)]
+    (P : Measure Ω) [IsProbabilityMeasure P] (c : ∀ i, β i) :
+    iIndepFun (fun i (_ : Ω) => c i) P := by
+  rw [iIndepFun_iff_measure_inter_preimage_eq_mul]
+  intro S sets _
+  by_cases h : ∀ i ∈ S, c i ∈ sets i
+  · have h1 : (⋂ i ∈ S, (fun _ : Ω => c i) ⁻¹' sets i) = Set.univ := by
+      ext ω
+      simp only [Set.mem_iInter, Set.mem_preimage, Set.mem_univ, iff_true]
+      exact h
+    rw [h1, measure_univ]
+    symm
+    refine Finset.prod_eq_one fun i hi => ?_
+    have h2 : (fun _ : Ω => c i) ⁻¹' sets i = Set.univ := by
+      ext ω
+      simp [h i hi]
+    rw [h2, measure_univ]
+  · push Not at h
+    obtain ⟨i, hi, hci⟩ := h
+    have h0 : (fun _ : Ω => c i) ⁻¹' sets i = ∅ := by
+      ext ω
+      simp [hci]
+    have h1 : (⋂ i ∈ S, (fun _ : Ω => c i) ⁻¹' sets i) = ∅ := by
+      refine Set.eq_empty_of_subset_empty ?_
+      rw [← h0]
+      exact Set.biInter_subset_of_mem hi
+    rw [h1, measure_empty]
+    symm
+    exact Finset.prod_eq_zero hi (by rw [h0, measure_empty])
+
+/-- The process that is zero at all times is a Gaussian process. -/
+private theorem isGaussianProcess_zero (P : Measure Ω) [IsProbabilityMeasure P] :
+    IsGaussianProcess (fun (_ : Time) (_ : Ω) => (0 : ℝ)) P where
+  hasGaussianLaw I :=
+    { aemeasurable := aemeasurable_const
+      isGaussian_map := by
+        rw [Measure.map_const, measure_univ, one_smul]
+        infer_instance }
+
+/-- The components of a draw are finitely many when the hosts are. -/
+private def componentEquiv (H : Type) :
+    Component H ≃ ({z : Sym2 H // ¬ z.IsDiag} ⊕ H) ⊕ (H ⊕ H) ⊕ (H × H) where
+  toFun
+    | .split z => .inl (.inl z)
+    | .offset h => .inl (.inr h)
+    | .logRate h => .inr (.inl (.inl h))
+    | .wander h => .inr (.inl (.inr h))
+    | .traffic i j => .inr (.inr (i, j))
+  invFun
+    | .inl (.inl z) => .split z
+    | .inl (.inr h) => .offset h
+    | .inr (.inl (.inl h)) => .logRate h
+    | .inr (.inl (.inr h)) => .wander h
+    | .inr (.inr (i, j)) => .traffic i j
+  left_inv := by rintro (_ | _ | _ | _ | _) <;> rfl
+  right_inv := by rintro ((_ | _) | (_ | _) | ⟨_, _⟩) <;> rfl
+
+private instance : Fintype (Component (Fin 3)) := Fintype.ofEquiv _ (componentEquiv (Fin 3)).symm
+
+/-- A number moved into the interval from zero to one: itself if it lies
+there, one half otherwise. -/
+private def toSplit (u : ℝ) : ℝ := if 0 < u ∧ u < 1 then u else 1 / 2
+
+private theorem toSplit_mem (u : ℝ) : toSplit u ∈ Set.Ioo (0 : ℝ) 1 := by
+  unfold toSplit
+  split_ifs with h
+  · exact h
+  · constructor <;> norm_num
+
+private theorem measurable_toSplit : Measurable toSplit :=
+  Measurable.ite (measurableSet_Ioo (a := (0 : ℝ)) (b := 1)) measurable_id measurable_const
+
+private theorem toSplit_ae_eq : toSplit =ᵐ[betaMeasure 2 2] id := by
+  rw [Filter.EventuallyEq, ae_iff]
+  refine measure_mono_null (fun u hu => ?_) (betaMeasure_compl_Ioo 2 2)
+  intro hmem
+  exact hu (by simp [toSplit, hmem.1, hmem.2])
+
+/-- The example's model: three hosts, the sender and two speakers on their
+own hosts, devices at one frame per second in blocks of one frame, a request
+lead of half a second, a target latency of one second, and shape two. -/
+private def exampleModel : GenerativeWorld (Fin 3) 2 where
+  rate := 1
+  rate_pos := one_pos
+  sender := 0
+  host := ![1, 2]
+  shape := 2
+  shape_pos := two_pos
+  blockSize := 1
+  blockSize_pos := one_pos
+  lead := 1 / 2
+  lead_pos := by norm_num
+  targetLatency := 1
+  targetLatency_nonneg := zero_le_one
+
+/-- The example's member: round trips of one second, no other traffic and no
+wander. -/
+private def exampleMember : Member (Fin 3) 2 where
+  roundTrip := fun _ _ => 1
+  roundTrip_pos := fun _ _ => one_pos
+  roundTrip_symm := fun _ _ => rfl
+  trafficRate := fun _ _ => 0
+  trafficRate_nonneg := fun _ _ => le_rfl
+  trafficWork := fun _ _ => 1
+  trafficWork_pos := fun _ _ => one_pos
+  load_lt_one := fun _ _ => by norm_num
+  rateSpread := 1
+  rateSpread_nonneg := zero_le_one
+  wanderSize := fun _ => 0
+  wanderSize_nonneg := fun _ => le_rfl
+  wanderTime := fun _ => 1
+  wanderTime_pos := fun _ => one_pos
+  offsetRange := 1
+  offsetRange_pos := one_pos
+  captureStart := 0
+  speakerStart := fun _ => 1
+
+/-- The law of each coordinate of the example's probability space. -/
+private def exampleLaw : Component (Fin 3) → Measure ℝ
+  | .split _ => betaMeasure 2 2
+  | .offset _ => ProbabilityTheory.cond volume (Set.Icc (-1 : ℝ) 1)
+  | .logRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
+  | .wander _ => Measure.dirac 0
+  | .traffic _ _ => Measure.dirac 0
+
+private instance (p : Component (Fin 3)) : IsProbabilityMeasure (exampleLaw p) := by
+  cases p
+  · exact isProbabilityMeasureBeta two_pos two_pos
+  · exact cond_isProbabilityMeasure_of_finite (by rw [Real.volume_Icc]; norm_num)
+      (by rw [Real.volume_Icc]; exact ENNReal.ofReal_ne_top)
+  · exact inferInstanceAs (IsProbabilityMeasure (gaussianReal 0 _))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+
+/-- The pair of two distinct hosts. -/
+private def examplePair (i j : Fin 3) (h : i ≠ j) : {z : Sym2 (Fin 3) // ¬ z.IsDiag} :=
+  ⟨s(i, j), by simpa using h⟩
+
+/-- The example's draw: the split of a pair, in the order of the hosts'
+numbers, the offsets and the mean rates are coordinates of the probability
+space; the wander and the other traffic are zero. -/
+private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
+  split := fun i j =>
+    if h : i = j then 1 / 2
+    else if i < j then toSplit (ω (.split (examplePair i j h)))
+    else 1 - toSplit (ω (.split (examplePair i j h)))
+  offset := fun h => ω (.offset h)
+  logRate := fun h => ω (.logRate h)
+  wander := fun _ _ => 0
+  traffic := fun _ _ _ => 0
+
+private theorem examplePair_swap {i j : Fin 3} (h : i ≠ j) :
+    examplePair j i h.symm = examplePair i j h :=
+  Subtype.ext Sym2.eq_swap
+
+private theorem exampleDraw_split_mem (ω : Component (Fin 3) → ℝ) (i j : Fin 3) :
+    (exampleDraw ω).split i j ∈ Set.Ioo (0 : ℝ) 1 := by
+  simp only [exampleDraw]
+  split_ifs with h h'
+  · constructor <;> norm_num
+  · exact toSplit_mem _
+  · have := toSplit_mem (ω (.split (examplePair i j h)))
+    exact ⟨by linarith [this.2], by linarith [this.1]⟩
+
+private theorem exampleDraw_split_swap (ω : Component (Fin 3) → ℝ) (i j : Fin 3) :
+    (exampleDraw ω).split i j + (exampleDraw ω).split j i = 1 := by
+  rcases lt_trichotomy i j with hlt | heq | hgt
+  · have hne : i ≠ j := hlt.ne
+    simp only [exampleDraw, dite_eq_right hne, dite_eq_right hne.symm, ite_eq_left hlt,
+      ite_eq_right hlt.not_gt, examplePair_swap hne]
+    ring
+  · subst heq
+    simp only [exampleDraw]
+    norm_num
+  · have hne : i ≠ j := hgt.ne'
+    simp only [exampleDraw, dite_eq_right hne, dite_eq_right hne.symm, ite_eq_left hgt,
+      ite_eq_right hgt.not_gt, examplePair_swap hne]
+    ring
+
+private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
+    HasLaw (fun ω => (exampleDraw ω).split i j) (betaMeasure 2 2) (Measure.pi exampleLaw) := by
+  have hcoord : HasLaw (fun ω : Component (Fin 3) → ℝ => ω (.split (examplePair i j hij)))
+      (betaMeasure 2 2) (Measure.pi exampleLaw) :=
+    (measurePreserving_eval exampleLaw (.split (examplePair i j hij))).hasLaw
+  have hto : HasLaw toSplit (betaMeasure 2 2) (betaMeasure 2 2) := HasLaw.id.congr toSplit_ae_eq
+  rcases lt_or_gt_of_ne hij with hlt | hgt
+  · have heq : (fun ω => (exampleDraw ω).split i j)
+        = fun ω => toSplit (ω (.split (examplePair i j hij))) := by
+      funext ω
+      simp only [exampleDraw, dite_eq_right hij, ite_eq_left hlt]
+    rw [heq]
+    exact hto.fun_comp hcoord
+  · have heq : (fun ω => (exampleDraw ω).split i j)
+        = fun ω => 1 - toSplit (ω (.split (examplePair i j hij))) := by
+      funext ω
+      simp only [exampleDraw, dite_eq_right hij, ite_eq_right hgt.not_gt]
+    rw [heq]
+    have hsub : HasLaw (fun x : ℝ => 1 - x) (betaMeasure 2 2) (betaMeasure 2 2) :=
+      ⟨by fun_prop, betaMeasure_map_one_sub 2⟩
+    exact hsub.fun_comp (hto.fun_comp hcoord)
+
+/-- How each component of the example's draw depends on its coordinate. -/
+private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 3)) → ℝ → p.Val
+  | .split z => fun u => if (o z).1.1 < (o z).1.2 then toSplit u else 1 - toSplit u
+  | .offset _ => fun u => u
+  | .logRate _ => fun u => u
+  | .wander _ => fun _ _ => 0
+  | .traffic _ _ => fun _ _ => 0
+
+private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Component (Fin 3)) :
+    Measurable (exampleComponentMap o p) := by
+  cases p with
+  | split z =>
+    exact Measurable.ite (MeasurableSet.const _) measurable_toSplit (measurable_toSplit.const_sub 1)
+  | offset h => exact measurable_id
+  | logRate h => exact measurable_id
+  | wander h => exact measurable_const
+  | traffic i j => exact measurable_const
+
+private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (Fin 3))
+    (ω : Component (Fin 3) → ℝ) :
+    (exampleDraw ω).component o p = exampleComponentMap o p (ω p) := by
+  cases p with
+  | split z =>
+    have hz : s((o z).1.1, (o z).1.2) = z.1 := (o z).2
+    have hne : (o z).1.1 ≠ (o z).1.2 := by
+      intro h
+      apply z.2
+      rw [← hz]
+      exact Sym2.mk_isDiag_iff.mpr h
+    have hpair : examplePair (o z).1.1 (o z).1.2 hne = z := Subtype.ext hz
+    simp only [Draw.component, exampleComponentMap, exampleDraw, dite_eq_right hne, hpair]
+    rfl
+  | offset h => rfl
+  | logRate h => rfl
+  | wander h => rfl
+  | traffic i j => rfl
+
+/-- The example's world: the one built from the example's draw. -/
+private def exampleWorld (ω : Component (Fin 3) → ℝ) : World (Fin 3) 2 where
+  rate := 1
+  rate_pos := one_pos
+  sender := 0
+  host := ![1, 2]
+  hosts := fun h => by
+    fin_cases h
+    · exact Or.inl rfl
+    · exact Or.inr ⟨0, rfl⟩
+    · exact Or.inr ⟨1, rfl⟩
+  clock := fun h =>
+    { read := fun t => ω (.offset h) + Real.exp (ω (.logRate h)) * t
+      strictMono := fun a b hab => by
+        have := mul_lt_mul_of_pos_left hab (Real.exp_pos (ω (.logRate h)))
+        linarith
+      continuous := by fun_prop }
+  source :=
+    { capture := fun n => ((n : ℝ) - ω (.offset 0)) * Real.exp (-ω (.logRate 0))
+      capture_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+      first := id
+      first_zero := rfl
+      first_strictMono := strictMono_id
+      handed := fun b => ((b : ℝ) - ω (.offset 0)) * Real.exp (-ω (.logRate 0))
+      handed_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+      handed_after := fun b => by simp
+      reported := fun b => (b : ℝ) }
+  speaker := fun r =>
+    { out := fun k => (1 + (k : ℝ) - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+      out_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+      first := id
+      first_zero := rfl
+      first_strictMono := strictMono_id
+      asked := fun b =>
+        (1 / 2 + (b : ℝ) - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+      asked_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+      asked_before := fun b => by
+        exact mul_lt_mul_of_pos_right (by simp only [id]; linarith) (Real.exp_pos _)
+      reported := fun b => 1 + (b : ℝ) }
+  network :=
+    { deliver := fun i j s _ => some (s + (exampleDraw ω).split i j * 1 + 0)
+      after := fun i j s _ a h => by
+        simp only [Option.some.injEq] at h
+        have := (exampleDraw_split_mem ω i j).1
+        linarith }
+  target := fun _ => 1
+
+private theorem exp_mul_exp_neg (c : ℝ) : Real.exp c * Real.exp (-c) = 1 := by
+  rw [← Real.exp_add, add_neg_cancel, Real.exp_zero]
+
+private theorem exampleWorld_builds (ω : Component (Fin 3) → ℝ) :
+    exampleModel.Builds exampleMember (exampleDraw ω) (exampleWorld ω) where
+  rate_eq := rfl
+  sender_eq := rfl
+  host_eq := rfl
+  clock := fun h t => by
+    simp only [exampleWorld, Draw.reading, exampleDraw, add_zero, intervalIntegral.integral_const,
+      sub_zero, smul_eq_mul]
+    ring
+  network := fun i j s q => by
+    refine ⟨0, ⟨?_, ?_⟩, rfl⟩
+    · rintro x ⟨u, hu, rfl⟩
+      simp only [exampleDraw, sub_self, zero_sub, neg_nonpos, sub_nonneg]
+      exact hu
+    · intro u hu
+      exact hu ⟨s, le_rfl, by simp [exampleDraw]⟩
+  capture := fun n => by
+    have h := exp_mul_exp_neg (ω (.logRate 0))
+    simp only [exampleWorld, exampleModel, exampleMember, zero_add, div_one]
+    linear_combination ((n : ℝ) - ω (.offset 0)) * h
+  capture_first := fun b => by simp [exampleWorld, exampleModel]
+  capture_handed := fun b => by simp [exampleWorld]
+  capture_reported := fun b => by
+    have h := exp_mul_exp_neg (ω (.logRate 0))
+    simp only [exampleWorld, id]
+    linear_combination (-((b : ℝ) - ω (.offset 0))) * h
+  speaker_out := fun r k => by
+    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
+    simp only [exampleWorld, exampleModel, exampleMember, div_one]
+    linear_combination (1 + (k : ℝ) - ω (.offset (![1, 2] r))) * h
+  speaker_first := fun r b => by simp [exampleWorld, exampleModel]
+  speaker_asked := fun r b => by
+    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
+    simp only [exampleWorld, exampleModel, id]
+    linear_combination (1 / 2 : ℝ) * h
+  speaker_reported := fun r b => by
+    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
+    simp only [exampleWorld, id]
+    linear_combination (-(1 + (b : ℝ) - ω (.offset (![1, 2] r)))) * h
+  target_eq := fun _ => rfl
+
+private theorem exampleDraw_prior :
+    exampleModel.Prior exampleMember (Measure.pi exampleLaw) exampleDraw where
+  prob := inferInstance
+  split_swap := exampleDraw_split_swap
+  split_mem := exampleDraw_split_mem
+  split_law := fun i j hij => exampleDraw_split_law hij
+  offset_law := fun h => (measurePreserving_eval exampleLaw (.offset h)).hasLaw
+  logRate_law := fun h => (measurePreserving_eval exampleLaw (.logRate h)).hasLaw
+  wander_gaussian := fun _ => isGaussianProcess_zero _
+  wander_mean := fun _ _ => by simp [exampleDraw]
+  wander_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  wander_continuous := fun _ _ => continuous_const
+  traffic_monotone := fun _ _ _ => monotone_const
+  traffic_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
+  traffic_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  traffic_law := fun i j s t _ => by
+    have h0 : Real.toNNReal (exampleMember.trafficRate i j * (t - s)) = 0 := by
+      simp [exampleMember]
+    rw [h0, trafficLaw_zero]
+    change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
+    exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
+  independent := fun o => by
+    have h : (fun p ω => (exampleDraw ω).component o p)
+        = fun p (ω : Component (Fin 3) → ℝ) => exampleComponentMap o p (ω p) := by
+      funext p ω
+      exact exampleDraw_component o p ω
+    rw [h]
+    exact iIndepFun_pi fun p => (measurable_exampleComponentMap o p).aemeasurable
+
+/-- **The generative model is not empty.** There is a random world of the
+model with three hosts and two speakers. In it the splits, the clock offsets
+and the clocks' mean rates are random; its member has no other traffic and no
+wander, so this does not show that members with either exist. -/
+theorem GenerativeWorld.example_holds :
+    ∃ (m : GenerativeWorld (Fin 3) 2) (f : GenerativeWorld.Member (Fin 3) 2) (Ω : Type)
+      (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
+      m.Holds f P world ∧ (∀ i j, f.trafficRate i j = 0) ∧ ∀ h, f.wanderSize h = 0 :=
+  ⟨exampleModel, exampleMember, Component (Fin 3) → ℝ, inferInstance, Measure.pi exampleLaw,
+    exampleWorld, ⟨exampleDraw, exampleDraw_prior, exampleWorld_builds⟩,
+    fun _ _ => rfl, fun _ => rfl⟩
+
+end Example
 
 end Unisono.Spec

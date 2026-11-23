@@ -41,9 +41,11 @@ public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
+public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.Topologies
 public import Unisono.Sync
@@ -930,6 +932,42 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.StochasticWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.StochasticWorld.example_holds
+
+/-- info: 'Unisono.Spec.OptimalWithin.expectedCost_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.OptimalWithin.expectedCost_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.leastDelay_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.leastDelay_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.leastDelay_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.leastDelay_add
+
+/-- info: 'Unisono.Spec.GenerativeWorld.trafficLaw_univ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.trafficLaw_univ
+
+/-- info: 'Unisono.Spec.GenerativeWorld.betaPDF_one_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.betaPDF_one_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.betaMeasure_map_one_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.betaMeasure_map_one_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.betaMeasure_compl_Ioo' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.betaMeasure_compl_Ioo
+
+/-- info: 'Unisono.Spec.GenerativeWorld.trafficLaw_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.trafficLaw_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.example_holds
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

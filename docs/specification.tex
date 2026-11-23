@@ -483,10 +483,11 @@ a weighting by modulation rate should replace it, is open.
 
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. Statements hold under a model, and the
-same solution can perform differently under different models. Five approved
-model classes live in \path{lean/Unisono/Spec/Models}, each in its own file
-and each accompanied by a non-emptiness witness in
-\path{lean/Unisono/Spec/Checks.lean}.
+same solution can perform differently under different models. Six approved
+models live in \path{lean/Unisono/Spec/Models}, each in its own file and
+each accompanied by a non-emptiness witness in
+\path{lean/Unisono/Spec/Checks.lean}. Five are model classes; the sixth
+gives the world a probability law (Section~\ref{sec:generative}).
 
 \subsection{Ideal constant worlds}
 
@@ -799,6 +800,279 @@ in \lean{StochasticWorld} satisfies
 distributional constraints satisfied by many probability laws over
 \lean{World}---rather than a single generative law. The class is not empty
 (\lean{StochasticWorld.\allowbreak example\_\allowbreak holds}).
+
+\subsection{A generative world}\label{sec:generative}
+
+The models above are classes: many probability laws satisfy each of them,
+and none says how the two directions of a link differ. Under a class a
+solution can be judged only by its worst case. The generative model
+\lean{GenerativeWorld}
+(\path{lean/Unisono/Spec/Models/GenerativeWorld.lean}) gives the world a
+probability law, so that the expected cost of a solution is a number and
+solutions can be compared by it (Section~\ref{sec:optimality}). It is a
+family of laws. A solution is told a few things, the same for every member
+of the family; everything else it has to estimate from what it observes.
+
+\begin{definition}[What a solution is told]
+A solution is told the following (\lean{GenerativeWorld}).
+\begin{itemize}
+\item The hosts, which one is the sender, and which host drives each
+  speaker.
+\item The settings of the devices and of the application: the nominal rate
+  $\rho$, the number $m \ge 1$ of frames or output samples in a block
+  (\lean{blockSize}), the request lead $\lambda > 0$ (\lean{lead}) and the
+  target latency $L^* \ge 0$ (\lean{targetLatency}). The \emph{request
+  lead} is how long before a block's first output sample leaves, measured on
+  the clock of the speaker's host, the playback device asks its host for the
+  block.
+\item One number of the prior: the \emph{shape} $\alpha > 0$
+  (\lean{shape}).
+\end{itemize}
+The weights of the cost (Section~\ref{sec:objectives}) are known to a
+solution as well: optimality is stated for given weights
+(Section~\ref{sec:optimality}).
+\end{definition}
+
+\begin{definition}[What a solution has to estimate]
+A member of the family is a choice of the following numbers
+(\lean{GenerativeWorld.\allowbreak Member}). A solution is not told them.
+\begin{itemize}
+\item For each pair of hosts $i$ and $j$, their least round-trip time
+  $\tau_{ij} = \tau_{ji} > 0$, in seconds (\lean{roundTrip}).
+\item For each direction from $i$ to $j$, the rate $\mu_{ij} \ge 0$ at
+  which packets of other traffic arrive on the link, in packets per second
+  (\lean{trafficRate}), and the mean time $\beta_{ij} > 0$ that the link
+  needs to carry one of them (\lean{trafficWork}), with
+  $\mu_{ij}\beta_{ij} < 1$.
+\item The spread $\sigma \ge 0$ of the mean rates of the clocks
+  (\lean{rateSpread}).
+\item For each host $i$, the size $\nu_i \ge 0$ and the time scale
+  $\vartheta_i > 0$ of the wander of its clock (\lean{wanderSize},
+  \lean{wanderTime}).
+\item The range $\theta_{\max} > 0$ of the clock offsets
+  (\lean{offsetRange}).
+\end{itemize}
+A member also fixes the readings $\xi$ and $\xi_r$ of their hosts' clocks
+at which the capture device and speaker $r$ start (\lean{captureStart},
+\lean{speakerStart}). They are not known before the devices start, and
+nothing about them has to be estimated: each host reads the start of its own
+device from the first timestamp that the device reports.
+\end{definition}
+
+\begin{definition}[The prior]
+The following are drawn at random, all independently of one another
+(\lean{GenerativeWorld.\allowbreak Draw},
+\lean{GenerativeWorld.\allowbreak Prior}).
+\begin{itemize}
+\item For each pair of distinct hosts $i$ and $j$, the \emph{split}
+  $u_{ij} \in (0, 1)$, with $u_{ji} = 1 - u_{ij}$ (\lean{split}). It has the
+  Beta law with both parameters equal to $\alpha$, whose density at
+  $x \in (0, 1)$ is proportional to $x^{\alpha - 1}(1 - x)^{\alpha - 1}$.
+\item For each host $i$, the offset $\theta_i$ of its clock, uniform on
+  $[-\theta_{\max}, \theta_{\max}]$ (\lean{offset}).
+\item For each host $i$, the logarithm $\gamma_i$ of the mean rate of its
+  clock, Gaussian with mean $0$ and standard deviation $\sigma$
+  (\lean{logRate}).
+\item For each host $i$, the wander $Z_i(t)$ of its clock: a stationary
+  Gaussian process with mean $0$, continuous in $t$, whose covariance
+  between true times $s$ and $t$ is $\nu_i^2\,e^{-|s - t|/\vartheta_i}$
+  (\lean{wander}).
+\item For each direction from $i$ to $j$, the other traffic of the link.
+  Packets arrive at the instants of a Poisson process of rate $\mu_{ij}$,
+  and each brings an independent, exponentially distributed amount of work
+  with mean $\beta_{ij}$. Write $W_{ij}(t)$ for the work that has arrived up
+  to true time $t$ (\lean{traffic}, \lean{trafficLaw}).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[The world built from a draw]
+The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
+\begin{itemize}
+\item The clock of host $i$ reads
+  \[
+    C_i(t) = \theta_i + \int_0^t e^{\gamma_i + Z_i(x)}\,dx
+  \]
+  at true time $t$ (\lean{Draw.reading}). Its rate
+  $e^{\gamma_i + Z_i(t)}$ is positive for every draw.
+\item The least delay from $i$ to $j$ is $u_{ij}\tau_{ij}$, and from $j$ to
+  $i$ it is $(1 - u_{ij})\tau_{ij}$. Both are positive for every draw
+  (\lean{Prior.leastDelay\_pos}) and they add up to $\tau_{ij}$
+  (\lean{Prior.leastDelay\_add}).
+\item The backlog of the link from $i$ to $j$ at true time $t$ is the work
+  of other traffic that the link has not yet carried. The link carries one
+  second of work per second while any is left, so the backlog is
+  \[
+    Q_{ij}(t) = \sup_{s \le t}\,\bigl(W_{ij}(t) - W_{ij}(s) - (t - s)\bigr)
+  \]
+  (\lean{Draw.IsBacklog}). A message sent at true time $s$ from $i$ to $j$
+  arrives at $s + u_{ij}\tau_{ij} + Q_{ij}(s)$. No message is lost.
+\item Every audio device runs on the clock of its host. Frame $n$ is
+  captured when the sender's clock reads $\xi + n/\rho$, and output sample
+  $k$ of speaker $r$ leaves when the clock of its host reads
+  $\xi_r + k/\rho$. Blocks hold $m$ frames or output samples. A capture
+  block is handed over when its last frame is captured. A playback block is requested $\lambda$ seconds, measured on
+  the host's clock, before its first output sample leaves. Timestamps are
+  exact, and the target latency of every frame is $L^*$.
+\end{itemize}
+A random world belongs to a member of the family when, in every outcome, it
+is the world built from a draw, and the draw has the law above
+(\lean{GenerativeWorld.\allowbreak Holds}).
+\end{definition}
+
+The split $u_{ij}$ measures the asymmetry of a pair of hosts. One half is a
+symmetric pair, and no pair is assumed symmetric. For $\alpha = 1$ the least
+delay of one direction is uniform between zero and the round trip; as
+$\alpha$ grows, the two directions become equal. A solution is given no
+time scale, so the asymmetry of a pair is stated as a share of a quantity
+that the solution can measure, the pair's least round-trip time. The law of
+a split does not prefer a direction: one minus a split has the same law
+(\lean{betaMeasure\_map\_one\_sub}).
+
+A number belongs to the member, and is not drawn, only if a solution can
+learn it from what it observes.
+The offsets and the splits cannot be learned exactly: two hosts that
+exchange messages observe the difference of their offsets plus
+$(u_{ij} - \tfrac12)\,\tau_{ij}$, never the two terms apart, and no host
+observes true time. Around a closed loop of links the offsets cancel, so
+the sum of these terms around the loop is observed. The offsets and the
+splits are therefore drawn. If they were numbers of the member, a solution
+designed for one member would know them and play without error, and no
+solution would be optimal in the sense of Section~\ref{sec:optimality}. Two
+numbers of the member are exceptions, because they describe the laws of quantities
+that cannot be learned: the range $\theta_{\max}$ of the offsets and the
+spread $\sigma$ of the mean rates. The margin of an optimality statement
+has to carry its dependence on them.
+
+The law of the work that arrives is a probability law
+(\lean{trafficLaw\_univ}), and no traffic brings no work
+(\lean{trafficLaw\_zero}). The model is not empty
+(\lean{GenerativeWorld.\allowbreak example\_\allowbreak holds}): there is a
+random world of the model with three hosts in which the splits, the offsets
+and the mean rates are random. Its member has no other traffic and no
+wander, $\mu_{ij} = 0$ and $\nu_i = 0$. A random world with other traffic
+needs a Poisson process, and one with wander needs a stationary Gaussian
+process with continuous paths. Both exist by standard constructions, which
+are not carried out in Lean, so the model is not yet shown to have such
+members. The generative model is not proved to belong to the classes above;
+its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
+
+\paragraph{Limitations.}
+The model leaves out, or simplifies, the following. Each item says what the
+simplification distorts.
+\begin{itemize}
+\item \emph{Jitter of different links is independent}, including the two
+  directions of one pair. Real links that share a host share its network
+  stack and its scheduler, and links on one switch or access point share
+  its queue and its radio channel. The model overstates what combining
+  several paths gains, and it misses that a delay common to all receivers
+  harms synchronization little.
+\item \emph{The splits of different pairs are independent.} Part of a real
+  pair's asymmetry belongs to a host, whose sending path differs from its
+  receiving path, or to a shared switch, and is common to several pairs.
+  That part cancels around every closed loop of links, so no exchange of
+  messages reveals it. The model overstates how much messages between
+  receivers reduce the error.
+\item \emph{Every pair has the same law for its split}, symmetric about one
+  half and independent of the round trip. Real asymmetry need not be
+  proportional to the round trip, and some links favour one direction.
+\item \emph{Clocks of different hosts are independent.} Hosts in one room
+  share changes of temperature. A common change of rate does not affect the
+  relative timing of the hosts.
+\item \emph{Least delays never change.} Real routes and wireless
+  transmission rates change. A solution that is optimal for the model
+  becomes ever more certain of a least delay and has no reason to notice
+  that it has changed.
+\item \emph{The numbers of a member never change.} Real traffic follows the time
+  of day. The expectation that a solution can learn them rests
+  on learning them once.
+\item \emph{Hosts never join, leave or restart.}
+\item \emph{A message finds its link idle with positive probability}, so the
+  exact least delay is observed, and often. On a real wireless link even an
+  idle channel adds a random delay. The model overstates how fast least
+  delays are learned.
+\item \emph{Other traffic is a Poisson process, and the backlog has a tail
+  that falls exponentially.} Real traffic comes in bursts on many time
+  scales, and occasional delays are far longer.
+\item \emph{No message is lost, held back, reordered or duplicated.}
+\item \emph{The messages of a solution are free}: they add no work to a
+  link, and nothing limits their number.
+\item \emph{The wander of a clock has one time scale and is stationary.}
+  Real oscillators also age, have noise with long memory, and shift as a
+  device warms up.
+\item \emph{Every audio device runs on the clock of its host and reports
+  exact timestamps.} Most real devices have their own oscillator and inexact
+  timestamps. Estimating the clock of a device against that of its host is
+  a second estimation problem, which the model omits. A constant error in
+  the time that a device reports for its output can be observed by no host,
+  like asymmetry.
+\item \emph{No host can check the shape $\alpha$.} Every result under the
+  model depends on it and has to say how it changes when $\alpha$ is wrong.
+\end{itemize}
+
+\section{Optimality in expected cost}\label{sec:optimality}
+
+When the world is random, a solution is judged by its expected cost: the
+mean of its cost $J$ (Section~\ref{sec:objectives}) over the worlds that a
+probability measure draws (\lean{Solution.\allowbreak expectedCost}). The
+definitions are in \path{lean/Unisono/Spec/Optimality.lean}.
+
+\begin{definition}[Optimal within a margin]
+Let a model be a family of sets of random worlds, one set for each value $f$
+of an index (\lean{RandomWorlds}), and let a class of solutions be given
+(\lean{SolutionClass}). Write $\mathbb{E}\,J(\sigma)$ for the expected cost
+of a solution $\sigma$ in a random world. A solution $\sigma$ of the class
+is \emph{optimal within the margin} $\varepsilon$, where
+$\varepsilon(f) \ge 0$ for each $f$, if for every $f$, every random world of
+the set of $f$ and every solution $\tau$ of the class,
+\[
+  \mathbb{E}\,J(\sigma) \le \mathbb{E}\,J(\tau) + \varepsilon(f)
+\]
+(\lean{OptimalWithin}). With $\varepsilon = 0$, no solution of the class has
+a lower expected cost in any of these random worlds.
+\end{definition}
+
+For the generative world, the index $f$ is the member: the numbers that a
+solution is not told (\lean{GenerativeWorld.\allowbreak laws}). The margin may
+depend on the member, because a cost in seconds squared cannot have one
+margin for networks of all sizes. Two solutions that are both optimal with
+no margin have the same expected cost
+(\lean{OptimalWithin.\allowbreak expectedCost\_eq}).
+
+\begin{remark}[Means, not outcomes]
+The comparison is between means. In one world a solution with a larger
+expected cost can still cost less, as a decision that is right on average
+can still turn out badly. The definition gives no guarantee for one
+network: a network whose asymmetry lies in the tail of the law does worse
+than the mean, and no host can tell.
+\end{remark}
+
+\begin{remark}[What the solution knows]
+The weights $w$ of the cost and the lookahead $a$ of the resampler come
+first: a solution is designed for them and may depend on them, and a
+statement of optimality is about one choice of them. The solution $\sigma$
+is fixed before the member $f$ and the random world are chosen, so beyond
+the weights it uses only what the model tells every solution. The
+solution $\tau$ is chosen afterwards and may be designed for that one
+member. A solution that is optimal in this sense therefore does as well as
+one that is told the numbers of the member. This can hold only when the cost is a
+long-run average and those numbers can be learned from what a host
+observes; then the cost of learning them is a share of the average that
+vanishes. For the generative world this is an expectation that has not been
+proved. A cost that counted the time to start up would make a solution that
+is told those numbers strictly better, and optimality would then need a
+law for them as well.
+\end{remark}
+
+\begin{remark}[The class of solutions]
+The class \lean{allSolutions} compares all solutions. A statement about a
+smaller class has to name it. A speaker that does not play a frame adds
+nothing to that frame's synchronization and tracking costs, so with
+$w_M = 0$ a solution that plays nothing has cost zero and is optimal. A
+statement about synchronization and tracking alone therefore needs either
+$w_M > 0$ or a class of solutions that play every frame.
+\end{remark}
+
+No solution is proved optimal in this sense yet.
 
 \section{Communication topologies and fundamental limits}\label{sec:limits}
 

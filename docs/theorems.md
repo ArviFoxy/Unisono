@@ -1,6 +1,6 @@
 # The theorems
 
-All 455 theorems indexed below live in `lean/Unisono` and are checked in
+All 464 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -10,7 +10,7 @@ The proofs fall into three groups:
 
 1. **Formal specification, models, topologies, and fundamental limits**
    (`Unisono.Spec.*`, plus the abstract reference solution
-   `Unisono.Solutions.FixedDelay`): definitions of the problem, the five
+   `Unisono.Solutions.FixedDelay`): definitions of the problem, the six
    approved world models, communication topologies, and impossibility and
    separation theorems in the official framework (`docs/specification.tex`).
 2. **Supplementary analytical results** (`Unisono.Model.*`,
@@ -48,7 +48,7 @@ argument, whether or not reachable in a run.
 | `Spec.Solution.views_succ`, `views_append`, `handled_before`, `handled_of_mem_views`, `handled_time`, `handled_of_views_eq`, `exists_handed_step`, `askedNext_mono`, `askedNext_succ`, `exists_asked_step`, `plays_of_asked_step`, `handled_of_asked`, `handled_asked`, `no_request_between`, `Solution.progress` | Structural run invariants connecting host views, handled events, playback-block requests, playback decisions, and sufficient conditions for non-Zeno progress. |
 | `Spec.longRun_le`, `missed_eq_zero`, `discontinuities_eq_zero`, `meanLatency_le`, `sync_le`, `tracking_le` | Linear accrual bounds long-run averages; any playback within `E` of fixed latency `L` from some sample onward has zero long-run missed samples and discontinuities, mean latency at most `L + E + δ`, synchronization cost at most `(E + δ)²`, and tracking cost at most `(D + E + δ)²`, where `δ` bounds output sample spacing and `D` bounds `|L* - L|` for target latency `L*`. |
 
-### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld}`)
+### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld}`)
 
 | Theorem | Model | What it says |
 |---|---|---|
@@ -58,6 +58,7 @@ argument, whether or not reachable in a run.
 | `Spec.Link.deliver_after`, `StationaryNetworkDisturbances.example_holds` | `StationaryNetworkDisturbances` | Positive baseline and nonnegative per-packet jitter ensure every delivered message arrives strictly after send time; the model class is non-empty. |
 | `Spec.ClockNoise.density_nonneg`, `secondDifferenceCovariance_integrableOn`, `secondDifferenceCovariance_diag_le`, `SecondOrderMoments.example_holds` | `SecondOrderMoments` | The band-limited IEEE Std 1139-2008 power-law one-sided frequency-noise spectral density `S(f)` is nonnegative and yields convergent phase second-difference covariances bounded by `4 τ² ∫ S(f) df` at every lag `τ`; a three-host witness with nonzero uncorrelated per-packet link jitter proves satisfiability. |
 | `Spec.StochasticWorld.Holds.network_random`, `StochasticWorld.example_holds` | `StochasticWorld` | Every composite stochastic world satisfies `StationaryNetworkDisturbances.Random`; the composite model class is non-empty. |
+| `Spec.GenerativeWorld.Prior.leastDelay_pos`, `Prior.leastDelay_add`, `trafficLaw_univ`, `trafficLaw_zero`, `betaPDF_one_sub`, `betaMeasure_map_one_sub`, `betaMeasure_compl_Ioo`, `GenerativeWorld.example_holds` | `GenerativeWorld` | In every outcome both least delays of a pair of hosts are positive and add up to the pair's least round-trip time; the law of the work that other traffic brings to a link is a probability law, and no traffic brings no work; the Beta law of a split gives no mass outside `(0, 1)` and is the same for a split and for one minus it, so it prefers no direction; a random world with three hosts, random splits, clock offsets and mean clock rates, no other traffic and no wander satisfies the model. |
 
 ### 1.3 Communication topologies, modal split, and shift invariance (`Spec.Topologies`)
 
@@ -90,6 +91,17 @@ production core) proved end to end under `World.WithinBounds`:
 | `Solutions.FixedDelay.block_arrives`, `origin_inFlight`, `replicate_copies`, `query_inFlight`, `answer_inFlight`, `query_answered`, `answer_reaches`, `offset_sample`, `block_handled`, `block_memory`, `offset_recent`, `exists_block_of_frame`, `frame_held`, `playable_of_captured` | Message delivery, query-answer timing, and frame playability under `World.WithinBounds` when message repetition exceeds the consecutive-loss bound `lossRun`. |
 | `Solutions.FixedDelay.progress`, `asked_gap`, `handed_gap`, `request_step`, `last_at_next_request`, `advance_tracks`, `advance_converges`, `target_time_error`, `captured_nominal`, `captured_target`, `target_band`, `exists_last_below`, `exists_block_of_sample`, `trajectory_step`, `plays_eq_chosen`, `targetError_mono`, `late_targets` | Non-Zeno progress, bounded inter-event gaps, clock-estimate freshness, and slew convergence into the target latency band. |
 | `Solutions.FixedDelay.speaker_at_latency`, `plays_at_latency`, `guarantees`, `plays_at_latency_example` | From some output sample onward, every speaker plays continuously within `latencyError` of `L`, yielding zero long-run missed samples and discontinuities and explicit bounds on mean latency, synchronization, and tracking; `plays_at_latency_example` exhibits a two-host world meeting all hypotheses. |
+
+### 1.6 Optimality in expected cost (`Spec.Optimality`)
+
+`OptimalWithin` defines what it means for a solution to be optimal within a
+margin: its expected cost exceeds that of no other allowed solution by more
+than the margin, in every random world of every member of a family of laws.
+No solution is proved optimal yet.
+
+| Theorem | What it says |
+|---|---|
+| `Spec.OptimalWithin.expectedCost_eq` | Two solutions that are both optimal with no margin have the same expected cost in every random world of every member. |
 
 ## 2. Supplementary analytical results
 
@@ -313,9 +325,10 @@ rather than a proof about the runtime threads.
    inputs. No theorem currently connects a run of `Core.solution` to any of the
    six `Unisono.Spec.Objectives` in any model (`IdealConstantWorld`,
    `World.WithinBounds`, `StationaryNetworkDisturbances`,
-   `SecondOrderMoments`, or `StochasticWorld`).
+   `SecondOrderMoments`, `StochasticWorld`, or `GenerativeWorld`).
 2. **Unused stochastic world hypotheses:** no theorem in the repository
-   currently takes `SecondOrderMoments` or `StochasticWorld` as a hypothesis;
+   currently takes `SecondOrderMoments`, `StochasticWorld` or `GenerativeWorld`
+   as a hypothesis;
    constructing a random strictly increasing `Clock` with nonzero `ClockNoise`
    also remains open.
 3. **`WithinSpeed` and `ideal_zero_cost_objectives` boundaries:**
@@ -357,3 +370,12 @@ rather than a proof about the runtime threads.
    machine-code inspection (`crates/reachable`, `crates/cycle-cost`), and
    container tests against PipeWire and Advanced Linux Sound Architecture
    (ALSA).
+7. **Optimality in expected cost under `GenerativeWorld`:** no solution is
+   proved optimal (`OptimalWithin`), and no lower bound on expected cost is
+   proved under the model. The model is shown non-empty only for a member
+   with no other traffic and no clock wander; a random world with other
+   traffic needs a Poisson process and one with wander needs a stationary
+   Gaussian process with continuous paths, and neither is constructed in
+   Lean. The expectation that a solution loses nothing in the long run by not
+   being told the numbers of its member is not proved. The generative
+   model is not shown to belong to the model classes above.

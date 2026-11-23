@@ -38,6 +38,10 @@ simulation and integration tests (see `PRINCIPLES.md`):
     separation directly in `Unisono.Spec` (`lean/Unisono/Spec/Limits.lean`),
     plus end-to-end objective bounds for the abstract real-valued reference
     `Unisono.Solutions.FixedDelay` under `World.WithinBounds`.
+  - The definition of optimality in expected cost (`OptimalWithin` in
+    `lean/Unisono/Spec/Optimality.lean`) and the generative model
+    `GenerativeWorld`, with checks of its definitions and a random world that
+    satisfies it (a member with no other traffic and no clock wander).
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
@@ -50,7 +54,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
   - No theorem currently connects a run of `Core.solution` to any of the six
     `Unisono.Spec.Objectives` in any model (including `IdealConstantWorld`,
     `World.WithinBounds`, `StationaryNetworkDisturbances`,
-    `SecondOrderMoments`, and `StochasticWorld`).
+    `SecondOrderMoments`, `StochasticWorld`, and `GenerativeWorld`).
+  - No solution is proved optimal in expected cost (`OptimalWithin`) under
+    `GenerativeWorld`, and no lower bound on expected cost is proved under it.
+    The model is shown non-empty only for a member with no other traffic and
+    no clock wander; random worlds with either are not yet constructed in
+    Lean. The expectation that a solution loses nothing in the long run by
+    not being told the numbers of its member is not proved.
   - Unconditional `Solution.WithinSpeed` across all block boundaries (including
     silence restarts and arbitrary `jump` values) for `Core.solution` remains
     open.
@@ -156,8 +166,8 @@ individual packet drops.
 
 ## Models
 
-All formal specification results are stated under one of the five approved
-model classes in `lean/Unisono/Spec/Models` (see `PRINCIPLES.md` and
+All formal specification results are stated under one of the six approved
+models in `lean/Unisono/Spec/Models` (see `PRINCIPLES.md` and
 `docs/specification.tex`):
 
 | Model | Scope | Description | Motivation | File |
@@ -167,12 +177,13 @@ model classes in `lean/Unisono/Spec/Models` (see `PRINCIPLES.md` and
 | `StationaryNetworkDisturbances` | Probabilistic network-only | Per-directed-link $(i, j)$ slow Lipschitz baseline, nonnegative per-packet jitter $(u, q)$ reaching arbitrarily close to zero with exponential upper tails, pause and outage episode arrival rates and finite-mean length distributions, individual drop probabilities $< 1$, and joint stationarity and mixing across all links (no cross-link independence assumed). | Captures tail delays, pauses, outages, and heterogeneous wired/wireless topologies that govern missed samples, discontinuities, and playout latency selection. | [`lean/Unisono/Spec/Models/Delays.lean`](lean/Unisono/Spec/Models/Delays.lean) |
 | `SecondOrderMoments` | Probabilistic moment model (continuous timing noise) | Square-integrable host clocks and audio devices following band-limited IEEE Std 1139-2008 power-law frequency noise (white $h_0$, flicker $h_{-1}/f$, and random-walk $h_{-2}/f^2$ over Fourier frequency $f \in [f_{\mathrm{lo}}, f_{\mathrm{hi}}]$), additive per-packet link jitter ($J^{\mathrm{tx}}_i + J^{\mathrm{rx}}_j + J^{\mathrm{own}}_{ij}$) with unconstrained transmit/receive cross-correlations, and white device timestamp errors. | Captures first- and second-moment structure—including shared host-stack and wireless-medium jitter correlations and co-located oscillators—driving synchronization, tracking, and roughness. | [`lean/Unisono/Spec/Models/SecondOrder.lean`](lean/Unisono/Spec/Models/SecondOrder.lean) |
 | `StochasticWorld` | Probabilistic composite full-world | Combines `StationaryNetworkDisturbances` and `SecondOrderMoments` over a shared per-link decomposition, together with deterministic capture-handoff, playback-request-lead, and block-size bounds across every realization. | Complete probabilistic model class for stating end-to-end expected-cost theorems on `Unisono.Spec.Objectives`. | [`lean/Unisono/Spec/Models/StochasticWorld.lean`](lean/Unisono/Spec/Models/StochasticWorld.lean) |
+| `GenerativeWorld` | Probabilistic full-world with a prior (a family of laws) | A solution is told the hosts, the settings of the devices and of the application (nominal rate, block size, request lead, target latency) and one number of the prior, the shape $\alpha$; the weights of the cost are known to it as well. Drawn at random, all independently: each pair's split of its least round-trip time between the two directions (Beta law with both parameters $\alpha$, so both least delays are positive), each clock's offset (uniform), mean rate (log-normal) and wander (stationary Gaussian with exponentially falling covariance), and each directed link's other traffic (Poisson arrivals, exponentially distributed work; a message waits for the link's backlog). Not told, to be estimated by a solution: least round-trip times, traffic rates and work, the spread and stability of clock rates, and the range of offsets. Devices run on their host's clock with exact timestamps; no message is lost. | Gives the world a probability law, so that expected cost is a number and optimality (`OptimalWithin` in `lean/Unisono/Spec/Optimality.lean`) can be stated; estimating everything a solution is not told is part of the problem. Its limitations (independent links and pairs, constant least delays, ideal audio devices, no loss) are listed in `docs/specification.tex`. | [`lean/Unisono/Spec/Models/GenerativeWorld.lean`](lean/Unisono/Spec/Models/GenerativeWorld.lean) |
 
 Supplementary component and centralized/oracle analyses live in
 `lean/Unisono/Model/` and `lean/Unisono/Analysis/` (`Estimation.lean`,
 `Level.lean`, `ModalControl.lean`, `Spectral.lean`); each states its
 simplified setting explicitly and supplements, rather than replaces, proofs in
-`Unisono.Spec` under the five approved models above.
+`Unisono.Spec` under the six approved models above.
 
 ## Layout
 
