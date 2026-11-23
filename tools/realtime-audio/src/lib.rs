@@ -2,11 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The cycles of the audio threads, each behind a function of its own, for
-//! `tools/realtime.sh` to inspect: the receiver's playback cycle, which takes
-//! in what the network thread handed over, plans, resamples and conceals,
-//! and the sender's capture cycle, which hands frames to the network thread.
-//! The sizes are those of the program.
+//! Exported `cdylib` wrappers for audio-thread playback and capture cycles
+//! audited by `tools/realtime.sh` for allocation-, panic-, and syscall-free
+//! machine code.
 
 // The entry points are named for the inspection, not for a caller in C.
 #![allow(improper_ctypes_definitions)]

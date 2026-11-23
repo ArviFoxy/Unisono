@@ -2,13 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Prints what stamps this host gives to datagrams on the loopback
-//! interface, and how tight they are: where the stamps of arrivals and
-//! departures come from, the error that the conversion to the raw clock
-//! states, and the transit of a datagram by the kernel's stamps and by the
-//! program's own.
+//! Diagnostic tool measuring loopback UDP RX/TX timestamp provenance,
+//! clock-conversion error bounds, and kernel vs. userspace transit latency.
 //!
-//! Run it with `cargo run --release --example stamps -p unisono-runtime`.
+//! Run with `cargo run --release --example stamps -p unisono-runtime`.
 
 use std::io;
 use std::net::SocketAddr;

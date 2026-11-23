@@ -2,8 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The program's metrics, and the address that serves them in the
-//! Prometheus text format.
+//! Prometheus metrics definitions and HTTP text-format exporter for `unisono`.
 
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -12,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use unisono_metrics::{CONTENT_TYPE, Counter, FloatGauge, RegistrationError, Registry};
+use unisono_metrics::{CONTENT_TYPE, Counter, FloatGauge, Gauge, RegistrationError, Registry};
 
 /// Maximum total time spent reading one HTTP request header.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(2);
@@ -91,7 +90,7 @@ impl Metrics {
         })
     }
 
-    /// A gauge of its own family.
+    /// A floating-point gauge of its own family.
     pub(crate) fn gauge(
         &mut self,
         name: &str,
@@ -99,6 +98,12 @@ impl Metrics {
     ) -> Result<FloatGauge, RegistrationError> {
         let family = self.registry.float_gauge_family(name, help, &[])?;
         self.registry.float_gauge(family, &[])
+    }
+
+    /// An integer gauge of its own family.
+    pub(crate) fn int_gauge(&mut self, name: &str, help: &str) -> Result<Gauge, RegistrationError> {
+        let family = self.registry.gauge_family(name, help, &[])?;
+        self.registry.gauge(family, &[])
     }
 
     /// Serves the metrics at `address`, on a thread of its own, to every

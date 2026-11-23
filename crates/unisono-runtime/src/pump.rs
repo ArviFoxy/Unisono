@@ -2,31 +2,29 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! From the core's plan for a cycle to the frames that a device plays.
+//! Audio playback pipeline translating core playback plans into resampled PCM.
 //!
-//! For each cycle of a device the core's receiver says where in the stream
-//! the cycle's output frames are taken: a starting position and a step from
-//! one output frame to the next. The [`Pump`] does the rest. It takes the
-//! frames of the stream that those positions need from the receiver, in
-//! order, each exactly once: frames that are held come from the [`Store`],
-//! frames that are missing are made by the concealment. It keeps the few
-//! frames behind the receiver's playhead that the resampler's filter still
-//! reaches back to, and the resampler computes the output from them.
+//! Each device cycle, `unisono_core::receiver::Receiver` returns a [`Plan`]
+//! giving the starting fractional stream position and per-sample step.
+//! [`Pump`] advances the receiver playhead strictly monotonically, pulls
+//! available frames from [`Store`], synthesizes missing frames via
+//! [`Concealment`], maintains the FIR resampler lookbehind window, and renders
+//! output samples via [`Resampler`].
 //!
-//! A plan can start where the cycle before did not end: the receiver jumps
-//! when its position is too far from the schedule. Then the kept frames are
-//! dropped. Ahead, the frames in between are skipped. Back, nothing is
-//! played twice: frames behind the playhead are never given again, so the
-//! pump plays silence until the position has reached the playhead.
+//! On a discontinuous jump (`plan.jumped`), the resampler window is flushed:
+//! jumping forward skips intervening frames; jumping backward outputs silence
+//! until the position catches up to the monotonic playhead so frames are never
+//! replayed twice.
 //!
-//! [`ReceiverPlayback`] ties a receiver, its store and its pump together
-//! behind the [`Playback`] interface of an audio device.
+//! [`ReceiverPlayback`] wraps `Receiver`, `Store`, and `Pump` behind the
+//! real-time [`Playback`] trait.
 
 use unisono_core::device::Device;
 use unisono_core::needs::Needs;
 use unisono_core::packet::{Audio, Echo, RECENT, Recent, Report};
-use unisono_core::player::{Plan, Regulation};
+use unisono_core::player::{ModalRegulation, Plan, Regulation};
 use unisono_core::receiver::{self, Heard, Receiver};
+use unisono_core::sync::SyncSnapshot;
 use unisono_core::timing;
 use unisono_dsp::{Concealment, Filter, Parameters, Position, Resampler, Step, Window};
 
@@ -573,6 +571,31 @@ impl Pump {
     }
 }
 
+/// Shipped receiver silence timeout before adopting a new timeline, in ns.
+pub const SHIPPED_SILENCE_NS: i64 = 1_000_000_000;
+
+/// Shipped receiver clock-estimator slope limit, in ns/s.
+pub const SHIPPED_SLOPE_LIMIT: i64 = 200_000;
+
+/// Shipped single-mode regulator gain in Q16 (`4.0 / s`).
+pub const SHIPPED_REGULATION_GAIN: u32 = 4 << 16;
+
+/// Shipped playback pace limit, in ppb (`1000 ppm`).
+pub const SHIPPED_REGULATION_LIMIT: u32 = 1_000_000;
+
+/// Shipped pump resampling sub-block size, in output frames.
+pub const SHIPPED_BLOCK: usize = 256;
+
+/// Shipped accepted audio-device clock-rate deviation, in ppb (`1%`).
+pub const SHIPPED_DEVICE_RANGE: u32 = 10_000_000;
+
+/// Shipped default playback request lead, in nanoseconds (`4 ms`).
+pub const SHIPPED_LEAD_NS: i64 = 4_000_000;
+
+/// Shipped receiver playback dimensions: 16,384 held frames (`256 * 64`),
+/// 64 lower-hull clock samples, 8 packet-arrival slots, and 64 device reports.
+pub type ShippedPlayback = ReceiverPlayback<256, 64, 8, 64>;
+
 /// What a receiver that plays on a device is set up with.
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
@@ -591,8 +614,13 @@ pub struct Settings {
     /// The largest slope of the receiver's estimate of the sender's clock,
     /// in nanoseconds per second.
     pub slope_limit: i64,
-    /// The settings of the receiver's regulator.
+    /// The settings of the receiver's single-mode regulator (used in legacy
+    /// lower-hull mode and as the fallback when `modal_regulation` is `None`).
     pub regulation: Regulation,
+    /// Optional two-mode (`ModalPlayer`) regulation used when [`SyncSnapshot`]
+    /// clock estimation is enabled (`--sync peer`, default). `None` selects the
+    /// legacy one-way lower-hull clock estimator (`--sync hull`).
+    pub modal_regulation: Option<ModalRegulation>,
     /// The sizes of the concealment.
     pub concealment: Parameters,
     /// The most output frames that are computed in one go.
@@ -605,6 +633,40 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Builds the shipped validated receiver [`Settings`] shared by the CLI, C
+    /// library, and simulator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any field violates [`Settings::validate`].
+    pub fn shipped(
+        stream: u16,
+        rate: u32,
+        channels: u8,
+        identity: u64,
+        modal_regulation: Option<ModalRegulation>,
+    ) -> Result<Settings, InvalidSettings> {
+        let settings = Settings {
+            stream,
+            rate,
+            channels,
+            identity,
+            silence: SHIPPED_SILENCE_NS,
+            slope_limit: SHIPPED_SLOPE_LIMIT,
+            regulation: Regulation {
+                gain: SHIPPED_REGULATION_GAIN,
+                limit: SHIPPED_REGULATION_LIMIT,
+                jump: (rate / 200).max(1),
+            },
+            modal_regulation,
+            concealment: Parameters::for_rate(rate),
+            block: SHIPPED_BLOCK,
+            device_range: SHIPPED_DEVICE_RANGE,
+        };
+        settings.validate()?;
+        Ok(settings)
+    }
+
     /// Validates that rate, channels, silence timeout, clock slope limit,
     /// regulator jump threshold, and block size satisfy runtime invariants.
     ///
@@ -629,6 +691,13 @@ impl Settings {
         if self.regulation.jump == 0 {
             return Err(InvalidSettings::new(
                 "regulator jump threshold must be at least 1 frame",
+            ));
+        }
+        if let Some(modal) = self.modal_regulation
+            && modal.jump == 0
+        {
+            return Err(InvalidSettings::new(
+                "modal regulator jump threshold must be at least 1 frame",
             ));
         }
         if self.block == 0 {
@@ -657,8 +726,8 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     device: Device<W>,
     /// How far its rate may be from the nominal one, in parts per billion.
     device_range: u32,
-    /// Whether the delay of the path was told, so that it is not measured.
-    told: bool,
+    /// Explicit fixed path delay override (`--path`), if configured.
+    told_path: Option<i64>,
     /// Whether at least one playback cycle has played frames on the current
     /// timeline (so `playhead` tracks the schedule rather than the initial
     /// adoption index).
@@ -683,14 +752,18 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     #[must_use]
     pub fn new(settings: &Settings) -> Self {
         let channels = usize::from(settings.channels);
+        let mut receiver = Receiver::new(receiver::Settings {
+            stream: settings.stream,
+            identity: settings.identity,
+            silence: settings.silence,
+            limit: settings.slope_limit,
+            regulation: settings.regulation,
+        });
+        if let Some(modal) = settings.modal_regulation {
+            receiver.enable_sync(modal);
+        }
         ReceiverPlayback {
-            receiver: Receiver::new(receiver::Settings {
-                stream: settings.stream,
-                identity: settings.identity,
-                silence: settings.silence,
-                limit: settings.slope_limit,
-                regulation: settings.regulation,
-            }),
+            receiver,
             store: Store::for_stretch(N, channels),
             pump: Pump::new(
                 Filter::for_rate(settings.rate),
@@ -701,7 +774,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             needs: Needs::new(),
             device: Device::new(settings.rate),
             device_range: settings.device_range,
-            told: false,
+            told_path: None,
             timeline_played: false,
             revisions: Revisions::default(),
             expected: None,
@@ -732,12 +805,27 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         &self.receiver
     }
 
+    /// Enables [`unisono_core::sync::Sync`]-driven playback regulation with
+    /// `regulation`.
+    pub fn enable_sync(&mut self, regulation: ModalRegulation) {
+        self.receiver.enable_sync(regulation);
+    }
+
+    /// Applies an O(1) clock synchronization snapshot published from the
+    /// network thread, preserving any explicit fixed path delay override.
+    pub fn apply_sync(&mut self, snapshot: SyncSnapshot) {
+        self.receiver.apply_sync(snapshot);
+        if let Some(path) = self.told_path {
+            self.receiver.path(path);
+        }
+    }
+
     /// Tells the receiver the smallest delay of a packet from the sender, in
     /// nanoseconds. A receiver that is told it keeps it: the sender's
     /// answers to its reports are no longer taken in.
     pub fn path(&mut self, path: i64) {
         self.receiver.path(path);
-        self.told = true;
+        self.told_path = Some(path);
     }
 
     /// Makes the next report to send back to the sender, or `None` when no
@@ -762,7 +850,7 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
     /// Takes in the sender's answer to a report, from which the delay of
     /// the path is measured, unless that delay was told.
     pub fn echo(&mut self, echo: &Echo) {
-        if !self.told {
+        if self.told_path.is_none() {
             self.receiver.echo(echo);
         }
     }
@@ -955,6 +1043,7 @@ mod tests {
                 limit: 1_000_000,
                 jump: 240,
             },
+            modal_regulation: None,
             concealment: Parameters::for_rate(rate),
             block: 256,
             device_range: 10_000_000,
@@ -1080,6 +1169,7 @@ mod tests {
                 limit: 1_000_000,
                 jump: 240,
             },
+            modal_regulation: None,
             concealment: Parameters::for_rate(48_000),
             block: 256,
             device_range: 10_000_000,

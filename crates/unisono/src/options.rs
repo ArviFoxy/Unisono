@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The command line: options of the form `--name value`, each at most once
-//! unless it is said to repeat.
+//! Minimal CLI flag parser supporting `--name value` single and repeatable
+//! options.
 
 use std::collections::HashMap;
 use std::fmt;

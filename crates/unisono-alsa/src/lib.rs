@@ -2,33 +2,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! ALSA as an audio system for unisono.
+//! ALSA audio backend implementing [`Playback`] and [`Capture`].
 //!
-//! [`play`] opens an ALSA device and plays on it what a [`Playback`] gives,
-//! and [`capture`] opens one and hands what it captures to a [`Capture`].
-//! Each runs a thread of its own that waits for the device, cycle after
-//! cycle, and asks the system to schedule it ahead of ordinary threads.
-//! Nothing else of unisono knows ALSA: the program uses this crate only
-//! when it is built with it.
+//! [`play`] and [`capture`] open an ALSA PCM device and spawn a dedicated
+//! real-time-scheduled thread that drives audio callbacks on each period.
+//! No other crate depends on ALSA directly.
 //!
-//! # Times
+//! # Timestamping
 //!
-//! Before each cycle the device is asked for its state: how many frames lie
-//! between the program and the converter, and when that was so. A playback
-//! device says how many frames are written and not yet played, so the first
-//! frame that is written now leaves the device that many frames after the
-//! time of the state. A capture device says how many frames are captured
-//! and not yet read, so the first frame that is read now was captured that
-//! many frames before the time of the state. The count of frames that goes
-//! with a time is the number of frames written, or read, so far.
+//! Before each period, the backend queries `snd_pcm_status` for the hardware
+//! delay and timestamp. For playback, the first newly written frame leaves
+//! the DAC `delay` frames after the status timestamp; for capture, the first
+//! newly read frame entered the ADC `delay` frames before the status
+//! timestamp.
 //!
-//! The device is asked to give its times on the raw clock, which unisono
-//! times everything by. One that gives them on the monotonic or system clock
-//! has them converted through a typed [`Tracker`]; one that gives no time has
-//! the raw clock read in its place.
-//!
-//! Samples are 32-bit floats, interleaved; a device that takes another
-//! format is opened through ALSA's `plug` device, which converts.
+//! The backend requests `CLOCK_MONOTONIC_RAW` timestamps from ALSA, converts
+//! `CLOCK_MONOTONIC` or `CLOCK_REALTIME` fallback timestamps through a typed
+//! [`Tracker`], and falls back to reading `CLOCK_MONOTONIC_RAW` directly if
+//! the driver supplies no timestamp. Interleaved `f32` samples are used;
+//! devices requiring format conversion are opened via ALSA's `plug` layer.
 
 use std::fmt;
 use std::sync::atomic::{AtomicBool, Ordering};

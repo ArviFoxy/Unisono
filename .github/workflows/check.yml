@@ -212,7 +212,7 @@ jobs:
 
   proofs:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
@@ -228,30 +228,26 @@ jobs:
               | sh -s -- -y --default-toolchain none
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
-      # The Lean library of Aeneas is built from source and takes long without this.
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            .tools/aeneas
-            lean/.lake
-          key: proofs-${{ runner.os }}-${{ hashFiles('tools/proof-tools.sh', 'lean/lean-toolchain', 'lean/lakefile.toml', 'lean/lake-manifest.json') }}
-      - run: just prove translation-check
-
-  translation:
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: extractions/setup-just@53165ef7e734c5c07cb06b3c8e7b647c5aa16db3 # v4
-      - name: Install opam
-        run: sudo apt-get -o Acquire::Retries=5 update && sudo apt-get -o Acquire::Retries=5 install --yes opam libgmp-dev pkg-config
+      # Cache built Charon/Aeneas, opam, and Lake artifacts (including Aeneas's
+      # Lean library) so proof runs generate UnisonoCore directly without
+      # checking generated Lean files into git.
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .tools/aeneas
             ~/.opam
-          key: translation-${{ runner.os }}-${{ hashFiles('tools/proof-tools.sh') }}
-      - run: just translation
+            lean/.lake
+          key: proofs-${{ runner.os }}-${{ hashFiles('tools/proof-tools.sh') }}-${{ hashFiles('lean/lean-toolchain', 'lean/lakefile.toml', 'lean/lake-manifest.json') }}
+          restore-keys: |
+            proofs-${{ runner.os }}-${{ hashFiles('tools/proof-tools.sh') }}-
+      - name: Install opam when Aeneas needs building
+        run: |
+          rev="$(sed -n 's/^AENEAS_REV=//p' tools/proof-tools.sh)"
+          if [ ! -x .tools/aeneas/bin/aeneas ] || [ ! -x .tools/aeneas/charon/bin/charon ] || [ "$(cat .tools/aeneas/.built-commit 2>/dev/null || true)" != "$rev" ]; then
+            sudo apt-get -o Acquire::Retries=5 update
+            sudo apt-get -o Acquire::Retries=5 install --yes opam libgmp-dev pkg-config
+          fi
+      - run: just prove translation-check
 
   # The documents written in LaTeX: each PDF in the repository is built from
   # its current source, and each source builds without a LaTeX warning.

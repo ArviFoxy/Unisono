@@ -2,23 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The answers to a receiver's reports that went fastest there and back,
-//! over a stretch of time that moves on.
+//! Sliding-window minimum-RTT tracker for legacy report/echo path delay.
 //!
-//! An answer says when its report left, on the receiver's clock, and when it
-//! arrived, on the sender's. With the estimate of the receiver's clock
-//! against the sender's from audio packets, that gives the time there and
-//! back ([`round_trip`]). The estimate gets better as packets come, so an
-//! answer is kept, and its time there and back is worked out again with the
-//! estimate as it is whenever it is asked for.
+//! Each echo pairs a receiver report departure timestamp with the sender
+//! arrival timestamp; combining that with the current one-way clock relation
+//! yields an RTT estimate ([`round_trip`]) that is re-evaluated on demand as
+//! the clock estimate improves.
 //!
-//! Time is cut into windows of a set length. Of each of the last `R`
-//! windows the answer with the shortest time there and back is kept, as the
-//! estimate was when it came. An answer whose report left in a window older
-//! than those is left out, unless it is older by far, by `2 R` windows or
-//! more before the newest: then the receiver's clock has started again, and
-//! what was kept is dropped. So whatever it holds, the memory follows the
-//! answers again from the first that is not of the `R` windows just passed.
+//! Retains the minimum-RTT echo per bucket over the last `R` fixed-duration
+//! windows. Buckets older than `R` windows are ignored; an echo older than
+//! `2 * R` windows triggers a reset to recover from receiver clock resets.
 
 use crate::fixed::{div_floor, rem_euclid_wide, saturate};
 use crate::relation::Line;

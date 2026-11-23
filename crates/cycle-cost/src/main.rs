@@ -2,16 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Counts the instructions and measures the time that unisono's real-time
-//! functions take, on the inputs that cost most.
+//! Worst-case instruction-count budget verifier and wall-clock microbenchmark
+//! for `unisono` real-time entry points.
 //!
-//! For each case a stream is brought to the state in question, and then one
-//! call is measured: a cycle of the device, or the taking in of a packet.
-//! The count of instructions is the same on every run, and each case has a
-//! budget that it must stay within: about a quarter above what the case
-//! counted when the budget was set, to leave room for another compiler or
-//! processor. The time is measured on the machine that runs this and is only
-//! reported.
+//! Each benchmark drives a stream to its worst-case state and measures a
+//! single device cycle or packet-ingestion call. Deterministic instruction
+//! counts are checked against fixed upper bounds (~25% headroom for toolchain
+//! and CPU variance); wall-clock times are reported for diagnostics only.
 
 mod count;
 mod scene;
@@ -74,6 +71,18 @@ const CASES: &[Case] = &[
         budget: 13_500,
         prepare: || Scene::running(|_| false),
         call: Scene::device,
+    },
+    Case {
+        name: "a cycle with modal peer sync",
+        budget: 590_000,
+        prepare: Scene::running_modal,
+        call: Scene::cycle,
+    },
+    Case {
+        name: "applying a sync snapshot",
+        budget: 200,
+        prepare: Scene::running_modal,
+        call: Scene::apply_sync,
     },
 ];
 

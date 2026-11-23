@@ -2,12 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! When frames are due: from readings of clocks to positions in the stream.
-//!
-//! A frame is due when the sender's clock reads the frame's capture time plus
-//! the level. A receiver turns a reading of its own clock into a reading of
-//! the sender's with its estimate of the relation between the two, and that
-//! into the position in the stream that is due then.
+//! Stream timing conversions mapping local clock timestamps through a clock
+//! relation and playback schedule to fractional stream positions (`Position`,
+//! `Step`).
 
 use crate::fixed::{div_floor, saturate};
 use crate::relation::Line;

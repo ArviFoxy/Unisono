@@ -2,16 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The program through PipeWire: a sender that captures a ramp with its
-//! software device, a receiver that plays on PipeWire into the sink of
-//! `tools/pipewire-test.sh`, and a stream that records what the sink plays,
-//! with the times that PipeWire gives it. A frame of the ramp says when it
-//! was captured, so each recorded frame says how long after its capture the
-//! sink played it: the latency, which is to be the level.
+//! End-to-end CLI test streaming a virtual-device ramp through `unisono` into
+//! PipeWire's `unisono-test-sink` (`tools/pipewire-test.sh`) and verifying
+//! measured playback latency against the configured target level.
 //!
-//! The test is ignored unless it is asked for: it needs that PipeWire
-//! instance and the program built with PipeWire, at the path that the
-//! variable `UNISONO_PROGRAM` of the environment gives.
+//! Marked `#[ignore]` by default; requires the PipeWire test container and
+//! `UNISONO_PROGRAM` pointing to a PipeWire-enabled `unisono` binary.
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
@@ -20,7 +16,7 @@ use std::time::Duration;
 
 use unisono_pipewire::{Settings, capture};
 use unisono_runtime::audio::Capture;
-use unisono_runtime::software::Device;
+use unisono_runtime::virtual_device::Device;
 
 /// The level that the sender announces: 30 ms.
 const LEVEL: f64 = 30e6;

@@ -2,13 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Streams through a running PipeWire, which `tools/pipewire-test.sh` starts
-//! with a sink named `unisono-test-sink` that plays to nothing. The tests are
-//! ignored unless they are asked for, because they need that instance.
+//! PipeWire integration tests against the null sink `unisono-test-sink`
+//! started by `tools/pipewire-test.sh`. Marked `#[ignore]` by default because
+//! they require that test instance.
 //!
-//! A playback stream plays a ramp, whose sample says which frame it is, into
-//! the sink, and a capture stream records what the sink plays. The positions
-//! and times that PipeWire reports to both are held against each other.
+//! Plays a frame-index ramp into the sink, captures it back through a second
+//! stream, and cross-checks PipeWire's reported positions and timestamps.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

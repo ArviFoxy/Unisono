@@ -93,7 +93,8 @@ not the processors that unisono runs on. Three things stand in for it:
 - a count of the instructions that a cycle and the taking in of a packet
   execute on the inputs that cost most: a cycle whose frames are all held, a
   cycle in which a gap begins, a cycle inside a gap, a packet, a packet that
-  ends a window of the estimator, and a report of a device. The program in
+  ends a window of the estimator, a report of a device, a cycle with modal peer
+  synchronization, and applying a synchronization snapshot. The program in
   `crates/cycle-cost` runs each under single-stepping and counts. The count is
   the same on every run, each case has a budget about a quarter above what it
   counted when the budget was set, and `just check` fails when a case goes

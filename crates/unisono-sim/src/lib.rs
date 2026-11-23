@@ -2,28 +2,31 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A deterministic simulation of clocks, links and hosts.
+//! Deterministic discrete-event simulator of clocks, network links, and hosts.
 //!
-//! Everything here is driven by a true time that the simulated parties cannot
-//! read, and by random numbers from a seeded generator, so a run is the same
-//! every time. The simulation computes in floating point; the code under test
-//! does not.
+//! Runs the production [`unisono_runtime`] network and playback engines
+//! (`SenderNetEngine`, `ReceiverNetEngine`, `ReceiverPlayback`,
+//! `ReportSchedule`) over real serialized UDP wire bytes and simulated
+//! IEEE 1139 clocks and impaired links, scoring playback against the six
+//! canonical objectives of `Unisono.Spec.Objectives`.
 
 #![forbid(unsafe_code)]
 
 pub mod assumptions;
 pub mod clock;
 pub mod link;
+pub mod objectives;
+pub mod oracle;
 pub mod packets;
+pub mod probe;
 pub mod protection;
 pub mod random;
-pub mod reference;
-pub mod star;
-pub mod stream;
+pub mod scene;
 
 /// A point in true time, in nanoseconds from the start of a simulation.
 ///
-/// No simulated party reads this; each reads its own [`clock::Oscillator`].
+/// No simulated party reads this; each reads its own [`clock::Oscillator`] or
+/// [`clock::Course`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrueTime(pub i64);
 

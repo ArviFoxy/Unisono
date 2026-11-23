@@ -2,17 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A sender, a link and a receiver with its device, brought to the state
-//! that a case measures.
-//!
-//! Times are whole nanoseconds. The receiver's clock is an hour ahead of the
-//! sender's, a packet leaves half a millisecond after its last frame was
-//! captured and takes a millisecond, and the receivers hold 20 ms.
+//! Deterministic benchmark fixture constructing a sender, simulated link, and
+//! receiver with a 1-hour clock offset, 0.5 ms handoff, 1 ms transit delay,
+//! and 20 ms playout level.
 
 use unisono_core::device::Device;
+use unisono_core::kalman::LINE_RUN;
 use unisono_core::packet::{Audio, Format};
-use unisono_core::player::Regulation;
+use unisono_core::player::{ModalRegulation, Regulation};
+use unisono_core::relation::Line;
 use unisono_core::sender::{Sender, Settings as SenderSettings};
+use unisono_core::sync::SyncSnapshot;
 use unisono_dsp::Parameters;
 use unisono_dsp::format::to_signed24;
 use unisono_runtime::audio::Playback;
@@ -52,8 +52,8 @@ pub(crate) struct Scene {
 
 impl Scene {
     /// A scene at its start, in which the packets for which `lost` holds do
-    /// not arrive.
-    fn new(lost: fn(u64) -> bool) -> Scene {
+    /// not arrive, optionally running modal peer synchronization.
+    fn new(lost: fn(u64) -> bool, modal: Option<ModalRegulation>) -> Scene {
         let settings = SenderSettings {
             stream: 1,
             rate: RATE,
@@ -77,6 +77,7 @@ impl Scene {
                 limit: 1_000_000,
                 jump: 240,
             },
+            modal_regulation: modal,
             concealment: Parameters::for_rate(RATE),
             block: CYCLE,
             device_range: 10_000_000,
@@ -91,6 +92,32 @@ impl Scene {
             payload: vec![0; usize::from(PACKET) * CHANNELS * 3],
             samples: vec![0.0; usize::from(PACKET) * CHANNELS],
             output: vec![0.0; CYCLE * CHANNELS],
+        }
+    }
+
+    /// A realistic peer-active [`SyncSnapshot`] matching this scene's 1-hour
+    /// offset and 1 ms path delay.
+    fn peer_snapshot(epoch: u32) -> SyncSnapshot {
+        SyncSnapshot {
+            valid: true,
+            peer_active: true,
+            epoch,
+            fleet_line: Line {
+                time: OFFSET,
+                value: 25_000,
+                rise: 0,
+                run: LINE_RUN,
+            },
+            common_line: Line {
+                time: OFFSET,
+                value: -OFFSET - 25_000,
+                rise: 0,
+                run: LINE_RUN,
+            },
+            path_ns: DELAY,
+            active_peers: 2,
+            common_var_ns2: 25_000_000,
+            diff_var_ns2: 4_000_000,
         }
     }
 
@@ -170,11 +197,31 @@ impl Scene {
         }
     }
 
+    /// Applies one O(1) peer synchronization snapshot on the audio thread.
+    pub(crate) fn apply_sync(&mut self) {
+        self.listener.apply_sync(Self::peer_snapshot(2));
+    }
+
     /// A scene that has run for two seconds, in which the packets for which
     /// `lost` holds do not arrive.
     pub(crate) fn running(lost: fn(u64) -> bool) -> Scene {
-        let mut scene = Scene::new(lost);
+        let mut scene = Scene::new(lost, None);
         scene.run_while(|scene| scene.next_cycle() < OFFSET + 2_000_000_000);
+        scene
+    }
+
+    /// A scene that has run for two seconds in active two-mode peer sync.
+    pub(crate) fn running_modal() -> Scene {
+        let mut scene = Scene::new(|_| false, Some(ModalRegulation::lipsync(1_000_000, 240)));
+        // Ingest the first packet so the timeline is adopted before applying
+        // the peer sync snapshot (adoption resets pre-existing snapshots).
+        scene.packet();
+        scene.listener.apply_sync(Self::peer_snapshot(1));
+        scene.run_while(|scene| scene.next_cycle() < OFFSET + 2_000_000_000);
+        assert!(
+            scene.listener.totals().played > 0,
+            "modal scene must be actively playing frames"
+        );
         scene
     }
 
@@ -186,12 +233,12 @@ impl Scene {
         // Run once to find the cycle, then again up to it. At its start a
         // stream has frames to conceal too; those are left behind first.
         let settled = |scene: &Scene| scene.next_cycle() >= OFFSET + 1_900_000_000;
-        let mut trial = Scene::new(lost);
+        let mut trial = Scene::new(lost, None);
         trial.run_while(|scene| !settled(scene));
         let before = trial.listener.totals().concealed;
         trial.run_while(|scene| scene.listener.totals().concealed == before);
         let first = trial.cycles - 1;
-        let mut scene = Scene::new(lost);
+        let mut scene = Scene::new(lost, None);
         scene.run_while(|scene| scene.cycles < first || scene.next_arrival() <= scene.next_cycle());
         scene
     }
@@ -200,7 +247,7 @@ impl Scene {
     /// sender's clock, and that estimate remembers as many samples as it
     /// can.
     pub(crate) fn before_window_end() -> Scene {
-        let mut scene = Scene::new(|_| false);
+        let mut scene = Scene::new(|_| false, None);
         // The first packet of a window ends the window before it. After 70
         // windows the memory of 64 samples is full.
         scene.run_while(|scene| scene.packets < 70 * WINDOW + 1);

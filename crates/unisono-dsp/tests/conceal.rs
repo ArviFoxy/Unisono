@@ -2,7 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The concealment of gaps against sounds whose continuation is known.
+//! Integration tests verifying packet-loss concealment against analytic
+//! signals.
 
 #![allow(clippy::cast_precision_loss)] // frame indices as f64
 #![allow(clippy::cast_possible_truncation)] // test signals are rounded to f32 on purpose

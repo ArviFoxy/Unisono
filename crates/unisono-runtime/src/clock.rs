@@ -2,38 +2,32 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The host's clocks.
+//! Host clock access and cross-clock timestamp conversion.
 //!
-//! Every time in unisono is a reading of the host's **raw clock**: the
-//! monotonic clock that no time service adjusts (`CLOCK_MONOTONIC_RAW`). The
-//! kernel stamps packets with the **system clock** (`CLOCK_REALTIME`), which
-//! a time service slews and sometimes steps, and audio systems stamp cycles
-//! with the **monotonic clock** (`CLOCK_MONOTONIC`), which a time service
-//! slews. All three run apart by tens of parts per million, so a relation
-//! measured once is wrong by a hundred microseconds a few seconds later. A
-//! [`Tracker`] therefore measures the relation again and again, and converts a
-//! stamp of its clock only with a measurement that is recent.
+//! All internal timestamps use the unadjusted raw monotonic clock
+//! (`CLOCK_MONOTONIC_RAW`, [`RawNs`]). Kernel packet timestamps arrive in
+//! `CLOCK_REALTIME` ([`SystemNs`]), which NTP may slew or step, and audio
+//! backends typically report `CLOCK_MONOTONIC` ([`MonotonicNs`]), which NTP
+//! may slew. Because clock domains drift relative to each other by tens of
+//! ppm, [`Tracker`] periodically cross-samples the target clock against the
+//! raw clock and converts only timestamps close to a recent measurement.
 //!
-//! Each clock domain has its own nanosecond type ([`RawNs`], [`SystemNs`],
-//! [`MonotonicNs`]) and [`Tracker`] is parameterized by the clock it tracks
-//! ([`System`] or [`Monotonic`]), so stamps of one clock cannot be converted
-//! with a tracker of another.
+//! Distinct newtypes ([`RawNs`], [`SystemNs`], [`MonotonicNs`]) and typed
+//! clock markers ([`System`], [`Monotonic`]) prevent mixing timestamps across
+//! clock domains at compile time.
 //!
-//! A measurement reads the raw clock, the other clock, and the raw clock
-//! again. The other clock was read somewhere between the two raw readings, so
-//! taking the middle is wrong by at most half the time between them.
+//! Each cross-sample brackets a read of the tracked clock between two raw
+//! clock reads; the midpoint error is bounded by half the bracketing interval.
 //!
-//! # What a conversion assumes
+//! # Conversion Bounds
 //!
-//! Between a measurement and the stamp that is converted with it, the rate
-//! of the tracked clock against the raw clock changes by at most
-//! [`RATE_CHANGE`], and where the rate has not been measured yet it is at
-//! most [`LARGEST_RATE`] in size. The kernel slews the system clock by at
-//! most 500 parts per million for a frequency correction and as much again
-//! for a correction of the time, which gives both numbers. A step of the
-//! system clock between a stamp and the next measurement is outside what a
-//! conversion can know; the tracker notices the step at that measurement and
-//! forgets the rate.
+//! Between a cross-sample and a converted timestamp, the relative clock rate
+//! is assumed to change by at most [`RATE_CHANGE`] (and have magnitude at most
+//! [`LARGEST_RATE`] before a rate estimate is available), matching Linux's
+//! 500 ppm frequency-adjustment + 500 ppm time-slew limits. A step of
+//! `CLOCK_REALTIME` occurring between a packet timestamp and the next sample
+//! cannot be detected retroactively; upon observing a step, the tracker resets
+//! its rate estimate.
 
 use std::marker::PhantomData;
 use std::sync::atomic::{AtomicI64, Ordering};

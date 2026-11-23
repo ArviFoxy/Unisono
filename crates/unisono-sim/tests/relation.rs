@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The estimator of a clock relation against simulated senders, receivers
-//! and links.
+//! Clock-relation estimator accuracy and fault-injection tests against
+//! simulated senders, receivers, and links.
 //!
-//! Each test names the assumptions it runs under and a largest error it
-//! accepts. For each such bound a second test shows that an estimator with a
-//! plausible defect exceeds it, so that the bound is known to be able to fail.
+//! Pairs each accuracy bound with a defect-injection control test verifying
+//! that broken estimators exceed the threshold.
 
 use unisono_core::relation::{Estimator, Sample};
 use unisono_sim::assumptions::{OneWayAssumptions, WIRED_BUSY, WIRED_CALM, WIRELESS};
@@ -15,9 +14,12 @@ use unisono_sim::packets::{OneWay, Packet};
 use unisono_sim::random::Generator;
 
 /// Packets per window, and how long samples are remembered: 64 packets are
-/// 85 ms at 750 packets a second, and 128 windows of them are 11 s.
+/// 85 ms at 750 packets a second; 128 windows cover 11 s for wired links, while
+/// 256 windows cover 22 s for wireless links whose 1 s exponential pauses can
+/// occasionally exceed 5 s over a 30-minute run.
 const WINDOW: u64 = 64;
 const SPAN: i64 = 11_000_000_000;
+const WIRELESS_SPAN: i64 = 22_000_000_000;
 
 /// The largest slope the estimate may take: 200 parts per million, twice what
 /// an oscillator may be off by.
@@ -30,9 +32,9 @@ trait UnderTest {
 }
 
 /// The estimator of the core, as it is meant to be used.
-struct Core(Estimator<128>);
+struct Core<const M: usize>(Estimator<M>);
 
-impl UnderTest for Core {
+impl<const M: usize> UnderTest for Core<M> {
     fn packet(&mut self, packet: &Packet) -> Option<i64> {
         let sample = Sample {
             time: packet.sent,
@@ -45,9 +47,9 @@ impl UnderTest for Core {
 
 /// The same estimator fed the first packet of every window instead of the
 /// lowest: what a mistake in the selection would do.
-struct FirstOfWindow(Estimator<128>);
+struct FirstOfWindow<const M: usize>(Estimator<M>);
 
-impl UnderTest for FirstOfWindow {
+impl<const M: usize> UnderTest for FirstOfWindow<M> {
     fn packet(&mut self, packet: &Packet) -> Option<i64> {
         if packet.number.is_multiple_of(WINDOW) {
             let sample = Sample {
@@ -115,8 +117,12 @@ fn largest_error(
 
 fn undisturbed(_: &mut OneWay, _: u64) {}
 
-fn core() -> Core {
+fn core() -> Core<128> {
     Core(Estimator::new(SPAN, LIMIT))
+}
+
+fn wireless_core() -> Core<256> {
+    Core(Estimator::new(WIRELESS_SPAN, LIMIT))
 }
 
 #[test]
@@ -158,13 +164,13 @@ fn on_a_busy_wired_link_the_error_stays_under_three_microseconds() {
 
 #[test]
 fn on_a_wireless_link_with_pauses_the_error_stays_under_fifty_microseconds() {
-    let error = largest_error(&WIRELESS, 4, 1800.0, &mut core(), &mut undisturbed);
+    let error = largest_error(&WIRELESS, 4, 1800.0, &mut wireless_core(), &mut undisturbed);
     assert!(error < 50_000.0, "largest error {error} ns");
 }
 
 #[test]
 fn the_wireless_bound_fails_for_an_estimator_that_does_not_select() {
-    let mut defective = FirstOfWindow(Estimator::new(SPAN, LIMIT));
+    let mut defective = FirstOfWindow(Estimator::<256>::new(WIRELESS_SPAN, LIMIT));
     let error = largest_error(&WIRELESS, 4, 1800.0, &mut defective, &mut undisturbed);
     assert!(
         error > 50_000.0,

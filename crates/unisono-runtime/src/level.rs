@@ -2,106 +2,74 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The choice of the level from the needs that receivers report.
+//! Sender-side adaptive playout latency (`level`) controller.
 //!
-//! The level is the latency that every receiver holds. A frame is played at
-//! a receiver when the level is at least what the frame needed there, and
-//! the group of receivers plays it when the level is at least the largest
-//! need over the receivers. Each receiver reports, for each stretch of the
-//! index, the largest need of a frame in it, and the sender keeps the largest
-//! over the receivers: `y`, the need of the group in that stretch. A stretch
-//! is `D` seconds long, the window of the sender's clock estimate.
+//! All receivers share a single playout latency `l`. A frame plays cleanly at
+//! a receiver when `l` is at least that frame's required latency (`need`), and
+//! across the whole group when `l` is at least the maximum need across all
+//! receivers. Receivers report per-window maximum needs, and the sender takes
+//! the group-wide maximum `y` for each window of duration `D` seconds (the
+//! sender clock-estimator window).
 //!
-//! # What a stretch costs
+//! # Per-Window Cost Model
 //!
-//! Held at a level `l`, a stretch whose need is `y`, after a stretch whose
-//! need was `p`, costs
-//!
-//! ```text
-//! c(l; p, y) = w_gap [p <= l < y] + w_miss min((y - l)+, D).
-//! ```
-//!
-//! The first term counts a gap where one starts: the stretch is missed from
-//! its start, since `y > l`, and the stretch before was not. The second is
-//! the time of the frames that are missed: the frames of a stretch need less
-//! the later they were captured, since they waited less for the pause that
-//! delayed them, so of a stretch with `y > l` about `min(y - l, D)` seconds
-//! are missed. A level held at `l` then costs, per second,
+//! At playout latency `l`, a window with group need `y` following a previous
+//! window with group need `p` incurs cost:
 //!
 //! ```text
-//! J(l) = w_lat l + w_tgt (l - L0)^2 + (the mean of c(l; p, y)) / D,
+//! c(l; p, y) = w_gap * 1[p <= l < y] + w_miss * min((y - l)+, D).
 //! ```
 //!
-//! with `L0` a level aimed at and the `w` weights.
-//!
-//! # What is expected of the next stretch
-//!
-//! The mean is over what the next stretch will be, given the `m` stretches
-//! seen. Nothing sets the next stretch apart from those seen, so, for needs
-//! that are all different, it has the largest need of the `m + 1` with the
-//! probability `1 / (m + 1)`. The mean is taken accordingly: with that
-//! probability the next stretch needs more than any that was seen, and
-//! starts a gap if its need is above the level; otherwise it is one of the
-//! stretches seen, each as likely as the others. The mean cost of the next
-//! stretch is then
+//! The first term charges a discontinuity whenever a gap opens (`y > l` after
+//! `p <= l`). The second term approximates missed duration: frames captured
+//! later within a pause wait less, so a window with `y > l` misses roughly
+//! `min(y - l, D)` seconds. The expected steady-state cost rate per second is:
 //!
 //! ```text
-//! (c1(l) + the sum of c(l; p, y) over the stretches seen) / (m + 1),
+//! J(l) = w_lat * l + w_tgt * (l - L0)^2 + E[c(l; p, y)] / D,
 //! ```
 //!
-//! where `c1(l)` is the mean cost of a stretch that needs more than any
-//! seen. The level that makes `J` smallest with this mean is the best
-//! decision that the evidence and the law of such a stretch allow. A group
-//! with little evidence gets high rates at low levels, and so a high level,
-//! which comes down as stretches without large needs are seen: after the
-//! time `T` of evidence, a need above all that were seen is expected about
-//! once in `T`.
+//! where `L0` is the target latency and `w_lat`, `w_tgt`, `w_gap`, `w_miss`
+//! are the objective weights.
 //!
-//! How far above the largest need `M` seen the need of such a stretch lies
-//! is not something the stretches seen can say. It is taken from a law fixed
-//! beforehand: the need exceeds `x`, for `x` above `M`, with the probability
-//! `((S + M) / (S + x))^2`. This is the law `(1 + x / S)^-2` of a need
-//! about which nothing is known, given that it is above `M`. `S` is 20 ms:
-//! the need of a stretch is the time that packets and the cycles of the
-//! devices take, milliseconds to tens of milliseconds, and at times a pause
-//! of a link, tens to hundreds. The law has no variance, and under it a new
-//! largest need lies above the last by `S + M` on average: pauses are taken
-//! to have no typical size. These numbers are about links and devices in
-//! general and are not fitted to anything.
+//! # Exchangeable Tail Prediction
 //!
-//! # The least cost
+//! Given `m` observed windows, under exchangeability the next window exceeds
+//! the running maximum `M` with probability `1 / (m + 1)` and otherwise draws
+//! uniformly from the observed empirical pairs `(p, y)`:
 //!
-//! A level is a whole number of nanoseconds between zero and a ceiling, and
-//! the level chosen is one at which `J` is least among all of those. `J`
-//! changes its form only at the needs that were seen and one stretch below
-//! each of them. Between two neighbours of these levels, `J` is the sum of
-//! a number that does not change, a square, and the mean cost of a stretch
-//! that needs more than all seen; it is least at one end, or where its
-//! derivative passes from negative to positive, which happens at most once
-//! and is found by halving. So the levels that need to be compared are, for
-//! each of those neighbours, the lower one, the last level before the upper
-//! one, and the two levels around that crossing.
+//! ```text
+//! E[c(l; p, y)] = (c_tail(l) + sum_{observed} c(l; p, y)) / (m + 1).
+//! ```
 //!
-//! # Moving
+//! Early in a session (small `m`), the `1 / (m + 1)` tail probability keeps
+//! `l` conservative; as clean windows accumulate over duration `T`, `l`
+//! lowers automatically. Exceedances above `M` follow the Pareto tail
+//! `P(Y > x | Y > M) = ((S + M) / (S + x))^2` with scale `S = 20 ms`,
+//! capturing heavy-tailed link pauses without assuming a finite tail variance.
 //!
-//! A move costs `c` once and saves `s`, the difference of `J` between the
-//! level now and the best one, per second for as long as the needs keep the
-//! law they have: it pays for itself if they keep it for more than `c / s`
-//! longer. They have kept it for the time `T` that the evidence covers. With
-//! the moment of the choice as likely in any part of the time over which
-//! the law holds as in any other, the law holds for more than `t` longer
-//! with the probability `T / (T + t)`, and the move more likely than not
-//! pays for itself exactly when `s T > c`. The level moves when that holds.
+//! # Optimization
 //!
-//! # What the stretches say about the assumptions
+//! Candidate latencies are integer nanoseconds in `[0, max_level]`. `J(l)` is
+//! piecewise smooth with breakpoints only at observed needs `y` and `y - D`.
+//! On each interval between adjacent breakpoints, `J(l)` is convex and its
+//! minimum lies at an endpoint or at the unique zero-crossing of its
+//! derivative (found by bisection).
 //!
-//! Three things are assumed above, and each says something that can be
-//! counted ([`Checks`]). Of the stretches that follow `m` others, one in
-//! `m + 1` needs more than all of those. A need above all before it lies
-//! beyond any given size with the probability that the law says, so the
-//! probability that the law gave to a need as large as the one that came is,
-//! on average, a half. And half of the levels chosen are held for longer
-//! than the time of the evidence they were chosen from.
+//! # Hysteresis (Move Rule)
+//!
+//! Changing the latency incurs a one-time ramp cost `c` and saves `s` per
+//! second while the current delay regime persists. Under a non-informative
+//! regime-duration prior over evidence duration `T`, the probability that the
+//! regime persists for at least `t` more seconds is `T / (T + t)`, so the
+//! transition has > 50% probability of breaking even iff `s * T > c`.
+//!
+//! # Calibration Checks
+//!
+//! [`Checks`] tracks online diagnostics for the three modeling assumptions:
+//! empirical record-high rate (`~ 1 / (m + 1)`), PIT uniformity of exceedances
+//! under the Pareto tail (`mean ~ 0.5`), and whether chosen levels hold for
+//! longer than the evidence duration `T` half the time.
 
 // Counts of stretches, and levels in nanoseconds, are far below 2^52, where
 // an `f64` holds every integer exactly.
@@ -115,6 +83,25 @@ use crate::InvalidSettings;
 /// matching the core packet format's pace limit so both `+slope` and `-slope`
 /// are valid on the wire.
 pub const MAX_SLOPE: i32 = 999_999_999;
+
+/// Shipped default gap cost, in seconds of a millisecond of latency.
+pub const SHIPPED_GAP_COST: f64 = 600.0;
+
+/// Shipped default missed-audio cost, in seconds per millisecond missed.
+pub const SHIPPED_MISSED_COST_S: f64 = 60.0;
+
+/// Shipped default level-move cost, in seconds of a millisecond of latency.
+pub const SHIPPED_MOVE_COST: f64 = 60.0;
+
+/// Shipped default level-ramp slope, in microseconds per second (`0.5 ms/s`).
+pub const SHIPPED_SLOPE_US: i32 = 500;
+
+/// Maximum shipped level-ramp slope, in microseconds per second (`1 ms/s`),
+/// matching the receiver's `1000 ppm` pace limit.
+pub const SHIPPED_MAX_SLOPE_US: i32 = 1_000;
+
+/// Shipped evidence history span for adaptive level selection, in seconds.
+pub const SHIPPED_HISTORY_SECONDS: u64 = 120;
 
 /// The weights of the cost of a level.
 #[derive(Clone, Copy, Debug)]
@@ -191,6 +178,72 @@ pub struct Choice {
 }
 
 impl Choice {
+    /// Builds the shipped default adaptive level-chooser configuration for a
+    /// stream of `rate` frames/s and clock-estimator `window` frames, validated
+    /// via [`Choice::validate`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when `window` is zero or the resulting
+    /// configuration fails validation.
+    pub fn shipped_default(rate: u32, window: u32) -> Result<Choice, InvalidSettings> {
+        Choice::shipped_with_costs(
+            rate,
+            window,
+            SHIPPED_GAP_COST,
+            SHIPPED_MISSED_COST_S,
+            SHIPPED_MOVE_COST,
+            SHIPPED_SLOPE_US,
+        )
+    }
+
+    /// Builds a validated shipped adaptive level-chooser configuration with
+    /// custom cost weights and `slope_us` in `1..=SHIPPED_MAX_SLOPE_US`
+    /// microseconds per second.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when `window` is zero, `slope_us` exceeds
+    /// the receiver pace limit (`1..=1000 us/s`), or weights fail validation.
+    pub fn shipped_with_costs(
+        rate: u32,
+        window: u32,
+        gap: f64,
+        missed_s: f64,
+        moving: f64,
+        slope_us: i32,
+    ) -> Result<Choice, InvalidSettings> {
+        if window == 0 {
+            return Err(InvalidSettings::new(
+                "clock estimator window must be positive",
+            ));
+        }
+        if !(1..=SHIPPED_MAX_SLOPE_US).contains(&slope_us) {
+            return Err(InvalidSettings::new(
+                "level slope must be between 1 and 1000 microseconds per second",
+            ));
+        }
+        let history = usize::try_from(
+            SHIPPED_HISTORY_SECONDS.saturating_mul(u64::from(rate)) / u64::from(window),
+        )
+        .unwrap_or(usize::MAX)
+        .max(1);
+        let choice = Choice {
+            weights: Weights {
+                latency: 1_000.0,
+                target: 0,
+                off_target: 0.0,
+                gap,
+                missed: missed_s * 1_000.0,
+                moving,
+            },
+            history,
+            slope: slope_us.saturating_mul(1_000),
+        };
+        choice.validate()?;
+        Ok(choice)
+    }
+
     /// Validates the weights, history length, and level-ramp slope.
     ///
     /// # Errors

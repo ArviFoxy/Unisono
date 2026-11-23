@@ -2,61 +2,32 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Fades, and the concealment of gaps in a stream.
+//! Packet-loss concealment (Burg AR extrapolation) and raised-cosine fades.
 //!
-//! When frames are missing, what is played in their place continues the
-//! sound that came before and fades it out, and when frames arrive again
-//! they are faded in. Nothing is delayed for this: the continuation is made
-//! from the frames already played.
+//! When frames are missing, synthesizes a zero-latency continuation from prior
+//! samples and fades it out; when valid frames resume, crossfades them back
+//! in. See `docs/concealment.md` for the problem formulation and benchmarks.
 //!
-//! `docs/concealment.md` states what a concealment computes as a problem of
-//! inference, which instance of it this module solves, and how the
-//! alternatives compare.
+//! # Autoregressive Extrapolation
 //!
-//! # The continuation
+//! Each channel fits an AR(`order`) linear predictor to its recent sample
+//! history using Burg's method (which guarantees stable reflection
+//! coefficients, unlike least-squares fits that can diverge on multi-partial
+//! signals), then recursively generates missing samples clamped to the recent
+//! peak amplitude.
 //!
-//! The continuation is a linear prediction. Each channel's last frames
-//! before the gap are fitted with a model in which a sample is a weighted
-//! sum of the `order` samples before it. The weights are found by Burg's
-//! method, which minimizes the error of predicting each fitted sample from
-//! those before it and from those after it. The model then predicts the
-//! missing samples one after another, each from the predictions before it.
+//! With [`Parameters::for_rate`] at 48 kHz, steady tones >= 50 Hz hold within
+//! 2% amplitude over 1 ms and 10% over 2 ms (tests assert 3% and 15%), while
+//! dense partials, very low tones, and noise decay naturally before the fade
+//! finishes.
 //!
-//! The continuation starts where the sound left off, so a gap begins
-//! without a step. It cannot grow: Burg's method only gives models whose
-//! free response does not grow, and what is played is also kept within the
-//! largest sample of the fitted frames. This is why the method was chosen.
-//! A fit by least squares over the same frames was tried: it continues a
-//! single tone exactly, but for a sound of many close partials it gave
-//! models that grow.
+//! # Raised-Cosine Crossfades
 //!
-//! Its accuracy is modest. With the sizes of [`Parameters::for_rate`] at
-//! 48 000 frames per second, a single steady tone of 50 Hz or more is
-//! continued within 2 % of its amplitude over the first millisecond and
-//! within 10 % over the first two; these are the largest errors over some
-//! 500 frequencies up to 20 kHz and 16 phases, and the tests assert 3 % and
-//! 15 %. After 5 ms the error can be half the amplitude. A sound of several
-//! close partials, or a tone so low that the fitted frames hold less than a
-//! cycle of it, is followed for a shorter time, and its continuation then
-//! dies away by itself. Noise cannot be predicted, and its continuation
-//! dies away within a few frames. The continuation therefore covers the
-//! start of a gap, where it resembles the sound, and the fade out removes
-//! it before it has lasted long.
-//!
-//! # The fades
-//!
-//! A fade is a raised cosine. The continuation starts at full level and
-//! reaches silence `fade_out` frames into the gap. When frames arrive again
-//! they are mixed with the continuation, which keeps running: the arriving
-//! frames rise by a raised cosine over `fade_in` frames while what is left
-//! of the continuation falls, the two weights adding up to one.
-//!
-//! A gap that begins before the fade in is complete does not get a whole
-//! new fade out. The sound just played was then partly a continuation
-//! itself, and continuing it at full level again and again would keep a
-//! sound alive that the stream never held. Such a gap enters the fade out
-//! part-way: at the place the last continuation had reached, times the
-//! share of the fade in that was still missing.
+//! Missing spans fade out over `fade_out` frames; returning audio crossfades
+//! against the running extrapolation over `fade_in` frames with complementary
+//! weights summing to 1. If a second gap starts before fade-in completes, the
+//! new fade-out resumes partway down proportional to the remaining synthetic
+//! weight so repeated gaps cannot sustain synthetic audio indefinitely.
 
 use std::f64::consts::PI;
 

@@ -2,23 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Ways of protecting a stream against lost packets, held against each
-//! other.
+//! Offline packet-loss protection comparison study (retransmission,
+//! duplication, and forward error correction).
 //!
-//! A sender sends a packet every `period` seconds over a path that loses
-//! packets in outages: for a time, nothing that is sent in either direction
-//! arrives. A way of protecting the stream gives a packet that was lost a
-//! second way to the receiver, and the question for each way is when the
-//! frames of each packet are at the receiver, by whichever way comes first.
-//! That time, less the time the packet was sent, is what the packet needs of
-//! the level, and from the needs of all packets follows what the stream
-//! costs at the best level (`evaluate`): latency, gaps and missed frames, as
-//! the sender's choice of the level counts them. What a way sends on top of
-//! the stream is reported beside it.
-//!
-//! The model leaves out what no way of protecting can change: a pause that
-//! holds packets back and then delivers them delays the repairs as it delays
-//! the packets.
+//! Standalone historical design comparison referenced by `docs/model.md` to
+//! compare alternative loss-recovery schemes (unprotected, fixed copy, block
+//! Reed-Solomon, burst-erasure codes, and idealized request/retry) on a
+//! stylized outage channel. This module is NOT the production retransmission
+//! protocol (`unisono_runtime::retransmission`), which is simulated end-to-end
+//! over real wire packets inside [`crate::scene::Scene`].
 
 use crate::random::Generator;
 

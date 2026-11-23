@@ -158,12 +158,36 @@ no pending candidate. -/
 theorem new_spec (N M K : Std.Usize) (settings : receiver.Settings) :
     receiver.Receiver.new N M K settings ⦃ r =>
       r.stream = settings.stream ∧ r.following = false ∧ r.has_candidate = false
-      ∧ r.silence = settings.silence ∧ r.limit = settings.limit ⦄ := by
+      ∧ r.silence = settings.silence ∧ r.limit = settings.limit
+      ∧ r.use_sync = false ⦄ := by
   unfold receiver.Receiver.new player.Player.new
   step with Unisono.Presence.new_spec as ⟨p⟩
   step as ⟨e⟩
   step as ⟨a⟩
   step with Unisono.Answers.new_total as ⟨l⟩
+  step with Unisono.Player.modal_regulation_from_single_total as ⟨mreg⟩
+  step with Unisono.Player.modal_new_total as ⟨mp⟩
+
+/-- Enabling `Sync`-driven playback sets `use_sync` and updates the modal
+regulator, leaving stream, timeline, frames, and schedules unchanged. -/
+theorem enable_sync_spec (r : receiver.Receiver N M K) (reg : player.ModalRegulation) :
+    receiver.Receiver.enable_sync r reg ⦃ r' =>
+      SameStream r' r ∧ r'.use_sync = true ∧ r'.schedule = r.schedule
+      ∧ r'.path = r.path ∧ r'.clock = r.clock ⦄ := by
+  unfold receiver.Receiver.enable_sync player.ModalPlayer.set_regulation
+  simp [SameStream]
+
+/-- Applying a `SyncSnapshot` enables `use_sync`, stores the snapshot, updates
+`path` when the snapshot is valid, and leaves stream, timeline, frames, and
+schedules unchanged. -/
+theorem apply_sync_spec (r : receiver.Receiver N M K) (snap : sync.SyncSnapshot) :
+    receiver.Receiver.apply_sync r snap ⦃ r' =>
+      SameStream r' r ∧ r'.use_sync = true ∧ r'.sync_snapshot = snap
+      ∧ r'.schedule = r.schedule ∧ r'.clock = r.clock
+      ∧ (snap.valid = true → r'.path = snap.path_ns)
+      ∧ (snap.valid = false → r'.path = r.path) ⦄ := by
+  unfold receiver.Receiver.apply_sync
+  cases snap.valid <;> simp [SameStream]
 
 /-! ## A receiver cannot stay behind what arrives -/
 
@@ -205,7 +229,7 @@ theorem followed_packet (r : receiver.Receiver N M K) (h : packet.Audio) (t : St
   refine ⟨hstr, f.trans hf, tl, hs, ?_⟩
   rintro ⟨hno, hlate⟩
   refine ⟨hfresh hno hlate, fun hsil => ?_⟩
-  obtain ⟨p1, -, -, -, hall_iff, harr1⟩ := harr hno
+  obtain ⟨p1, -, -, -, -, hall_iff, harr1⟩ := harr hno
   have hall : AllLate r.presence h.index.val h.frames.val :=
     hall_iff.mp ((onlyLate_iff harr1).mp hlate)
   have hre : Restarts r h t := ⟨hall, hsil⟩
@@ -350,23 +374,54 @@ theorem reached_spec (r : receiver.Receiver N M K) (schedule : timing.Schedule)
           · simpa using ⟨hsame1, hp1, hc1, ha1, hpl1, hid1, hrep1, hdep1, hans1⟩
     · simp [SameStream]
 
+private theorem snapshot_common_offset_total (s : sync.SyncSnapshot) (t : Std.I64) :
+    sync.SyncSnapshot.common_offset_ns s t ⦃ _ => True ⦄ := by
+  unfold sync.SyncSnapshot.common_offset_ns
+  split
+  · apply WP.spec_mono (Unisono.Relation.eval_spec s.common_line t); intro _ _; trivial
+  · simp
+
+private theorem snapshot_sender_time_total (s : sync.SyncSnapshot) (t : Std.I64) :
+    sync.SyncSnapshot.sender_time s t ⦃ _ => True ⦄ := by
+  unfold sync.SyncSnapshot.sender_time
+  split
+  · step with Unisono.Relation.eval_spec s.common_line t as ⟨i⟩
+    step as ⟨com⟩
+    have hdiff :
+        (if s.peer_active = true then do
+          let i1 ← relation.Line.eval s.fleet_line t
+          ok (IScalar.cast .I128 i1)
+        else ok 0#i128) ⦃ _ => True ⦄ := by
+      split
+      · step with Unisono.Relation.eval_spec s.fleet_line t as ⟨i1⟩
+      · simp
+    apply WP.spec_bind hdiff
+    intro diff _
+    step*
+  · simp
+
 /-- Asking which position is due at a time returns for every state and every
 time. -/
 theorem due_at_total (r : receiver.Receiver N M K) (time : Std.I64) :
     receiver.Receiver.due_at r time ⦃ _ => True ⦄ := by
   unfold receiver.Receiver.due_at relation.Estimator.impl.line
   split
-  · simp only [bind_ok]
-    cases r.clock.line with
+  · cases r.schedule with
     | none => simp
-    | some line =>
+    | some schedule =>
       simp only
-      cases r.schedule with
-      | none => simp
-      | some schedule =>
-        simp only
-        step as ⟨first⟩
-        step as ⟨o⟩
+      split
+      · split
+        · step with snapshot_sender_time_total r.sync_snapshot time as ⟨sender_now⟩
+          step as ⟨o⟩
+        · simp
+      · simp only [bind_ok]
+        cases r.clock.line with
+        | none => simp
+        | some line =>
+          simp only
+          step as ⟨sender_now⟩
+          step as ⟨o⟩
   · simp
 
 /-- Planning a cycle of the device returns for every state and every reading
@@ -381,38 +436,76 @@ theorem cycle_spec (r : receiver.Receiver N M K) (time duration : Std.I64)
       ∧ out.2.answers = r.answers ⦄ := by
   unfold receiver.Receiver.cycle relation.Estimator.impl.line
   split
-  · simp only [bind_ok]
-    cases r.clock.line with
+  · cases r.schedule with
     | none => simp [SameStream]
-    | some line =>
+    | some schedule =>
       simp only
-      cases r.schedule with
-      | none => simp [SameStream]
-      | some schedule =>
-        simp only
-        step as ⟨first⟩
-        step as ⟨i, hi⟩
-        step as ⟨last⟩
-        step as ⟨o1⟩
-        cases o1 with
-        | none => simp [SameStream]
-        | some now =>
-          simp only
-          step as ⟨o2, r1, hsame, hp, hc, ha, _, hid, hrep, hdep, hans⟩
-          cases o2 with
-          | none =>
-            simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
-          | some turned =>
-            obtain ⟨schedule1, now1⟩ := turned
+      step as ⟨end_time⟩
+      split
+      · split
+        · step with snapshot_sender_time_total r.sync_snapshot time as ⟨first⟩
+          step with snapshot_sender_time_total r.sync_snapshot end_time as ⟨last⟩
+          step as ⟨o1⟩
+          cases o1 with
+          | none => simp [SameStream]
+          | some now =>
             simp only
-            step as ⟨o3⟩
-            cases o3 with
+            step as ⟨o2, r1, hsame, hp, hc, ha, _, hid, hrep, hdep, hans⟩
+            cases o2 with
             | none =>
               simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
-            | some later =>
+            | some turned =>
+              obtain ⟨schedule1, now1⟩ := turned
               simp only
-              step as ⟨out⟩
+              step as ⟨o3⟩
+              cases o3 with
+              | none =>
+                simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+              | some later =>
+                simp only
+                split
+                · step with snapshot_common_offset_total r1.sync_snapshot time as ⟨com_now⟩
+                  step with snapshot_common_offset_total r1.sync_snapshot end_time as ⟨com_then⟩
+                  step with Unisono.Player.modal_cycle_spec r1.modal_player now1 later frames
+                      duration schedule1 r1.sync_snapshot.peer_active r1.sync_snapshot.epoch
+                      com_now com_then as ⟨out⟩
+                  simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+                · step as ⟨out⟩
+                  simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+        · simp [SameStream]
+      · cases r.clock.line with
+        | none => simp [SameStream]
+        | some line =>
+          simp only
+          step as ⟨first⟩
+          step as ⟨last⟩
+          step as ⟨o1⟩
+          cases o1 with
+          | none => simp [SameStream]
+          | some now =>
+            simp only
+            step as ⟨o2, r1, hsame, hp, hc, ha, _, hid, hrep, hdep, hans⟩
+            cases o2 with
+            | none =>
               simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+            | some turned =>
+              obtain ⟨schedule1, now1⟩ := turned
+              simp only
+              step as ⟨o3⟩
+              cases o3 with
+              | none =>
+                simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+              | some later =>
+                simp only
+                split
+                · step with snapshot_common_offset_total r1.sync_snapshot time as ⟨com_now⟩
+                  step with snapshot_common_offset_total r1.sync_snapshot end_time as ⟨com_then⟩
+                  step with Unisono.Player.modal_cycle_spec r1.modal_player now1 later frames
+                      duration schedule1 r1.sync_snapshot.peer_active r1.sync_snapshot.epoch
+                      com_now com_then as ⟨out⟩
+                  simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
+                · step as ⟨out⟩
+                  simpa using ⟨hsame, hp, hc, ha, hid, hrep, hdep, hans⟩
   · simp [SameStream]
 
 /-! ## Reports and the delay of the path -/

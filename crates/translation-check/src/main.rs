@@ -2,19 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Prints inputs and results of the core's functions.
+//! Differential test vector generator comparing Rust `unisono_core` execution
+//! against its Aeneas-translated Lean model (`lean/TranslationCheck.lean`).
 //!
-//! The proofs are about the Lean translation of the core, so they say
-//! something about the Rust only if the translation computes what the Rust
-//! computes. `lean/TranslationCheck.lean` reads the lines printed here,
-//! evaluates the translated function on the same inputs and compares.
-//!
-//! Each line is the name of a function, its arguments, `->` and its results.
+//! Emits one `function args -> outputs` record per line for Lean to evaluate
+//! and verify bit-for-bit equality.
 
 use std::io::{self, BufWriter, Write};
 
 use unisono_core::{
-    answers, device, fixed, needs, packet, player, presence, receiver, relation, sender, timing,
+    answers, blue, device, fixed, kalman, min_rtt, needs, packet, player, presence, receiver,
+    relation, sender, sync, timing,
 };
 
 /// Values at which integer arithmetic tends to go wrong: zero, the extremes,
@@ -560,6 +558,7 @@ fn receiver_cases(out: &mut impl Write) -> io::Result<()> {
                             receiver: to,
                             sequence: report.sequence,
                             arrival: now + delay,
+                            departure: now + delay,
                         });
                         report.sequence
                     });
@@ -675,14 +674,14 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
             match sequence.next() % 8 {
                 0 => {
                     let timeline = sequence.next() % 8;
-                    write!(out, " 2 {timeline} 0 0")?;
+                    write!(out, " 2 {timeline} 0 0 0")?;
                     sender.restart(timeline);
                 }
                 1 | 2 => {
                     let timeline = sender.timeline().saturating_sub(sequence.next() % 2);
                     let index = sequence.next() % (sender.next() + 30);
                     let departure = sequence.signed();
-                    write!(out, " 1 {timeline} {index} {departure}")?;
+                    write!(out, " 1 {timeline} {index} {departure} 0")?;
                     sender.departed(timeline, index, departure);
                 }
                 3 => {
@@ -690,29 +689,31 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
                     // The cast keeps the low bits of a random number.
                     #[allow(clippy::cast_possible_truncation)]
                     let slope = (sequence.signed() % 2_000_000_000) as i32;
-                    write!(out, " 3 {level} {slope} 0")?;
+                    write!(out, " 3 {level} {slope} 0 0")?;
                     sender.level(level, slope);
                 }
                 4 => {
                     let stream = u16::try_from(1 + sequence.next() % 2).unwrap_or(1);
                     let number = sequence.next();
                     let arrival = sequence.signed();
+                    let departure = arrival.saturating_add(sequence.signed() % 1_000_000);
                     let report = packet::Report {
                         stream,
                         timeline: sender.timeline(),
                         receiver: 42,
                         sequence: number,
                     };
-                    write!(out, " 4 {stream} {number} {arrival}")?;
-                    match sender.answer(&report, arrival) {
+                    write!(out, " 4 {stream} {number} {arrival} {departure}")?;
+                    match sender.answer(&report, arrival, departure) {
                         Some(echo) => results.extend([
                             1,
                             i128::from(echo.stream),
                             i128::from(echo.receiver),
                             i128::from(echo.sequence),
                             i128::from(echo.arrival),
+                            i128::from(echo.departure),
                         ]),
-                        None => results.extend([0, 0, 0, 0, 0]),
+                        None => results.extend([0, 0, 0, 0, 0, 0]),
                     }
                 }
                 _ => {
@@ -721,7 +722,7 @@ fn sender_cases(out: &mut impl Write) -> io::Result<()> {
                     // The cast keeps the low bits of a random number.
                     #[allow(clippy::cast_possible_truncation)]
                     let drift = sequence.signed() as i32;
-                    write!(out, " 0 {frames} {capture} {drift}")?;
+                    write!(out, " 0 {frames} {capture} {drift} 0")?;
                     let header = sender.packet(frames, capture, drift);
                     results.extend([
                         i128::from(header.index),
@@ -982,16 +983,18 @@ fn report_cases(out: &mut impl Write) -> io::Result<()> {
             receiver: sequence.next(),
             sequence: sequence.next(),
             arrival: sequence.signed(),
+            departure: sequence.signed(),
         };
-        let mut answer = [0u8; 40];
+        let mut answer = [0u8; 48];
         let size = packet::write_echo(&echo, &mut answer).unwrap_or(0);
         writeln!(
             out,
-            "write_echo {} {} {} {} -> {size} {}",
+            "write_echo {} {} {} {} {} -> {size} {}",
             echo.stream,
             echo.receiver,
             echo.sequence,
             echo.arrival,
+            echo.departure,
             bytes_of(&answer)
         )?;
         let (asked, asked_size) = request_case(out, &mut sequence)?;
@@ -1122,7 +1125,7 @@ fn request_numbers(bytes: &[u8]) -> [i128; 5] {
 
 /// What reading an answer to a report gives, as numbers: 0 and its fields,
 /// or the reason for rejection and zeros.
-fn echo_numbers(bytes: &[u8]) -> [i128; 5] {
+fn echo_numbers(bytes: &[u8]) -> [i128; 6] {
     match packet::parse_echo(bytes) {
         Ok(echo) => [
             0,
@@ -1130,10 +1133,11 @@ fn echo_numbers(bytes: &[u8]) -> [i128; 5] {
             i128::from(echo.receiver),
             i128::from(echo.sequence),
             i128::from(echo.arrival),
+            i128::from(echo.departure),
         ],
         Err(reason) => {
             let [code, detail] = rejection(reason);
-            [code, detail, 0, 0, 0]
+            [code, detail, 0, 0, 0, 0]
         }
     }
 }
@@ -1402,12 +1406,574 @@ fn answers_cases(out: &mut impl Write) -> io::Result<()> {
     Ok(())
 }
 
+/// Differential cases for v2 `fixed` helpers: `saturating_mul_i64`,
+/// `saturating_mul_i128`, and `scale_div_pow2`.
+fn fixed_v2_cases(out: &mut impl Write) -> io::Result<()> {
+    let vals = boundary_values();
+    for &a in vals.iter().take(18) {
+        for &b in vals.iter().take(18) {
+            writeln!(
+                out,
+                "saturating_mul_i64 {a} {b} -> {}",
+                fixed::saturating_mul_i64(a, b)
+            )?;
+        }
+    }
+    let wide = [
+        0i128,
+        1,
+        -1,
+        i128::from(i64::MAX),
+        i128::from(i64::MIN),
+        i128::MAX,
+        i128::MIN,
+        1i128 << 64,
+        -(1i128 << 64),
+        1i128 << 96,
+    ];
+    for &a in &wide {
+        for &b in &wide {
+            writeln!(
+                out,
+                "saturating_mul_i128 {a} {b} -> {}",
+                fixed::saturating_mul_i128(a, b)
+            )?;
+        }
+    }
+    let mut seq = Sequence(14);
+    for _ in 0..300 {
+        let num = (i128::from(seq.signed()) << 32) ^ i128::from(seq.signed());
+        let shift = u32::try_from(seq.next() % 70).unwrap_or(0);
+        let den = match seq.next() % 6 {
+            0 => 0i128,
+            1 => -10,
+            2 => 1,
+            _ => i128::from(1 + (seq.next() % 1_000_000_000)),
+        };
+        writeln!(
+            out,
+            "scale_div_pow2 {num} {shift} {den} -> {}",
+            fixed::scale_div_pow2(num, shift, den)
+        )?;
+    }
+    Ok(())
+}
+
+/// Wire round-trips and rejection cases for `PeerProbe`, `PeerEcho`, and `PeerRelay`.
+#[allow(clippy::too_many_lines)]
+fn peer_packet_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(15);
+    for _ in 0..80 {
+        #[allow(clippy::cast_possible_truncation)]
+        let probe = packet::PeerProbe {
+            stream: seq.next() as u16,
+            prober: seq.next(),
+            target: seq.next(),
+            sequence: seq.next(),
+        };
+        let mut pbuf = [0u8; 40];
+        let psize = packet::write_peer_probe(&probe, &mut pbuf).unwrap_or(0);
+        writeln!(
+            out,
+            "write_peer_probe {} {} {} {} -> {psize} {}",
+            probe.stream,
+            probe.prober,
+            probe.target,
+            probe.sequence,
+            bytes_of(&pbuf)
+        )?;
+        #[allow(clippy::cast_possible_truncation)]
+        let pecho = packet::PeerEcho {
+            stream: seq.next() as u16,
+            prober: seq.next(),
+            responder: seq.next(),
+            sequence: seq.next(),
+            arrival: seq.signed(),
+            departure: seq.signed(),
+        };
+        let mut ebuf = [0u8; 56];
+        let esize = packet::write_peer_echo(&pecho, &mut ebuf).unwrap_or(0);
+        writeln!(
+            out,
+            "write_peer_echo {} {} {} {} {} {} -> {esize} {}",
+            pecho.stream,
+            pecho.prober,
+            pecho.responder,
+            pecho.sequence,
+            pecho.arrival,
+            pecho.departure,
+            bytes_of(&ebuf)
+        )?;
+
+        let count = u8::try_from(seq.next() % 5).unwrap_or(0);
+        let mut edges = [packet::RelayEdge::ZERO; packet::MAX_RELAY_EDGES];
+        for slot in edges.iter_mut().take(usize::from(count)) {
+            #[allow(clippy::cast_possible_truncation)]
+            {
+                *slot = packet::RelayEdge {
+                    from_id: seq.next() % 10,
+                    to_id: seq.next() % 10,
+                    offset_ns: seq.signed(),
+                    variance_ns2: seq.next(),
+                    age_ns: seq.next() as u32,
+                };
+            }
+        }
+        #[allow(clippy::cast_possible_truncation)]
+        let relay = packet::PeerRelay {
+            stream: seq.next() as u16,
+            sender: seq.next(),
+            sequence: seq.next(),
+            sender_clock_id: seq.next() as u32,
+            count,
+            edges,
+        };
+        let mut rbuf = [0u8; 220];
+        let rsize = packet::write_peer_relay(&relay, &mut rbuf).unwrap_or(0);
+        write!(
+            out,
+            "write_peer_relay {} {} {} {} {count}",
+            relay.stream, relay.sender, relay.sequence, relay.sender_clock_id
+        )?;
+        for edge in relay.edges.iter().take(usize::from(count)) {
+            write!(
+                out,
+                " {} {} {} {} {}",
+                edge.from_id, edge.to_id, edge.offset_ns, edge.variance_ns2, edge.age_ns
+            )?;
+        }
+        writeln!(out, " -> {rsize} {}", bytes_of(&rbuf))?;
+
+        let mut pmut = pbuf[..psize].to_vec();
+        let place = usize::try_from(seq.next() % 32).unwrap_or(0);
+        if let Some(b) = pmut.get_mut(place) {
+            *b ^= 1;
+        }
+        let mut emut = ebuf[..esize].to_vec();
+        if let Some(b) = emut.get_mut(place) {
+            *b ^= 1;
+        }
+        let mut rmut = rbuf[..rsize].to_vec();
+        let rplace = place.min(rmut.len().saturating_sub(1));
+        if let Some(b) = rmut.get_mut(rplace) {
+            *b ^= 1;
+        }
+        for bytes in [
+            &pbuf[..psize],
+            &pmut[..],
+            &pbuf[..=psize],
+            &ebuf[..esize],
+            &emut[..],
+            &ebuf[..=esize],
+            &rbuf[..rsize],
+            &rmut[..],
+            &rbuf[..rsize.saturating_sub(1)],
+        ] {
+            let pnums = match packet::parse_peer_probe(bytes) {
+                Ok(p) => vec![
+                    0,
+                    i128::from(p.stream),
+                    i128::from(p.prober),
+                    i128::from(p.target),
+                    i128::from(p.sequence),
+                ],
+                Err(r) => {
+                    let [c, d] = rejection(r);
+                    vec![c, d, 0, 0, 0]
+                }
+            };
+            writeln!(
+                out,
+                "parse_peer_probe {} -> {}",
+                bytes_of(bytes),
+                join(&pnums)
+            )?;
+            let enums = match packet::parse_peer_echo(bytes) {
+                Ok(e) => vec![
+                    0,
+                    i128::from(e.stream),
+                    i128::from(e.prober),
+                    i128::from(e.responder),
+                    i128::from(e.sequence),
+                    i128::from(e.arrival),
+                    i128::from(e.departure),
+                ],
+                Err(r) => {
+                    let [c, d] = rejection(r);
+                    vec![c, d, 0, 0, 0, 0, 0]
+                }
+            };
+            writeln!(
+                out,
+                "parse_peer_echo {} -> {}",
+                bytes_of(bytes),
+                join(&enums)
+            )?;
+            let rnums = match packet::parse_peer_relay(bytes) {
+                Ok(rel) => {
+                    let mut v = vec![
+                        0,
+                        i128::from(rel.stream),
+                        i128::from(rel.sender),
+                        i128::from(rel.sequence),
+                        i128::from(rel.sender_clock_id),
+                        i128::from(rel.count),
+                    ];
+                    for edge in rel.edges.iter().take(usize::from(rel.count)) {
+                        v.extend([
+                            i128::from(edge.from_id),
+                            i128::from(edge.to_id),
+                            i128::from(edge.offset_ns),
+                            i128::from(edge.variance_ns2),
+                            i128::from(edge.age_ns),
+                        ]);
+                    }
+                    v
+                }
+                Err(r) => {
+                    let [c, d] = rejection(r);
+                    vec![c, d, 0, 0, 0, 0]
+                }
+            };
+            writeln!(
+                out,
+                "parse_peer_relay {} -> {}",
+                bytes_of(bytes),
+                join(&rnums)
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// Differential cases for `min_rtt::ntp_exchange` and `SlidingMinRtt<8>`.
+fn min_rtt_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(16);
+    for _ in 0..80 {
+        let stride = 1 + usize::try_from(seq.next() % 5).unwrap_or(0);
+        let init_var = 1_000_000u64 + (seq.next() % 100_000_000);
+        let floor_var = 100_000u64 + (seq.next() % 50_000_000);
+        let mut sel = min_rtt::SlidingMinRtt::<8>::new(stride, init_var, floor_var);
+        let ops = 1 + seq.next() % 18;
+        write!(out, "min_rtt {stride} {init_var} {floor_var} {ops}")?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut t1 = 1_000_000_000i64;
+        let offset = (seq.signed() % 5_000_000_000).clamp(-5_000_000_000, 5_000_000_000);
+        for id in 1..=ops {
+            t1 = t1
+                .saturating_add(50_000_000 + i64::try_from(seq.next() % 100_000_000).unwrap_or(0));
+            let fwd = i64::try_from(1_000_000 + seq.next() % 20_000_000).unwrap_or(0);
+            let proc_ns = if seq.next().is_multiple_of(9) {
+                -500
+            } else {
+                i64::try_from(seq.next() % 100_000).unwrap_or(0)
+            };
+            let rev = i64::try_from(1_000_000 + seq.next() % 20_000_000).unwrap_or(0);
+            let t2 = t1.saturating_add(offset).saturating_add(fwd);
+            let t3 = t2.saturating_add(proc_ns);
+            let t4 = t1
+                .saturating_add(fwd)
+                .saturating_add(proc_ns)
+                .saturating_add(rev);
+            write!(out, " {id} {t1} {t2} {t3} {t4}")?;
+            let ex = min_rtt::Exchange { id, t1, t2, t3, t4 };
+            match sel.observe(ex) {
+                Some(m) => results.extend([
+                    1,
+                    i128::from(m.id),
+                    i128::from(m.midpoint_ns),
+                    i128::from(m.offset_ns),
+                    i128::from(m.rtt_ns),
+                    i128::from(m.variance_ns2),
+                ]),
+                None => results.extend([0, 0, 0, 0, 0, 0]),
+            }
+            results.push(sel.min_rtt_ns().map_or(-1, i128::from));
+            results.push(i128::from(sel.variance_ns2()));
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
+/// Differential cases for `kalman::KalmanFilter`.
+fn kalman_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(17);
+    let priors = [
+        kalman::NoisePrior::TCXO,
+        kalman::NoisePrior::CONSUMER_QUARTZ,
+        kalman::NoisePrior::WANDERING_QUARTZ,
+    ];
+    for case in 0..80 {
+        let prior_idx = case % priors.len();
+        let jump_ns = 10_000_000 + i64::try_from(seq.next() % 200_000_000).unwrap_or(0);
+        let mut kf = kalman::KalmanFilter::new(priors[prior_idx], jump_ns);
+        let ops = 1 + seq.next() % 14;
+        write!(out, "kalman {prior_idx} {jump_ns} {ops}")?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut t = 1_000_000_000i64;
+        let mut off = seq.signed() % 10_000_000_000;
+        for _ in 0..ops {
+            t = t
+                .saturating_add(100_000_000 + i64::try_from(seq.next() % 500_000_000).unwrap_or(0));
+            let delta = if seq.next().is_multiple_of(7) {
+                seq.signed() % 500_000_000
+            } else {
+                seq.signed() % 500_000
+            };
+            off = off.saturating_add(delta);
+            let var = 1_000_000 + (seq.next() % 500_000_000);
+            let query = t.saturating_add(seq.signed() % 500_000_000);
+            write!(out, " {t} {off} {var} {query}")?;
+            let jumped = kf.update(t, off, var);
+            results.push(i128::from(jumped));
+            results.push(i128::from(kf.freq_q48()));
+            results.push(i128::from(kf.offset_variance_ns2()));
+            match kf.predict_offset_ns(query) {
+                Some(v) => results.extend([1, i128::from(v)]),
+                None => results.extend([0, 0]),
+            }
+            match kf.to_line() {
+                Some(l) => results.extend([
+                    1,
+                    i128::from(l.time),
+                    i128::from(l.value),
+                    i128::from(l.rise),
+                    i128::from(l.run),
+                ]),
+                None => results.extend([0, 0, 0, 0, 0]),
+            }
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
+/// Differential cases for `blue::solve_blue` on small connected/disconnected graphs.
+fn blue_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(18);
+    for _ in 0..100 {
+        let hosts = 2 + usize::try_from(seq.next() % 5).unwrap_or(0);
+        let self_idx = 1 + usize::try_from(seq.next() % (hosts as u64 - 1)).unwrap_or(0);
+        let n_edges = 1 + usize::try_from(seq.next() % 10).unwrap_or(0);
+        let mut edges = Vec::with_capacity(n_edges);
+        write!(out, "blue {hosts} {self_idx} {n_edges}")?;
+        for _ in 0..n_edges {
+            let from = usize::try_from(seq.next() % hosts as u64).unwrap_or(0);
+            let to = usize::try_from(seq.next() % hosts as u64).unwrap_or(0);
+            let offset_ns = seq.signed() % 2_000_000_000;
+            let variance_ns2 = if seq.next().is_multiple_of(11) {
+                0
+            } else {
+                1_000 + (seq.next() % 500_000_000)
+            };
+            edges.push(blue::EdgeObs {
+                from,
+                to,
+                offset_ns,
+                variance_ns2,
+            });
+            write!(out, " {from} {to} {offset_ns} {variance_ns2}")?;
+        }
+        let res = blue::solve_blue(hosts, self_idx, &edges, edges.len());
+        let mut results = vec![
+            i128::try_from(res.active_count).unwrap_or(0),
+            i128::from(res.common_offset_ns),
+            i128::from(res.common_var_ns2),
+            i128::from(res.self_diff_offset_ns),
+            i128::from(res.self_diff_var_ns2),
+        ];
+        for h in 0..hosts {
+            results.push(i128::from(res.reachable[h]));
+            results.push(i128::from(res.offsets_ns[h]));
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
+/// Differential cases for `player::ModalPlayer::cycle` across Star and Peer modes.
+fn modal_player_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(19);
+    for _ in 0..60 {
+        let reg = player::ModalRegulation::lipsync(1_000_000, 128);
+        let mut mp = player::ModalPlayer::new(reg);
+        let cycles = 1 + seq.next() % 16;
+        write!(out, "modal_player {cycles}")?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut now = timing::Position {
+            frame: 1000,
+            fraction: 0,
+        };
+        let mut epoch = 0u32;
+        for step_idx in 0..cycles {
+            let frames = [0u32, 128, 256, 480][usize::try_from(seq.next() % 4).unwrap_or(0)];
+            let duration = i64::from(frames) * 20_833;
+            let peer_active = (step_idx / 4) % 2 == 1;
+            if step_idx % 5 == 0 {
+                epoch = epoch.wrapping_add(1);
+            }
+            let com_now = seq.signed() % 5_000_000;
+            let com_then = com_now.saturating_add(seq.signed() % 100_000);
+            let later = timing::advance(now, frames, seq.signed() % 10_000_000_000);
+            let schedule = timing::Schedule {
+                index: now.frame,
+                capture: 0,
+                rate: 48_000,
+                drift: 0,
+                level: 20_000_000,
+                level_slope: 0,
+            };
+            write!(
+                out,
+                " {} {} {} {} {frames} {duration} {} {epoch} {com_now} {com_then}",
+                now.frame,
+                now.fraction,
+                later.frame,
+                later.fraction,
+                u8::from(peer_active)
+            )?;
+            let plan = mp.cycle(
+                now,
+                later,
+                frames,
+                duration,
+                &schedule,
+                peer_active,
+                epoch,
+                com_now,
+                com_then,
+            );
+            results.extend(plan_numbers(&plan));
+            now = later;
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
+/// End-to-end Star & Peer sequences on `sync::Sync`.
+#[allow(clippy::too_many_lines)]
+fn sync_cases(out: &mut impl Write) -> io::Result<()> {
+    let mut seq = Sequence(20);
+    for case in 0..30 {
+        let with_peers = case % 2 == 1;
+        let mut eng = sync::Sync::new(sync::SyncSettings::standard(1, 100));
+        if with_peers {
+            let _ = eng.add_peer(200, sync::WEIGHT_UNITY_Q16);
+            let _ = eng.add_peer(300, sync::WEIGHT_UNITY_Q16);
+        }
+        let ops = 6 + seq.next() % 12;
+        write!(out, "sync {} {ops}", u8::from(with_peers))?;
+        let mut results: Vec<i128> = Vec::new();
+        let mut now = 1_000_000_000i64;
+        let mut rseq = 1u64;
+        let mut pseq = 1u64;
+        let mut rel_seq = 1u64;
+        for _ in 0..ops {
+            now = now
+                .saturating_add(100_000_000 + i64::try_from(seq.next() % 200_000_000).unwrap_or(0));
+            let kind = seq.next() % 5;
+            match kind {
+                0 => {
+                    // Sender report departure + echo arrival
+                    let t1 = now.saturating_sub(20_000_000);
+                    let t2 = t1.saturating_add(500_000_000).saturating_add(2_000_000);
+                    let t3 = t2.saturating_add(10_000);
+                    let t4 = t1.saturating_add(4_500_000);
+                    eng.report_departed(rseq, t1);
+                    let ec = packet::Echo {
+                        stream: 1,
+                        receiver: 100,
+                        sequence: rseq,
+                        arrival: t2,
+                        departure: t3,
+                    };
+                    let ok = eng.on_sender_echo(&ec, t4);
+                    write!(out, " 0 {rseq} {t1} {t2} {t3} {t4}")?;
+                    results.push(i128::from(ok));
+                    rseq += 1;
+                }
+                1 => {
+                    // Peer probe departure + peer echo arrival from peer 200
+                    let t1 = now.saturating_sub(10_000_000);
+                    let t2 = t1.saturating_add(100_000_000).saturating_add(500_000);
+                    let t3 = t2.saturating_add(5_000);
+                    let t4 = t1.saturating_add(1_100_000);
+                    eng.peer_probe_departed(0, pseq, t1);
+                    let pe = packet::PeerEcho {
+                        stream: 1,
+                        prober: 100,
+                        responder: 200,
+                        sequence: pseq,
+                        arrival: t2,
+                        departure: t3,
+                    };
+                    let ok = eng.on_peer_echo(&pe, t4);
+                    write!(out, " 1 {pseq} {t1} {t2} {t3} {t4}")?;
+                    results.push(i128::from(ok));
+                    pseq += 1;
+                }
+                2 => {
+                    // Incoming peer relay from peer 200 carrying sender edge + peer 300 edge
+                    let mut relay = packet::PeerRelay::EMPTY;
+                    relay.stream = 1;
+                    relay.sender = 200;
+                    relay.sequence = rel_seq;
+                    relay.count = 2;
+                    relay.edges[0] = packet::RelayEdge {
+                        from_id: 200,
+                        to_id: 0,
+                        offset_ns: 400_000_000,
+                        variance_ns2: 50_000_000,
+                        age_ns: 5_000_000,
+                    };
+                    relay.edges[1] = packet::RelayEdge {
+                        from_id: 200,
+                        to_id: 300,
+                        offset_ns: -50_000_000,
+                        variance_ns2: 5_000_000,
+                        age_ns: 4_000_000,
+                    };
+                    let acc = eng.on_peer_relay(&relay, now);
+                    write!(out, " 2 {rel_seq} {now} 0 0 0")?;
+                    results.push(i128::try_from(acc).unwrap_or(0));
+                    rel_seq += 1;
+                }
+                3 => {
+                    // Build relay
+                    let cnt = eng.build_relay(now).map_or(-1, |r| i128::from(r.count));
+                    write!(out, " 3 {now} 0 0 0 0")?;
+                    results.push(cnt);
+                }
+                _ => {
+                    // Step and query snapshot
+                    let snap = eng.step(now);
+                    write!(out, " 4 {now} 0 0 0 0")?;
+                    results.extend([
+                        i128::from(snap.valid),
+                        i128::from(snap.peer_active),
+                        i128::from(snap.active_peers),
+                        i128::from(snap.epoch),
+                        i128::from(snap.sender_time(now)),
+                        i128::from(snap.common_offset_ns(now)),
+                        i128::from(snap.diff_offset_ns(now)),
+                    ]);
+                }
+            }
+        }
+        writeln!(out, " -> {}", join(&results))?;
+    }
+    Ok(())
+}
+
 fn main() -> io::Result<()> {
     let mut out = BufWriter::new(io::stdout().lock());
     saturate_cases(&mut out)?;
     mul_shift_cases(&mut out)?;
     div_floor_cases(&mut out)?;
     root_cases(&mut out)?;
+    fixed_v2_cases(&mut out)?;
     relation_cases(&mut out)?;
     packet_cases(&mut out)?;
     presence_cases(&mut out)?;
@@ -1417,8 +1983,14 @@ fn main() -> io::Result<()> {
     unit_cases(&mut out)?;
     player_cases(&mut out)?;
     report_cases(&mut out)?;
+    peer_packet_cases(&mut out)?;
     device_cases(&mut out)?;
     needs_cases(&mut out)?;
     answers_cases(&mut out)?;
+    min_rtt_cases(&mut out)?;
+    kalman_cases(&mut out)?;
+    blue_cases(&mut out)?;
+    modal_player_cases(&mut out)?;
+    sync_cases(&mut out)?;
     out.flush()
 }

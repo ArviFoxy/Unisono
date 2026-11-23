@@ -1,6 +1,6 @@
 [package]
 name = "reachable"
-description = "Checks what the machine code of entry points of a library can reach: only unisono's own code and a few functions that copy memory and do arithmetic."
+description = "Static x86-64 ELF call-graph auditor ensuring real-time entry points stay free of syscalls, allocations, and panics."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

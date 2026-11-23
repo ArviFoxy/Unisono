@@ -21,21 +21,22 @@ namespace Unisono.Packet
 
 /-! ## Echo wire layout and round-trip -/
 
-/-- Exact 32-byte wire layout produced by `write_echo`. -/
+/-- Exact 40-byte wire layout produced by `write_echo`. -/
 theorem write_echo_spec (e : packet.Echo) (bytes : Slice Std.U8)
     (hlen : bytes.val.length = packet.ECHO.val) :
     packet.write_echo e bytes ⦃ out =>
       out.1 = some packet.ECHO
-      ∧ out.2.val.length = 32
+      ∧ out.2.val.length = 40
       ∧ HasLE out.2.val 0 4 packet.MAGIC.val
       ∧ HasLE out.2.val 4 1 packet.VERSION.val
       ∧ HasLE out.2.val 5 1 packet.KIND_ECHO.val
       ∧ HasLE out.2.val 6 2 e.stream.val
       ∧ HasLE out.2.val 8 8 e.receiver.val
       ∧ HasLE out.2.val 16 8 e.sequence.val
-      ∧ HasLE out.2.val 24 8 (IScalar.hcast .U64 e.arrival).val ⦄ := by
-  have hecho : packet.ECHO.val = 32 := by simp [packet.ECHO]
-  have hlen32 : bytes.val.length = 32 := by omega
+      ∧ HasLE out.2.val 24 8 (IScalar.hcast .U64 e.arrival).val
+      ∧ HasLE out.2.val 32 8 (IScalar.hcast .U64 e.departure).val ⦄ := by
+  have hecho : packet.ECHO.val = 40 := by simp [packet.ECHO]
+  have hlen40 : bytes.val.length = 40 := by omega
   unfold packet.write_echo
   have hnotlt : ¬ bytes.len < packet.ECHO := by
     have : bytes.len.val = bytes.val.length := rfl
@@ -59,40 +60,50 @@ theorem write_echo_spec (e : packet.Echo) (bytes : Slice Std.U8)
   step as ⟨ia, hia⟩
   step with write_spec bs6 24#usize 8#usize ia (by scalar_tac) (by decide)
     as ⟨b6, bs7, hb6, hl7, ha7, ho7⟩
-  simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, Bool.and_self, ↓reduceIte]
+  step as ⟨id_, hid⟩
+  step with write_spec bs7 32#usize 8#usize id_ (by scalar_tac) (by decide)
+    as ⟨b7, bs8, hb7, hl8, hd8, ho8⟩
+  simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7, Bool.and_self, ↓reduceIte]
   rw [WP.spec_ok]
   dsimp only
   have hv_eq : iv.val = packet.VERSION.val := by rw [hiv]; exact cast_u8_u64_val _
   have hk_eq : ik.val = packet.KIND_ECHO.val := by rw [hik]; exact cast_u8_u64_val _
   have hs_eq : is.val = e.stream.val := by rw [his]; exact cast_u16_u64_val _
-  refine ⟨rfl, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · exact (((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
+  refine ⟨rfl, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact ((((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
       |>.preserve hl3 ho3 (Or.inl (by decide)))
       |>.preserve hl4 ho4 (Or.inl (by decide)))
       |>.preserve hl5 ho5 (Or.inl (by decide)))
       |>.preserve hl6 ho6 (Or.inl (by decide)))
-      |>.preserve hl7 ho7 (Or.inl (by decide))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide))
   · rw [← hv_eq]
-    exact (((((hv2.preserve hl3 ho3 (Or.inl (by decide)))
+    exact ((((((hv2.preserve hl3 ho3 (Or.inl (by decide)))
       |>.preserve hl4 ho4 (Or.inl (by decide)))
       |>.preserve hl5 ho5 (Or.inl (by decide)))
       |>.preserve hl6 ho6 (Or.inl (by decide)))
       |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
   · rw [← hk_eq]
-    exact ((((hk3.preserve hl4 ho4 (Or.inl (by decide)))
+    exact (((((hk3.preserve hl4 ho4 (Or.inl (by decide)))
       |>.preserve hl5 ho5 (Or.inl (by decide)))
       |>.preserve hl6 ho6 (Or.inl (by decide)))
       |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
   · rw [← hs_eq]
-    exact (((hs4.preserve hl5 ho5 (Or.inl (by decide)))
+    exact ((((hs4.preserve hl5 ho5 (Or.inl (by decide)))
       |>.preserve hl6 ho6 (Or.inl (by decide)))
       |>.preserve hl7 ho7 (Or.inl (by decide)))
-  · exact ((hr5.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+  · exact (((hr5.preserve hl6 ho6 (Or.inl (by decide)))
       |>.preserve hl7 ho7 (Or.inl (by decide)))
-  · exact hq6.preserve hl7 ho7 (Or.inl (by decide))
-  · rw [← hia]; exact ha7
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+  · exact (hq6.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide))
+  · rw [← hia]; exact ha7.preserve hl8 ho8 (Or.inl (by decide))
+  · rw [← hid]; exact hd8
 
-/-- Writing an `Echo` into a 32-byte buffer and parsing it back recovers the
+/-- Writing an `Echo` into a 40-byte buffer and parsing it back recovers the
 exact `Echo`. -/
 theorem echo_roundtrip (e : packet.Echo) (bytes : Slice Std.U8)
     (hlen : bytes.val.length = packet.ECHO.val) :
@@ -102,28 +113,32 @@ theorem echo_roundtrip (e : packet.Echo) (bytes : Slice Std.U8)
       | some _ => packet.parse_echo out.2
       | none => ok (.Err .TooShort))
     ⦃ r => r = .Ok e ⦄ := by
-  have hecho : packet.ECHO.val = 32 := by simp [packet.ECHO]
+  have hecho : packet.ECHO.val = 40 := by simp [packet.ECHO]
   step with write_echo_spec e bytes hlen
-    as ⟨out, hsome, hlen7, hm7, hv7, hk7, hs7, hr7, hq7, ha7⟩
+    as ⟨out, hsome, hlen8, hm8, hv8, hk8, hs8, hr8, hq8, ha8, hd8⟩
   rw [hsome]
   have hs_lt : e.stream.val < 2 ^ (8 * 2) := by scalar_tac
   have hrec_lt : e.receiver.val < 2 ^ (8 * 8) := by scalar_tac
   have hseq_lt : e.sequence.val < 2 ^ (8 * 8) := by scalar_tac
   have hia_lt : (IScalar.hcast .U64 e.arrival).val < 2 ^ (8 * 8) := by scalar_tac
+  have hid_lt : (IScalar.hcast .U64 e.departure).val < 2 ^ (8 * 8) := by scalar_tac
   unfold packet.parse_echo
-  step with kind_of_hasLE out.2 packet.KIND_ECHO hm7 hv7 hk7 as ⟨rk, hrk⟩
+  step with kind_of_hasLE out.2 packet.KIND_ECHO hm8 hv8 hk8 as ⟨rk, hrk⟩
   rw [hrk]
   simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
-  step with read_of_hasLE out.2 6#usize 2#usize e.stream.val hs7 (by decide) hs_lt
+  step with read_of_hasLE out.2 6#usize 2#usize e.stream.val hs8 (by decide) hs_lt
     as ⟨o0, stream, ho0, hstream⟩
-  step with read_of_hasLE out.2 8#usize 8#usize e.receiver.val hr7 (by decide) hrec_lt
+  step with read_of_hasLE out.2 8#usize 8#usize e.receiver.val hr8 (by decide) hrec_lt
     as ⟨o1, receiver, ho1, hreceiver⟩
-  step with read_of_hasLE out.2 16#usize 8#usize e.sequence.val hq7 (by decide) hseq_lt
+  step with read_of_hasLE out.2 16#usize 8#usize e.sequence.val hq8 (by decide) hseq_lt
     as ⟨o2, sequence, ho2', hsequence⟩
-  step with read_of_hasLE out.2 24#usize 8#usize (IScalar.hcast .U64 e.arrival).val ha7 (by decide)
+  step with read_of_hasLE out.2 24#usize 8#usize (IScalar.hcast .U64 e.arrival).val ha8 (by decide)
       hia_lt
     as ⟨o3, arrival, ho3', harrival⟩
-  rw [ho0, ho1, ho2', ho3']
+  step with read_of_hasLE out.2 32#usize 8#usize (IScalar.hcast .U64 e.departure).val hd8 (by decide)
+      hid_lt
+    as ⟨o4, departure, ho4', hdeparture⟩
+  rw [ho0, ho1, ho2', ho3', ho4']
   have hlen_eq : out.2.len = packet.ECHO := by
     apply UScalar.eq_of_val_eq
     have : out.2.len.val = out.2.val.length := rfl
@@ -131,6 +146,7 @@ theorem echo_roundtrip (e : packet.Echo) (bytes : Slice Std.U8)
   simp only [hlen_eq, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
   step as ⟨st, hst⟩
   step as ⟨ar, har⟩
+  step as ⟨dep, hdep⟩
   congr 1
   cases e
   congr 1
@@ -141,6 +157,7 @@ theorem echo_roundtrip (e : packet.Echo) (bytes : Slice Std.U8)
   · exact UScalar.eq_of_val_eq hreceiver
   · exact UScalar.eq_of_val_eq hsequence
   · rw [har]; exact hcast_i64_u64_i64 _ arrival harrival
+  · rw [hdep]; exact hcast_i64_u64_i64 _ departure hdeparture
 
 /-! ## Request round-trip -/
 
@@ -463,6 +480,281 @@ theorem report_roundtrip (rep : packet.Report) (bytes : Slice Std.U8) (length : 
   · exact UScalar.eq_of_val_eq htimeline
   · exact UScalar.eq_of_val_eq hreceiver
   · exact UScalar.eq_of_val_eq hsequence
+
+/-! ## PeerProbe wire layout and round-trip -/
+
+/-- Exact 32-byte wire layout produced by `write_peer_probe`. -/
+theorem write_peer_probe_spec (p : packet.PeerProbe) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.PEER_PROBE.val) :
+    packet.write_peer_probe p bytes ⦃ out =>
+      out.1 = some packet.PEER_PROBE
+      ∧ out.2.val.length = 32
+      ∧ HasLE out.2.val 0 4 packet.MAGIC.val
+      ∧ HasLE out.2.val 4 1 packet.VERSION.val
+      ∧ HasLE out.2.val 5 1 packet.KIND_PEER_PROBE.val
+      ∧ HasLE out.2.val 6 2 p.stream.val
+      ∧ HasLE out.2.val 8 8 p.prober.val
+      ∧ HasLE out.2.val 16 8 p.target.val
+      ∧ HasLE out.2.val 24 8 p.sequence.val ⦄ := by
+  have hprobe : packet.PEER_PROBE.val = 32 := by simp [packet.PEER_PROBE]
+  have hlen32 : bytes.val.length = 32 := by omega
+  unfold packet.write_peer_probe
+  have hnotlt : ¬ bytes.len < packet.PEER_PROBE := by
+    have : bytes.len.val = bytes.val.length := rfl
+    scalar_tac
+  simp only [hnotlt, ↓reduceIte]
+  step with write_spec bytes 0#usize 4#usize packet.MAGIC (by scalar_tac) (by decide)
+    as ⟨b0, bs1, hb0, hl1, hm1, _⟩
+  step as ⟨iv, hiv⟩
+  step with write_spec bs1 4#usize 1#usize iv (by scalar_tac) (by decide)
+    as ⟨b1, bs2, hb1, hl2, hv2, ho2⟩
+  step as ⟨ik, hik⟩
+  step with write_spec bs2 5#usize 1#usize ik (by scalar_tac) (by decide)
+    as ⟨b2, bs3, hb2, hl3, hk3, ho3⟩
+  step as ⟨is, his⟩
+  step with write_spec bs3 6#usize 2#usize is (by scalar_tac) (by decide)
+    as ⟨b3, bs4, hb3, hl4, hs4, ho4⟩
+  step with write_spec bs4 8#usize 8#usize p.prober (by scalar_tac) (by decide)
+    as ⟨b4, bs5, hb4, hl5, hp5, ho5⟩
+  step with write_spec bs5 16#usize 8#usize p.target (by scalar_tac) (by decide)
+    as ⟨b5, bs6, hb5, hl6, ht6, ho6⟩
+  step with write_spec bs6 24#usize 8#usize p.sequence (by scalar_tac) (by decide)
+    as ⟨b6, bs7, hb6, hl7, hq7, ho7⟩
+  simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, Bool.and_self, ↓reduceIte]
+  rw [WP.spec_ok]
+  dsimp only
+  have hv_eq : iv.val = packet.VERSION.val := by rw [hiv]; exact cast_u8_u64_val _
+  have hk_eq : ik.val = packet.KIND_PEER_PROBE.val := by rw [hik]; exact cast_u8_u64_val _
+  have hs_eq : is.val = p.stream.val := by rw [his]; exact cast_u16_u64_val _
+  refine ⟨rfl, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
+      |>.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide))
+  · rw [← hv_eq]
+    exact (((((hv2.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · rw [← hk_eq]
+    exact ((((hk3.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · rw [← hs_eq]
+    exact (((hs4.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · exact ((hp5.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+  · exact ht6.preserve hl7 ho7 (Or.inl (by decide))
+  · exact hq7
+
+/-- Writing a `PeerProbe` into a 32-byte buffer and parsing it back recovers
+the exact `PeerProbe`. -/
+theorem peer_probe_roundtrip (p : packet.PeerProbe) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.PEER_PROBE.val) :
+    (do
+      let out ← packet.write_peer_probe p bytes
+      match out.1 with
+      | some _ => packet.parse_peer_probe out.2
+      | none => ok (.Err .TooShort))
+    ⦃ r => r = .Ok p ⦄ := by
+  have hprobe : packet.PEER_PROBE.val = 32 := by simp [packet.PEER_PROBE]
+  step with write_peer_probe_spec p bytes hlen
+    as ⟨out, hsome, hlen7, hm7, hv7, hk7, hs7, hp7, ht7, hq7⟩
+  rw [hsome]
+  have hs_lt : p.stream.val < 2 ^ (8 * 2) := by scalar_tac
+  have hp_lt : p.prober.val < 2 ^ (8 * 8) := by scalar_tac
+  have ht_lt : p.target.val < 2 ^ (8 * 8) := by scalar_tac
+  have hq_lt : p.sequence.val < 2 ^ (8 * 8) := by scalar_tac
+  unfold packet.parse_peer_probe
+  step with kind_of_hasLE out.2 packet.KIND_PEER_PROBE hm7 hv7 hk7 as ⟨rk, hrk⟩
+  rw [hrk]
+  simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step with read_of_hasLE out.2 6#usize 2#usize p.stream.val hs7 (by decide) hs_lt
+    as ⟨o0, stream, ho0, hstream⟩
+  step with read_of_hasLE out.2 8#usize 8#usize p.prober.val hp7 (by decide) hp_lt
+    as ⟨o1, prober, ho1, hprober⟩
+  step with read_of_hasLE out.2 16#usize 8#usize p.target.val ht7 (by decide) ht_lt
+    as ⟨o2, target, ho2', htarget⟩
+  step with read_of_hasLE out.2 24#usize 8#usize p.sequence.val hq7 (by decide) hq_lt
+    as ⟨o3, sequence, ho3', hsequence⟩
+  rw [ho0, ho1, ho2', ho3']
+  have hlen_eq : out.2.len = packet.PEER_PROBE := by
+    apply UScalar.eq_of_val_eq
+    have : out.2.len.val = out.2.val.length := rfl
+    omega
+  simp only [hlen_eq, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step as ⟨st, hst⟩
+  congr 1
+  cases p
+  congr 1
+  · rw [hst]
+    apply UScalar.eq_of_val_eq
+    rw [UScalar.cast_val_mod_pow_of_inBounds_eq, hstream]
+    scalar_tac
+  · exact UScalar.eq_of_val_eq hprober
+  · exact UScalar.eq_of_val_eq htarget
+  · exact UScalar.eq_of_val_eq hsequence
+
+/-! ## PeerEcho wire layout and round-trip -/
+
+/-- Exact 48-byte wire layout produced by `write_peer_echo`. -/
+theorem write_peer_echo_spec (e : packet.PeerEcho) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.PEER_ECHO.val) :
+    packet.write_peer_echo e bytes ⦃ out =>
+      out.1 = some packet.PEER_ECHO
+      ∧ out.2.val.length = 48
+      ∧ HasLE out.2.val 0 4 packet.MAGIC.val
+      ∧ HasLE out.2.val 4 1 packet.VERSION.val
+      ∧ HasLE out.2.val 5 1 packet.KIND_PEER_ECHO.val
+      ∧ HasLE out.2.val 6 2 e.stream.val
+      ∧ HasLE out.2.val 8 8 e.prober.val
+      ∧ HasLE out.2.val 16 8 e.responder.val
+      ∧ HasLE out.2.val 24 8 e.sequence.val
+      ∧ HasLE out.2.val 32 8 (IScalar.hcast .U64 e.arrival).val
+      ∧ HasLE out.2.val 40 8 (IScalar.hcast .U64 e.departure).val ⦄ := by
+  have hecho : packet.PEER_ECHO.val = 48 := by simp [packet.PEER_ECHO]
+  have hlen48 : bytes.val.length = 48 := by omega
+  unfold packet.write_peer_echo
+  have hnotlt : ¬ bytes.len < packet.PEER_ECHO := by
+    have : bytes.len.val = bytes.val.length := rfl
+    scalar_tac
+  simp only [hnotlt, ↓reduceIte]
+  step with write_spec bytes 0#usize 4#usize packet.MAGIC (by scalar_tac) (by decide)
+    as ⟨b0, bs1, hb0, hl1, hm1, _⟩
+  step as ⟨iv, hiv⟩
+  step with write_spec bs1 4#usize 1#usize iv (by scalar_tac) (by decide)
+    as ⟨b1, bs2, hb1, hl2, hv2, ho2⟩
+  step as ⟨ik, hik⟩
+  step with write_spec bs2 5#usize 1#usize ik (by scalar_tac) (by decide)
+    as ⟨b2, bs3, hb2, hl3, hk3, ho3⟩
+  step as ⟨is, his⟩
+  step with write_spec bs3 6#usize 2#usize is (by scalar_tac) (by decide)
+    as ⟨b3, bs4, hb3, hl4, hs4, ho4⟩
+  step with write_spec bs4 8#usize 8#usize e.prober (by scalar_tac) (by decide)
+    as ⟨b4, bs5, hb4, hl5, hp5, ho5⟩
+  step with write_spec bs5 16#usize 8#usize e.responder (by scalar_tac) (by decide)
+    as ⟨b5, bs6, hb5, hl6, hr6, ho6⟩
+  step with write_spec bs6 24#usize 8#usize e.sequence (by scalar_tac) (by decide)
+    as ⟨b6, bs7, hb6, hl7, hq7, ho7⟩
+  step as ⟨ia, hia⟩
+  step with write_spec bs7 32#usize 8#usize ia (by scalar_tac) (by decide)
+    as ⟨b7, bs8, hb7, hl8, ha8, ho8⟩
+  step as ⟨id_, hid⟩
+  step with write_spec bs8 40#usize 8#usize id_ (by scalar_tac) (by decide)
+    as ⟨b8, bs9, hb8, hl9, hd9, ho9⟩
+  simp only [hb0, hb1, hb2, hb3, hb4, hb5, hb6, hb7, hb8, Bool.and_self, ↓reduceIte]
+  rw [WP.spec_ok]
+  dsimp only
+  have hv_eq : iv.val = packet.VERSION.val := by rw [hiv]; exact cast_u8_u64_val _
+  have hk_eq : ik.val = packet.KIND_PEER_ECHO.val := by rw [hik]; exact cast_u8_u64_val _
+  have hs_eq : is.val = e.stream.val := by rw [his]; exact cast_u16_u64_val _
+  refine ⟨rfl, by omega, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · exact (((((((hm1.preserve hl2 ho2 (Or.inl (by decide)))
+      |>.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide))
+  · rw [← hv_eq]
+    exact (((((((hv2.preserve hl3 ho3 (Or.inl (by decide)))
+      |>.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · rw [← hk_eq]
+    exact ((((((hk3.preserve hl4 ho4 (Or.inl (by decide)))
+      |>.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · rw [← hs_eq]
+    exact (((((hs4.preserve hl5 ho5 (Or.inl (by decide)))
+      |>.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · exact ((((hp5.preserve hl6 ho6 (Or.inl (by decide)))
+      |>.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · exact (((hr6.preserve hl7 ho7 (Or.inl (by decide)))
+      |>.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · exact ((hq7.preserve hl8 ho8 (Or.inl (by decide)))
+      |>.preserve hl9 ho9 (Or.inl (by decide)))
+  · rw [← hia]; exact ha8.preserve hl9 ho9 (Or.inl (by decide))
+  · rw [← hid]; exact hd9
+
+/-- Writing a `PeerEcho` into a 48-byte buffer and parsing it back recovers the
+exact `PeerEcho`. -/
+theorem peer_echo_roundtrip (e : packet.PeerEcho) (bytes : Slice Std.U8)
+    (hlen : bytes.val.length = packet.PEER_ECHO.val) :
+    (do
+      let out ← packet.write_peer_echo e bytes
+      match out.1 with
+      | some _ => packet.parse_peer_echo out.2
+      | none => ok (.Err .TooShort))
+    ⦃ r => r = .Ok e ⦄ := by
+  have hecho : packet.PEER_ECHO.val = 48 := by simp [packet.PEER_ECHO]
+  step with write_peer_echo_spec e bytes hlen
+    as ⟨out, hsome, hlen9, hm9, hv9, hk9, hs9, hp9, hr9, hq9, ha9, hd9⟩
+  rw [hsome]
+  have hs_lt : e.stream.val < 2 ^ (8 * 2) := by scalar_tac
+  have hp_lt : e.prober.val < 2 ^ (8 * 8) := by scalar_tac
+  have hr_lt : e.responder.val < 2 ^ (8 * 8) := by scalar_tac
+  have hq_lt : e.sequence.val < 2 ^ (8 * 8) := by scalar_tac
+  have ha_lt : (IScalar.hcast .U64 e.arrival).val < 2 ^ (8 * 8) := by scalar_tac
+  have hd_lt : (IScalar.hcast .U64 e.departure).val < 2 ^ (8 * 8) := by scalar_tac
+  unfold packet.parse_peer_echo
+  step with kind_of_hasLE out.2 packet.KIND_PEER_ECHO hm9 hv9 hk9 as ⟨rk, hrk⟩
+  rw [hrk]
+  simp only [bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step with read_of_hasLE out.2 6#usize 2#usize e.stream.val hs9 (by decide) hs_lt
+    as ⟨o0, stream, ho0, hstream⟩
+  step with read_of_hasLE out.2 8#usize 8#usize e.prober.val hp9 (by decide) hp_lt
+    as ⟨o1, prober, ho1, hprober⟩
+  step with read_of_hasLE out.2 16#usize 8#usize e.responder.val hr9 (by decide) hr_lt
+    as ⟨o2, responder, ho2', hresponder⟩
+  step with read_of_hasLE out.2 24#usize 8#usize e.sequence.val hq9 (by decide) hq_lt
+    as ⟨o3, sequence, ho3', hsequence⟩
+  step with read_of_hasLE out.2 32#usize 8#usize (IScalar.hcast .U64 e.arrival).val ha9 (by decide)
+      ha_lt
+    as ⟨o4, arrival, ho4', harrival⟩
+  step with read_of_hasLE out.2 40#usize 8#usize (IScalar.hcast .U64 e.departure).val hd9 (by decide)
+      hd_lt
+    as ⟨o5, departure, ho5', hdeparture⟩
+  rw [ho0, ho1, ho2', ho3', ho4', ho5']
+  have hlen_eq : out.2.len = packet.PEER_ECHO := by
+    apply UScalar.eq_of_val_eq
+    have : out.2.len.val = out.2.val.length := rfl
+    omega
+  simp only [hlen_eq, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte]
+  step as ⟨st, hst⟩
+  step as ⟨ar, har⟩
+  step as ⟨dep, hdep⟩
+  congr 1
+  cases e
+  congr 1
+  · rw [hst]
+    apply UScalar.eq_of_val_eq
+    rw [UScalar.cast_val_mod_pow_of_inBounds_eq, hstream]
+    scalar_tac
+  · exact UScalar.eq_of_val_eq hprober
+  · exact UScalar.eq_of_val_eq hresponder
+  · exact UScalar.eq_of_val_eq hsequence
+  · rw [har]; exact hcast_i64_u64_i64 _ arrival harrival
+  · rw [hdep]; exact hcast_i64_u64_i64 _ departure hdeparture
 
 
 end Unisono.Packet

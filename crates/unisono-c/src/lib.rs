@@ -2,36 +2,37 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! unisono for programs written in C: see `include/unisono.h`, which says
-//! what each function does.
+//! C FFI bindings for `unisono` (public ABI documented in `include/unisono.h`).
 //!
-//! A sender is the capture end of [`unisono_runtime::send`] with a managed
-//! [`NetworkThread`] running its network end; a receiver is the audio end of
-//! [`unisono_runtime::receive`] with a managed [`NetworkThread`] running its
-//! network end. Each network thread is held to the system calls that such a
-//! thread makes where the system does that ([`unisono_runtime::syscalls`]),
-//! and returns its socket on stop so closing it happens outside the filter.
+//! Wraps the capture end of [`unisono_runtime::send`] and the audio end of
+//! [`unisono_runtime::receive`], each paired with a managed [`NetworkThread`]
+//! running under [`unisono_runtime::syscalls`] seccomp restrictions on Linux
+//! and returning its socket on shutdown so `close(fd)` runs outside the filter.
 
 use std::ffi::{CStr, c_char, c_int};
 use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
+use unisono_core::kalman::NoisePrior;
 use unisono_core::packet::Format;
-use unisono_core::player::Regulation;
-use unisono_core::sender::Settings as StreamSettings;
-use unisono_dsp::Parameters;
+use unisono_core::player::ModalRegulation;
+use unisono_core::sync::{MAX_DIRECT_PEERS, SyncSettings, WEIGHT_UNITY_Q16};
 use unisono_runtime::audio::{Capture, Playback};
 use unisono_runtime::clock;
-use unisono_runtime::level::{Choice, Weights};
 use unisono_runtime::network_thread::NetworkThread;
-use unisono_runtime::pump::{ReceiverPlayback, Settings as PlaybackSettings};
-use unisono_runtime::receive::{self, Intake, ReceiverAudio, ReceiverNetwork, Reporting, Sizes};
-use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings as SenderSettings};
+use unisono_runtime::pump::{Settings as PlaybackSettings, ShippedPlayback};
+use unisono_runtime::receive::{
+    self, Intake, NetConfig, PeerConfig, ReceiverNetwork, Reporting, SHIPPED_INTAKE_ITEMS,
+    SHIPPED_SIZES, ShippedAudio, SyncMode,
+};
+use unisono_runtime::send::{
+    self, CaptureEnd, SHIPPED_CAPTURE_BUFFERS, SenderNetwork, Settings as SenderSettings,
+};
 use unisono_runtime::socket::{self, Socket};
 
 /// The receiver's audio end: room for 16,384 frames, 64 samples of the
 /// sender's clock, the arrivals of 8 packets, and 64 reports of its device.
-type Audio = ReceiverAudio<256, 64, 8, 64>;
+type Audio = ShippedAudio;
 
 /// Maximum number of receivers accepted by one sender.
 const MAX_RECEIVERS: usize = 4_096;
@@ -41,7 +42,7 @@ const MAX_RECEIVERS: usize = 4_096;
 const MAX_RATE: u32 = 1_000_000;
 
 /// Number of buffers in the capture-to-network ring.
-const CAPTURE_BUFFERS: usize = 64;
+const CAPTURE_BUFFERS: usize = SHIPPED_CAPTURE_BUFFERS;
 
 /// Maximum total bytes allocated for the capture ring (`64 MiB`).
 const MAX_CAPTURE_RING_BYTES: usize = 64 * 1024 * 1024;
@@ -73,6 +74,27 @@ pub struct Sender {
     network: Option<NetworkThread<SenderNetwork>>,
 }
 
+/// Receiver sync mode constants matching `include/unisono.h`.
+const SYNC_PEER: u8 = 0;
+const SYNC_HULL: u8 = 1;
+
+/// Modal gain preset constants matching `include/unisono.h`.
+const MODE_LIPSYNC: u8 = 0;
+const MODE_LOW_LATENCY: u8 = 1;
+
+/// Oscillator noise prior constants matching `include/unisono.h`.
+const CLOCK_CONSUMER: u8 = 0;
+const CLOCK_TCXO: u8 = 1;
+const CLOCK_WANDERING: u8 = 2;
+
+/// One direct peer entry; `unisono_peer` in the header.
+#[repr(C)]
+pub struct PeerEntry {
+    identity: u64,
+    address: *const c_char,
+    weight_q16: u32,
+}
+
 /// What a receiver is set up with; `unisono_receiver_settings` in the
 /// header.
 #[repr(C)]
@@ -82,6 +104,16 @@ pub struct ReceiverOptions {
     identity: u64,
     rate: u32,
     channels: u8,
+    sync_mode: u8,
+    mode: u8,
+    clock_prior: u8,
+    sender_clock_prior: u8,
+    star_gain_q16: u32,
+    common_gain_q16: u32,
+    diff_gain_q16: u32,
+    sender_weight_q16: u32,
+    peers: *const PeerEntry,
+    peer_count: usize,
 }
 
 /// A receiver that runs; `unisono_receiver` in the header.
@@ -214,42 +246,20 @@ unsafe fn start_sender(options: &SenderOptions) -> Result<Sender, String> {
         // SAFETY: the caller says that `bind` is a text.
         unsafe { address(options.bind) }?
     };
-    let window = 2_400;
-    // The needs of the last two minutes, and the costs that the program
-    // takes when none are given.
-    let stretches = usize::try_from(120 * u64::from(options.rate) / u64::from(window))
-        .unwrap_or(usize::MAX)
-        .max(1);
-    let choice = (options.choose_level != 0).then_some(Choice {
-        weights: Weights {
-            latency: 1_000.0,
-            target: 0,
-            off_target: 0.0,
-            gap: 600.0,
-            missed: 60_000.0,
-            moving: 60.0,
-        },
-        history: stretches,
-        slope: 500_000,
-    });
-    let settings = SenderSettings {
-        stream: StreamSettings {
-            stream: options.stream,
-            rate: options.rate,
-            channels: options.channels,
-            format,
-            span: 2_000,
-            window,
-            clock: send::clock_identity(),
-        },
-        packet: options.packet_frames,
-        level: options.level,
-        choice,
-        timeline: send::first_timeline(),
+    let settings = SenderSettings::shipped(
+        options.stream,
+        options.rate,
+        options.channels,
+        format,
+        options.packet_frames,
+        options.level,
+        send::first_timeline(),
+        send::clock_identity(),
         receivers,
-        kept: if options.protection != 0 { 256 } else { 0 },
-    };
-    settings.validate().map_err(|error| error.to_string())?;
+        options.choose_level != 0,
+        options.protection != 0,
+    )
+    .map_err(|error| error.to_string())?;
 
     let channels = usize::from(options.channels);
     let cycle = usize::try_from(options.cycle_frames)
@@ -364,6 +374,16 @@ pub unsafe extern "C" fn unisono_sender_stop(sender: *mut Sender) {
     }));
 }
 
+/// Maps a C oscillator prior enum value to [`NoisePrior`].
+fn decode_clock_prior(code: u8) -> Result<NoisePrior, String> {
+    match code {
+        CLOCK_CONSUMER => Ok(NoisePrior::CONSUMER_QUARTZ),
+        CLOCK_TCXO => Ok(NoisePrior::TCXO),
+        CLOCK_WANDERING => Ok(NoisePrior::WANDERING_QUARTZ),
+        _ => Err(format!("unknown clock prior value `{code}`")),
+    }
+}
+
 /// Fills `settings` with what the program takes when nothing is said.
 ///
 /// # Safety
@@ -384,12 +404,117 @@ pub unsafe extern "C" fn unisono_receiver_defaults(settings: *mut ReceiverOption
                 identity: 1,
                 rate: 48_000,
                 channels: 2,
+                sync_mode: SYNC_PEER,
+                mode: MODE_LIPSYNC,
+                clock_prior: CLOCK_CONSUMER,
+                sender_clock_prior: CLOCK_CONSUMER,
+                star_gain_q16: 0,
+                common_gain_q16: 0,
+                diff_gain_q16: 0,
+                sender_weight_q16: 0,
+                peers: std::ptr::null(),
+                peer_count: 0,
             });
         }
     }));
 }
 
 /// The receiver that `options` describe, started.
+/// Builds modal regulation and network sync configuration from C receiver options.
+///
+/// # Safety
+///
+/// `options.peers` is either unused (`peer_count == 0`) or points to
+/// `options.peer_count` valid [`Peer`] entries whose `address` strings are
+/// valid NUL-terminated UTF-8 or null.
+unsafe fn build_receiver_sync(
+    options: &ReceiverOptions,
+    datagram: usize,
+    jump: u32,
+) -> Result<(Option<ModalRegulation>, NetConfig), String> {
+    let sync_mode = match options.sync_mode {
+        SYNC_PEER => SyncMode::Peer,
+        SYNC_HULL => SyncMode::Hull,
+        code => return Err(format!("unknown sync mode `{code}`")),
+    };
+    match sync_mode {
+        SyncMode::Hull => {
+            if options.peer_count > 0 {
+                return Err("peers cannot be configured in hull sync mode".into());
+            }
+            Ok((None, NetConfig::hull(options.stream, datagram)))
+        }
+        SyncMode::Peer => {
+            if options.peer_count > MAX_DIRECT_PEERS {
+                return Err(format!("at most {MAX_DIRECT_PEERS} peers are supported"));
+            }
+            let base_modal = match options.mode {
+                MODE_LIPSYNC => ModalRegulation::lipsync(1_000_000, jump),
+                MODE_LOW_LATENCY => ModalRegulation::low_latency(1_000_000, jump),
+                code => return Err(format!("unknown modal preset `{code}`")),
+            };
+            let modal = ModalRegulation {
+                star_gain: if options.star_gain_q16 == 0 {
+                    base_modal.star_gain
+                } else {
+                    options.star_gain_q16
+                },
+                common_gain: if options.common_gain_q16 == 0 {
+                    base_modal.common_gain
+                } else {
+                    options.common_gain_q16
+                },
+                diff_gain: if options.diff_gain_q16 == 0 {
+                    base_modal.diff_gain
+                } else {
+                    options.diff_gain_q16
+                },
+                limit: base_modal.limit,
+                jump,
+            };
+            let mut sync_settings = SyncSettings::standard(options.stream, options.identity);
+            sync_settings.local_prior = decode_clock_prior(options.clock_prior)?;
+            sync_settings.sender_prior = decode_clock_prior(options.sender_clock_prior)?;
+            let mut peers = Vec::with_capacity(options.peer_count);
+            if options.peer_count > 0 {
+                if options.peers.is_null() || !options.peers.is_aligned() {
+                    return Err("peer array pointer is null or misaligned".into());
+                }
+                for idx in 0..options.peer_count {
+                    // SAFETY: `options.peers` is non-null, aligned, and points
+                    // to `options.peer_count <= MAX_DIRECT_PEERS` entries.
+                    let entry = unsafe { &*options.peers.add(idx) };
+                    // SAFETY: `entry.address` is null or a NUL-terminated string.
+                    let addr = unsafe { address(entry.address) }?;
+                    peers.push(PeerConfig {
+                        identity: entry.identity,
+                        address: addr,
+                        weight_q16: if entry.weight_q16 == 0 {
+                            WEIGHT_UNITY_Q16
+                        } else {
+                            entry.weight_q16
+                        },
+                    });
+                }
+            }
+            let net_cfg = NetConfig {
+                stream: options.stream,
+                sync_mode: SyncMode::Peer,
+                sync_settings,
+                sender_weight_q16: if options.sender_weight_q16 == 0 {
+                    WEIGHT_UNITY_Q16
+                } else {
+                    options.sender_weight_q16
+                },
+                peers,
+                datagram,
+            };
+            net_cfg.validate().map_err(|error| error.to_string())?;
+            Ok((Some(modal), net_cfg))
+        }
+    }
+}
+
 ///
 /// # Safety
 ///
@@ -400,44 +525,32 @@ unsafe fn start_receiver(options: &ReceiverOptions) -> Result<Receiver, String> 
     }
     // SAFETY: the caller says that `listen` is null or a text.
     let listen = unsafe { address(options.listen) }?;
-    let playback_settings = PlaybackSettings {
-        stream: options.stream,
-        rate: options.rate,
-        channels: options.channels,
-        identity: options.identity,
-        silence: 1_000_000_000,
-        slope_limit: 200_000,
-        regulation: Regulation {
-            gain: 4 << 16,
-            limit: 1_000_000,
-            jump: (options.rate / 200).max(1),
-        },
-        concealment: Parameters::for_rate(options.rate),
-        block: 256,
-        device_range: 10_000_000,
-    };
-    playback_settings
-        .validate()
-        .map_err(|error| error.to_string())?;
+    let jump = (options.rate / 200).max(1);
+    // SAFETY: the caller guarantees `options` pointers follow the header contract.
+    let (modal_regulation, net_config) =
+        unsafe { build_receiver_sync(options, SHIPPED_SIZES.datagram, jump) }?;
+    let playback_settings = PlaybackSettings::shipped(
+        options.stream,
+        options.rate,
+        options.channels,
+        options.identity,
+        modal_regulation,
+    )
+    .map_err(|error| error.to_string())?;
 
     let socket = Socket::bind(listen).map_err(|error| format!("binding {listen}: {error}"))?;
     let port = socket
         .address()
         .map_err(|error| format!("the address of the socket: {error}"))?
         .port();
-    let playback = ReceiverPlayback::new(&playback_settings);
-    let sizes = Sizes {
-        buffers: 64,
-        datagram: send::MAX_DATAGRAM,
-        messages: 64,
-    };
-    let (network_end, audio_end) = receive::link(sizes);
-    let network = ReceiverNetwork::new(socket, network_end, options.stream, sizes);
+    let playback = ShippedPlayback::new(&playback_settings);
+    let (network_end, audio_end) = receive::link(SHIPPED_SIZES);
+    let network = ReceiverNetwork::with_config(socket, network_end, &net_config);
     let audio = Audio::new(
         playback,
         audio_end,
         Intake {
-            items: 16,
+            items: SHIPPED_INTAKE_ITEMS,
             reports: Some(Reporting::USUAL),
         },
     );
@@ -572,10 +685,10 @@ mod tests {
     use std::net::UdpSocket;
 
     use super::{
-        ReceiverOptions, SenderOptions, explain, unisono_clock, unisono_receiver_defaults,
-        unisono_receiver_play, unisono_receiver_port, unisono_receiver_start,
-        unisono_receiver_stop, unisono_sender_capture, unisono_sender_defaults,
-        unisono_sender_start, unisono_sender_stop,
+        CLOCK_TCXO, MODE_LOW_LATENCY, PeerEntry, ReceiverOptions, SYNC_HULL, SYNC_PEER,
+        SenderOptions, explain, unisono_clock, unisono_receiver_defaults, unisono_receiver_play,
+        unisono_receiver_port, unisono_receiver_start, unisono_receiver_stop,
+        unisono_sender_capture, unisono_sender_defaults, unisono_sender_start, unisono_sender_stop,
     };
 
     #[test]
@@ -690,6 +803,54 @@ mod tests {
                 );
                 unisono_sender_stop(tx_v6);
             }
+        }
+    }
+
+    #[test]
+    fn receiver_peer_sync_options_validate_and_start_cleanly() {
+        let listen = CString::new("127.0.0.1:0").expect("cstr");
+        let peer_addr = CString::new("127.0.0.1:50002").expect("cstr");
+        let mut opts = MaybeUninit::<ReceiverOptions>::uninit();
+        let mut err = [0 as c_char; 160];
+        // SAFETY: valid pointers.
+        unsafe {
+            unisono_receiver_defaults(opts.as_mut_ptr());
+            let mut opts = opts.assume_init();
+            assert_eq!(opts.sync_mode, SYNC_PEER);
+            opts.listen = listen.as_ptr();
+            opts.identity = 1;
+            opts.mode = MODE_LOW_LATENCY;
+            opts.clock_prior = CLOCK_TCXO;
+            opts.sender_clock_prior = CLOCK_TCXO;
+
+            // Rejects peer_count > 0 with null peers pointer.
+            opts.peer_count = 1;
+            opts.peers = std::ptr::null();
+            assert!(unisono_receiver_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
+
+            // Rejects peers in hull mode.
+            let peer = PeerEntry {
+                identity: 2,
+                address: peer_addr.as_ptr(),
+                weight_q16: 65_536,
+            };
+            opts.peers = &raw const peer;
+            opts.sync_mode = SYNC_HULL;
+            assert!(unisono_receiver_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
+
+            // Rejects unknown sync mode.
+            opts.sync_mode = 99;
+            assert!(unisono_receiver_start(&raw const opts, err.as_mut_ptr(), err.len()).is_null());
+
+            // Starts cleanly in peer mode with one configured peer.
+            opts.sync_mode = SYNC_PEER;
+            let rx = unisono_receiver_start(&raw const opts, err.as_mut_ptr(), err.len());
+            assert!(
+                !rx.is_null(),
+                "peer receiver start failed: {:?}",
+                CStr::from_ptr(err.as_ptr())
+            );
+            unisono_receiver_stop(rx);
         }
     }
 }

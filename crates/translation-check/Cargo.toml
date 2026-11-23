@@ -1,6 +1,6 @@
 [package]
 name = "translation-check"
-description = "Prints inputs and results of the core's functions, for comparison with their Lean translation."
+description = "Differential test vector generator validating Rust unisono-core against its Lean translation."
 publish = false
 version.workspace = true
 edition.workspace = true

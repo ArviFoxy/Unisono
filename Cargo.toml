@@ -23,3 +23,12 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(translating)'] }
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+
+# Optimize the Kaiser-sinc FIR resampler and simulator harness in dev/test
+# builds while preserving debug assertions and overflow checks, so end-to-end
+# real-DSP simulation tests run in seconds rather than minutes.
+[profile.dev.package.unisono-dsp]
+opt-level = 2
+
+[profile.dev.package.unisono-sim]
+opt-level = 2

@@ -2,41 +2,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The receiver of a stream: which timeline it follows, which frames it
-//! holds, and which frame its device gets next.
+//! Receiver state machine: timeline adoption, monotonic playhead management,
+//! schedule tracking, and playback cycle planning.
 //!
-//! There is no session. A receiver follows one timeline at a time and takes
-//! up another when a packet of a later timeline arrives, or when the one it
-//! follows has been silent for a while. Whatever state it is in, packets of a
-//! timeline that keep arriving are therefore followed after that while at
-//! the latest.
+//! Operates statelessly with respect to sessions: adopts a newer timeline
+//! immediately or switches after the active timeline goes silent. The playhead
+//! advances strictly monotonically so every frame index is delivered at most
+//! once (held, concealed, or skipped); sustained arrival of only behind-playhead
+//! packets triggers a fresh restart after `silence`.
 //!
-//! The frames of the timeline pass the receiver's **playhead** once and in
-//! order: the playhead is the index of the next frame for the device, it
-//! only moves forward, and every index it passes is reported exactly once,
-//! as held, as absent, or as skipped. If packets of the followed timeline
-//! keep arriving and every frame of theirs is behind the playhead for a
-//! while, the playhead is wrong, and the receiver starts anew at the frames
-//! that arrive.
-//!
-//! The stamps of audio packets give the receiver its clock against the
-//! sender's, but later by the smallest delay of the path from the sender. To
-//! find that delay the receiver sends reports. The sender answers each with
-//! the time at which it arrived. The report's two stamps give the sender's
-//! clock against the receiver's, later by the delay of that report on the
-//! way back; added to the estimate from audio packets at the same moment,
-//! the clocks cancel, and what is left is the smallest delay from the sender
-//! and the delay of the report back. The smallest such sum over about a
-//! minute is the smallest delay there and back, and the receiver takes half
-//! of it for the path from the sender. The delay of a path is a constant,
-//! so the memory can be long, and reports can be rare.
+//! Supports both the unified [`SyncSnapshot`] / `ModalPlayer` synchronization
+//! pipeline (`use_sync = true`) and the legacy one-way lower-hull clock
+//! estimator (`relation::Estimator`) plus report/echo RTT path-delay estimate.
 
 use crate::answers::{Answer, Answers};
 use crate::arrivals::Arrivals;
 use crate::packet::{Audio, Echo, FLAG_STAMPED, Report};
-use crate::player::{Plan, Player, Regulation};
+use crate::player::{ModalPlayer, ModalRegulation, Plan, Player, Regulation};
 use crate::presence::{Marked, Presence};
 use crate::relation::{Estimator, Line, Sample};
+use crate::sync::SyncSnapshot;
 use crate::timing::{Position, Schedule, Step, due, sender_time};
 
 /// The number of nanoseconds in a millisecond.
@@ -153,6 +138,13 @@ pub struct Receiver<const N: usize, const M: usize, const K: usize> {
     /// ahead of the frames being played.
     after: Option<Schedule>,
     after_from: u64,
+    /// Whether playback uses snapshots from [`crate::sync::Sync`] and
+    /// [`ModalPlayer`] instead of the legacy lower-hull estimator.
+    use_sync: bool,
+    /// Latest clock synchronization snapshot from [`crate::sync::Sync`].
+    sync_snapshot: SyncSnapshot,
+    /// Modal playback regulator used when `use_sync` is enabled.
+    modal_player: ModalPlayer,
     player: Player,
     /// A number that tells this receiver from the others of the stream.
     identity: u64,
@@ -206,6 +198,55 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             reports: 0,
             departures: Arrivals::new(),
             answers: Answers::new(ROUND_WINDOW),
+            use_sync: false,
+            sync_snapshot: SyncSnapshot::EMPTY,
+            modal_player: ModalPlayer::new(ModalRegulation::from_single(settings.regulation)),
+        }
+    }
+
+    /// Enables [`crate::sync::Sync`]-driven clock estimation and configures
+    /// [`ModalPlayer`] with `regulation`.
+    pub fn enable_sync(&mut self, regulation: ModalRegulation) {
+        self.use_sync = true;
+        self.modal_player.set_regulation(regulation);
+    }
+
+    /// Updates the [`ModalPlayer`] regulation parameters without changing
+    /// active playback continuity.
+    pub fn set_modal_regulation(&mut self, regulation: ModalRegulation) {
+        self.modal_player.set_regulation(regulation);
+    }
+
+    /// Applies an O(1) clock synchronization snapshot published by
+    /// [`crate::sync::Sync`] on the network thread.
+    pub fn apply_sync(&mut self, snapshot: SyncSnapshot) {
+        self.use_sync = true;
+        self.sync_snapshot = snapshot;
+        if snapshot.valid {
+            self.path = snapshot.path_ns;
+        }
+    }
+
+    /// Latest [`SyncSnapshot`] applied to this receiver.
+    #[must_use]
+    pub fn sync_snapshot(&self) -> SyncSnapshot {
+        self.sync_snapshot
+    }
+
+    /// Whether this receiver is using [`crate::sync::Sync`] snapshots rather
+    /// than the legacy lower-hull estimator.
+    #[must_use]
+    pub fn uses_sync(&self) -> bool {
+        self.use_sync
+    }
+
+    /// Sender clock identifier of the followed timeline, if any.
+    #[must_use]
+    pub fn clock_id(&self) -> Option<u32> {
+        if self.following {
+            Some(self.clock_id)
+        } else {
+            None
         }
     }
 
@@ -299,6 +340,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         self.next = None;
         self.after = None;
         self.player.stop();
+        self.modal_player.stop();
         if same_clock {
             self.clock.remember(span_of(header));
             self.clock.reset_window();
@@ -306,6 +348,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
             self.clock = Estimator::new(span_of(header), self.limit);
             self.answers.clear();
             self.departures = Arrivals::new();
+            self.sync_snapshot = SyncSnapshot::EMPTY;
         }
     }
 
@@ -422,7 +465,11 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     /// the stretch where it is, so that a wrong header does not carry the
     /// playhead away.
     fn keep_newest(&mut self, header: &Audio) {
-        if self.clock.line().is_some() {
+        if self.use_sync {
+            if self.sync_snapshot.valid {
+                return;
+            }
+        } else if self.clock.line().is_some() {
             return;
         }
         let width = self.presence.width();
@@ -466,6 +513,7 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     fn renew(&mut self, header: &Audio) -> Marked {
         self.presence.restart(header.index);
         self.player.stop();
+        self.modal_player.stop();
         // The index has started again, so what earlier packets said about
         // when frames are due no longer holds.
         self.schedule = None;
@@ -497,7 +545,9 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
     fn accept(&mut self, header: &Audio, arrival: i64, adopted: bool) -> Heard {
         self.heard = arrival;
         self.keep_newest(header);
-        self.measure(header, arrival);
+        if !self.use_sync {
+            self.measure(header, arrival);
+        }
         let first = self.presence.mark(header.index, header.frames as u32);
         let restarted = self.stale(&first, arrival);
         let marked = if restarted { self.renew(header) } else { first };
@@ -611,14 +661,27 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if !self.following {
             return idle;
         }
-        let Some(line) = self.clock.line() else {
-            return idle;
-        };
         let Some(schedule) = self.schedule else {
             return idle;
         };
-        let first = sender_time(&line, self.path, time);
-        let last = sender_time(&line, self.path, time.saturating_add(duration));
+        let end_time = time.saturating_add(duration);
+        let (first, last) = if self.use_sync {
+            if !self.sync_snapshot.valid {
+                return idle;
+            }
+            (
+                self.sync_snapshot.sender_time(time),
+                self.sync_snapshot.sender_time(end_time),
+            )
+        } else {
+            let Some(line) = self.clock.line() else {
+                return idle;
+            };
+            (
+                sender_time(&line, self.path, time),
+                sender_time(&line, self.path, end_time),
+            )
+        };
         let Some(now) = due(&schedule, first) else {
             return idle;
         };
@@ -630,8 +693,24 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         let Some(then) = due(&schedule, last) else {
             return idle;
         };
-        self.player
-            .cycle(now, then, frames, duration, schedule.level_slope)
+        if self.use_sync {
+            let com_now = self.sync_snapshot.common_offset_ns(time);
+            let com_then = self.sync_snapshot.common_offset_ns(end_time);
+            self.modal_player.cycle(
+                now,
+                then,
+                frames,
+                duration,
+                &schedule,
+                self.sync_snapshot.peer_active,
+                self.sync_snapshot.epoch,
+                com_now,
+                com_then,
+            )
+        } else {
+            self.player
+                .cycle(now, then, frames, duration, schedule.level_slope)
+        }
     }
 
     /// The position that is due when the receiver's clock reads `time`, by
@@ -642,13 +721,21 @@ impl<const N: usize, const M: usize, const K: usize> Receiver<N, M, K> {
         if !self.following {
             return None;
         }
-        let Some(line) = self.clock.line() else {
-            return None;
-        };
         let Some(schedule) = self.schedule else {
             return None;
         };
-        due(&schedule, sender_time(&line, self.path, time))
+        let sender_now = if self.use_sync {
+            if !self.sync_snapshot.valid {
+                return None;
+            }
+            self.sync_snapshot.sender_time(time)
+        } else {
+            let Some(line) = self.clock.line() else {
+                return None;
+            };
+            sender_time(&line, self.path, time)
+        };
+        due(&schedule, sender_now)
     }
 
     /// Advances through any queued schedule whose starting index the due
@@ -921,6 +1008,7 @@ mod tests {
             receiver: 42,
             sequence: report.sequence,
             arrival: 5_000,
+            departure: 5_000,
         });
         assert_eq!(receiver.delay(), 77);
         // Even a higher timeline on the wrong stream leaves the receiver alone.
@@ -1242,6 +1330,7 @@ mod tests {
                     receiver: 42,
                     sequence: report.sequence,
                     arrival: now - offset + 140_000,
+                    departure: now - offset + 140_000,
                 });
             }
         }
@@ -1263,6 +1352,7 @@ mod tests {
                 receiver: to,
                 sequence,
                 arrival: 5_000,
+                departure: 5_000,
             });
         }
         assert_eq!(receiver.delay(), 77);
@@ -1342,6 +1432,7 @@ mod tests {
                 receiver: 42,
                 sequence: report.sequence,
                 arrival: now - offset + 140_000,
+                departure: now - offset + 140_000,
             });
         };
         for k in 0..20i64 {
@@ -1370,6 +1461,7 @@ mod tests {
                 receiver: 42,
                 sequence: report.sequence,
                 arrival: now - offset + back,
+                departure: now - offset + back,
             });
         };
         // Packets take 100 microseconds from the sender. Reports take 140
@@ -1410,6 +1502,7 @@ mod tests {
             receiver: 42,
             sequence: first_report.sequence,
             arrival: t_dep - old_offset + 140_000,
+            departure: t_dep - old_offset + 140_000,
         });
         assert_eq!(receiver.delay(), 120_000);
         // Also leave an in-flight report from the old clock.
@@ -1446,6 +1539,7 @@ mod tests {
             receiver: 42,
             sequence: old_inflight.sequence,
             arrival: t_dep - old_offset + 10_140_000,
+            departure: t_dep - old_offset + 10_140_000,
         });
         assert_eq!(receiver.delay(), 120_000);
 
@@ -1458,7 +1552,59 @@ mod tests {
             receiver: 42,
             sequence: new_report.sequence,
             arrival: new_dep - new_offset + 200_000,
+            departure: new_dep - new_offset + 200_000,
         });
         assert_eq!(receiver.delay(), 150_000);
+    }
+
+    #[test]
+    fn sync_snapshot_drives_cycle_and_due_at_without_lower_hull() {
+        use crate::kalman::LINE_RUN;
+        use crate::player::ModalRegulation;
+        use crate::relation::Line;
+        use crate::sync::{SyncSnapshot, ZERO_LINE};
+
+        let offset = 3_600_000_000_000i64; // receiver 1 hour ahead of sender
+        let mut receiver: Receiver<4, 8, 4> = receiver();
+        receiver.enable_sync(ModalRegulation::lipsync(1_000_000, 240));
+        // Feed a single unstamped audio packet (no lower-hull samples at all).
+        let mut h = header(7, 0, 480);
+        h.capture = 0;
+        receiver.packet(&h, offset + 100_000);
+        // Idle until a valid SyncSnapshot arrives.
+        assert_eq!(receiver.due_at(offset + 500_000_000), None);
+        assert_eq!(
+            receiver.cycle(offset + 500_000_000, 5_000_000, 240).frames,
+            0
+        );
+
+        let snap = SyncSnapshot {
+            valid: true,
+            peer_active: false,
+            epoch: 1,
+            fleet_line: ZERO_LINE,
+            common_line: Line {
+                time: offset,
+                value: -offset,
+                rise: 0,
+                run: LINE_RUN,
+            },
+            path_ns: 100_000,
+            active_peers: 0,
+            common_var_ns2: 25_000_000,
+            diff_var_ns2: 0,
+        };
+        receiver.apply_sync(snap);
+        assert_eq!(receiver.delay(), 100_000);
+        // At receiver time `offset + 500 ms`, sender time is `500 ms`; with 20 ms
+        // level, frame `(500 - 20) * 48 = 23_040` is due.
+        let due_pos = receiver.due_at(offset + 500_000_000).expect("due");
+        assert_eq!(due_pos.frame, 23_040);
+        let plan = receiver.cycle(offset + 500_000_000, 5_000_000, 240);
+        assert!(plan.jumped && plan.frames == 240);
+        assert_eq!(plan.start.frame, 23_040);
+        let next = receiver.cycle(offset + 505_000_000, 5_000_000, 240);
+        assert!(!next.jumped);
+        assert_eq!(next.start.frame, 23_040 + 240);
     }
 }

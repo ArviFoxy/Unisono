@@ -2,17 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Counters, gauges and histograms that a real-time thread can update, and
-//! their export in the Prometheus text format.
+//! Lock-free real-time-safe Prometheus counters, gauges, and histograms.
 //!
-//! A [`Registry`] owns metric families. A family has a name, a help text, a
-//! type and a list of label names, and each of its series has one value for
-//! every label name. Registering a family or a series allocates memory, so a
-//! program does it before it starts its real-time work, or later on a thread
-//! that may wait. Registering a series gives a handle to it: a [`Counter`],
-//! a [`Gauge`], a [`FloatGauge`] or a [`Histogram`]. The threads that do the
-//! work hold handles. Cloning a handle increments a reference count, and
-//! every clone updates the same series.
+//! [`Registry`] owns metric families (name, help, type, label schema) and
+//! allocates series during setup, returning cloneable atomic handles
+//! ([`Counter`], [`Gauge`], [`FloatGauge`], [`Histogram`]) for worker and
+//! real-time threads.
 //!
 //! ```
 //! use unisono_metrics::Registry;
@@ -20,14 +15,14 @@
 //! let mut registry = Registry::new();
 //! let packets = registry.counter_family(
 //!     "packets_total",
-//!     "Packets received, by what became of them.",
+//!     "Received packets by disposition.",
 //!     &["outcome"],
 //! )?;
 //! let accepted = registry.counter(packets, &["accepted"])?;
 //! // Durations are observed in nanoseconds and exported in seconds.
 //! let delays = registry.histogram_family(
 //!     "delay_seconds",
-//!     "Time a packet took.",
+//!     "Packet transit delay.",
 //!     &[],
 //!     &[100_000, 1_000_000, 10_000_000],
 //!     1_000_000_000,
@@ -44,69 +39,36 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! # Updating a series
+//! # Real-Time Update Guarantees
 //!
-//! An update through a handle takes no lock, allocates and frees no memory,
-//! makes no system call, and performs a fixed number of atomic operations on
-//! 64-bit numbers: one for a counter or a gauge, and two for a histogram,
-//! which first finds the bucket by bisection of its bounds. Any number of
-//! threads may update the same series.
+//! Updating through a handle performs no locks, allocations, or syscalls,
+//! using one 64-bit atomic operation for counters/gauges and two for
+//! histograms (plus binary search over static bucket bounds). On x86-64 and
+//! ARMv8.1+ (LSE), these compile to single atomic instructions; on older ARM
+//! targets they use LL/SC loops (lock-free, never blocked by exporters).
 //!
-//! How long one atomic operation takes depends on the processor. On x86-64,
-//! and on 64-bit ARM processors that have the atomic instructions of version
-//! 8.1 of the architecture, replacing a value and adding to a value are one
-//! instruction each. On other ARM processors adding is a short loop: it
-//! reads the number, adds, and writes the result on the condition that
-//! nothing has written to the number in between. On 32-bit ARM, replacing a
-//! 64-bit value is the same loop without the addition. A thread repeats the
-//! loop when another thread's write to the same number went through in
-//! between, or when the thread itself was interrupted in between. So some
-//! update always completes, and an export, which only reads, never makes an
-//! update repeat; but nothing bounds how often one thread repeats while
-//! other threads keep writing to the same number.
+//! # Concurrent Export Semantics
 //!
-//! # What the export guarantees
+//! [`Registry::write_text`] emits families and series in registration order
+//! using lock-free single-pass atomic loads:
 //!
-//! [`Registry::write_text`] writes the families in the order in which they
-//! were registered, and the series of a family in that order as well. It
-//! takes no lock and reads every number once, so it may run while other
-//! threads update. A reader of the text may rely on the following.
+//! - Within a histogram export, cumulative bucket counts are non-decreasing
+//!   and `_count` matches the `+Inf` bucket (derived from the same read).
+//! - Each gauge reflects a single atomic value (no torn reads).
+//! - Across sequentially ordered exports, counters, histogram buckets, and
+//!   `_count` never decrease (absent `u64::MAX` wraparound).
+//! - Updates ordered before `write_text` begins are always visible; updates
+//!   ordered after it returns are absent; quiescent exports are exact.
+//! - Concurrent updates may appear partially across `_bucket`/`_sum` or across
+//!   separate series.
 //!
-//! - **Within one export of a histogram**, the bucket lines never decrease
-//!   from one bound to the next, and the `_count` line has the number of the
-//!   `+Inf` bucket line. Both lines are computed from the same numbers read
-//!   once.
-//! - **A gauge line** has a value that the gauge had at one moment, never a
-//!   mixture of two values.
-//! - **From one export to a later one**, a counter does not decrease, and no
-//!   bucket line and no `_count` line of a histogram decreases. "Later"
-//!   means that the earlier export had returned before the later one
-//!   started, as the program can tell: on the same thread, or on threads
-//!   that hand the registry over through a lock, a channel or a join. This
-//!   holds as long as no counter and no bucket passes `u64::MAX`.
-//! - **An update that had returned before the export started**, in the same
-//!   sense, is in the text. An update that starts after the export has
-//!   returned is not. When no update runs during an export, the text is
-//!   exact.
+//! # Numeric Representation
 //!
-//! An update that runs during an export may be in the text or not, and one
-//! observation of a histogram may be in the bucket and count lines without
-//! being in the `_sum` line, or the reverse. Different series are read at
-//! different moments, so numbers of two series in one text need not belong
-//! to the same instant.
-//!
-//! # Numbers
-//!
-//! A counter is a `u64` and an integer gauge an `i64`; both are written in
-//! full, without rounding. A floating-point gauge is written with the fewest
-//! digits that give the same `f64` back, or as `NaN`, `+Inf` or `-Inf`.
-//!
-//! A histogram counts whole numbers of steps, and its family states how many
-//! steps make one unit of the exported value. The bucket bounds and the sum
-//! are kept in steps and divided by that number when they are written. The
-//! sum of a histogram is therefore exact: it does not depend on the order in
-//! which threads add to it, and it has no rounding error until it is
-//! divided for the text.
+//! Counters (`u64`) and integer gauges (`i64`) format exactly; floating-point
+//! gauges use shortest round-trip formatting (`NaN`, `+Inf`, `-Inf`).
+//! Histograms accumulate integer steps and divide by the family scale factor
+//! only during formatting, keeping sums order-independent and free of
+//! floating-point drift.
 
 #![forbid(unsafe_code)]
 

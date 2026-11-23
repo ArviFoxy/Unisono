@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The resampler against sinusoids whose value at any position is known,
-//! and against the exact arithmetic of its positions.
+//! Integration tests verifying resampler interpolation accuracy against
+//! analytic sinusoids and exact fixed-point `Position`/`Step` arithmetic.
 
 #![allow(clippy::cast_precision_loss)] // frame indices and 64-bit fractions as f64
 

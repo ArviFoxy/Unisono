@@ -2,9 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A program in C that sends and receives through the interface for C,
-//! compiled with the system's C compiler against the header and the
-//! library.
+//! Integration test compiling and executing a C program against
+//! `include/unisono.h` and `libunisono_c`.
 
 use std::path::PathBuf;
 use std::process::Command;

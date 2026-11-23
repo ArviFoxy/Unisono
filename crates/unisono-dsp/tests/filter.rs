@@ -2,8 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! What the interpolation filter does to a sinusoid, computed from its
-//! weights.
+//! Unit/integration tests verifying interpolation filter frequency response
+//! and passband/stopband error bounds against sinusoids.
 
 #![allow(clippy::cast_precision_loss)] // small counts and 64-bit fractions as f64
 

@@ -2,12 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! What a reader of the exported text may rely on while threads update.
-//!
-//! Several threads update a counter, two gauges and a histogram without
-//! pause while another thread exports. Every export must keep what the
-//! crate's documentation promises, and the export after the threads have
-//! stopped must be exactly what they say they did.
+//! Concurrency stress tests verifying Prometheus export monotonicity,
+//! histogram bucket consistency, and exact quiescent totals under concurrent
+//! updates.
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread;

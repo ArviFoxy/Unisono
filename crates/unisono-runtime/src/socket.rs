@@ -2,44 +2,35 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Datagrams with the times at which they arrived and left.
+//! Non-blocking UDP socket with kernel RX and TX timestamping.
 //!
-//! A [`Socket`] is a UDP socket that does not block. With every datagram it
-//! receives it gives the time of arrival, and for every datagram it sent it
-//! reports, a little later, the time of departure, together with the tag the
-//! caller gave the datagram. All times are readings of the raw clock of
-//! [`crate::clock`].
+//! [`Socket`] wraps a non-blocking UDP socket that attaches a raw-clock
+//! arrival timestamp ([`crate::clock`]) to every received datagram and reports
+//! asynchronous TX departure timestamps keyed by caller-supplied tags.
 //!
-//! # Where a time comes from
+//! # Timestamp Provenance
 //!
-//! Each [`Stamp`] says which of three sources it has.
+//! Each [`Stamp`] records its source:
 //!
-//! - **The kernel** stamped the datagram on its way in, or when it handed it
-//!   to the network device on its way out. These are the stamps to want: a
-//!   program is woken some time after a datagram arrived, and that time grows
-//!   to milliseconds on a busy host, while the kernel's stamp does not move.
-//! - **The packet scheduler**: the kernel stamped an outgoing datagram when
-//!   it entered the queue before the device. Every device gives this; it is
-//!   earlier than the departure by the time spent in the queue.
-//! - **The program** read the clock itself. A departure is then stamped
-//!   before the datagram is sent and an arrival after it was received, so
-//!   that the error always makes the datagram look slower, never faster: an
-//!   estimate built on the fastest datagrams is then merely worse, not wrong.
+//! - **Kernel (`SO_TIMESTAMPING`):** captured by the kernel on RX or at NIC
+//!   handoff on TX, eliminating user-space scheduler wakeup jitter.
+//! - **Packet scheduler (`SCM_TSTAMP_SCHED`):** captured on Linux when an
+//!   outgoing packet enters the qdisc, prior to NIC transmission.
+//! - **Userspace fallback:** read immediately before `send` (TX) or after
+//!   `recv` (RX), biasing apparent latency strictly upward so minimum-delay
+//!   estimators never underestimate path delay.
 //!
-//! The kernel stamps with the system clock. A [`crate::clock::Tracker`] turns
-//! that into the raw clock, and the stamp carries the error of that
-//! conversion. A kernel stamp that is further than [`LONGEST_AGE`] from the
-//! tracker's latest measurement is not converted, and the program's own
-//! stamp takes its place.
+//! Linux kernel timestamps use `CLOCK_REALTIME` and are converted to
+//! `CLOCK_MONOTONIC_RAW` through [`crate::clock::Tracker`], carrying the
+//! conversion error bound. Stale kernel timestamps older than [`LONGEST_AGE`]
+//! relative to the latest clock sample fall back to userspace timestamps.
+//! Non-Linux platforms always report userspace timestamps.
 //!
-//! Kernel stamps exist on Linux. On another system every stamp is the
-//! program's, and the socket says so.
+//! # Usage
 //!
-//! # Use
-//!
-//! One thread owns the socket. It calls [`Socket::wait`], then
-//! [`Socket::receive`] and [`Socket::departure`] until each has nothing
-//! more. Nothing in sending, receiving or reporting allocates memory.
+//! Single-threaded ownership: call [`Socket::wait`], then drain
+//! [`Socket::receive`] and [`Socket::departure`] until empty. Neither sends,
+//! receives, nor timestamp draining allocates memory.
 
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, UdpSocket};
@@ -187,6 +178,68 @@ pub struct Received {
 pub struct Sent {
     /// The raw clock just before the datagram was sent.
     pub before: i64,
+}
+
+/// Outcome of one outbound datagram transmission attempt from a network engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SendStatus {
+    /// Datagram was handed to the transport.
+    Sent,
+    /// Transient transport failure; the datagram was dropped.
+    Transient {
+        /// Whether caused by per-destination policy (`EPERM`) or address
+        /// availability (`EADDRNOTAVAIL`).
+        restricted: bool,
+    },
+}
+
+/// Outbound datagram transport sink used by pure network engines.
+///
+/// Production network shells implement this over [`Socket`] via [`SocketSink`];
+/// deterministic simulators implement it by routing serialized wire bytes into
+/// simulated links. Neither path allocates.
+pub trait DatagramSink {
+    /// Fatal transport error type (`io::Error` for sockets, `Infallible` for
+    /// in-memory simulations).
+    type Error;
+
+    /// Transmits `bytes` to `to`, optionally attaching a TX departure `tag`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a fatal transport error that should stop the caller.
+    fn send(
+        &mut self,
+        to: SocketAddr,
+        bytes: &[u8],
+        tag: Option<u64>,
+    ) -> Result<SendStatus, Self::Error>;
+}
+
+/// [`DatagramSink`] adapter wrapping a mutable [`Socket`].
+pub struct SocketSink<'a>(pub &'a mut Socket);
+
+impl DatagramSink for SocketSink<'_> {
+    type Error = io::Error;
+
+    fn send(
+        &mut self,
+        to: SocketAddr,
+        bytes: &[u8],
+        tag: Option<u64>,
+    ) -> Result<SendStatus, io::Error> {
+        let result = match tag {
+            Some(tag) => self.0.send_to(bytes, to, tag),
+            None => self.0.send_untagged(bytes, to),
+        };
+        match result {
+            Ok(_) => Ok(SendStatus::Sent),
+            Err(error) if is_transient_send_error(&error) => Ok(SendStatus::Transient {
+                restricted: is_restricted_send_error(&error),
+            }),
+            Err(error) => Err(error),
+        }
+    }
 }
 
 /// The departure of a datagram that was sent earlier.

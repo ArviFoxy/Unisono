@@ -7,7 +7,9 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
+public import Unisono.Spec.Models.StochasticWorld
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
@@ -48,7 +50,9 @@ build.
   (`Solution.eventTime_le_succ`), and a run that advances past every true
   time decides what every output sample plays (`Solution.decided`).
 * No model of the world is empty (`Bounds.example_within`,
-  `DelayModel.example_holds`, `SecondOrderModel.example_holds`).
+  `IdealConstantWorld.example_holds`,
+  `StationaryNetworkDisturbances.example_holds`,
+  `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`).
 -/
 
 @[expose] public noncomputable section
@@ -783,19 +787,90 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
   · intro i j q send
     exact ⟨0, le_rfl, rfl⟩
 
-/-- **The probabilistic network model is not empty**: a network of one host
-whose link to itself has a constant baseline of one second, no jitter, no
-pauses and no losses follows the model with zero rates. -/
-theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
-    (d : Unit → Unit → Unit → Link), IsProbabilityMeasure P ∧ m.Holds P d := by
-  let link : Link := ⟨fun _ => 1, fun _ => 0, ∅, ∅⟩
+/-- **The ideal constant world model is not empty** (including both symmetric
+and asymmetric instances, and every instance satisfies `WithinBounds`). -/
+theorem IdealConstantWorld.example_holds :
+    (∃ (m : IdealConstantWorld (Fin 2) 1) (w : World (Fin 2) 1), m.Holds w ∧ m.Symmetric)
+    ∧ (∃ (m : IdealConstantWorld (Fin 2) 1) (w : World (Fin 2) 1), m.Holds w ∧ m.Asymmetric) := by
+  let mkWorld (d : Fin 2 → Fin 2 → ℝ) (hd : ∀ i j, 0 < d i j) : World (Fin 2) 1 :=
+      { rate := 1
+        rate_pos := one_pos
+        sender := 0
+        host := fun _ => 1
+        hosts := fun h => by
+          fin_cases h
+          · exact Or.inl rfl
+          · exact Or.inr ⟨0, rfl⟩
+        clock := fun h => ⟨fun t => t + (h : ℕ), fun _ _ hlt => by linarith,
+          continuous_id.add continuous_const⟩
+        source :=
+          { capture := fun n => n
+            capture_strictMono := Nat.strictMono_cast
+            first := id
+            first_zero := rfl
+            first_strictMono := strictMono_id
+            handed := fun b => b
+            handed_strictMono := Nat.strictMono_cast
+            handed_after := fun b => by simp
+            reported := fun b => b }
+        speaker := fun _ =>
+          { out := fun k => k + 1
+            out_strictMono := fun a b h => by simpa using h
+            first := id
+            first_zero := rfl
+            first_strictMono := strictMono_id
+            asked := fun b => b + 1 / 2
+            asked_strictMono := fun a b h => by simpa using h
+            asked_before := fun b => by norm_num
+            reported := fun b => (b + 1 : ℝ) + 1 }
+        network := ⟨fun i j s _ => some (s + d i j), fun i j s _ a h => by
+          simp only [Option.some.injEq] at h; linarith [hd i j]⟩
+        target := fun _ => 1 }
+  have mkHolds : ∀ (d : Fin 2 → Fin 2 → ℝ) (hd : ∀ i j, 0 < d i j),
+      IdealConstantWorld.Holds
+        { rate := 1, rate_pos := one_pos, sender := 0, host := fun _ => 1,
+          delay := d, delay_pos := hd, blockSize := 1, blockSize_pos := one_pos,
+          lead := 1 / 2, lead_pos := by norm_num, targetLatency := 1, targetLatency_nonneg := zero_le_one }
+        (mkWorld d hd) := by
+    intro d hd
+    refine
+      { rate_eq := rfl
+        sender_eq := rfl
+        host_eq := rfl
+        clocks := fun h => ⟨(h : ℕ), fun _ => rfl⟩
+        capture := ⟨0, fun n => by simp [mkWorld]⟩
+        capture_first := fun b => by simp [mkWorld]
+        capture_handed := fun b => by simp [mkWorld]
+        capture_reported := fun b => by simp [mkWorld]
+        speaker_out := fun _ => ⟨1, fun k => by simp [mkWorld]; ring⟩
+        speaker_first := fun _ b => by simp [mkWorld]
+        speaker_asked := fun _ b => by simp [mkWorld]; ring
+        speaker_reported := fun _ b => by simp [mkWorld]
+        network := fun _ _ _ _ => rfl
+        target_eq := fun _ => rfl }
+  constructor
+  · refine ⟨_, mkWorld (fun _ _ => 1) (fun _ _ => one_pos),
+      mkHolds (fun _ _ => 1) (fun _ _ => one_pos), fun _ _ => rfl⟩
+  · let dAsym : Fin 2 → Fin 2 → ℝ := fun i j => if i = 0 ∧ j = 1 then 2 else 1
+    have hdAsym : ∀ i j, 0 < dAsym i j := fun i j => by
+      simp only [dAsym]; split_ifs <;> norm_num
+    refine ⟨_, mkWorld dAsym hdAsym, mkHolds dAsym hdAsym, 0, 1, ?_⟩
+    simp [dAsym]
+
+/-- **The stationary network disturbances model class is not empty**: a network
+of one host whose link to itself has a constant baseline of one second, no
+jitter, no pauses and no losses belongs to the model class with zero rates. -/
+theorem StationaryNetworkDisturbances.example_holds :
+    ∃ (m : StationaryNetworkDisturbances Unit) (P : Measure Unit)
+      (d : Unit → Unit → Unit → Link), IsProbabilityMeasure P ∧ m.Holds P d := by
+  let link : Link := ⟨fun _ => 1, fun _ _ => 0, ∅, ∅⟩
   let d : Unit → Unit → Unit → Link := fun _ _ _ => link
-  have hstate : ∀ u, link.state u = (0, false, false) := by
-    intro u
+  have hstate : ∀ u q, link.state u q = (0, false, false) := by
+    intro u q
     simp [Link.state, Link.Holds, Link.Loses, link]
   have hshift : ∀ τ ω, shiftTime τ (linkStates d ω) = linkStates d ω := by
     intro τ ω
-    funext i j u
+    funext i j u q
     simp [shiftTime, linkStates, d, hstate]
   have hdrop : ∀ m ω, shiftCount m (droppedMessages d ω) = droppedMessages d ω := by
     intro m ω
@@ -808,36 +883,36 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
     simp only [Measure.dirac_apply, Set.indicator, Set.mem_ofPred_eq, Pi.one_apply]
     by_cases hA : X () ∈ A <;> by_cases hB : X () ∈ B <;> simp [hA, hB]
   refine ⟨
-    { slope := 0
-      slope_nonneg := le_rfl
-      tailFactor := 1
-      tailFactor_pos := one_pos
-      tailScale := 1
-      tailScale_pos := one_pos
-      pauseRate := fun _ => 0
-      pauseRate_nonneg := fun _ => le_rfl
-      pauseLength := fun _ => Measure.dirac 1
-      pauseLength_probability := fun _ => inferInstance
-      pauseLength_pos := fun _ => by simp [Measure.dirac_apply']
-      pauseLength_mean := fun _ => by
+    { slope := fun _ _ => 0
+      slope_nonneg := fun _ _ => le_rfl
+      tailFactor := fun _ _ => 1
+      tailFactor_pos := fun _ _ => one_pos
+      tailScale := fun _ _ => 1
+      tailScale_pos := fun _ _ => one_pos
+      pauseRate := fun _ _ _ => 0
+      pauseRate_nonneg := fun _ _ _ => le_rfl
+      pauseLength := fun _ _ _ => Measure.dirac 1
+      pauseLength_probability := fun _ _ _ => inferInstance
+      pauseLength_pos := fun _ _ _ => by simp [Measure.dirac_apply']
+      pauseLength_mean := fun _ _ _ => by
         rw [lintegral_dirac]
         exact ENNReal.ofReal_lt_top
-      lossProbability := 0
-      lossProbability_nonneg := le_rfl
-      lossProbability_lt_one := zero_lt_one },
+      lossProbability := fun _ _ => 0
+      lossProbability_nonneg := fun _ _ => le_rfl
+      lossProbability_lt_one := fun _ _ => zero_lt_one },
     Measure.dirac (), d, inferInstance, ?_⟩
   refine
     { baseline_pos := fun _ _ _ _ => one_pos
       baseline_slow := fun _ _ _ _ _ => by simp [d, link]
-      jitter_nonneg := fun _ _ _ _ => le_rfl
-      jitter_near_zero := fun _ _ _ δ hδ => by simp [d, link, hδ]
-      jitter_tail := fun _ _ _ x hx => by simp [d, link, not_lt.mpr hx]
+      jitter_nonneg := fun _ _ _ _ _ => le_rfl
+      jitter_near_zero := fun _ _ _ _ δ hδ => by simp [d, link, hδ]
+      jitter_tail := fun _ _ _ _ x hx => by simp [d, link, not_lt.mpr hx]
       pause_length_pos := fun _ _ _ p hp => by simp [d, link] at hp
       paused_lt_one := fun _ _ _ => by simp [d, link, Link.Holds]
       outage_lt_one := fun _ _ _ => by simp [d, link, Link.Loses]
       pauses := fun _ _ _ _ _ _ _ _ => by simp [d, link]
       lost := fun _ _ _ => by simp [d, link]
-      state_measurable := fun _ _ _ => measurable_const' fun _ _ => rfl
+      state_measurable := fun _ _ _ _ => measurable_const' fun _ _ => rfl
       lost_measurable := fun _ _ _ => by simp [d, link]
       states_stationary := fun τ => by simp only [hshift]
       states_mixing := fun A B _ _ => by
@@ -850,19 +925,19 @@ theorem DelayModel.example_holds : ∃ (m : DelayModel) (P : Measure Unit)
         rw [hmix]
         exact tendsto_const_nhds }
 
-/-- **The second-order model is not empty**: a 3-host star (sender `0`, speakers
-on hosts `1` and `2`) over a uniform probability space on `Bool × Bool`, with
-nonzero uncorrelated link jitter of variance `1` on links `(0, 1)` and `(0, 2)`
-and zero clock, device, and timestamp noise, satisfies `SecondOrderModel.Holds`.
-Band-limiting `ClockNoise` to `[lowFreq, highFreq]` resolves the rate-bound
-incompatibility (`secondDifferenceCovariance_diag_le`), while constructing a
-witness with nonzero `ClockNoise` whose clock paths remain strictly increasing
-remains open. -/
-theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
+/-- **The second-order moments model class is not empty**: a 3-host star
+(sender `0`, speakers on hosts `1` and `2`) over a uniform probability space on
+`Bool × Bool`, with nonzero uncorrelated per-packet link jitter of variance `1`
+on links `(0, 1)` and `(0, 2)` and zero clock, device, and timestamp noise,
+satisfies `SecondOrderMoments.Holds`. Band-limiting `ClockNoise` to
+`[lowFreq, highFreq]` resolves the rate-bound incompatibility
+(`secondDifferenceCovariance_diag_le`), while constructing a witness with
+nonzero `ClockNoise` whose clock paths remain strictly increasing remains open. -/
+theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2)
     (P : Measure (Bool × Bool)) (world : Bool × Bool → World (Fin 3) 2)
     (d : Bool × Bool → Fin 3 → Fin 3 → Link),
     m.Holds P world d ∧
-      m.ownJitter 0 1 = ⟨1, fun _ => 1⟩ ∧ m.ownJitter 0 2 = ⟨1, fun _ => 1⟩ := by
+      m.ownJitter 0 1 = ⟨1, fun _ _ => 1⟩ ∧ m.ownJitter 0 2 = ⟨1, fun _ _ => 1⟩ := by
   let P : Measure (Bool × Bool) :=
     (4 : ℝ≥0∞)⁻¹ • (Measure.dirac (false, false) + Measure.dirac (false, true)
       + Measure.dirac (true, false) + Measure.dirac (true, true))
@@ -901,10 +976,10 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
     ring
   let s1 : Bool × Bool → ℝ := fun ω => if ω.1 then 1 else -1
   let s2 : Bool × Bool → ℝ := fun ω => if ω.2 then 1 else -1
-  let own : Bool × Bool → Fin 3 → Fin 3 → Time → ℝ := fun ω i j _ =>
+  let own : Bool × Bool → Fin 3 → Fin 3 → Time → ℕ → ℝ := fun ω i j _ _ =>
     if i = 0 ∧ j = 1 then 1 + s1 ω else if i = 0 ∧ j = 2 then 1 + s2 ω else 0
-  have hown_nonneg : ∀ ω i j u, 0 ≤ own ω i j u := by
-    intro ω i j u
+  have hown_nonneg : ∀ ω i j u q, 0 ≤ own ω i j u q := by
+    intro ω i j u q
     simp only [own, s1, s2]
     split_ifs <;> norm_num
   let d : Bool × Bool → Fin 3 → Fin 3 → Link := fun ω i j =>
@@ -943,11 +1018,11 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
       network := ⟨fun i j s q => (d ω i j).deliver s q,
         fun i j _ _ _ h => Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h⟩
       target := fun _ => 0 }
-  let ownJ : Fin 3 → Fin 3 → JitterNoise := fun i j =>
-    if i = 0 ∧ j = 1 then ⟨1, fun _ => 1⟩
-    else if i = 0 ∧ j = 2 then ⟨1, fun _ => 1⟩
-    else ⟨0, fun _ => 0⟩
-  let m : SecondOrderModel (Fin 3) 2 :=
+  let ownJ : Fin 3 → Fin 3 → PacketJitterNoise := fun i j =>
+    if i = 0 ∧ j = 1 then ⟨1, fun _ _ => 1⟩
+    else if i = 0 ∧ j = 2 then ⟨1, fun _ _ => 1⟩
+    else ⟨0, fun _ _ => 0⟩
+  let m : SecondOrderMoments (Fin 3) 2 :=
     { rate := 1
       rate_pos := one_pos
       sender := 0
@@ -986,28 +1061,28 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
         fun t₁ τ₁ t₂ τ₂ => by simp [m, hclk_zero, secondDifferenceCovariance_zero]⟩
       clocks_uncorrelated := fun i j _ t₁ τ₁ t₂ τ₂ => by simp [hclk_zero]
       jitter := ⟨fun _ _ _ => 0, fun _ _ _ => 0, own,
-        fun ω i j u => by simp [d],
+        fun ω i j u q => by simp [d],
         fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
         fun _ => ⟨fun _ => hmemLp _, fun _ => by simp [m], fun _ _ => by simp [m]⟩,
-        fun i j => ⟨fun _ => hmemLp _, fun s => by
+        fun i j => ⟨fun _ _ => hmemLp _, fun s q => by
             rw [hint]
             by_cases h1 : i = 0 ∧ j = 1
             · simp [m, ownJ, own, s1, h1]; norm_num
             · by_cases h2 : i = 0 ∧ j = 2
               · simp [m, ownJ, own, s2, h2]; norm_num
               · simp [m, ownJ, own, h1, h2],
-          fun s u => by
+          fun s q u q' => by
             rw [hint]
             by_cases h1 : i = 0 ∧ j = 1
             · simp [m, ownJ, own, s1, h1]; norm_num
             · by_cases h2 : i = 0 ∧ j = 2
               · simp [m, ownJ, own, s2, h2]; norm_num
               · simp [m, ownJ, own, h1, h2]⟩,
-        fun _ _ _ _ _ => by simp,
-        fun _ _ _ _ _ => by simp,
-        fun i j i' j' hne s u => by
+        fun _ _ _ _ _ _ => by simp,
+        fun _ _ _ _ _ _ => by simp,
+        fun i j i' j' hne s q u q' => by
           have hzero_left : ∀ a b : Fin 3, ¬(a = 0 ∧ b = 1) → ¬(a = 0 ∧ b = 2) →
-              ∀ ω t, own ω a b t = 0 := fun a b h1 h2 ω t => by simp [own, h1, h2]
+              ∀ ω t k, own ω a b t k = 0 := fun a b h1 h2 ω t k => by simp [own, h1, h2]
           by_cases h1 : i = 0 ∧ j = 1
           · by_cases h2' : i' = 0 ∧ j' = 2
             · simp only [hint, own, s1, s2, h1, h2', and_true, true_and, ite_true]
@@ -1025,19 +1100,19 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
             · simp [hzero_left i j h1 h2],
         fun _ _ _ _ _ => by simp [hclk_zero],
         fun _ _ _ _ _ => by simp [hclk_zero],
-        fun _ _ _ _ _ _ => by simp [hclk_zero],
+        fun _ _ _ _ _ _ _ => by simp [hclk_zero],
         fun _ _ _ _ => by simp [hdev_cap],
         fun _ _ _ _ => by simp [hdev_cap],
-        fun _ _ _ _ _ => by simp [hdev_cap],
+        fun _ _ _ _ _ _ => by simp [hdev_cap],
         fun _ _ _ _ _ => by simp [hdev_spk],
         fun _ _ _ _ _ => by simp [hdev_spk],
-        fun _ _ _ _ _ _ => by simp [hdev_spk],
+        fun _ _ _ _ _ _ _ => by simp [hdev_spk],
         fun _ _ _ => by simp [world, captureError],
         fun _ _ _ => by simp [world, captureError],
-        fun _ _ _ _ => by simp [world, captureError],
+        fun _ _ _ _ _ => by simp [world, captureError],
         fun _ _ _ _ => by simp [world, playbackError],
         fun _ _ _ _ => by simp [world, playbackError],
-        fun _ _ _ _ _ => by simp [world, playbackError]⟩
+        fun _ _ _ _ _ _ => by simp [world, playbackError]⟩
       capture := ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_cap],
         fun k₁ j₁ k₂ j₂ => by simp [m, hdev_cap, secondDifferenceCovariance_zero]⟩
       playback := fun r => ⟨fun _ _ => hmemLp _, fun k j => by simp [hdev_spk],
@@ -1058,6 +1133,188 @@ theorem SecondOrderModel.example_holds : ∃ (m : SecondOrderModel (Fin 3) 2)
       capture_device_playback_timestamps_uncorrelated := fun r k j b => by simp [hdev_cap]
       playback_device_capture_timestamps_uncorrelated := fun r k j b => by simp [hdev_spk]
       playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
+
+/-- **The composite stochastic world model class is not empty**: a degenerate
+Dirac world satisfies both `StationaryNetworkDisturbances` and
+`SecondOrderMoments` together with the deterministic handoff, request-lead, and
+block-size bounds. -/
+theorem StochasticWorld.example_holds :
+    ∃ (m : StochasticWorld Unit 1) (P : Measure Unit) (world : Unit → World Unit 1),
+      m.Holds P world := by
+  let link : Link := ⟨fun _ => 1, fun _ _ => 0, ∅, ∅⟩
+  let d₀ : Unit → Unit → Unit → Link := fun _ _ _ => link
+  have hstate : ∀ u q, link.state u q = (0, false, false) := fun u q => by
+    simp [Link.state, Link.Holds, Link.Loses, link]
+  have hshift : ∀ τ ω, shiftTime τ (linkStates d₀ ω) = linkStates d₀ ω := fun τ ω => by
+    funext i j u q; simp [shiftTime, linkStates, d₀, hstate]
+  have hdrop : ∀ m ω, shiftCount m (droppedMessages d₀ ω) = droppedMessages d₀ ω := fun m ω => by
+    funext i j q; simp [shiftCount, droppedMessages, d₀, link]
+  have hmix : ∀ {β : Type} [MeasurableSpace β] (X : Unit → β) (A B : Set β),
+      (Measure.dirac ()) {ω | X ω ∈ A ∧ X ω ∈ B}
+        = (Measure.dirac ()) {ω | X ω ∈ A} * (Measure.dirac ()) {ω | X ω ∈ B} := by
+    intro β _ X A B
+    simp only [Measure.dirac_apply, Set.indicator, Set.mem_ofPred_eq, Pi.one_apply]
+    by_cases hA : X () ∈ A <;> by_cases hB : X () ∈ B <;> simp [hA, hB]
+  let w₀ : World Unit 1 :=
+    { rate := 1
+      rate_pos := one_pos
+      sender := ()
+      host := fun _ => ()
+      hosts := fun _ => Or.inl rfl
+      clock := fun _ => ⟨id, strictMono_id, continuous_id⟩
+      source :=
+        { capture := fun n => n
+          capture_strictMono := Nat.strictMono_cast
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          handed := fun b => b
+          handed_strictMono := Nat.strictMono_cast
+          handed_after := fun b => by simp
+          reported := fun b => b }
+      speaker := fun _ =>
+        { out := fun k => k + 1
+          out_strictMono := fun a b h => by simpa using h
+          first := id
+          first_zero := rfl
+          first_strictMono := strictMono_id
+          asked := fun b => b + 1 / 2
+          asked_strictMono := fun a b h => by simpa using h
+          asked_before := fun b => by norm_num
+          reported := fun b => b + 1 }
+      network := ⟨fun i j s q => (d₀ () i j).deliver s q,
+        fun i j _ _ _ h => Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h⟩
+      target := fun _ => 0 }
+  let P₀ : Measure Unit := Measure.dirac ()
+  have hmem : ∀ f : Unit → ℝ, MemLp f 2 P₀ := fun f =>
+    MemLp.of_bound (Measurable.aestronglyMeasurable (measurable_of_countable f)) |f ()|
+      (ae_of_all _ fun _ => by rw [Real.norm_eq_abs])
+  let mNet₀ : StationaryNetworkDisturbances Unit :=
+    { slope := fun _ _ => 0
+      slope_nonneg := fun _ _ => le_rfl
+      tailFactor := fun _ _ => 1
+      tailFactor_pos := fun _ _ => one_pos
+      tailScale := fun _ _ => 1
+      tailScale_pos := fun _ _ => one_pos
+      pauseRate := fun _ _ _ => 0
+      pauseRate_nonneg := fun _ _ _ => le_rfl
+      pauseLength := fun _ _ _ => Measure.dirac 1
+      pauseLength_probability := fun _ _ _ => inferInstance
+      pauseLength_pos := fun _ _ _ => by simp [Measure.dirac_apply']
+      pauseLength_mean := fun _ _ _ => by rw [lintegral_dirac]; exact ENNReal.ofReal_lt_top
+      lossProbability := fun _ _ => 0
+      lossProbability_nonneg := fun _ _ => le_rfl
+      lossProbability_lt_one := fun _ _ => zero_lt_one }
+  let mMom₀ : SecondOrderMoments Unit 1 :=
+    { rate := 1
+      rate_pos := one_pos
+      sender := ()
+      host := fun _ => ()
+      clock := fun _ => ClockNoise.zero
+      txJitter := fun _ => ⟨0, fun _ => 0⟩
+      rxJitter := fun _ => ⟨0, fun _ => 0⟩
+      ownJitter := fun _ _ => ⟨0, fun _ _ => 0⟩
+      capture := ClockNoise.zero
+      playback := fun _ => ClockNoise.zero
+      captureTimestampVariance := 0
+      captureTimestampVariance_nonneg := le_rfl
+      playbackTimestampVariance := fun _ => 0
+      playbackTimestampVariance_nonneg := fun _ => le_rfl }
+  let m : StochasticWorld Unit 1 :=
+    { network := mNet₀
+      moments := mMom₀
+      handoff := 0
+      handoff_nonneg := le_rfl
+      leadLeast := 1 / 2
+      leadMost := 1 / 2
+      leadLeast_pos := by norm_num
+      leadLeast_le := le_rfl
+      blockLeast := 1
+      blockMost := 1
+      blockLeast_pos := one_pos
+      blockLeast_le := le_rfl }
+  have hclk_zero : ∀ t τ, secondDifference (fun t => (w₀.clock ()).read t - t) t τ = 0 := by
+    intro t τ; simp [w₀, secondDifference]
+  have hdev_cap : ∀ k j, gridDifference (devicePhase w₀.source.capture m.moments.rate) k j = 0 := by
+    intro k j; simp [m, mMom₀, w₀, devicePhase, gridDifference]
+  have hdev_spk : ∀ r k j, gridDifference (devicePhase (w₀.speaker r).out m.moments.rate) k j = 0 := by
+    intro r k j; simp only [m, mMom₀, w₀, devicePhase, gridDifference]; push_cast; simp only [div_one]; ring
+  refine ⟨m, P₀, fun _ => w₀, ?_⟩
+  refine
+    { links := ⟨d₀, ?_, ?_⟩
+      handoff := fun _ b => by simp [m, w₀]
+      lead := fun _ r b => by simp [m, w₀]; norm_num
+      capture_blocks := fun _ b => by simp [m, w₀]
+      playback_blocks := fun _ r b => by simp [m, w₀] }
+  · exact
+      { baseline_pos := fun _ _ _ _ => one_pos
+        baseline_slow := fun _ _ _ _ _ => by simp [d₀, link, m, mNet₀]
+        jitter_nonneg := fun _ _ _ _ _ => le_rfl
+        jitter_near_zero := fun _ _ _ _ δ hδ => by simp [P₀, d₀, link, hδ]
+        jitter_tail := fun _ _ _ _ x hx => by simp [P₀, d₀, link, not_lt.mpr hx]
+        pause_length_pos := fun _ _ _ p hp => by simp [d₀, link] at hp
+        paused_lt_one := fun _ _ _ => by simp [P₀, d₀, link, Link.Holds]
+        outage_lt_one := fun _ _ _ => by simp [P₀, d₀, link, Link.Loses]
+        pauses := fun _ _ _ _ _ _ _ _ => by simp [P₀, d₀, link, m, mNet₀]
+        lost := fun _ _ _ => by simp [P₀, d₀, link, m, mNet₀]
+        state_measurable := fun _ _ _ _ => measurable_const' fun _ _ => rfl
+        lost_measurable := fun _ _ _ => by simp [d₀, link]
+        states_stationary := fun τ => by simp only [hshift]
+        states_mixing := fun A B _ _ => by simp only [hshift]; rw [hmix]; exact tendsto_const_nhds
+        dropped_stationary := fun k => by simp only [hdrop]
+        dropped_mixing := fun A B _ _ => by simp only [hdrop]; rw [hmix]; exact tendsto_const_nhds }
+  · exact
+      { prob := inferInstance
+        network := fun _ _ _ _ _ => rfl
+        rate_eq := fun _ => rfl
+        sender_eq := fun _ => rfl
+        host_eq := fun _ _ => rfl
+        clocks := fun _ => ⟨fun _ _ => hmem _, fun t τ => by simp [hclk_zero],
+          fun t₁ τ₁ t₂ τ₂ => by simp [m, mMom₀, hclk_zero, secondDifferenceCovariance_zero]⟩
+        clocks_uncorrelated := fun i j hne => absurd (Subsingleton.elim i j) hne
+        jitter := ⟨fun _ _ _ => 0, fun _ _ _ => 0, fun _ _ _ _ _ => 0,
+          fun _ _ _ _ _ => by simp [d₀, link],
+          fun _ => ⟨fun _ => hmem _, fun _ => by simp [m, mMom₀], fun _ _ => by simp [m, mMom₀]⟩,
+          fun _ => ⟨fun _ => hmem _, fun _ => by simp [m, mMom₀], fun _ _ => by simp [m, mMom₀]⟩,
+          fun _ _ => ⟨fun _ _ => hmem _, fun _ _ => by simp [m, mMom₀], fun _ _ _ _ => by simp [m, mMom₀]⟩,
+          fun _ _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ => by simp [hclk_zero],
+          fun _ _ _ _ _ => by simp [hclk_zero],
+          fun _ _ _ _ _ _ _ => by simp [hclk_zero],
+          fun _ _ _ _ => by simp,
+          fun _ _ _ _ => by simp,
+          fun _ _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ => by simp,
+          fun _ _ _ _ _ _ _ => by simp,
+          fun _ _ _ => by simp [w₀, captureError],
+          fun _ _ _ => by simp [w₀, captureError],
+          fun _ _ _ _ _ => by simp [w₀, captureError],
+          fun _ _ _ _ => by simp [w₀, playbackError],
+          fun _ _ _ _ => by simp [w₀, playbackError],
+          fun _ _ _ _ _ _ => by simp [w₀, playbackError]⟩
+        capture := ⟨fun _ _ => hmem _, fun k j => by simp [hdev_cap],
+          fun k₁ j₁ k₂ j₂ => by simp [m, mMom₀, hdev_cap, secondDifferenceCovariance_zero]⟩
+        playback := fun r => ⟨fun _ _ => hmem _, fun k j => by simp [hdev_spk],
+          fun k₁ j₁ k₂ j₂ => by simp [m, mMom₀, hdev_spk, secondDifferenceCovariance_zero]⟩
+        capture_clock_uncorrelated := fun i hne => absurd (Subsingleton.elim i _) hne
+        playback_clock_uncorrelated := fun i r hne => absurd (Subsingleton.elim i _) hne
+        capture_playback_uncorrelated := fun r hne => absurd (Subsingleton.elim _ _) hne
+        playback_uncorrelated := fun r r' hne => absurd (Subsingleton.elim _ _) hne
+        capture_timestamps := ⟨fun _ => hmem _, fun b => by simp [w₀, captureError],
+          fun b b' => by simp [m, mMom₀, w₀, captureError]⟩
+        playback_timestamps := fun r => ⟨fun _ => hmem _, fun b => by simp [w₀, playbackError],
+          fun b b' => by simp [m, mMom₀, w₀, playbackError]⟩
+        capture_playback_timestamps_uncorrelated := fun r b₁ b₂ => by simp [w₀, captureError]
+        playback_timestamps_uncorrelated := fun r r' hne => absurd (Subsingleton.elim r r') hne
+        clock_capture_timestamps_uncorrelated := fun i t τ b => by simp [hclk_zero]
+        clock_playback_timestamps_uncorrelated := fun i r t τ b => by simp [hclk_zero]
+        capture_device_capture_timestamps_uncorrelated := fun k j b => by simp [hdev_cap]
+        capture_device_playback_timestamps_uncorrelated := fun r k j b => by simp [hdev_cap]
+        playback_device_capture_timestamps_uncorrelated := fun r k j b => by simp [hdev_spk]
+        playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
 
 end Further
 

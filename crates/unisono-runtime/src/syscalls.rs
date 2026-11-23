@@ -2,20 +2,18 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The system calls that a network thread may make.
+//! Linux seccomp-BPF syscall allowlist for network threads.
 //!
-//! A network thread reads bytes that anyone who reaches the socket can send.
-//! It parses them with the core's parsers, which are proved to return for
-//! every input, and what it does with them is little: it receives and sends
-//! on a socket that is open already, reads the clock, waits, writes a line
-//! when something is wrong, manages non-executable memory (`brk`, `munmap`,
-//! `madvise`, and `mmap`/`mprotect` without `PROT_EXEC`) so allocator teardown
-//! on thread exit cannot fail or livelock, and signals its own process via
-//! `tgkill` so `abort()` terminates cleanly. Opening a file, making a socket,
-//! starting a program and making memory executable are not on the list.
+//! Network threads parse untrusted UDP payloads using the formally verified
+//! parsers in `unisono_core` and require only a minimal syscall surface:
+//! socket I/O on an already-open descriptor, clock reads, polling/waiting,
+//! diagnostic writes, non-executable memory management (`brk`, `munmap`,
+//! `madvise`, and `mmap`/`mprotect` without `PROT_EXEC`) for clean allocator
+//! teardown on thread exit, and `tgkill` so `abort()` terminates cleanly.
+//! File opens, socket creation, `execve`, and executable mappings are blocked.
 //!
-//! The list belongs to the thread that asks and to the threads it starts
-//! later, not to the threads that run already. It cannot be taken back.
+//! The filter applies to the calling thread and any descendants it spawns,
+//! leaves existing threads unaffected, and is irreversible once installed.
 
 use std::io;
 

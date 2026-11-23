@@ -2,23 +2,19 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A ring between two threads, without locks.
+//! Bounded lock-free single-producer single-consumer (SPSC) ring buffer.
 //!
-//! One thread puts items in and one other thread takes them out, in the
-//! order they were put in. Neither ever waits for the other: putting into a
-//! full ring and taking from an empty one return at once, and each call is a
-//! fixed number of steps. The ring allocates its places when it is made and
-//! nothing afterwards, so a thread that may not wait can use either end.
+//! Wait-free and O(1) on both ends: `put` into a full ring and `take` from an
+//! empty ring return immediately without blocking or allocating after initial
+//! construction, making both endpoints safe on real-time audio threads.
 //!
-//! # How it works
+//! # Synchronization
 //!
-//! Two counters count the items ever put in and ever taken out. The producer
-//! alone writes the first and the consumer alone the second; each reads the
-//! other's to see how full the ring is, and keeps its own in a field of its
-//! end as well, so that it never reads what only it writes. An item is
-//! written to its place before the counter that makes it visible is stored,
-//! and it is read before the counter that frees its place is stored, so the
-//! two threads never use one place at the same time.
+//! Uses monotonic head (producer) and tail (consumer) atomic indices with
+//! release/acquire ordering. Each endpoint caches its own index locally to
+//! avoid redundant atomic loads. Slots are written before publishing the
+//! updated producer index and read before publishing the updated consumer
+//! index, guaranteeing disjoint slot access.
 
 use std::mem::MaybeUninit;
 

@@ -2,11 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Updating a series, and cloning or dropping a handle, allocates and frees
-//! no memory.
+//! Verifies that updating, cloning, and dropping metric handles perform zero
+//! heap allocations or deallocations.
 //!
-//! This file is a test program of its own, because it replaces the
-//! allocator of the whole program by one that counts.
+//! Runs as a standalone test binary with a custom counting global allocator.
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;

@@ -2,18 +2,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Keeping the program's memory in place.
+//! Process memory locking (`mlockall`) and stack prefaulting for real-time
+//! threads.
 //!
-//! A page of memory that the system has moved out, or not yet put in, is put
-//! in when it is touched, and a real-time thread that touches it waits for
-//! the disk or for the system. Locking keeps the pages that the program has
-//! in memory. A program therefore locks once everything that its real-time
-//! threads use is made and its threads are running.
+//! Demand-paged memory can trigger page faults and unbounded disk or kernel
+//! stalls on real-time audio threads. Call this module's locking routine once
+//! all real-time buffers are allocated and real-time threads have spawned.
 //!
-//! Pages that the program gets later are not locked. Locking them as well
-//! would make every later allocation, and every new thread's stack, fail
-//! once the system's limit on locked memory is reached, on threads that are
-//! not real-time and do allocate.
+//! Only currently resident pages (`MCL_CURRENT`) are locked; `MCL_FUTURE` is
+//! intentionally omitted so non-real-time allocations and later thread stacks
+//! do not fail if `RLIMIT_MEMLOCK` is tight.
 
 use std::io;
 

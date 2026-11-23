@@ -2,24 +2,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The functions of the core that run on the real-time threads, as one
-//! library.
+//! Exported `cdylib` wrappers for `unisono_core` real-time entry points
+//! audited by `tools/realtime.sh`.
 //!
-//! Nothing here is used by unisono. `tools/realtime.sh` builds this library
-//! and inspects its machine code: every function below, with everything it
-//! calls, must come out free of calls into the kernel, of calls to an
-//! allocator, and of code that panics. The functions take and return plain
-//! data, so nothing that they call can come from outside this library.
+//! Not linked into `unisono` binaries; compiled solely so `reachable` can
+//! verify that every exported function and its transitive callees are free of
+//! syscalls, allocator calls, and panic paths.
 
 #![no_std]
 // The entry points are named for the inspection, not for a caller in C.
 #![allow(improper_ctypes_definitions)]
 
 use unisono_core::device::Device;
-use unisono_core::packet::{self, Audio, Echo, Rejected, Report};
-use unisono_core::player::Plan;
+use unisono_core::packet::{self, Audio, Echo, PeerEcho, PeerProbe, PeerRelay, Rejected, Report};
+use unisono_core::player::{ModalRegulation, Plan};
 use unisono_core::receiver::{Heard, Receiver, Segment};
 use unisono_core::sender::Sender;
+use unisono_core::sync::{Sync, SyncSnapshot};
 
 /// A receiver of the sizes that a program would use.
 type Listener = Receiver<64, 64, 8>;
@@ -160,15 +159,99 @@ pub extern "C" fn realtime_sender_answer(
     sender: &Sender,
     report: &Report,
     arrival: i64,
+    departure: i64,
     echo: &mut Echo,
 ) -> bool {
-    match sender.answer(report, arrival) {
+    match sender.answer(report, arrival, departure) {
         Some(made) => {
             *echo = made;
             true
         }
         None => false,
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_receiver_enable_sync(
+    receiver: &mut Listener,
+    regulation: ModalRegulation,
+) {
+    receiver.enable_sync(regulation);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_receiver_apply_sync(receiver: &mut Listener, snapshot: SyncSnapshot) {
+    receiver.apply_sync(snapshot);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_on_sender_echo(sync: &mut Sync, echo: &Echo, arrival: i64) -> bool {
+    sync.on_sender_echo(echo, arrival)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_on_peer_probe(
+    sync: &Sync,
+    probe: &PeerProbe,
+    arrival: i64,
+    departure: i64,
+    echo: &mut PeerEcho,
+) -> bool {
+    match sync.on_peer_probe(probe, arrival, departure) {
+        Some(made) => {
+            *echo = made;
+            true
+        }
+        None => false,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_on_peer_echo(
+    sync: &mut Sync,
+    echo: &PeerEcho,
+    arrival: i64,
+) -> bool {
+    sync.on_peer_echo(echo, arrival)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_on_peer_relay(
+    sync: &mut Sync,
+    relay: &PeerRelay,
+    arrival: i64,
+) -> usize {
+    sync.on_peer_relay(relay, arrival)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_build_relay(
+    sync: &mut Sync,
+    now_ns: i64,
+    relay: &mut PeerRelay,
+) -> bool {
+    match sync.build_relay(now_ns) {
+        Some(made) => {
+            *relay = made;
+            true
+        }
+        None => false,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_set_sender_clock_id(sync: &mut Sync, clock_id: u32) {
+    sync.set_sender_clock_id(clock_id);
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_reset_sender_clock(sync: &mut Sync) {
+    sync.reset_sender_clock();
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_sync_step(sync: &mut Sync, now_ns: i64) -> SyncSnapshot {
+    sync.step(now_ns)
 }
 
 #[unsafe(no_mangle)]
@@ -226,4 +309,52 @@ pub extern "C" fn realtime_parse_echo(bytes: &[u8], echo: &mut Echo) -> bool {
 #[unsafe(no_mangle)]
 pub extern "C" fn realtime_write_echo(echo: &Echo, bytes: &mut [u8]) -> usize {
     packet::write_echo(echo, bytes).unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_parse_peer_probe(bytes: &[u8], probe: &mut PeerProbe) -> bool {
+    match packet::parse_peer_probe(bytes) {
+        Ok(read) => {
+            *probe = read;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_write_peer_probe(probe: &PeerProbe, bytes: &mut [u8]) -> usize {
+    packet::write_peer_probe(probe, bytes).unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_parse_peer_echo(bytes: &[u8], echo: &mut PeerEcho) -> bool {
+    match packet::parse_peer_echo(bytes) {
+        Ok(read) => {
+            *echo = read;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_write_peer_echo(echo: &PeerEcho, bytes: &mut [u8]) -> usize {
+    packet::write_peer_echo(echo, bytes).unwrap_or(0)
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_parse_peer_relay(bytes: &[u8], relay: &mut PeerRelay) -> bool {
+    match packet::parse_peer_relay(bytes) {
+        Ok(read) => {
+            *relay = read;
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn realtime_write_peer_relay(relay: &PeerRelay, bytes: &mut [u8]) -> usize {
+    packet::write_peer_relay(relay, bytes).unwrap_or(0)
 }

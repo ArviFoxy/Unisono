@@ -2,11 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! When recent packets arrived.
-//!
-//! A packet carries the time at which an earlier packet left the sender. The
-//! receiver pairs that time with the time at which the earlier packet
-//! arrived, which it keeps here for the last few packets.
+//! Fixed-size ring buffer recording recent packet arrival timestamps keyed by
+//! sequence or frame index, used to pair deferred TX timestamps with prior RX
+//! arrivals.
 
 /// The arrival of one packet.
 #[derive(Clone, Copy)]

@@ -2,12 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The ways in which a sender can start again, and what a receiver's
-//! estimate of the sender's clock does in each.
-//!
-//! A sender runs for five seconds and is then followed by a second run. In
-//! every case the receiver has to follow the second run and to know its
-//! clock, within a time that the settings give. Times are nanoseconds.
+//! Integration tests covering sender restart scenarios (same clock vs. new
+//! clock, timeline changes) and receiver clock-estimation recovery bounds.
 
 use unisono_core::packet::{Audio, FLAG_STAMPED, Format};
 use unisono_core::player::Regulation;

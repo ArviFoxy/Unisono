@@ -2,13 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The filter that gives a stream's value between its frames.
+//! Kaiser-windowed sinc FIR interpolation filter table.
 //!
-//! The value at a position is a weighted sum of the frames around it. The
-//! weights are those of the ideal interpolation, `sin(pi t) / (pi t)` for a
-//! frame at distance `t`, cut to a finite length by a Kaiser window. They
-//! are tabulated for a number of evenly spaced fractions of a frame, and the
-//! weights for a fraction between two of those are interpolated linearly.
+//! Precomputes symmetric `sinc(t) * kaiser(t)` tap weights on a uniform grid
+//! of fractional frame offsets and linearly interpolates between adjacent
+//! table entries during resampling.
 
 use std::f64::consts::PI;
 

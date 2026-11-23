@@ -2,22 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Checks what the machine code of entry points of a shared library can
-//! reach.
+//! Static x86-64 ELF reachability auditor for real-time shared library entry
+//! points.
 //!
 //! Usage: `reachable LIBRARY ENTRY...`
 //!
-//! Follows every direct call, unconditional jump, conditional jump, linear
-//! fallthrough, and relocation-backed indirect call or jump from the entry
-//! points through the demangled disassembly that `objdump` produces. Fails
-//! closed unless every reached function belongs to unisono, one of the
-//! allowed memory functions, or one of the compiler's 128-bit arithmetic
-//! helpers, and unless no reached unisono function enters the kernel, executes
-//! a trap instruction, or branches through an unresolved pointer or
-//! unsupported relocation.
-//!
-//! Only x86-64 ELF libraries are audited; unsupported architectures fail with
-//! an explicit error rather than reporting zero problems.
+//! Traverses direct calls, conditional/unconditional branches, linear
+//! fallthrough, and relocation-backed indirect targets in `objdump` output.
+//! Fails closed unless every reachable symbol belongs to `unisono`, an allowed
+//! memory/math intrinsic, or a 128-bit compiler helper, and no reachable
+//! `unisono` function issues syscalls, trap instructions, or unresolved
+//! indirect branches. Rejects non-x86-64 ELF inputs explicitly.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::ops::Bound;
@@ -298,19 +293,27 @@ fn is_prefix(token: &str) -> bool {
     ) || token.starts_with("rex.")
 }
 
-/// Parses an instruction line into `(mnemonic, operands)` after stripping prefixes.
-fn parse_instruction(line: &str) -> Option<(&str, &str)> {
+/// Parses an instruction line into `(address, mnemonic, operands)` after
+/// stripping prefixes.
+fn parse_instruction_with_addr(line: &str) -> Option<(u64, &str, &str)> {
     let (address, body) = line.split_once(':')?;
-    hex(address.trim())?;
+    let addr = hex(address.trim())?;
     let mut rest = body.trim_start();
     loop {
         let (token, after) = split_token(rest)?;
         if is_prefix(token) && !after.is_empty() {
             rest = after;
         } else {
-            return Some((token, after));
+            return Some((addr, token, after));
         }
     }
+}
+
+/// Parses an instruction line into `(mnemonic, operands)` after stripping prefixes.
+#[cfg(test)]
+fn parse_instruction(line: &str) -> Option<(&str, &str)> {
+    let (_, mnemonic, operands) = parse_instruction_with_addr(line)?;
+    Some((mnemonic, operands))
 }
 
 /// Strips x86-64 branch-prediction hint suffixes (`,pt` / `,pn`) that
@@ -417,9 +420,310 @@ fn parse_indirect_slot(operands: &str) -> Option<u64> {
 }
 
 /// A pending node in the reachability graph.
+#[derive(Clone)]
 enum Target {
     Address(u64),
     Name(String),
+}
+
+/// Canonical 64-bit name for an x86-64 general-purpose register or any of its
+/// 32/16/8-bit sub-registers.
+fn canonical_reg(token: &str) -> Option<&'static str> {
+    match token.strip_prefix('%')? {
+        "rax" | "eax" | "ax" | "al" | "ah" => Some("rax"),
+        "rbx" | "ebx" | "bx" | "bl" | "bh" => Some("rbx"),
+        "rcx" | "ecx" | "cx" | "cl" | "ch" => Some("rcx"),
+        "rdx" | "edx" | "dx" | "dl" | "dh" => Some("rdx"),
+        "rsi" | "esi" | "si" | "sil" => Some("rsi"),
+        "rdi" | "edi" | "di" | "dil" => Some("rdi"),
+        "rbp" | "ebp" | "bp" | "bpl" => Some("rbp"),
+        "rsp" | "esp" | "sp" | "spl" => Some("rsp"),
+        "r8" | "r8d" | "r8w" | "r8b" => Some("r8"),
+        "r9" | "r9d" | "r9w" | "r9b" => Some("r9"),
+        "r10" | "r10d" | "r10w" | "r10b" => Some("r10"),
+        "r11" | "r11d" | "r11w" | "r11b" => Some("r11"),
+        "r12" | "r12d" | "r12w" | "r12b" => Some("r12"),
+        "r13" | "r13d" | "r13w" | "r13b" => Some("r13"),
+        "r14" | "r14d" | "r14w" | "r14b" => Some("r14"),
+        "r15" | "r15d" | "r15w" | "r15b" => Some("r15"),
+        _ => None,
+    }
+}
+
+/// Exact 64-bit x86-64 general-purpose register name (excluding sub-registers).
+fn exact_reg64(token: &str) -> Option<&'static str> {
+    match token.strip_prefix('%')? {
+        "rax" => Some("rax"),
+        "rbx" => Some("rbx"),
+        "rcx" => Some("rcx"),
+        "rdx" => Some("rdx"),
+        "rsi" => Some("rsi"),
+        "rdi" => Some("rdi"),
+        "rbp" => Some("rbp"),
+        "rsp" => Some("rsp"),
+        "r8" => Some("r8"),
+        "r9" => Some("r9"),
+        "r10" => Some("r10"),
+        "r11" => Some("r11"),
+        "r12" => Some("r12"),
+        "r13" => Some("r13"),
+        "r14" => Some("r14"),
+        "r15" => Some("r15"),
+        _ => None,
+    }
+}
+
+/// Whether `reg` is callee-saved under the System V AMD64 ABI.
+fn is_callee_saved(reg: &str) -> bool {
+    matches!(reg, "rbx" | "rbp" | "r12" | "r13" | "r14" | "r15")
+}
+
+/// Whether `mnemonic` is a 64-bit call instruction (`call` / `callq`).
+fn is_call64(mnemonic: &str) -> bool {
+    matches!(base_mnemonic(mnemonic), "call" | "callq")
+}
+
+/// Splits AT&T instruction operands (without `# ...` comment) on commas
+/// outside parentheses.
+fn split_operands(raw: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (i, ch) in raw.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                let part = raw[start..i].trim();
+                if !part.is_empty() {
+                    parts.push(part);
+                }
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    let tail = raw[start..].trim();
+    if !tail.is_empty() {
+        parts.push(tail);
+    }
+    parts
+}
+
+/// Resolves an immutable relocation-backed GOT slot into its call target.
+fn resolve_got_slot(
+    slot: u64,
+    disassembly: &Disassembly,
+    table: &HashMap<u64, Relocation>,
+    immutable: &[(u64, u64)],
+) -> Result<Target, String> {
+    if !slot_is_immutable(slot, immutable) {
+        return Err(format!("branches through writable slot 0x{slot:x}"));
+    }
+    let Some(reloc) = table.get(&slot) else {
+        return Err(format!("branches through unmapped GOT slot 0x{slot:x}"));
+    };
+    if !ALLOWED_RELOCATIONS.contains(&reloc.kind.as_str()) {
+        return Err(format!("uses unsupported relocation {}", reloc.kind));
+    }
+    if let Some(address) = reloc.target.strip_prefix("*ABS*+") {
+        if let Some((dest_start, _)) = hex(address).and_then(|addr| disassembly.containing(addr)) {
+            Ok(Target::Address(dest_start))
+        } else {
+            Err(format!(
+                "branches to unresolved local address {}",
+                reloc.target
+            ))
+        }
+    } else {
+        let target = reloc
+            .target
+            .split('@')
+            .next()
+            .unwrap_or(&reloc.target)
+            .to_string();
+        Ok(Target::Name(target))
+    }
+}
+
+/// Collects every intra-function branch target address so intra-basic-block
+/// register tracking clears at every CFG join point.
+fn intra_function_branch_targets(function: &Function) -> BTreeSet<u64> {
+    let mut targets = BTreeSet::new();
+    for line in &function.lines {
+        let Some((_, mnemonic, operands)) = parse_instruction_with_addr(line) else {
+            continue;
+        };
+        if is_branch_or_call(mnemonic)
+            && !operands.starts_with('*')
+            && let Some((addr, _)) = parse_direct_target(operands)
+        {
+            targets.insert(addr);
+        }
+    }
+    targets
+}
+
+/// Updates intra-basic-block constant-target register state for a non-branch
+/// instruction. Only `lea disp(%rip), %r64` of an exact function start,
+/// `mov disp(%rip), %r64` from an immutable RELRO GOT slot, and `mov %r64, %r64`
+/// introduce or propagate tracked targets; all other writes clear affected
+/// registers conservatively.
+fn update_reg_targets(
+    mnemonic: &str,
+    operands: &str,
+    disassembly: &Disassembly,
+    table: &HashMap<u64, Relocation>,
+    immutable: &[(u64, u64)],
+    reg_targets: &mut HashMap<&'static str, Target>,
+) {
+    if is_nop(mnemonic) {
+        return;
+    }
+    let base = base_mnemonic(mnemonic);
+    let (body, comment) = match operands.split_once('#') {
+        Some((b, c)) => (b.trim(), Some(c.trim())),
+        None => (operands.trim(), None),
+    };
+    let ops = split_operands(body);
+
+    // 1. `lea disp(%rip), %dst64  # ADDR <SYM>` (exact function start only)
+    if matches!(base, "lea" | "leaq")
+        && ops.len() == 2
+        && ops[0].contains("(%rip)")
+        && let Some(dst) = exact_reg64(ops[1])
+    {
+        reg_targets.remove(dst);
+        if let Some(cmt) = comment
+            && let Some((addr, sym)) = parse_direct_target(cmt)
+            && !cmt.contains("+0x")
+            && let Some(func) = disassembly.by_addr.get(&addr)
+            && func.name == sym
+        {
+            reg_targets.insert(dst, Target::Address(addr));
+        }
+        return;
+    }
+
+    // 2. `mov disp(%rip), %dst64  # SLOT ...` (immutable RELRO GOT slot only)
+    if matches!(base, "mov" | "movq")
+        && ops.len() == 2
+        && ops[0].contains("(%rip)")
+        && let Some(dst) = exact_reg64(ops[1])
+    {
+        reg_targets.remove(dst);
+        if let Some(cmt) = comment
+            && let Some((slot_str, _)) = split_token(cmt)
+            && let Some(slot) = hex(slot_str)
+            && let Ok(target) = resolve_got_slot(slot, disassembly, table, immutable)
+        {
+            reg_targets.insert(dst, target);
+        }
+        return;
+    }
+
+    // 3. `mov %src64, %dst64` (register-to-register propagation)
+    if matches!(base, "mov" | "movq")
+        && ops.len() == 2
+        && let Some(src) = exact_reg64(ops[0])
+        && let Some(dst) = exact_reg64(ops[1])
+    {
+        if let Some(target) = reg_targets.get(src).cloned() {
+            reg_targets.insert(dst, target);
+        } else {
+            reg_targets.remove(dst);
+        }
+        return;
+    }
+
+    // Read-only flag-setting comparisons do not modify general-purpose registers.
+    if matches!(
+        base,
+        "cmp" | "cmpb" | "cmpw" | "cmpl" | "cmpq" | "test" | "testb" | "testw" | "testl" | "testq"
+    ) {
+        return;
+    }
+
+    invalidate_reg_targets(base, &ops, reg_targets);
+}
+
+/// Mnemonics that write both operands (plus implicit `rax`/`rdx`).
+const DUAL_WRITE_OPS: &[&str] = &[
+    "xchg",
+    "xchgb",
+    "xchgw",
+    "xchgl",
+    "xchgq",
+    "xadd",
+    "xaddb",
+    "xaddw",
+    "xaddl",
+    "xaddq",
+    "cmpxchg",
+    "cmpxchgb",
+    "cmpxchgw",
+    "cmpxchgl",
+    "cmpxchgq",
+    "cmpxchg8b",
+    "cmpxchg16b",
+];
+
+/// Mnemonics that implicitly write `rax`, `rdx`, and/or `rcx`.
+const IMPLICIT_AX_DX_OPS: &[&str] = &[
+    "mul", "mulb", "mulw", "mull", "mulq", "imul", "imulb", "imulw", "imull", "imulq", "div",
+    "divb", "divw", "divl", "divq", "idiv", "idivb", "idivw", "idivl", "idivq", "cdq", "cqo",
+    "cqto", "cltd", "cwd", "cwtd", "cbw", "cbtw", "cwde", "cwtl", "cdqe", "cltq", "rdtsc",
+    "rdtscp", "rdpmc", "xgetbv", "lahf",
+];
+
+/// Conservatively clears every register that `base` / `ops` could modify.
+fn invalidate_reg_targets(
+    base: &str,
+    ops: &[&str],
+    reg_targets: &mut HashMap<&'static str, Target>,
+) {
+    if let Some(&last) = ops.last()
+        && let Some(reg) = canonical_reg(last)
+    {
+        reg_targets.remove(reg);
+    }
+    if DUAL_WRITE_OPS.contains(&base) {
+        for op in ops {
+            if let Some(reg) = canonical_reg(op) {
+                reg_targets.remove(reg);
+            }
+        }
+        reg_targets.remove("rax");
+        reg_targets.remove("rdx");
+    }
+    if IMPLICIT_AX_DX_OPS.contains(&base) {
+        reg_targets.remove("rax");
+        reg_targets.remove("rdx");
+        reg_targets.remove("rcx");
+    }
+    if base == "cpuid" {
+        for reg in ["rax", "rbx", "rcx", "rdx"] {
+            reg_targets.remove(reg);
+        }
+    }
+    if matches!(base, "push" | "pushq" | "pop" | "popq") {
+        reg_targets.remove("rsp");
+    }
+    if matches!(base, "leave" | "leaveq" | "enter" | "enterq") {
+        reg_targets.remove("rsp");
+        reg_targets.remove("rbp");
+    }
+    if base.starts_with("movs")
+        || base.starts_with("stos")
+        || base.starts_with("lods")
+        || base.starts_with("scas")
+        || base.starts_with("cmps")
+    {
+        reg_targets.remove("rax");
+        reg_targets.remove("rcx");
+        reg_targets.remove("rsi");
+        reg_targets.remove("rdi");
+    }
 }
 
 /// What the entry points reach that they may not, and how many functions of
@@ -503,11 +807,16 @@ fn audit_function(
 ) {
     let name = &function.name;
     let mut last_real_mnemonic: Option<&str> = None;
+    let branch_targets = intra_function_branch_targets(function);
+    let mut reg_targets: HashMap<&'static str, Target> = HashMap::new();
 
     for line in &function.lines {
-        let Some((mnemonic, operands)) = parse_instruction(line) else {
+        let Some((addr, mnemonic, operands)) = parse_instruction_with_addr(line) else {
             continue;
         };
+        if branch_targets.contains(&addr) {
+            reg_targets.clear();
+        }
         if !is_nop(mnemonic) {
             last_real_mnemonic = Some(mnemonic);
         }
@@ -516,54 +825,58 @@ fn audit_function(
                 "{name} executes forbidden instruction: {}",
                 line.trim()
             ));
+            reg_targets.clear();
             continue;
         }
         if !is_branch_or_call(mnemonic) {
+            if is_terminator(mnemonic) {
+                reg_targets.clear();
+            } else {
+                update_reg_targets(
+                    mnemonic,
+                    operands,
+                    disassembly,
+                    table,
+                    immutable,
+                    &mut reg_targets,
+                );
+            }
             continue;
         }
         if operands.starts_with('*') {
             audit_indirect(
                 name,
                 line,
+                mnemonic,
                 operands,
                 disassembly,
                 table,
                 immutable,
+                &reg_targets,
                 todo,
                 problems,
             );
+            if is_call64(mnemonic) {
+                reg_targets.retain(|reg, _| is_callee_saved(reg));
+            } else {
+                reg_targets.clear();
+            }
             continue;
         }
-        let Some((target_addr, target_name)) = parse_direct_target(operands) else {
-            problems.insert(format!(
-                "{name} has unresolved direct branch: {}",
-                line.trim()
-            ));
-            continue;
-        };
-        if let Some((dest_start, dest_name)) = disassembly.containing(target_addr) {
-            if dest_name != target_name {
-                problems.insert(format!(
-                    "{name} direct branch target mismatch ({target_name} vs {dest_name}): {}",
-                    line.trim()
-                ));
-            } else if dest_start != start {
-                if !ours(dest_name) && target_addr != dest_start {
-                    problems.insert(format!(
-                        "{name} branches into middle of {dest_name}: {}",
-                        line.trim()
-                    ));
-                } else {
-                    todo.push(Target::Address(dest_start));
-                }
-            }
-        } else if target_name == name {
-            problems.insert(format!(
-                "{name} branches outside library to 0x{target_addr:x}: {}",
-                line.trim()
-            ));
-        } else {
-            todo.push(Target::Name(target_name.to_string()));
+        audit_direct_branch(
+            start,
+            name,
+            line,
+            operands,
+            disassembly,
+            todo,
+            problems,
+            &mut reg_targets,
+        );
+        if is_call64(mnemonic) {
+            reg_targets.retain(|reg, _| is_callee_saved(reg));
+        } else if is_terminator(mnemonic) {
+            reg_targets.clear();
         }
     }
 
@@ -578,19 +891,77 @@ fn audit_function(
     }
 }
 
-/// Resolves an immutable relocation-backed indirect branch/call or records a
-/// failure.
+/// Resolves a direct branch or call instruction and queues its target.
 #[allow(clippy::too_many_arguments)]
-fn audit_indirect(
+fn audit_direct_branch(
+    start: u64,
     name: &str,
     line: &str,
     operands: &str,
     disassembly: &Disassembly,
+    todo: &mut Vec<Target>,
+    problems: &mut BTreeSet<String>,
+    reg_targets: &mut HashMap<&'static str, Target>,
+) {
+    let Some((target_addr, target_name)) = parse_direct_target(operands) else {
+        problems.insert(format!(
+            "{name} has unresolved direct branch: {}",
+            line.trim()
+        ));
+        reg_targets.clear();
+        return;
+    };
+    if let Some((dest_start, dest_name)) = disassembly.containing(target_addr) {
+        if dest_name != target_name {
+            problems.insert(format!(
+                "{name} direct branch target mismatch ({target_name} vs {dest_name}): {}",
+                line.trim()
+            ));
+        } else if dest_start != start {
+            if !ours(dest_name) && target_addr != dest_start {
+                problems.insert(format!(
+                    "{name} branches into middle of {dest_name}: {}",
+                    line.trim()
+                ));
+            } else {
+                todo.push(Target::Address(dest_start));
+            }
+        }
+    } else if target_name == name {
+        problems.insert(format!(
+            "{name} branches outside library to 0x{target_addr:x}: {}",
+            line.trim()
+        ));
+    } else {
+        todo.push(Target::Name(target_name.to_string()));
+    }
+}
+
+/// Resolves an immutable relocation-backed indirect branch/call, or a
+/// `call *%reg64` whose target was loaded from a constant function start or
+/// immutable GOT slot earlier in the same basic block.
+#[allow(clippy::too_many_arguments)]
+fn audit_indirect(
+    name: &str,
+    line: &str,
+    mnemonic: &str,
+    operands: &str,
+    disassembly: &Disassembly,
     table: &HashMap<u64, Relocation>,
     immutable: &[(u64, u64)],
+    reg_targets: &HashMap<&'static str, Target>,
     todo: &mut Vec<Target>,
     problems: &mut BTreeSet<String>,
 ) {
+    if is_call64(mnemonic)
+        && let Some((op, _)) = split_token(operands)
+        && let Some(reg_tok) = op.strip_prefix('*')
+        && let Some(reg) = exact_reg64(reg_tok)
+        && let Some(target) = reg_targets.get(reg)
+    {
+        todo.push(target.clone());
+        return;
+    }
     let Some(slot) = parse_indirect_slot(operands) else {
         problems.insert(format!(
             "{name} branches through unresolved pointer: {}",
@@ -598,46 +969,11 @@ fn audit_indirect(
         ));
         return;
     };
-    if !slot_is_immutable(slot, immutable) {
-        problems.insert(format!(
-            "{name} branches through writable slot 0x{slot:x}: {}",
-            line.trim()
-        ));
-        return;
-    }
-    let Some(reloc) = table.get(&slot) else {
-        problems.insert(format!(
-            "{name} branches through unmapped GOT slot 0x{slot:x}: {}",
-            line.trim()
-        ));
-        return;
-    };
-    if !ALLOWED_RELOCATIONS.contains(&reloc.kind.as_str()) {
-        problems.insert(format!(
-            "{name} uses unsupported relocation {}: {}",
-            reloc.kind,
-            line.trim()
-        ));
-        return;
-    }
-    if let Some(address) = reloc.target.strip_prefix("*ABS*+") {
-        if let Some((dest_start, _)) = hex(address).and_then(|addr| disassembly.containing(addr)) {
-            todo.push(Target::Address(dest_start));
-        } else {
-            problems.insert(format!(
-                "{name} branches to unresolved local address {}: {}",
-                reloc.target,
-                line.trim()
-            ));
+    match resolve_got_slot(slot, disassembly, table, immutable) {
+        Ok(target) => todo.push(target),
+        Err(reason) => {
+            problems.insert(format!("{name} {reason}: {}", line.trim()));
         }
-    } else {
-        let target = reloc
-            .target
-            .split('@')
-            .next()
-            .unwrap_or(&reloc.target)
-            .to_string();
-        todo.push(Target::Name(target));
     }
 }
 
@@ -914,5 +1250,67 @@ Program Header:
             problems.iter().any(|p| p.contains("target mismatch")),
             "{problems:?}"
         );
+    }
+
+    #[test]
+    fn resolves_register_cached_got_and_lea_calls_in_same_basic_block() {
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tmov    0x4000(%rip),%r15        # 5000 <memcpy>
+    1007:\tcall   *%r15
+    100a:\tcall   *%r15
+    100d:\tlea    0x1000(%rip),%r12        # 2000 <__divti3>
+    1014:\tcall   *%r12
+    1017:\tmov    %r12,%r8
+    101a:\tmov    %rax,%r12
+    101d:\tcall   *%r8
+    1020:\tret
+0000000000002000 <__divti3>:
+    2000:\tret
+";
+        let disassembly = Disassembly::read(code);
+        let relocs = table("0000000000005000 R_X86_64_GLOB_DAT memcpy@GLIBC_2.14\n");
+        let (problems, reached) = check(&disassembly, &relocs, RELRO, &["realtime_entry".into()]);
+        assert_eq!(reached, 1);
+        assert!(problems.is_empty(), "unexpected problems: {problems:?}");
+    }
+
+    #[test]
+    fn rejects_register_calls_across_clobber_join_caller_saved_writable_or_jmp() {
+        let code = "\
+0000000000001000 <realtime_entry>:
+    1000:\tmov    0x4000(%rip),%r8         # 5000 <memcpy>
+    1007:\tcall   *%r8
+    100a:\tcall   *%r8
+    100d:\tmov    0x4000(%rip),%r15        # 5000 <memcpy>
+    1014:\txor    %r15d,%r15d
+    1017:\tcall   *%r15
+    101a:\tmov    0x4000(%rip),%r14        # 5000 <memcpy>
+    1021:\tje     1026 <realtime_entry+0x26>
+    1026:\tcall   *%r14
+    1029:\tmov    0x4000(%rip),%r13        # 6000 <writable_slot>
+    1030:\tcall   *%r13
+    1033:\tmov    0x4000(%rip),%r12        # 5000 <memcpy>
+    103a:\tjmp    *%r12
+    103d:\tret
+";
+        let disassembly = Disassembly::read(code);
+        let relocs = table(
+            "\
+0000000000005000 R_X86_64_GLOB_DAT memcpy@GLIBC_2.14
+0000000000006000 R_X86_64_GLOB_DAT memcpy@GLIBC_2.14
+",
+        );
+        let (problems, _) = check(&disassembly, &relocs, RELRO, &["realtime_entry".into()]);
+        // 100a (r8 clobbered by call), 1017 (r15 clobbered by r15d), 1026 (join target),
+        // 1030 (writable slot 6000), 103a (jmp *%r12 never resolved).
+        for addr in ["100a:", "1017:", "1026:", "1030:", "103a:"] {
+            assert!(
+                problems
+                    .iter()
+                    .any(|p| p.contains(addr) && p.contains("unresolved pointer")),
+                "expected unresolved pointer at {addr}, got: {problems:?}"
+            );
+        }
     }
 }

@@ -2,20 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A stream through a receiver, its store and its pump into a software
-//! device.
+//! Integration tests for `ReceiverPlayback` (`Receiver`, `Store`, and `Pump`)
+//! driving a virtual playback device.
 //!
-//! Most tests run a scene in which every time is a whole number of frames:
-//! 50,000 frames a second, so that a frame lasts 20,000 nanoseconds, clocks
-//! that differ by a constant, and a device exactly at its rate. Every
-//! position that the receiver plays is then a whole frame, the resampler
-//! returns frames as they are, and with fades of no length every output
-//! sample is a sample of the stream or silence. The stream is a ramp, in
-//! which a sample says which frame it is, so each output frame can be held
-//! against the frame that is due when it leaves the device.
-//!
-//! The last tests run a device and clocks that drift, where the output is
-//! the stream between its frames.
+//! Most tests use a 50 kHz integer-frame scenario (20,000 ns/frame, constant
+//! clock offset, zero drift, zero fade) with a ramp signal so exact sample
+//! alignment and silence placement can be verified directly; later tests add
+//! clock and device drift to exercise fractional resampling.
 
 // The scene in whole frames is made so that samples are exact, and they are
 // compared exactly.
@@ -29,7 +22,7 @@ use common::{CHANNELS, Line, Listener, index_of, no_fades, ramp, run, settings};
 use unisono_core::sender::Sender;
 use unisono_dsp::{Filter, Parameters};
 use unisono_runtime::pump::Totals;
-use unisono_runtime::software::{Device, Output};
+use unisono_runtime::virtual_device::{Device, Output};
 
 /// Frames per second, frames in a packet, and the latency in nanoseconds
 /// and in frames, of the scene in whole frames.
@@ -676,7 +669,10 @@ fn report_and_echo_exchange_measures_path_delay_on_receiver_playback() {
                     let departure = line.receiver_clock(sender_now);
                     listener.reported(report.sequence, departure);
                     let arrival_at_sender = sender_now + line.delay;
-                    if let Some(echo) = line.sender.answer(&report, arrival_at_sender) {
+                    if let Some(echo) =
+                        line.sender
+                            .answer(&report, arrival_at_sender, arrival_at_sender)
+                    {
                         listener.echo(&echo);
                     }
                 }

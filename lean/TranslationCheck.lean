@@ -223,7 +223,7 @@ def receiverStep (state : CheckedReceiver × List Int) (operation : List Int) :
         let left ← receiver.Receiver.reported made.2 report.sequence (signed .I64 now)
         let answered ← receiver.Receiver.echo left
           ⟨unsigned .U16 echoStream, unsigned .U64 target, report.sequence,
-            signed .I64 (now + delay)⟩
+            signed .I64 (now + delay), signed .I64 (now + delay)⟩
         let path ← receiver.Receiver.delay answered
         pure (answered, ([report.sequence.val, path.val] : List Int))
     | [3, time, frames, _, _, _, _, _] => do
@@ -255,37 +255,37 @@ def runReceiver (silence : Int) (operations : List (List Int)) : Result (List In
     | none => -1
   pure (final.2 ++ lineNumbers ++ [scheduled])
 
-/-- Applies one operation of four numbers to a sender and collects its
+/-- Applies one operation of five numbers to a sender and collects its
 results; see `sender_cases` in the Rust program. -/
 def senderStep (state : sender.Sender × List Int) (operation : List Int) :
     Result (sender.Sender × List Int) := do
   let s := state.1
   let (s1, results) ← (match operation with
-    | [0, frames, capture, drift] => do
+    | [0, frames, capture, drift, _] => do
       let out ← sender.Sender.packet s (unsigned .U16 frames) (signed .I64 capture)
         (signed .I32 drift)
       pure (out.2, ([out.1.index.val, out.1.flags.val, out.1.stamped_index.val,
         out.1.stamped_departure.val, out.1.capture.val, out.1.drift.val,
         out.1.level.val, out.1.level_slope.val] : List Int))
-    | [1, timeline, index, departure] => do
+    | [1, timeline, index, departure, _] => do
       let s1 ← sender.Sender.departed s (unsigned .U64 timeline) (unsigned .U64 index)
         (signed .I64 departure)
       pure (s1, [])
-    | [2, timeline, _, _] => do
+    | [2, timeline, _, _, _] => do
       let s1 ← sender.Sender.restart s (unsigned .U64 timeline)
       pure (s1, [])
-    | [3, level, slope, _] => do
+    | [3, level, slope, _, _] => do
       let s1 ← sender.Sender.level s (signed .I64 level) (signed .I32 slope)
       pure (s1, [])
-    | [4, stream, number, arrival] => do
+    | [4, stream, number, arrival, departure] => do
       let tl ← sender.Sender.impl.timeline s
       let report : packet.Report :=
         { stream := unsigned .U16 stream, timeline := tl,
           receiver := 42#u64, sequence := unsigned .U64 number }
-      let echoed ← sender.Sender.answer s report (signed .I64 arrival)
+      let echoed ← sender.Sender.answer s report (signed .I64 arrival) (signed .I64 departure)
       let numbers : List Int := match echoed with
-        | some e => [1, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val]
-        | none => [0, 0, 0, 0, 0]
+        | some e => [1, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val, e.departure.val]
+        | none => [0, 0, 0, 0, 0, 0]
       pure (s, numbers)
     | _ => pure (s, [-2]) : Result (sender.Sender × List Int))
   let timeline ← sender.Sender.impl.timeline s1
@@ -313,8 +313,8 @@ def runParseReport (values : List Int) : Result (List Int) := do
 def runParseEcho (values : List Int) : Result (List Int) := do
   let parsed ← packet.parse_echo (byteSlice values)
   match parsed with
-  | .Ok e => pure [0, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val]
-  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+  | .Ok e => pure [0, e.stream.val, e.receiver.val, e.sequence.val, e.arrival.val, e.departure.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0, 0])
 
 /-- What reading a request gives, as numbers. -/
 def runParseRequest (values : List Int) : Result (List Int) := do
@@ -345,12 +345,13 @@ def runWriteReport (stream timeline receiver number length : Int) : Result (List
     | none => -1
   pure (written :: out.2.val.map (·.val))
 
-/-- Writes an answer to a report into 40 zero bytes, and returns the length
+/-- Writes an answer to a report into 48 zero bytes, and returns the length
 that writing reports, or 0, and the bytes. -/
-def runWriteEcho (stream receiver number arrival : Int) : Result (List Int) := do
+def runWriteEcho (stream receiver number arrival departure : Int) : Result (List Int) := do
   let out ← packet.write_echo
-    ⟨unsigned .U16 stream, unsigned .U64 receiver, unsigned .U64 number, signed .I64 arrival⟩
-    (byteSlice (List.replicate 40 0))
+    ⟨unsigned .U16 stream, unsigned .U64 receiver, unsigned .U64 number,
+      signed .I64 arrival, signed .I64 departure⟩
+    (byteSlice (List.replicate 48 0))
   let written : Int := match out.1 with
     | some n => n.val
     | none => 0
@@ -450,12 +451,238 @@ def runAnswers (length : Int) (operations : List (List Int)) : Result (List Int)
   let final ← operations.foldlM answersStep (start, [])
   pure final.2
 
+/-- Writes a `PeerProbe` into 40 zero bytes. -/
+def runWritePeerProbe (stream prober target sequence : Int) : Result (List Int) := do
+  let out ← packet.write_peer_probe
+    ⟨unsigned .U16 stream, unsigned .U64 prober, unsigned .U64 target, unsigned .U64 sequence⟩
+    (byteSlice (List.replicate 40 0))
+  let written : Int := match out.1 with | some n => n.val | none => 0
+  pure (written :: out.2.val.map (·.val))
+
+/-- Parses a `PeerProbe`. -/
+def runParsePeerProbe (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_peer_probe (byteSlice values)
+  match parsed with
+  | .Ok p => pure [0, p.stream.val, p.prober.val, p.target.val, p.sequence.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0])
+
+/-- Writes a `PeerEcho` into 56 zero bytes. -/
+def runWritePeerEcho (stream prober responder sequence arrival departure : Int) : Result (List Int) := do
+  let out ← packet.write_peer_echo
+    ⟨unsigned .U16 stream, unsigned .U64 prober, unsigned .U64 responder,
+      unsigned .U64 sequence, signed .I64 arrival, signed .I64 departure⟩
+    (byteSlice (List.replicate 56 0))
+  let written : Int := match out.1 with | some n => n.val | none => 0
+  pure (written :: out.2.val.map (·.val))
+
+/-- Parses a `PeerEcho`. -/
+def runParsePeerEcho (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_peer_echo (byteSlice values)
+  match parsed with
+  | .Ok e =>
+    pure [0, e.stream.val, e.prober.val, e.responder.val, e.sequence.val,
+      e.arrival.val, e.departure.val]
+  | .Err reason => pure (rejection reason ++ [0, 0, 0, 0, 0])
+
+/-- Writes a `PeerRelay` into 220 zero bytes. -/
+def runWritePeerRelay (args : List Int) : Result (List Int) := do
+  match args with
+  | stream :: senderId :: seq :: clockId :: count :: rest =>
+    match groups 5 rest with
+    | none => pure [-2]
+    | some edgeLists =>
+      let edges : List packet.RelayEdge := edgeLists.map fun e =>
+        match e with
+        | [f, t, off, var, age] =>
+          { from_id := unsigned .U64 f, to_id := unsigned .U64 t,
+            offset_ns := signed .I64 off, variance_ns2 := unsigned .U64 var,
+            age_ns := unsigned .U32 age }
+        | _ => packet.RelayEdge.ZERO
+      let padded := (edges ++ List.replicate 16 packet.RelayEdge.ZERO).take 16
+      if h : padded.length = (16#usize).val then
+        let arr : Array packet.RelayEdge 16#usize := Array.from padded h
+        let relay : packet.PeerRelay :=
+          { stream := unsigned .U16 stream, sender := unsigned .U64 senderId,
+            sequence := unsigned .U64 seq, sender_clock_id := unsigned .U32 clockId,
+            count := unsigned .U8 count, edges := arr }
+        let out ← packet.write_peer_relay relay (byteSlice (List.replicate 220 0))
+        let written : Int := match out.1 with | some n => n.val | none => 0
+        pure (written :: out.2.val.map (·.val))
+      else pure [-2]
+  | _ => pure [-2]
+
+/-- Parses a `PeerRelay`. -/
+def runParsePeerRelay (values : List Int) : Result (List Int) := do
+  let parsed ← packet.parse_peer_relay (byteSlice values)
+  match parsed with
+  | .Ok rel =>
+    let head : List Int := [0, rel.stream.val, rel.sender.val, rel.sequence.val,
+      rel.sender_clock_id.val, rel.count.val]
+    let edgeNums : List Int := (rel.edges.val.take rel.count.val).flatMap fun e =>
+      [(e.from_id.val : Int), (e.to_id.val : Int), e.offset_ns.val,
+        (e.variance_ns2.val : Int), (e.age_ns.val : Int)]
+    pure (head ++ edgeNums)
+  | .Err reason => pure (rejection reason ++ [0, 0, 0, 0])
+
+/-- Runs `SlidingMinRtt<8>` over a list of 5-tuples `(id, t1, t2, t3, t4)`. -/
+def runMinRtt (stride initVar floorVar : Int) (ops : List (List Int)) : Result (List Int) := do
+  let start ← min_rtt.SlidingMinRtt.new 8#usize (unsigned .Usize stride)
+    (unsigned .U64 initVar) (unsigned .U64 floorVar)
+  let final ← ops.foldlM
+    (fun (st : min_rtt.SlidingMinRtt 8#usize × List Int) (op : List Int) =>
+      match op with
+      | [id, t1, t2, t3, t4] => do
+        let ex : min_rtt.Exchange :=
+          { id := unsigned .U64 id, t1 := signed .I64 t1, t2 := signed .I64 t2,
+            t3 := signed .I64 t3, t4 := signed .I64 t4 }
+        let (meas, s1) ← min_rtt.SlidingMinRtt.observe st.1 ex
+        let mnums : List Int := match meas with
+          | some m => [1, m.id.val, m.midpoint_ns.val, m.offset_ns.val, m.rtt_ns.val, m.variance_ns2.val]
+          | none => [0, 0, 0, 0, 0, 0]
+        let mr ← min_rtt.SlidingMinRtt.min_rtt_ns s1
+        let mrNum : Int := match mr with | some v => v.val | none => -1
+        let v ← min_rtt.SlidingMinRtt.variance_ns2 s1
+        pure (s1, st.2 ++ mnums ++ [mrNum, v.val])
+      | _ => pure (st.1, st.2 ++ [-2]))
+    (start, [])
+  pure final.2
+
+/-- Runs `KalmanFilter` over a list of 4-tuples `(t, off, var, query)`. -/
+def runKalman (priorIdx jumpNs : Int) (ops : List (List Int)) : Result (List Int) := do
+  let prior := if priorIdx = 0 then kalman.NoisePrior.TCXO
+    else if priorIdx = 1 then kalman.NoisePrior.CONSUMER_QUARTZ
+    else kalman.NoisePrior.WANDERING_QUARTZ
+  let start ← kalman.KalmanFilter.new prior (signed .I64 jumpNs)
+  let final ← ops.foldlM
+    (fun (st : kalman.KalmanFilter × List Int) (op : List Int) =>
+      match op with
+      | [t, off, var, query] => do
+        let (jumped, k1) ← kalman.KalmanFilter.update st.1 (signed .I64 t)
+          (signed .I64 off) (unsigned .U64 var)
+        let fq ← kalman.KalmanFilter.impl.freq_q48 k1
+        let ov ← kalman.KalmanFilter.offset_variance_ns2 k1
+        let pred ← kalman.KalmanFilter.predict_offset_ns k1 (signed .I64 query)
+        let pnums : List Int := match pred with | some v => [1, v.val] | none => [0, 0]
+        let ln ← kalman.KalmanFilter.to_line k1
+        let lnums : List Int := match ln with
+          | some l => [1, l.time.val, l.value.val, l.rise.val, l.run.val]
+          | none => [0, 0, 0, 0, 0]
+        pure (k1, st.2 ++ [bit jumped, fq.val, ov.val] ++ pnums ++ lnums)
+      | _ => pure (st.1, st.2 ++ [-2]))
+    (start, [])
+  pure final.2
+
+/-- Runs `blue.solve_blue` on a graph of `hosts` hosts and 4-tuple edges. -/
+def runBlue (hosts selfIdx : Int) (edges : List (List Int)) : Result (List Int) := do
+  let obs : List blue.EdgeObs := edges.map fun e =>
+    match e with
+    | [f, t, off, var] =>
+      { «from» := unsigned .Usize f, «to» := unsigned .Usize t,
+        offset_ns := signed .I64 off, variance_ns2 := unsigned .U64 var }
+    | _ => blue.EdgeObs.ZERO
+  let sl : Slice blue.EdgeObs :=
+    if h : obs.length ≤ Usize.max then Slice.from obs h else Slice.from [] (by simp)
+  let res ← blue.solve_blue (unsigned .Usize hosts) (unsigned .Usize selfIdx) sl
+    (unsigned .Usize obs.length)
+  let head : List Int :=
+    [res.active_count.val, res.common_offset_ns.val, res.common_var_ns2.val,
+      res.self_diff_offset_ns.val, res.self_diff_var_ns2.val]
+  let hN := hosts.toNat
+  let tail : List Int := (List.range hN).flatMap fun i =>
+    let r := res.reachable.val.getD i false
+    let o := res.offsets_ns.val.getD i 0#i64
+    [bit r, o.val]
+  pure (head ++ tail)
+
+/-- Runs `ModalPlayer.cycle` over 10-tuple cycles. -/
+def runModalPlayer (cycles : List (List Int)) : Result (List Int) := do
+  let reg ← player.ModalRegulation.lipsync 1000000#u32 128#u32
+  let start ← player.ModalPlayer.new reg
+  let final ← cycles.foldlM
+    (fun (st : player.ModalPlayer × List Int) (c : List Int) =>
+      match c with
+      | [nf, nfr, lf, lfr, fr, dur, pa, ep, cn, ct] => do
+        let now : timing.Position := { frame := unsigned .U64 nf, fraction := unsigned .U64 nfr }
+        let later : timing.Position := { frame := unsigned .U64 lf, fraction := unsigned .U64 lfr }
+        let sched : timing.Schedule :=
+          { index := now.frame, capture := 0#i64, rate := 48000#u32, drift := 0#i32,
+            level := 20000000#i64, level_slope := 0#i32 }
+        let (plan, mp1) ← player.ModalPlayer.cycle st.1 now later (unsigned .U32 fr)
+          (signed .I64 dur) sched (pa != 0) (unsigned .U32 ep) (signed .I64 cn) (signed .I64 ct)
+        pure (mp1, st.2 ++ planNumbers plan)
+      | _ => pure (st.1, st.2 ++ [-2]))
+    (start, [])
+  pure final.2
+
+/-- Runs end-to-end Star & Peer sequences on `sync.Sync`. -/
+def runSync (withPeers : Int) (ops : List (List Int)) : Result (List Int) := do
+  let ss ← sync.SyncSettings.standard 1#u16 100#u64
+  let s0 ← sync.Sync.new ss
+  let s1 ← if withPeers != 0 then do
+    let (_, sA) ← sync.Sync.add_peer s0 200#u64 sync.WEIGHT_UNITY_Q16
+    let (_, sB) ← sync.Sync.add_peer sA 300#u64 sync.WEIGHT_UNITY_Q16
+    pure sB
+  else pure s0
+  let final ← ops.foldlM
+    (fun (st : sync.Sync × List Int) (op : List Int) =>
+      match op with
+      | [0, rseq, t1, t2, t3, t4] => do
+        let sA ← sync.Sync.report_departed st.1 (unsigned .U64 rseq) (signed .I64 t1)
+        let ec : packet.Echo :=
+          { stream := 1#u16, receiver := 100#u64, sequence := unsigned .U64 rseq,
+            arrival := signed .I64 t2, departure := signed .I64 t3 }
+        let (okb, sB) ← sync.Sync.on_sender_echo sA ec (signed .I64 t4)
+        pure (sB, st.2 ++ [bit okb])
+      | [1, pseq, t1, t2, t3, t4] => do
+        let sA ← sync.Sync.peer_probe_departed st.1 0#usize (unsigned .U64 pseq) (signed .I64 t1)
+        let pe : packet.PeerEcho :=
+          { stream := 1#u16, prober := 100#u64, responder := 200#u64,
+            sequence := unsigned .U64 pseq, arrival := signed .I64 t2,
+            departure := signed .I64 t3 }
+        let (okb, sB) ← sync.Sync.on_peer_echo sA pe (signed .I64 t4)
+        pure (sB, st.2 ++ [bit okb])
+      | [2, relSeq, now, _, _, _] => do
+        let e0 : packet.RelayEdge :=
+          { from_id := 200#u64, to_id := 0#u64, offset_ns := 400000000#i64,
+            variance_ns2 := 50000000#u64, age_ns := 5000000#u32 }
+        let e1 : packet.RelayEdge :=
+          { from_id := 200#u64, to_id := 300#u64, offset_ns := (-50000000)#i64,
+            variance_ns2 := 5000000#u64, age_ns := 4000000#u32 }
+        let list := e0 :: e1 :: List.replicate 14 packet.RelayEdge.ZERO
+        let arr : Array packet.RelayEdge 16#usize := Array.from list (by decide)
+        let relay : packet.PeerRelay :=
+          { stream := 1#u16, sender := 200#u64, sequence := unsigned .U64 relSeq,
+            sender_clock_id := 0#u32, count := 2#u8, edges := arr }
+        let (acc, sB) ← sync.Sync.on_peer_relay st.1 relay (signed .I64 now)
+        pure (sB, st.2 ++ [(acc.val : Int)])
+      | [3, now, _, _, _, _] => do
+        let (orel, sB) ← sync.Sync.build_relay st.1 (signed .I64 now)
+        let cnt : Int := match orel with | some r => r.count.val | none => -1
+        pure (sB, st.2 ++ [cnt])
+      | [4, now, _, _, _, _] => do
+        let (snap, sB) ← sync.Sync.step st.1 (signed .I64 now)
+        let stime ← sync.SyncSnapshot.sender_time snap (signed .I64 now)
+        let com ← sync.SyncSnapshot.common_offset_ns snap (signed .I64 now)
+        let diff ← sync.SyncSnapshot.diff_offset_ns snap (signed .I64 now)
+        pure (sB, st.2 ++ [bit snap.valid, bit snap.peer_active, snap.active_peers.val,
+          snap.epoch.val, stime.val, com.val, diff.val])
+      | _ => pure (st.1, st.2 ++ [-2]))
+    (s1, [])
+  pure final.2
+
 /-- Evaluates the function a line names on the line's arguments. -/
 def evaluate (function : String) (args : List Int) : Except String (List Int) :=
   match function, args with
   | "saturate", [x] => result (fixed.saturate (signed .I128 x)) (fun r => [r.val])
   | "mul_shift", [a, b, shift] =>
     result (fixed.mul_shift (signed .I64 a) (signed .I64 b) (unsigned .U32 shift))
+      (fun r => [r.val])
+  | "saturating_mul_i64", [a, b] =>
+    result (fixed.saturating_mul_i64 (signed .I64 a) (signed .I64 b)) (fun r => [r.val])
+  | "saturating_mul_i128", [a, b] =>
+    result (fixed.saturating_mul_i128 (signed .I128 a) (signed .I128 b)) (fun r => [r.val])
+  | "scale_div_pow2", [num, shift, den] =>
+    result (fixed.scale_div_pow2 (signed .I128 num) (unsigned .U32 shift) (signed .I128 den))
       (fun r => [r.val])
   | "root", [x] => result (fixed.root (signed .I128 x)) (fun r => [r.val])
   | "div_floor", [a, b] =>
@@ -500,11 +727,11 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
       else .error "the number of operations is not the stated one"
     | none => .error "operations are not groups of eight"
   | "sender", first :: count :: rest =>
-    match groups 4 rest with
+    match groups 5 rest with
     | some operations =>
       if operations.length = count then result (runSender first operations) id
       else .error "the number of operations is not the stated one"
-    | none => .error "operations are not groups of four"
+    | none => .error "operations are not groups of five"
   | "sender_time", [time, value, rise, run, path, moment] =>
     result (timing.sender_time
       { time := signed .I64 time, value := signed .I64 value, rise := signed .I64 rise,
@@ -561,8 +788,46 @@ def evaluate (function : String) (args : List Int) : Except String (List Int) :=
     result (runWriteRequest stream timeline first frames) id
   | "write_report", [stream, timeline, receiver, number, length] =>
     result (runWriteReport stream timeline receiver number length) id
-  | "write_echo", [stream, receiver, number, arrival] =>
-    result (runWriteEcho stream receiver number arrival) id
+  | "write_echo", [stream, receiver, number, arrival, departure] =>
+    result (runWriteEcho stream receiver number arrival departure) id
+  | "write_peer_probe", [stream, prober, target, seq] =>
+    result (runWritePeerProbe stream prober target seq) id
+  | "parse_peer_probe", bytes => result (runParsePeerProbe bytes) id
+  | "write_peer_echo", [stream, prober, responder, seq, arrival, departure] =>
+    result (runWritePeerEcho stream prober responder seq arrival departure) id
+  | "parse_peer_echo", bytes => result (runParsePeerEcho bytes) id
+  | "write_peer_relay", rest => result (runWritePeerRelay rest) id
+  | "parse_peer_relay", bytes => result (runParsePeerRelay bytes) id
+  | "min_rtt", stride :: initVar :: floorVar :: count :: rest =>
+    match groups 5 rest with
+    | some ops =>
+      if ops.length = count then result (runMinRtt stride initVar floorVar ops) id
+      else .error "the number of min_rtt operations is not the stated one"
+    | none => .error "min_rtt operations are not groups of five"
+  | "kalman", priorIdx :: jumpNs :: count :: rest =>
+    match groups 4 rest with
+    | some ops =>
+      if ops.length = count then result (runKalman priorIdx jumpNs ops) id
+      else .error "the number of kalman operations is not the stated one"
+    | none => .error "kalman operations are not groups of four"
+  | "blue", hosts :: selfIdx :: count :: rest =>
+    match groups 4 rest with
+    | some edges =>
+      if edges.length = count then result (runBlue hosts selfIdx edges) id
+      else .error "the number of blue edges is not the stated one"
+    | none => .error "blue edges are not groups of four"
+  | "modal_player", count :: rest =>
+    match groups 10 rest with
+    | some cycles =>
+      if cycles.length = count then result (runModalPlayer cycles) id
+      else .error "the number of modal_player cycles is not the stated one"
+    | none => .error "modal_player cycles are not groups of ten"
+  | "sync", withPeers :: count :: rest =>
+    match groups 6 rest with
+    | some ops =>
+      if ops.length = count then result (runSync withPeers ops) id
+      else .error "the number of sync operations is not the stated one"
+    | none => .error "sync operations are not groups of six"
   | "parse_audio", bytes => result (runParse bytes) id
   | "packet_kind", bytes => result (runKind bytes) id
   | "write_audio", fields => result (runWrite fields) id

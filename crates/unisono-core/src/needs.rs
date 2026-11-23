@@ -2,23 +2,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The latency that the frames of a stream needed at a receiver, by stretch
-//! of the index.
+//! Sliding-window maximum playout-latency (`need`) tracker per frame window.
 //!
-//! A frame needs the latency at which it would have been there in time: from
-//! its capture to its arrival, on the sender's clock, and the time that the
-//! receiver needs it before it leaves the device. The level, the latency
-//! that every receiver holds, has to be at least that for the frame to be
-//! played. The index is cut into stretches of a set number of frames, the
-//! same for every receiver of a stream, and of each stretch the largest need
-//! is kept, for the last `S` stretches. The sender takes the largest over its
-//! receivers for each stretch and chooses the level from that.
-//!
-//! A stretch older than the kept ones is left out, unless it is older by far,
-//! by `2 S` stretches or more before the newest: then the index has started
-//! again, and what was kept is dropped. So whatever it holds, the record
-//! follows a stream again from the first stretch that is not among the `S`
-//! just passed.
+//! A frame's required latency is the sender-clock interval from capture to
+//! arrival plus receiver playback lead time. Tracks the per-window maximum
+//! across the most recent `S` aligned frame windows for reporting to the
+//! sender's adaptive level controller. Windows older than `S` are ignored; an
+//! index jump backward by `>= 2 * S` windows resets the tracker.
 
 use crate::packet::{RECENT, Recent, UNKNOWN_NEED};
 

@@ -150,7 +150,12 @@ A world consists of:
   any two hosts. When host $i$ sends its $q$-th message to host $j$ at true
   time $s$, the network either delivers it at a true time
   $\mathrm{deliver}_{ij}(s,q) > s$ or drops it (\lean{deliver}). Delivery
-  and loss may depend on $s$ and $q$, but not on the payload.
+  and loss may depend on $s$ and $q$, but not on the payload. Throughout
+  this specification, a directed \emph{link} $(i, j)$ represents the entire
+  end-to-end path between the application's send call on host $i$ and
+  receive call on host $j$, covering both hosts' kernel network stacks,
+  drivers, network interface cards, switches or wireless access points, and
+  the wired or wireless medium.
 \item \emph{The target latency} $L^*(n)$ of each frame $n$, used in
   lip-sync mode, which the application sets and gives to the sender's host
   together with the frame (\lean{target}).
@@ -478,15 +483,56 @@ a weighting by modulation rate should replace it, is open.
 
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. Statements hold under a model, and the
-same solution can perform differently under different models. Each model
-is a file of its own in \lean{lean/Unisono/Spec/Models}, and each comes
-with an example showing that it is not empty.
+same solution can perform differently under different models. Five approved
+model classes live in \path{lean/Unisono/Spec/Models}, each in its own file
+and each accompanied by a non-emptiness witness in
+\path{lean/Unisono/Spec/Checks.lean}.
+
+\subsection{Ideal constant worlds}
+
+The deterministic model \lean{IdealConstantWorld}
+(\path{lean/Unisono/Spec/Models/Ideal.lean}) defines the noiseless baseline.
+Its parameters are the common nominal rate $\rho > 0$ (\lean{rate}), the
+sender host (\lean{sender}), the speaker-to-host assignment (\lean{host}),
+constant positive one-way delays $d_{ij} > 0$ on every directed link
+$(i, j)$ (\lean{delay}), a constant block size $B \ge 1$ (\lean{blockSize}),
+a constant playback request lead $\lambda > 0$ (\lean{lead}), and a constant
+target latency $L^* \ge 0$ (\lean{targetLatency}). A world belongs to the
+model (\lean{IdealConstantWorld.Holds}) when:
+\begin{itemize}
+\item clocks: every host $h$ has exact unit rate with an arbitrary constant
+  initial offset $c_{0,h} \in \R$, $C_h(t) = t + c_{0,h}$ (so a solution
+  must still recover unknown host offsets);
+\item capture: frames occur at $c(n) = t_{0,\mathrm{cap}} + n/\rho$ for some
+  start time $t_{0,\mathrm{cap}}$, blocks have size $B$ ($f(b) = bB$),
+  handoff delay is zero ($h(b) = c(f(b+1)-1)$), and timestamps are exact
+  (\lean{ReportsWithin 0});
+\item playback: each speaker $r$'s output samples leave at
+  $o_r(k) = t_{0,r} + k/\rho$ for some start time $t_{0,r}$, blocks have
+  size $B$ ($g_r(b) = bB$), request lead is exact
+  ($o_r(g_r(b)) - a_r(b) = \lambda$), and timestamps are exact
+  (\lean{ReportsWithin 0});
+\item network: every directed link $(i, j)$ delivers every message without
+  loss at constant delay $d_{ij}$,
+  $\mathrm{deliver}_{ij}(s, q) = s + d_{ij}$;
+\item target latency: $L^*(n) = L^*$ for every frame $n$.
+\end{itemize}
+Two subclasses distinguish link symmetry:
+\lean{IdealConstantWorld.\allowbreak Symmetric} requires $d_{ij} = d_{ji}$
+for all $i, j$, while \lean{IdealConstantWorld.\allowbreak Asymmetric}
+requires $d_{ij} \ne d_{ji}$ for at least one pair $(i, j)$, which is the
+setting of the Star-vs-Peer asymmetry separation in
+Section~\ref{sec:limits}. Every world in \lean{IdealConstantWorld} is a
+special case of the bounded model below
+(\lean{IdealConstantWorld.\allowbreak toBounds},
+\lean{IdealConstantWorld.\allowbreak withinBounds}). Both subclasses are
+non-empty (\lean{IdealConstantWorld.\allowbreak example\_\allowbreak holds}).
 
 \subsection{Bounded worlds}
 
-The model \lean{Bounded} is deterministic: a statement under it holds for
-every world that satisfies the bounds (\lean{World.WithinBounds}), which is
-the worst case.
+The model \lean{Bounded} (\path{lean/Unisono/Spec/Models/Bounded.lean}) is
+deterministic: a statement under it holds for every world that satisfies the
+bounds (\lean{World.WithinBounds}), which is the worst case.
 Its parameters (\lean{Bounds}) are the rate errors
 $\varepsilon_C, \varepsilon_D \in [0, 1)$, the timestamp error
 $\varepsilon_R \ge 0$, the handoff delay $\eta \ge 0$, the request leads
@@ -517,69 +563,87 @@ holds even for messages sent at the same moment. It therefore models
 isolated packet drops rather than outages, in which a link drops everything
 sent during a time interval. It also does not model pauses, in which a link
 holds messages back and releases them later; a pause enters only through
-$d_{\max}$. The model in the next section includes both. A random world can
-be required to satisfy the bounds almost surely (\lean{AlmostSurelyWithin}).
-The model is not empty (\lean{Bounds.example\_within}).
+$d_{\max}$. The network-disturbance model in the next section includes both.
+A random world can be required to satisfy the bounds almost surely
+(\lean{AlmostSurelyWithin}). The model is not empty
+(\lean{Bounds.example\_within}).
 
-\subsection{Delays, pauses and losses}
+\subsection{Stationary network disturbances}
 
-The model \lean{Delays} gives the network a probability distribution. It
-decomposes the delay as the design document \lean{docs/model.md} does in
-its section on disturbances. Each link from host $i$ to host $j$
-(\lean{Link}) has a baseline $B(u) > 0$, a jitter $J(u) \ge 0$, a set of
-episodes, each a pause or an outage with a start and a length $H > 0$, and
-a set of individually dropped messages.
+The probabilistic network-only model class
+\lean{StationaryNetworkDisturbances}
+(\path{lean/Unisono/Spec/Models/Delays.lean}) decomposes the end-to-end
+delay of each directed link $(i, j)$---covering both hosts' kernel network
+stacks, drivers, network interface cards, switches or access points, and the
+wired or wireless medium---into four disturbances (\lean{Link}): a slow
+baseline $B_{ij}(u) > 0$, a per-packet jitter $J_{ij}(u, q) \ge 0$ indexed
+by release time $u$ and message number $q$, a set of episodes
+(\lean{Pause}), each a pause or an outage with a start time and length
+$H > 0$, and a set of individually dropped message numbers (\lean{lost}).
 
 \begin{definition}[Delivery]
-A message sent at true time $s$ is released at
+A message $q$ sent on link $(i, j)$ at true time $s$ is released at
 \[
   U(s) = \inf\{u \ge s : \text{no pause is under way at } u\}
 \]
 (\lean{Link.release}); if no such time exists, the message is dropped. The
-$q$-th message on the link is also dropped if it is one of the individually
+$q$-th message on the link is also dropped if $q$ is one of the individually
 dropped messages or if an outage is under way at $U(s)$; otherwise it
-arrives at $U(s) + B(U(s)) + J(U(s))$ (\lean{Link.deliver}).
+arrives at $U(s) + B_{ij}(U(s)) + J_{ij}(U(s), q)$ (\lean{Link.deliver}).
 \end{definition}
 
-A pause thus holds back every message sent during it and releases them all
-when it ends: the first message sent in a pause of length $H$ is late by
-$H$. Messages released together arrive together: the model ignores the time
-a link takes to send out the messages it held. Two messages sent on the
-same link at the same instant arrive at the same time if both are
-delivered.
+A pause holds back every message sent during it and releases them all when
+it ends: the first message sent in a pause of length $H$ is late by at least
+$H$. Indexing the jitter $J_{ij}(u, q)$ by both release time $u$ and message
+index $q$ allows simultaneous messages, including a burst released at the
+end of a pause, to incur distinct sequential jitter rather than arriving at
+the exact same instant.
 
-\begin{definition}[The model's distribution]
-The parameters (\lean{DelayModel}) are the slope $\beta \ge 0$ of the
-baseline, the tail constants $C > 0$ and $x_0 > 0$ of the jitter, the rate
-$\lambda_\kappa \ge 0$ and the length distribution $F_\kappa$ on
-$(0, \infty)$, with a finite mean, of each kind $\kappa$ of episode, and
-the loss probability $p \in [0, 1)$. A random network follows the model
-(\lean{DelayModel.Holds}) when:
+\begin{definition}[Stationary network disturbances]
+Every parameter of the disturbance model
+\lean{StationaryNetworkDisturbances} is indexed by the directed link $(i, j)$,
+allowing heterogeneous topologies such as reliable wired peer links combined
+with a lossy or bursty wireless sender link: the baseline slope $\beta_{ij} \ge 0$ (\lean{slope}), the jitter tail factor
+$C_{ij} > 0$ (\lean{tailFactor}) and scale $x_{0,ij} > 0$ (\lean{tailScale}),
+the episode arrival rate $\lambda_{ij,\kappa} \ge 0$ (\lean{pauseRate}) and
+length distribution $F_{ij,\kappa}$ on $(0, \infty)$ with finite mean
+(\lean{pauseLength}) for each kind $\kappa \in \{\text{pause}, \text{outage}\}$,
+and the individual drop probability $p_{ij} \in [0, 1)$
+(\lean{lossProbability}). A random network $d(\omega)$ follows the model
+(\lean{StationaryNetworkDisturbances.\allowbreak Holds}) when:
 \begin{itemize}
-\item the baseline changes slowly: $|B(u) - B(u')| \le \beta\,|u - u'|$;
-\item the jitter comes arbitrarily close to zero, $\Prob(J(u) < \delta) > 0$
-  for every $\delta > 0$, so the baseline is the shortest time a message
-  takes;
-\item large jitter is rare: $\Prob(J(u) > x) \le C e^{-x/x_0}$ for $x \ge 0$;
-\item episodes of kind $\kappa$ start at rate $\lambda_\kappa$ with lengths
-  distributed as $F_\kappa$: the expected number that start within any $t$
-  seconds with length in a set $A$ is $\lambda_\kappa\, t\, F_\kappa(A)$;
-\item a pause, and likewise an outage, is under way at a given time with
-  probability less than one;
-\item each message is dropped individually with probability $p$;
-\item the state of all links over time, $X(u)$, made of each link's jitter
-  and whether a pause or an outage is under way, is jointly
-  \emph{stationary}: the distribution of the path $(X(u + \tau))_u$ equals
-  that of $(X(u))_u$ for every $\tau$; and \emph{mixing}: for any two
-  events $E$ and $E'$ about the path,
+\item the baseline is positive and changes slowly:
+  $|B_{ij}(u) - B_{ij}(u')| \le \beta_{ij}\,|u - u'|$;
+\item the per-packet jitter is nonnegative and comes arbitrarily close to
+  zero, $\Prob(J_{ij}(u, q) < \delta) > 0$ for every $\delta > 0$, so the
+  baseline is the least time a message takes;
+\item large jitter has per-link exponential upper tails:
+  $\Prob(J_{ij}(u, q) > x) \le C_{ij} e^{-x / x_{0,ij}}$ for $x \ge 0$;
+\item episodes of kind $\kappa$ start on link $(i, j)$ at rate
+  $\lambda_{ij,\kappa}$ with lengths distributed as $F_{ij,\kappa}$: the
+  expected number starting within any $t$ seconds with length in a
+  measurable set $A$ is $\lambda_{ij,\kappa}\, t\, F_{ij,\kappa}(A)$;
+\item at any given time, a pause (and likewise an outage) is under way on
+  link $(i, j)$ with probability strictly less than one;
+\item each message on link $(i, j)$ is dropped individually with probability
+  $p_{ij}$;
+\item the state of all links over time and message index, $X(u, q)$,
+  consisting of each link's jitter $J_{ij}(u, q)$ and whether a pause or an
+  outage is under way at $u$ (\lean{linkStates}), is jointly
+  \emph{stationary} under time shifts (\lean{shiftTime})---the distribution
+  of $(X(u + \tau, q))_{u,q}$ equals that of $(X(u, q))_{u,q}$ for every
+  $\tau$---and \emph{mixing}: for any two measurable events $E$ and $E'$
+  about the path,
   $\Prob(X \in E,\ \theta_\tau X \in E') \to \Prob(X \in E)\,\Prob(X \in
-  E')$ as $\tau \to \infty$, where $\theta_\tau$ shifts the path by $\tau$
+  E')$ as $\tau \to \infty$, where $\theta_\tau$ shifts time by $\tau$
   (\lean{Stationary}, \lean{Mixing});
-\item the individually dropped messages of all links are jointly stationary
-  and mixing in the message number.
+\item the individually dropped messages of all links (\lean{droppedMessages})
+  are jointly stationary and mixing under shifts of the message number
+  (\lean{shiftCount}).
 \end{itemize}
-A random world follows the model when its network consists of such links
-(\lean{DelayModel.Random}).
+A random world follows the model class when its network consists of such
+links (\lean{World.HasDelays},
+\lean{StationaryNetworkDisturbances.\allowbreak Random}).
 \end{definition}
 
 Mixing makes long-run averages, taken at regularly spaced times, equal their
@@ -588,24 +652,26 @@ link drops every message or holds a message forever. Nothing else is
 assumed independent: links may be correlated, episodes may come in
 clusters, and the jitter, the episodes and the losses may depend on each
 other. Mixing is assumed without a rate; a rate will be added when a
-statement about finite time windows needs one. The model is not empty
-(\lean{DelayModel.example\_holds}).
+statement about finite time windows needs one. The model class is not empty
+(\lean{StationaryNetworkDisturbances.\allowbreak example\_\allowbreak holds}).
 
-\subsection{A second-order model}
+\subsection{Second-order moments}
 
-The model \lean{SecondOrderModel} specifies the means and covariances of the
-oscillator, network, and audio-device noise
-(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Among the six objectives,
-synchronization, tracking, and playback roughness are quadratic in the timing
-errors and playback speed changes, while mean latency is linear; for linear
-time-invariant loops driven by measurements at fixed times (without packet loss,
-minimum-round-trip selection, speed clamps, or random device request times),
-first and second moments determine the steady-state performance on those four
-objectives. Missed samples and discontinuities additionally depend on how long
-link pauses and outages last and how often packets are dropped, as in
-\lean{DelayModel}.
+The model class \lean{SecondOrderMoments} specifies the means and
+covariances of continuous timing noise across host clocks, network link
+jitter, audio-device oscillators, and device timestamp errors
+(\path{lean/Unisono/Spec/Models/SecondOrder.lean}). Among the six
+objectives, synchronization, tracking, and playback roughness are quadratic
+in the timing errors and playback speed changes, while mean latency is
+linear; for linear time-invariant loops driven by measurements at fixed
+times (without packet loss, minimum-round-trip selection, speed clamps, or
+random device request times), first and second moments determine the
+steady-state performance on those four objectives. Missed samples and
+discontinuities additionally depend on how long link pauses and outages last
+and how often packets are dropped, as in
+\lean{StationaryNetworkDisturbances}.
 
-\begin{definition}[Second-order model]
+\begin{definition}[Second-order moments]
 A host's clock reads $C_i(t) = t + \phi_i(t)$ at true time $t$, where
 $\phi_i$ is the clock's \emph{phase}. Its fractional frequency
 $\dot\phi_i$ has the band-limited IEEE~Std~1139-2008 one-sided power spectral
@@ -639,32 +705,41 @@ covariances (\lean{FollowsNoise}, \lean{secondDifferenceCovariance})
 \]
 Because $S$ is supported on $[f_{\mathrm{lo}}, f_{\mathrm{hi}}]$ with
 $f_{\mathrm{lo}} > 0$, the integral converges for all three components
-(\lean{secondDifferenceCovariance\_integrableOn}) and satisfies
+(\lean{secondDifferenceCovariance\_\allowbreak integrableOn}) and satisfies
 $E[(\Delta^2_\tau \phi(t))^2] \le 4\tau^2 \int_{f_{\mathrm{lo}}}^{f_{\mathrm{hi}}} S(f)\,df$
-for every $\tau \in \mathbb{R}$ (\lean{secondDifferenceCovariance\_diag\_le}),
+for every $\tau \in \R$
+(\lean{secondDifferenceCovariance\_\allowbreak diag\_le}),
 so the second-moment bound is compatible with any rate-error bound
 \lean{Clock.RateWithin} at all lags $\tau$. The phase second differences of
 distinct hosts are uncorrelated.
 
-Each link's delay consists of its baseline, its jitter, and its pauses,
-outages, and drops, as in \lean{DelayModel}. The jitter on the directed link
-from host $i$ to host $j$ decomposes additively as
+Each directed link's delay consists of its baseline, its per-packet jitter,
+and its pauses, outages, and drops, as in
+\lean{StationaryNetworkDisturbances}. Because a link covers both hosts'
+network stacks and the wired or wireless medium, the per-packet jitter on
+link $(i, j)$ at release time $u$ and message index $q$ decomposes
+additively as
 \[
-  J_{ij}(t) = J^{\mathrm{tx}}_i(t) + J^{\mathrm{rx}}_j(t) + J^{\mathrm{own}}_{ij}(t),
+  J_{ij}(u, q) = J^{\mathrm{tx}}_i(u) + J^{\mathrm{rx}}_j(u)
+                 + J^{\mathrm{own}}_{ij}(u, q),
 \]
 separating sender-side transmit jitter $J^{\mathrm{tx}}_i$ (shared across
 links leaving $i$, such as network-interface queueing or operating-system
 scheduling), receiver-side arrival jitter $J^{\mathrm{rx}}_j$ (shared across
 links entering $j$, such as receive-side interrupt latency or a shared
-wireless medium), and link-specific jitter $J^{\mathrm{own}}_{ij}$. Each
-component is square-integrable and wide-sense stationary with constant mean
-and lag-dependent covariance (\lean{JitterNoise}, \lean{HasMoments}).
+wireless medium), and link-specific per-packet jitter
+$J^{\mathrm{own}}_{ij}$. The shared components $J^{\mathrm{tx}}_i$ and
+$J^{\mathrm{rx}}_j$ are square-integrable and wide-sense stationary in
+time (\lean{JitterNoise}, \lean{HasMoments}), while $J^{\mathrm{own}}_{ij}$
+is square-integrable and wide-sense stationary in release time and message
+number, with covariance depending on both time lag $\Delta t$ and index lag
+$\Delta q$ (\lean{PacketJitterNoise}, \lean{HasPacketMoments}).
 Link-specific jitter $J^{\mathrm{own}}_{ij}$ is uncorrelated across distinct
 links and with both transmit and receive jitter, while correlations among
 transmit and receive jitter processes $J^{\mathrm{tx}}_i$ and
-$J^{\mathrm{rx}}_j$ are left unconstrained so that same-host uplink--downlink
-coupling and shared-medium wireless contention across stations on one access
-point are admitted.
+$J^{\mathrm{rx}}_j$ are left unconstrained so that same-host
+uplink--downlink coupling and shared-medium wireless contention across
+stations on one access point are admitted.
 
 The capture device's timing and each playback device's timing deviate from
 true time according to the same band-limited clock model on the nominal sample
@@ -682,24 +757,153 @@ timestamps add square-integrable white zero-mean noise of variance
 $\sigma_{\mathrm{play},r}^2$ (\lean{WhiteErrors}). Across source families,
 host clocks and audio devices are uncorrelated with network jitter and
 timestamp errors, network jitter is uncorrelated with timestamp errors, and
-timestamp errors are mutually uncorrelated across distinct devices.
+timestamp errors are mutually uncorrelated across distinct devices
+(\lean{SecondOrderMoments.Holds}).
 \end{definition}
 
-A three-host witness with nonzero uncorrelated link jitter confirms that
-\lean{SecondOrderModel} is satisfiable (\lean{SecondOrderModel.example\_holds}).
-In that witness, clocks, devices, and timestamps carry zero noise; although
-band-limiting makes \lean{ClockNoise} compatible with bounded clock rates in
-second moments (\lean{secondDifferenceCovariance\_diag\_le}), constructing a
-random strictly increasing \lean{Clock} with nonzero \lean{ClockNoise} is left
-open. No theorem in the repository currently takes \lean{SecondOrderModel} as a
-hypothesis.
+A three-host witness carrying nonzero uncorrelated per-packet link jitter
+confirms that \lean{SecondOrderMoments} is satisfiable
+(\lean{SecondOrderMoments.\allowbreak example\_\allowbreak holds}). In that witness,
+clocks, devices, and timestamps carry zero noise; although band-limiting
+makes \lean{ClockNoise} compatible with bounded clock rates in second
+moments (\lean{secondDifferenceCovariance\_\allowbreak diag\_le}),
+constructing a random strictly increasing \lean{Clock} with nonzero
+\lean{ClockNoise} is left open. No end-to-end objective theorem in the
+repository currently takes \lean{SecondOrderMoments} as a hypothesis.
 
-\subsection{Communication topologies}
+\subsection{Composite stochastic worlds}
+
+The composite probabilistic model class \lean{StochasticWorld}, defined in
+\path{lean/Unisono/Spec/Models/StochasticWorld.lean}, combines:
+\begin{enumerate}
+\item a \lean{StationaryNetworkDisturbances} parameter set governing
+  per-link baselines, exponential-tail per-packet jitter, pauses, outages,
+  individual drops, and joint stationarity and mixing;
+\item a \lean{SecondOrderMoments} parameter set governing host-clock and
+  audio-device power-law spectra, additive link-jitter moments, and white
+  device timestamp errors;
+\item deterministic bounds across every realization on capture handoff delay
+  $\eta \ge 0$ (\lean{HandoffWithin}), playback request lead
+  $0 < \lambda_{\min} \le \lambda_{\max}$ (\lean{LeadWithin}), and capture
+  and playback block sizes $1 \le \ell_B \le m_B$ (\lean{BlocksWithin}).
+\end{enumerate}
+A random world belongs to the class (\lean{StochasticWorld.\allowbreak Holds})
+when a single per-link decomposition $d(\omega)$ simultaneously satisfies
+\lean{StationaryNetworkDisturbances.\allowbreak Holds} and
+\lean{SecondOrderMoments.\allowbreak Holds}, and every realization satisfies
+the handoff, request-lead, and block-size bounds. In particular, every world
+in \lean{StochasticWorld} satisfies
+\lean{StationaryNetworkDisturbances.\allowbreak Random}
+(\lean{StochasticWorld.\allowbreak Holds.\allowbreak network\_\allowbreak random}).
+\lean{StochasticWorld} is a model class---a set of structural and
+distributional constraints satisfied by many probability laws over
+\lean{World}---rather than a single generative law. The class is not empty
+(\lean{StochasticWorld.\allowbreak example\_\allowbreak holds}).
+
+\section{Communication topologies and fundamental limits}\label{sec:limits}
 
 Communication topologies are classified directly on \lean{Solution}
-(\path{lean/Unisono/Spec/Topologies.lean}): \lean{UsesGraph} restricts every
-sent message $(h \to j)$ to an allowed adjacency relation, and \lean{IsStar}
-specializes this to star graphs where every message either leaves or enters
-the sender ($h = \text{sender} \lor j = \text{sender}$).
+(\path{lean/Unisono/Spec/Topologies.lean}): \lean{Solution.UsesGraph}
+restricts every sent message $(h \to j)$ to an allowed directed adjacency
+relation $\mathrm{adj}(h, j)$, and \lean{Solution.IsStar} specializes this
+to star graphs in which every message either leaves or enters the sender
+($h = \mathrm{sender} \lor j = \mathrm{sender}$). Peer solutions
+additionally allow direct receiver-to-receiver messages.
+
+When every speaker plays frame $n$ with latencies
+$\ell_r(n) = T_r(n) - c(n)$ and group mean
+$\overline{\ell}(n) = \frac{1}{R}\sum_r \ell_r(n)$, the quadratic frame
+objectives decompose orthogonally into a differential mode and a common
+mode: synchronization cost equals the sample variance of latencies,
+$S(n) = \operatorname{Var}_r(\ell_r(n))$
+(\lean{World.\allowbreak syncCost\_\allowbreak eq\_\allowbreak var}),
+tracking cost splits as
+$\Theta(n) = S(n) + (\overline{\ell}(n) - L^*(n))^2$
+(\lean{World.\allowbreak trackingCost\_\allowbreak eq\_\allowbreak sync\_\allowbreak add\_\allowbreak mean}),
+and $w_S S(n) + w_\Theta \Theta(n)$ weights the differential mode by
+$w_S + w_\Theta$ and the common mode by $w_\Theta$ alone
+(\lean{World.\allowbreak weighted\_\allowbreak frame\_\allowbreak modal\_\allowbreak split}).
+
+Topology-dependent lower bounds and a strict Star-vs-Peer separation are
+proved directly on the event-driven specification in
+\path{lean/Unisono/Spec/Limits.lean}. Shifting each host $h$'s true timeline
+by $\Delta(h)$ with $\Delta(\mathrm{sender}) = 0$ (\lean{World.shiftHosts})
+adds $\Delta(j) - \Delta(i)$ to link $(i, j)$'s one-way delay while leaving
+every round-trip time unchanged
+(\lean{World.\allowbreak shiftHosts\_\allowbreak rtt\_\allowbreak eq}).
+Under non-Zeno progress and no simultaneous arrivals from distinct origins
+at the same host (\lean{Solution.\allowbreak NoCrossOriginCollision}), every
+host observes the identical local view and produces identical playback
+decisions (\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
+Because a star solution never sends on receiver-to-receiver links, its run
+states and playback decisions are completely invariant to modifications of
+non-star links
+(\lean{star\_\allowbreak states\_\allowbreak eq\_\allowbreak of\_\allowbreak star\_\allowbreak links\_\allowbreak eq}).
+
+\begin{theorem}[Star lower bound with symmetric peer links]
+\label{thm:star-lower-bound}
+Let $w$ be a world with $R > 0$ speakers and unbounded frame capture times,
+and let $\Delta$ be a host-shift vector with $\Delta(\mathrm{sender}) = 0$
+such that shifting star links by $\pm\Delta$ preserves positive transit
+times. Form the two worlds
+$w^+ = \text{\lean{shiftStarKeepPeers}}(w, \Delta)$ and
+$w^- = \text{\lean{shiftStarKeepPeers}}(w, -\Delta)$, which apply opposite
+one-way delay shifts $\pm(\Delta(j) - \Delta(i))$ on star links while
+leaving all direct receiver-to-receiver links identical to $w$ (including
+arbitrarily fast, symmetric peer links). Then for every star solution
+$\sigma$ (\lean{Solution.IsStar}) that is non-Zeno in $w$, $w^+$, and
+$w^-$, satisfies \lean{Solution.\allowbreak NoCrossOriginCollision} in $w$,
+and plays every frame from some index $N$ onward on every speaker,
+\[
+  \max\bigl(w^+.\mathrm{sync}(\sigma),\, w^-.\mathrm{sync}(\sigma)\bigr)
+  \ge \operatorname{Var}_r\bigl(\Delta(\mathrm{host}(r))\bigr),
+\]
+where $w^\pm.\mathrm{sync}(\sigma)$ is the long-run synchronization cost
+(\lean{World.sync}) and $\operatorname{Var}_r(\Delta(\mathrm{host}(r)))$ is
+the sample variance of $\Delta$ across the $R$ speakers (\lean{varFin})
+(\lean{star\_\allowbreak sync\_\allowbreak lower\_\allowbreak bound\_\allowbreak with\_\allowbreak symmetric\_\allowbreak peers}).
+\end{theorem}
+
+To establish tightness and strict separation inside the ideal constant model
+\lean{IdealConstantWorld}, consider the three-host, two-speaker base world
+\lean{sepBaseWorld}: sender $0$, speaker $0$ on host $1$, speaker $1$ on
+host $2$, unit frame rate $\rho = 1$, constant star-link delay $1/2$,
+symmetric direct peer-link delay $1/10$, and staggered speaker block-request
+offsets ($0$ and $1/3$) preventing cross-origin arrival collisions. For any
+asymmetry $A \in (0, 1/4)$, applying $\Delta = (0, A, -A)$ and $-\Delta$
+produces the pair
+$(w^+(A), w^-(A)) = (\text{\lean{sepWorldPlus}}, \text{\lean{sepWorldMinus}})$;
+both worlds belong to \lean{IdealConstantWorld.\allowbreak Asymmetric}
+(\lean{sepWorlds\_\allowbreak ideal\_\allowbreak asymmetric}), and
+$\operatorname{Var}_r(\Delta(\mathrm{host}(r))) = A^2$.
+
+\begin{theorem}[Tightness and Star-vs-Peer separation]
+\label{thm:star-peer-sep}
+For every $A \in (0, 1/4)$ on $(w^+(A), w^-(A))$:
+\begin{enumerate}
+\item \emph{Star lower bound and tightness.} Every qualifying star solution
+  satisfies
+  \[
+    \max\bigl(w^+(A).\mathrm{sync},\; w^-(A).\mathrm{sync}\bigr) \ge A^2 .
+  \]
+  The forwarding-only star witness \lean{ForwardStar.solution} satisfies the
+  hypotheses via \lean{isStar}, \lean{noCrossOriginCollision}, and
+  \lean{progress} in the \lean{ForwardStar} namespace, plays every frame
+  $n \ge 2$ on both speakers, and achieves
+  $w^+(A).\mathrm{sync} = w^-(A).\mathrm{sync} = A^2$
+  (\lean{ForwardStar.\allowbreak sync\_\allowbreak eq}).
+\item \emph{Peer upper bound.} The peer witness
+  \lean{PeerSync.\allowbreak solution} uses only star links and the
+  symmetric direct peer link $1 \leftrightarrow 2$
+  (\lean{PeerSync.\allowbreak usesGraph}), recovers the exact relative clock
+  offset $\Delta(2) - \Delta(1)$ from a single four-timestamp peer exchange
+  (\lean{peer\_\allowbreak probe\_\allowbreak recovers\_\allowbreak exact\_\allowbreak offset}),
+  is non-Zeno (\lean{PeerSync.\allowbreak progress}), plays every frame
+  $n \ge 2$ on both speakers, and achieves
+  $w^+(A).\mathrm{sync} = w^-(A).\mathrm{sync} = 0$
+  (\lean{PeerSync.\allowbreak sync\_\allowbreak eq\_\allowbreak zero},
+  \lean{peer\_\allowbreak beats\_\allowbreak star\_\allowbreak asymmetry\_\allowbreak bound}).
+\end{enumerate}
+\end{theorem}
 
 \end{document}

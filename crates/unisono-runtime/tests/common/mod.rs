@@ -2,24 +2,22 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! A sender for tests: the frames of a signal in packets, with the stamps
-//! that a running sender gives them, and the loop that hands them to a
-//! receiver between the cycles of its device.
+//! Shared test harness generating timestamped audio packets and driving a
+//! receiver between virtual playback device cycles.
 //!
-//! Times are whole nanoseconds. The sender's clock is the time of the test;
-//! the receiver's clock reads `offset + s + s * skew / 10^9` when the
-//! sender's reads `s`.
+//! Timestamps are integer nanoseconds. The sender clock defines test time `s`;
+//! the receiver clock reads `offset + s + s * skew / 10^9`.
 
 // Each test program uses a part of this.
 #![allow(dead_code)]
 
 use unisono_core::packet::{Audio, Format};
-use unisono_core::player::Regulation;
+use unisono_core::player::{ModalRegulation, Regulation};
 use unisono_core::sender::{Sender, Settings as SenderSettings};
 use unisono_dsp::Parameters;
 use unisono_dsp::format::to_signed24;
 use unisono_runtime::pump::{ReceiverPlayback, Settings};
-use unisono_runtime::software::Output;
+use unisono_runtime::virtual_device::Output;
 
 /// The receiver that the tests use: room for 4,096 frames, 64 samples of the
 /// sender's clock, the arrivals of 8 packets, 64 reports of its device.
@@ -148,9 +146,24 @@ pub(crate) fn settings(rate: u32, concealment: Parameters) -> Settings {
             limit: 1_000_000,
             jump: 240,
         },
+        modal_regulation: None,
         concealment,
         block: 256,
         device_range: 10_000_000,
+    }
+}
+
+/// Settings of a peer/star synchronized receiver with modal regulation.
+pub(crate) fn peer_settings(
+    rate: u32,
+    concealment: Parameters,
+    identity: u64,
+    modal: ModalRegulation,
+) -> Settings {
+    Settings {
+        identity,
+        modal_regulation: Some(modal),
+        ..settings(rate, concealment)
     }
 }
 

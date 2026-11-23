@@ -746,6 +746,8 @@ name = "unisono-sim"
 version = "0.1.0"
 dependencies = [
  "unisono-core",
+ "unisono-dsp",
+ "unisono-runtime",
 ]
 
 [[package]]

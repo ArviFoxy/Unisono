@@ -2,36 +2,39 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono receive`: a receiver that plays a stream on a playback device,
-//! and can keep what it played in a file.
+//! `unisono receive` subcommand: receives a stream, synchronizes playback, and
+//! optionally records virtual-device output to a file.
 
+use std::collections::HashSet;
 use std::fs::File;
-use std::io::{BufWriter, Write};
+use std::io::{self, BufWriter, Write};
 use std::net::SocketAddr;
 
-use unisono_core::player::Regulation;
-use unisono_dsp::Parameters;
-use unisono_metrics::{Counter, FloatGauge};
+use unisono_core::kalman::NoisePrior;
+use unisono_core::player::ModalRegulation;
+use unisono_core::sync::{SyncSettings, SyncSnapshot, WEIGHT_UNITY_Q16};
+use unisono_metrics::{Counter, FloatGauge, Gauge};
 use unisono_runtime::audio::Playback as AudioPlayback;
-use unisono_runtime::network_thread::NetworkThread;
-use unisono_runtime::pump::{ReceiverPlayback, Settings};
+use unisono_runtime::network_thread::{NetworkLoop, NetworkThread};
+use unisono_runtime::pump::{Settings, ShippedPlayback};
 use unisono_runtime::receive::{
-    self, Intake, NetworkCounts, ReceiverAudio, ReceiverNetwork, Reporting, Sizes,
+    self, Intake, NetConfig, NetworkCounts, PeerConfig, ReceiverNetwork, Reporting,
+    SHIPPED_INTAKE_ITEMS, SHIPPED_SIZES, ShippedAudio, SyncMode,
 };
 use unisono_runtime::socket::Socket;
-use unisono_runtime::software::{Device, Output};
+use unisono_runtime::virtual_device::{Device, Output};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Server, Tally};
+use crate::metrics::{Metrics, Server, Tally};
 use crate::options::{Options, Wrong};
 use crate::{MAX_CYCLE, System, sleep_until, validate_drift};
 
 /// The receiver: room for 16,384 frames, 64 samples of the sender's clock,
 /// the arrivals of 8 packets, and 64 reports of its device.
-type Playback = ReceiverPlayback<256, 64, 8, 64>;
+type Playback = ShippedPlayback;
 
 /// The receiver's audio thread.
-type Audio = ReceiverAudio<256, 64, 8, 64>;
+type Audio = ShippedAudio;
 
 /// The options of `unisono receive`.
 pub(crate) const OPTIONS: &[&str] = &[
@@ -45,6 +48,15 @@ pub(crate) const OPTIONS: &[&str] = &[
     "cycle",
     "drift",
     "lead",
+    "sync",
+    "peer",
+    "mode",
+    "clock-prior",
+    "sender-clock-prior",
+    "star-gain",
+    "common-gain",
+    "diff-gain",
+    "link-weight",
     "path",
     "report-period",
     "report-period-at-start",
@@ -75,9 +87,25 @@ Receives a stream and plays it on a software device.
   --cycle FRAMES      frames in a cycle of the device (256)
   --drift PPB         how much faster the device runs, in parts per billion (0)
   --lead MS           how long before a cycle plays it is asked for (4)
-  --path NS           the delay of the path from the sender, if it is known;
-                      the receiver then does not measure it from the answers
-                      to its reports
+  --sync peer|hull    clock synchronization mode: unified Kalman/BLUE/min-RTT
+                      peer/star sync (peer) or legacy one-way lower hull (hull)
+  --peer ID@ADDRESS   direct peer receiver for peer sync (repeatable, up to 15)
+  --mode lipsync|low-latency
+                      modal playback gain preset in peer sync (lipsync)
+  --clock-prior tcxo|consumer|wandering
+                      oscillator process-noise prior for receiver clocks (consumer)
+  --sender-clock-prior tcxo|consumer|wandering
+                      oscillator process-noise prior for the sender clock
+                      (defaults to --clock-prior)
+  --star-gain S^-1    single-mode star playback gain per second (4.0)
+  --common-gain S^-1  common-mode playback gain per second in peer sync
+                      (0.5 in lipsync, 0.05 in low-latency)
+  --diff-gain S^-1    differential-mode playback gain per second in peer sync (4.0)
+  --link-weight TARGET=WEIGHT
+                      static BLUE link weight multiplier (> 0) for `sender` or a
+                      configured peer ID (repeatable, peer sync only)
+  --path NS           fixed one-way path delay from the sender in hull mode;
+                      rejected in peer sync mode
   --report-period-at-start MS
                       time between reports to the sender in the first five
                       seconds (50)
@@ -135,15 +163,102 @@ impl Playing {
     }
 }
 
+/// Parses a named oscillator noise prior preset.
+fn parse_clock_prior(name: &str, value: &str) -> Result<NoisePrior, Wrong> {
+    match value {
+        "tcxo" => Ok(NoisePrior::TCXO),
+        "consumer" => Ok(NoisePrior::CONSUMER_QUARTZ),
+        "wandering" => Ok(NoisePrior::WANDERING_QUARTZ),
+        other => Err(Wrong(format!(
+            "`--{name} {other}` must be one of `tcxo`, `consumer`, or `wandering`"
+        ))),
+    }
+}
+
+/// Converts a positive floating-point gain or link weight into fixed-point Q16.
+fn positive_to_q16(name: &str, value: f64) -> Result<u32, Wrong> {
+    if !value.is_finite() || value <= 0.0 || value > 65_535.0 {
+        return Err(Wrong(format!(
+            "`--{name}` must be a finite number in (0, 65535]"
+        )));
+    }
+    // Bounded to `(0, 65535 * 65536]`, well within `u32`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let q16 = (value * 65_536.0).round() as u32;
+    Ok(q16.max(1))
+}
+
+/// Parses one `--peer ID@ADDRESS` argument.
+fn parse_peer(value: &str) -> Result<PeerConfig, Wrong> {
+    let Some((id_text, addr_text)) = value.split_once('@') else {
+        return Err(Wrong(format!(
+            "`--peer {value}` must have the form `ID@ADDRESS`"
+        )));
+    };
+    let identity: u64 = id_text.parse().map_err(|_| {
+        Wrong(format!(
+            "`--peer {value}` has invalid receiver ID `{id_text}`"
+        ))
+    })?;
+    let address: SocketAddr = addr_text.parse().map_err(|_| {
+        Wrong(format!(
+            "`--peer {value}` has invalid address `{addr_text}`"
+        ))
+    })?;
+    Ok(PeerConfig {
+        identity,
+        address,
+        weight_q16: WEIGHT_UNITY_Q16,
+    })
+}
+
+/// Target of a `--link-weight TARGET=WEIGHT` override.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum WeightTarget {
+    Sender,
+    Peer(u64),
+}
+
+/// Parses one `--link-weight TARGET=WEIGHT` argument.
+fn parse_link_weight(value: &str) -> Result<(WeightTarget, u32), Wrong> {
+    let Some((target_text, weight_text)) = value.split_once('=') else {
+        return Err(Wrong(format!(
+            "`--link-weight {value}` must have the form `TARGET=WEIGHT`"
+        )));
+    };
+    let target = if target_text == "sender" {
+        WeightTarget::Sender
+    } else {
+        let id: u64 = target_text.parse().map_err(|_| {
+            Wrong(format!(
+                "`--link-weight {value}` target must be `sender` or a peer ID"
+            ))
+        })?;
+        WeightTarget::Peer(id)
+    };
+    let weight: f64 = weight_text.parse().map_err(|_| {
+        Wrong(format!(
+            "`--link-weight {value}` has invalid numeric weight"
+        ))
+    })?;
+    let q16 = positive_to_q16("link-weight", weight)?;
+    Ok((target, q16))
+}
+
 /// Validated configuration parsed from `unisono receive` CLI options.
 struct Config {
     listen: SocketAddr,
     stream: u16,
+    identity: u64,
     rate: u32,
     channels: u8,
     cycle: usize,
     drift: i32,
     lead: i64,
+    sync_mode: SyncMode,
+    modal_regulation: Option<ModalRegulation>,
+    net: NetConfig,
+    fixed_path: Option<i64>,
     report_at_start: i64,
     report_after: i64,
     seconds: i64,
@@ -153,9 +268,11 @@ struct Config {
 }
 
 impl Config {
+    #[allow(clippy::too_many_lines)]
     fn from_options(options: &Options) -> Result<Config, Wrong> {
         let listen: SocketAddr = options.need("listen")?;
         let stream: u16 = options.get("stream", 1)?;
+        let identity: u64 = options.get("identity", 1)?;
         let rate: u32 = options.get("rate", 48_000)?;
         let channels: u8 = options.get("channels", 2)?;
         let cycle: usize = options.get("cycle", 256)?;
@@ -181,6 +298,132 @@ impl Config {
             .ok_or_else(|| {
                 Wrong("`--report-period` must be a positive number of milliseconds".into())
             })?;
+        let sync_mode = match options.get("sync", "peer".to_string())?.as_str() {
+            "peer" => SyncMode::Peer,
+            "hull" => SyncMode::Hull,
+            other => {
+                return Err(Wrong(format!("`--sync {other}` must be `peer` or `hull`")));
+            }
+        };
+        let fixed_path: Option<i64> = options.one("path")?;
+        let raw_peers = options.all("peer");
+        let raw_weights = options.all("link-weight");
+        let mode_opt: Option<String> = options.one("mode")?;
+        let clock_prior_opt: Option<String> = options.one("clock-prior")?;
+        let sender_prior_opt: Option<String> = options.one("sender-clock-prior")?;
+        let star_gain_opt: Option<f64> = options.one("star-gain")?;
+        let common_gain_opt: Option<f64> = options.one("common-gain")?;
+        let diff_gain_opt: Option<f64> = options.one("diff-gain")?;
+
+        let datagram = unisono_runtime::send::MAX_DATAGRAM;
+        let jump = (rate / 200).max(1);
+        let (modal_regulation, net_config) = match sync_mode {
+            SyncMode::Hull => {
+                if !raw_peers.is_empty() {
+                    return Err(Wrong("`--peer` cannot be used with `--sync hull`".into()));
+                }
+                if !raw_weights.is_empty() {
+                    return Err(Wrong(
+                        "`--link-weight` cannot be used with `--sync hull`".into(),
+                    ));
+                }
+                if mode_opt.is_some()
+                    || clock_prior_opt.is_some()
+                    || sender_prior_opt.is_some()
+                    || star_gain_opt.is_some()
+                    || common_gain_opt.is_some()
+                    || diff_gain_opt.is_some()
+                {
+                    return Err(Wrong(
+                        "modal gain and clock-prior options cannot be used with `--sync hull`"
+                            .into(),
+                    ));
+                }
+                (None, NetConfig::hull(stream, datagram))
+            }
+            SyncMode::Peer => {
+                if fixed_path.is_some() {
+                    return Err(Wrong(
+                        "`--path` cannot be used with `--sync peer` (use `--sync hull` for a fixed path delay)"
+                            .into(),
+                    ));
+                }
+                let base_modal = match mode_opt.as_deref().unwrap_or("lipsync") {
+                    "lipsync" => ModalRegulation::lipsync(1_000_000, jump),
+                    "low-latency" => ModalRegulation::low_latency(1_000_000, jump),
+                    other => {
+                        return Err(Wrong(format!(
+                            "`--mode {other}` must be `lipsync` or `low-latency`"
+                        )));
+                    }
+                };
+                let modal = ModalRegulation {
+                    star_gain: match star_gain_opt {
+                        Some(v) => positive_to_q16("star-gain", v)?,
+                        None => base_modal.star_gain,
+                    },
+                    common_gain: match common_gain_opt {
+                        Some(v) => positive_to_q16("common-gain", v)?,
+                        None => base_modal.common_gain,
+                    },
+                    diff_gain: match diff_gain_opt {
+                        Some(v) => positive_to_q16("diff-gain", v)?,
+                        None => base_modal.diff_gain,
+                    },
+                    limit: base_modal.limit,
+                    jump,
+                };
+                let local_prior = match clock_prior_opt.as_deref() {
+                    Some(v) => parse_clock_prior("clock-prior", v)?,
+                    None => NoisePrior::CONSUMER_QUARTZ,
+                };
+                let sender_prior = match sender_prior_opt.as_deref() {
+                    Some(v) => parse_clock_prior("sender-clock-prior", v)?,
+                    None => local_prior,
+                };
+                let mut peers = Vec::with_capacity(raw_peers.len());
+                for text in raw_peers {
+                    peers.push(parse_peer(text)?);
+                }
+                let mut sender_weight_q16 = WEIGHT_UNITY_Q16;
+                let mut seen_targets = HashSet::new();
+                for text in raw_weights {
+                    let (target, weight_q16) = parse_link_weight(text)?;
+                    if !seen_targets.insert(target) {
+                        return Err(Wrong(format!(
+                            "`--link-weight` specified more than once for `{text}`"
+                        )));
+                    }
+                    match target {
+                        WeightTarget::Sender => sender_weight_q16 = weight_q16,
+                        WeightTarget::Peer(id) => {
+                            let Some(slot) = peers.iter_mut().find(|p| p.identity == id) else {
+                                return Err(Wrong(format!(
+                                    "`--link-weight` references peer `{id}` which is not in `--peer`"
+                                )));
+                            };
+                            slot.weight_q16 = weight_q16;
+                        }
+                    }
+                }
+                let mut sync_settings = SyncSettings::standard(stream, identity);
+                sync_settings.local_prior = local_prior;
+                sync_settings.sender_prior = sender_prior;
+                let net_cfg = NetConfig {
+                    stream,
+                    sync_mode: SyncMode::Peer,
+                    sync_settings,
+                    sender_weight_q16,
+                    peers,
+                    datagram,
+                };
+                net_cfg
+                    .validate()
+                    .map_err(|error| Wrong(error.to_string()))?;
+                (Some(modal), net_cfg)
+            }
+        };
+
         let seconds: i64 = options.get("seconds", 0)?;
         let record: Option<String> = options.one("record")?;
         let system = System::from_options(options)?;
@@ -214,11 +457,16 @@ impl Config {
         Ok(Config {
             listen,
             stream,
+            identity,
             rate,
             channels,
             cycle,
             drift,
             lead,
+            sync_mode,
+            modal_regulation,
+            net: net_config,
+            fixed_path,
             report_at_start,
             report_after,
             seconds,
@@ -232,8 +480,8 @@ impl Config {
 /// Runs `unisono receive`.
 pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let config = Config::from_options(options)?;
-    let playback = playback(options, config.stream, config.rate, config.channels)?;
-    let (counters, _metrics_server) = Counters::served(options)?;
+    let playback = playback(&config)?;
+    let (counters, net_metrics, _metrics_server) = build_metrics(options)?;
 
     let socket = Socket::bind(config.listen)
         .map_err(|error| Wrong(format!("binding {}: {error}", config.listen)))?;
@@ -244,13 +492,11 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         .map_err(|error| Wrong(format!("the address of the socket: {error}")))?;
     println!("listening {listening}");
 
-    let sizes = Sizes {
-        buffers: 64,
-        datagram: unisono_runtime::send::MAX_DATAGRAM,
-        messages: 64,
+    let (network_end, audio_end) = receive::link(SHIPPED_SIZES);
+    let network = CountedNetwork {
+        network: ReceiverNetwork::with_config(socket, network_end, &config.net),
+        metrics: net_metrics,
     };
-    let (network_end, audio_end) = receive::link(sizes);
-    let network = ReceiverNetwork::new(socket, network_end, config.stream, sizes);
     // Reports carry what the frames needed, for the sender's choice of the
     // level, whether or not the delay of the path is measured from them.
     let reports = Some(Reporting {
@@ -258,7 +504,14 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         after: config.report_after,
         ..Reporting::USUAL
     });
-    let audio: Audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
+    let audio: Audio = Audio::new(
+        playback,
+        audio_end,
+        Intake {
+            items: SHIPPED_INTAKE_ITEMS,
+            reports,
+        },
+    );
     let start = clock::raw();
     let device = Device {
         rate: config.rate,
@@ -320,7 +573,11 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
     let stopped = networking
         .stop()
         .map_err(|_| Wrong("the network thread failed".into()))?;
-    summarize(&stopped.network.counts(), &seen);
+    summarize(
+        &stopped.network.network.counts(),
+        stopped.network.network.sync_snapshot(),
+        &seen,
+    );
     if let Some(path) = config.record {
         write_record(&path, &output).map_err(|error| Wrong(format!("writing {path}: {error}")))?;
     }
@@ -403,35 +660,43 @@ fn write_record(path: &str, output: &Output) -> std::io::Result<()> {
     file.flush()
 }
 
-/// The receiver's playback as `options` set it up.
-fn playback(options: &Options, stream: u16, rate: u32, channels: u8) -> Result<Playback, Wrong> {
-    let settings = Settings {
-        stream,
-        rate,
-        channels,
-        identity: options.get("identity", 1)?,
-        silence: 1_000_000_000,
-        slope_limit: 200_000,
-        regulation: Regulation {
-            gain: 4 << 16,
-            limit: 1_000_000,
-            jump: (rate / 200).max(1),
-        },
-        concealment: Parameters::for_rate(rate),
-        block: 256,
-        device_range: 10_000_000,
-    };
-    settings
-        .validate()
-        .map_err(|error| Wrong(error.to_string()))?;
+/// The receiver's playback as `config` sets it up.
+fn playback(config: &Config) -> Result<Playback, Wrong> {
+    let settings = Settings::shipped(
+        config.stream,
+        config.rate,
+        config.channels,
+        config.identity,
+        config.modal_regulation,
+    )
+    .map_err(|error| Wrong(error.to_string()))?;
     let mut playback = Playback::new(&settings);
-    if let Some(path) = options.one::<i64>("path")? {
+    if config.sync_mode == SyncMode::Hull
+        && let Some(path) = config.fixed_path
+    {
         playback.path(path);
     }
     Ok(playback)
 }
 
-/// The receiver's counters among the metrics.
+/// Registers audio-thread and network-thread receiver Prometheus metrics and
+/// starts the metrics HTTP server if `--metrics` was given.
+fn build_metrics(options: &Options) -> Result<(Counters, NetworkMetrics, Option<Server>), Wrong> {
+    let mut metrics = Metrics::new();
+    let counters = Counters::new(&mut metrics)?;
+    let net_metrics = NetworkMetrics::new(&mut metrics)?;
+    let server = match options.one::<SocketAddr>("metrics")? {
+        Some(address) => Some(
+            metrics
+                .serve(address)
+                .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?,
+        ),
+        None => None,
+    };
+    Ok((counters, net_metrics, server))
+}
+
+/// Audio-thread receiver counters and gauges.
 struct Counters {
     played: Tally,
     concealed: Tally,
@@ -443,21 +708,6 @@ struct Counters {
 }
 
 impl Counters {
-    /// The counters, among metrics that are served where `--metrics` says.
-    fn served(options: &Options) -> Result<(Counters, Option<Server>), Wrong> {
-        let mut metrics = Metrics::new();
-        let counters = Counters::new(&mut metrics)?;
-        let server = match options.one::<SocketAddr>("metrics")? {
-            Some(address) => Some(
-                metrics
-                    .serve(address)
-                    .map_err(|error| Wrong(format!("serving metrics at {address}: {error}")))?,
-            ),
-            None => None,
-        };
-        Ok((counters, server))
-    }
-
     fn new(metrics: &mut Metrics) -> Result<Counters, Wrong> {
         let named = |error| Wrong(format!("registering metrics: {error:?}"));
         Ok(Counters {
@@ -524,6 +774,175 @@ impl Counters {
     }
 }
 
+/// Network-thread receiver and peer-sync Prometheus metrics (lock-free,
+/// allocation-free, updated on the network thread outside the audio callback).
+struct NetworkMetrics {
+    packets: Tally,
+    answers: Tally,
+    reports: Tally,
+    requests: Tally,
+    dropped: Tally,
+    peer_probes_sent: Tally,
+    peer_probes_answered: Tally,
+    peer_echoes_received: Tally,
+    peer_relays_sent: Tally,
+    peer_relays_received: Tally,
+    sync_valid: Gauge,
+    sync_peer_active: Gauge,
+    sync_active_peers: Gauge,
+    sync_epoch: Gauge,
+    sync_common_std: FloatGauge,
+    sync_diff_std: FloatGauge,
+}
+
+impl NetworkMetrics {
+    fn new(metrics: &mut Metrics) -> Result<NetworkMetrics, Wrong> {
+        let named = |error| Wrong(format!("registering metrics: {error:?}"));
+        Ok(NetworkMetrics {
+            packets: metrics
+                .tally(
+                    "unisono_receiver_packets_total",
+                    "Audio packets handed to the audio thread.",
+                )
+                .map_err(named)?,
+            answers: metrics
+                .tally(
+                    "unisono_receiver_answers_total",
+                    "Sender report echoes processed by the receiver.",
+                )
+                .map_err(named)?,
+            reports: metrics
+                .tally(
+                    "unisono_receiver_reports_total",
+                    "Sender reports transmitted.",
+                )
+                .map_err(named)?,
+            requests: metrics
+                .tally(
+                    "unisono_receiver_requests_total",
+                    "Retransmission requests transmitted.",
+                )
+                .map_err(named)?,
+            dropped: metrics
+                .tally(
+                    "unisono_receiver_dropped_total",
+                    "Incoming datagrams or sync snapshots dropped due to ring pressure.",
+                )
+                .map_err(named)?,
+            peer_probes_sent: metrics
+                .tally(
+                    "unisono_receiver_peer_probes_sent_total",
+                    "Peer-to-peer clock probes transmitted.",
+                )
+                .map_err(named)?,
+            peer_probes_answered: metrics
+                .tally(
+                    "unisono_receiver_peer_probes_answered_total",
+                    "Incoming peer-to-peer clock probes answered with a PeerEcho.",
+                )
+                .map_err(named)?,
+            peer_echoes_received: metrics
+                .tally(
+                    "unisono_receiver_peer_echoes_received_total",
+                    "Valid PeerEcho responses received from configured peers.",
+                )
+                .map_err(named)?,
+            peer_relays_sent: metrics
+                .tally(
+                    "unisono_receiver_peer_relays_sent_total",
+                    "PeerRelay link-state packets transmitted to configured peers.",
+                )
+                .map_err(named)?,
+            peer_relays_received: metrics
+                .tally(
+                    "unisono_receiver_peer_relays_received_total",
+                    "Valid PeerRelay link-state packets received from configured peers.",
+                )
+                .map_err(named)?,
+            sync_valid: metrics
+                .int_gauge(
+                    "unisono_receiver_sync_valid",
+                    "1 when the receiver's peer/star sync snapshot holds a valid clock estimate.",
+                )
+                .map_err(named)?,
+            sync_peer_active: metrics
+                .int_gauge(
+                    "unisono_receiver_sync_peer_active",
+                    "1 when peer-assisted BLUE + modal synchronization is active, 0 in star mode.",
+                )
+                .map_err(named)?,
+            sync_active_peers: metrics
+                .int_gauge(
+                    "unisono_receiver_sync_active_peers",
+                    "Number of active peers contributing to the BLUE host graph.",
+                )
+                .map_err(named)?,
+            sync_epoch: metrics
+                .int_gauge(
+                    "unisono_receiver_sync_epoch",
+                    "Peer membership and clock-reset epoch counter.",
+                )
+                .map_err(named)?,
+            sync_common_std: metrics
+                .gauge(
+                    "unisono_receiver_sync_common_std_seconds",
+                    "Estimated common-mode (or star) measurement standard deviation, in seconds.",
+                )
+                .map_err(named)?,
+            sync_diff_std: metrics
+                .gauge(
+                    "unisono_receiver_sync_diff_std_seconds",
+                    "Estimated self differential-mode measurement standard deviation, in seconds.",
+                )
+                .map_err(named)?,
+        })
+    }
+
+    fn update(&mut self, counts: &NetworkCounts, snapshot: Option<SyncSnapshot>) {
+        self.packets.update(counts.packets);
+        self.answers.update(counts.answers);
+        self.reports.update(counts.reports);
+        self.requests.update(counts.requests);
+        self.dropped.update(counts.dropped);
+        self.peer_probes_sent.update(counts.peer_probes_sent);
+        self.peer_probes_answered
+            .update(counts.peer_probes_answered);
+        self.peer_echoes_received
+            .update(counts.peer_echoes_received);
+        self.peer_relays_sent.update(counts.peer_relays_sent);
+        self.peer_relays_received
+            .update(counts.peer_relays_received);
+        if let Some(snap) = snapshot {
+            self.sync_valid.set(i64::from(snap.valid));
+            self.sync_peer_active.set(i64::from(snap.peer_active));
+            self.sync_active_peers.set(i64::from(snap.active_peers));
+            self.sync_epoch.set(i64::from(snap.epoch));
+            #[allow(clippy::cast_precision_loss)]
+            {
+                self.sync_common_std
+                    .set((snap.common_var_ns2 as f64).sqrt() * 1e-9);
+                self.sync_diff_std
+                    .set((snap.diff_var_ns2 as f64).sqrt() * 1e-9);
+            }
+        }
+    }
+}
+
+/// Network loop wrapper updating lock-free [`NetworkMetrics`] on each turn.
+struct CountedNetwork {
+    network: ReceiverNetwork,
+    metrics: NetworkMetrics,
+}
+
+impl NetworkLoop for CountedNetwork {
+    fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
+        let result = self.network.turn(milliseconds);
+        self.metrics
+            .update(&self.network.counts(), self.network.sync_snapshot());
+        result
+    }
+}
+
 /// What the receiver did, read from its metrics.
 struct Seen {
     played: Counter,
@@ -544,10 +963,11 @@ impl Seen {
 }
 
 /// Says what the receiver did.
-fn summarize(counts: &NetworkCounts, seen: &Seen) {
+fn summarize(counts: &NetworkCounts, snapshot: Option<SyncSnapshot>, seen: &Seen) {
+    let active_peers = snapshot.map_or(0, |s| s.active_peers);
     println!(
         "received packets {} answers {} reports {} dropped {} played {} concealed {} jumps {} \
-         delay {} requests {} unsent {} blocked {}",
+         delay {} requests {} unsent {} blocked {} peer_probes {} peer_relays {} active_peers {}",
         counts.packets,
         counts.answers,
         counts.reports,
@@ -559,6 +979,9 @@ fn summarize(counts: &NetworkCounts, seen: &Seen) {
         counts.requests,
         counts.unsent,
         counts.blocked,
+        counts.peer_probes_sent,
+        counts.peer_relays_sent,
+        active_peers,
     );
 }
 

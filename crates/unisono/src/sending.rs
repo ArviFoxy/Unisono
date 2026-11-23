@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `unisono send`: a capture device and a sender that sends what it captures.
+//! `unisono send` subcommand: captures audio and streams it over UDP.
 
 use std::io;
 use std::net::SocketAddr;
@@ -14,14 +14,19 @@ use unisono_core::packet::Format;
 use unisono_core::sender::Settings as StreamSettings;
 use unisono_metrics::FloatGauge;
 use unisono_runtime::audio::Capture;
-use unisono_runtime::level::{Choice, Weights};
+use unisono_runtime::level::{
+    Choice, SHIPPED_GAP_COST, SHIPPED_MISSED_COST_S, SHIPPED_MOVE_COST, SHIPPED_SLOPE_US,
+};
 use unisono_runtime::network_thread::{NetworkLoop, NetworkThread};
-use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings};
+use unisono_runtime::send::{
+    self, CaptureEnd, SHIPPED_CAPTURE_BUFFERS, SHIPPED_KEPT_PACKETS, SHIPPED_SPAN_MS,
+    SHIPPED_WINDOW_FRAMES, SenderNetwork, Settings,
+};
 use unisono_runtime::socket::{self, Socket};
-use unisono_runtime::software::{Device, Input};
+use unisono_runtime::virtual_device::{Device, Input};
 use unisono_runtime::{clock, memory};
 
-use crate::exported::{Metrics, Tally};
+use crate::metrics::{Metrics, Tally};
 use crate::options::{Options, Wrong};
 use crate::{MAX_CYCLE, Signal, System, sleep_until, validate_drift};
 
@@ -299,7 +304,7 @@ impl Config {
         let cycle: usize = options.get("cycle", 256)?;
         let drift: i32 = options.get("drift", 0)?;
         let seconds: i64 = options.get("seconds", 0)?;
-        let window: u32 = options.get("window", 2_400)?;
+        let window: u32 = options.get("window", SHIPPED_WINDOW_FRAMES)?;
         let choice = level_choice(options, rate, window)?;
         let system = System::from_options(options)?;
         if cycle == 0 || cycle > MAX_CYCLE {
@@ -316,7 +321,7 @@ impl Config {
                 rate,
                 channels,
                 format,
-                span: options.get("span", 2_000)?,
+                span: options.get("span", SHIPPED_SPAN_MS)?,
                 window,
                 clock: send::clock_identity(),
             },
@@ -372,7 +377,11 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         #[cfg(any(feature = "pipewire", feature = "alsa"))]
         _ => config.cycle.max(AUDIO_RING_MIN_FRAMES),
     };
-    let (capture_end, sender_end) = send::link(64, ring_frames, usize::from(config.channels));
+    let (capture_end, sender_end) = send::link(
+        SHIPPED_CAPTURE_BUFFERS,
+        ring_frames,
+        usize::from(config.channels),
+    );
     let dropped = Arc::new(AtomicU64::new(0));
     let tracked = TrackedCapture {
         inner: capture_end,
@@ -466,7 +475,7 @@ fn summarize(network: &SenderNetwork, dropped: u64) {
 /// second and more of packets of five milliseconds, or none.
 fn kept_packets(options: &Options) -> Result<usize, Wrong> {
     match options.get("protection", String::from("on"))?.as_str() {
-        "on" => Ok(256),
+        "on" => Ok(SHIPPED_KEPT_PACKETS),
         "off" => Ok(0),
         _ => Err(Wrong("`--protection` is on or off".into())),
     }
@@ -649,41 +658,11 @@ fn level_choice(options: &Options, rate: u32, window: u32) -> Result<Option<Choi
         "off" => return Ok(None),
         _ => return Err(Wrong("`--level-choice` is on or off".into())),
     }
-    let gap: f64 = options.get("gap-cost", 600.0)?;
-    let missed: f64 = options.get("missed-cost", 60.0)?;
-    let moving: f64 = options.get("move-cost", 60.0)?;
-    let slope: i32 = options.get("level-slope", 500)?;
-    // A receiver of this program changes its pace by a thousandth at most,
-    // and a level that moves faster than that is not followed.
-    if !(1..=1_000).contains(&slope) {
-        return Err(Wrong(
-            "`--level-slope` is from 1 to 1000 microseconds per second".into(),
-        ));
-    }
-    if window == 0 {
-        return Err(Wrong("`--window` is not zero".into()));
-    }
-    let stretches = |seconds: u64| {
-        usize::try_from(seconds * u64::from(rate) / u64::from(window))
-            .unwrap_or(usize::MAX)
-            .max(1)
-    };
-    let choice = Choice {
-        weights: Weights {
-            latency: 1_000.0,
-            target: 0,
-            off_target: 0.0,
-            gap,
-            // Missing a fraction of the frames each second misses a
-            // thousand times that many milliseconds.
-            missed: missed * 1_000.0,
-            moving,
-        },
-        history: stretches(120),
-        slope: slope.saturating_mul(1_000),
-    };
-    choice
-        .validate()
+    let gap: f64 = options.get("gap-cost", SHIPPED_GAP_COST)?;
+    let missed: f64 = options.get("missed-cost", SHIPPED_MISSED_COST_S)?;
+    let moving: f64 = options.get("move-cost", SHIPPED_MOVE_COST)?;
+    let slope: i32 = options.get("level-slope", SHIPPED_SLOPE_US)?;
+    let choice = Choice::shipped_with_costs(rate, window, gap, missed, moving, slope)
         .map_err(|error| Wrong(error.to_string()))?;
     Ok(Some(choice))
 }

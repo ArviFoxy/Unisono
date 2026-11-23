@@ -2,15 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! An ALSA device that is PipeWire's device for ALSA programs, in the
-//! instance that `tools/alsa-test.sh` starts with a sink named
-//! `unisono-test-sink` that plays to nothing. The tests are ignored unless
-//! they are asked for, because they need that instance.
+//! ALSA integration tests against PipeWire's ALSA compatibility bridge and
+//! the null sink `unisono-test-sink` started by `tools/alsa-test.sh`. Marked
+//! `#[ignore]` by default because they require that test container.
 //!
-//! A ramp, whose sample says which frame it is, is played on the ALSA
-//! device, and a PipeWire stream records what the sink plays. Then the
-//! other way: a PipeWire stream plays the ramp into the sink and the ALSA
-//! device captures what the sink plays.
+//! Verifies both directions: playback through ALSA recorded by PipeWire, and
+//! PipeWire playback captured through ALSA, using a frame-index ramp signal.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

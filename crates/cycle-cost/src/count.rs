@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Counting the instructions that a piece of work executes.
+//! Deterministic user-space instruction counting via `ptrace` single-stepping.
 //!
-//! The work runs in a child process, and the parent lets the child execute
-//! one instruction at a time and counts them. The count is of instructions
-//! outside the kernel, and for work that reads no clock and no input it is
-//! the same on every run.
+//! Executes the target closure in a child process and counts user-space
+//! instructions step by step; for pure deterministic code without I/O or
+//! clock reads, the count is reproducible across runs.
 
 use std::io;
 

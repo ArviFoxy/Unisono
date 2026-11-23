@@ -247,4 +247,145 @@ theorem regulate_spec (p : player.Player) (behind ahead duration : Std.I64) :
   refine ⟨kept.val + added.val, by rw [hr, hi4v], ?_⟩
   exact Unisono.Model.Gains.law_close hKf1 hKf2 hDf1 hDf2 hcloseA hcloseB
 
+/-! ## Twin closeness and equal-gain linearity for `ModalPlayer` -/
+
+/-- Construct a single-mode `Player` carrying `gain_q16`, used to transfer
+`gains_spec` and `regulate_spec` to both branches (`common_gain` and
+`diff_gain`) of `ModalPlayer`. -/
+def playerOfGain (gain_q16 : Std.U32) : player.Player :=
+  { regulation := { gain := gain_q16, limit := 0#u32, jump := 0#u32 }
+    running := false
+    position := { frame := 0#u64, fraction := 0#u64 }
+    pace := 0#i64
+    slope := 0#i32 }
+
+open Unisono.Model.Regulation in
+/-- **Both branches of `ModalPlayer` compute gains close to the best law.**
+Because `player.gains_for gain_q16 duration` is identical to `Player.gains` at
+`gain_q16`, both the common-mode branch (`common_gain`) and the differential-mode
+branch (`diff_gain`) of `ModalPlayer` inherit `gains_spec`. -/
+theorem gains_for_spec (gain_q16 : Std.U32) (duration : Std.I64) :
+    player.gains_for gain_q16 duration ⦃ g =>
+      0 ≤ g.ahead.val ∧ g.ahead.val ≤ 2 ^ 38 ∧ -2 ^ 51 ≤ g.behind.val ∧ g.behind.val ≤ 2 ^ 51
+      ∧ |(g.ahead.val : ℝ) / 2 ^ 32 - modulus (realGain (playerOfGain gain_q16) duration.val) ^ 2|
+          ≤ 4 / 2 ^ 32
+      ∧ |(g.behind.val : ℝ) / 2 ^ 48
+            - realGain (playerOfGain gain_q16) duration.val ^ 2
+              * modulus (realGain (playerOfGain gain_q16) duration.val)|
+          ≤ realGain (playerOfGain gain_q16) duration.val ^ 2 / 2 ^ 31 + 1 / 2 ^ 48 ⦄ := by
+  have heq : player.gains_for gain_q16 duration = player.Player.gains (playerOfGain gain_q16) duration :=
+    gains_for_eq_player_gains (playerOfGain gain_q16) duration
+  rw [heq]
+  exact gains_spec (playerOfGain gain_q16) duration
+
+open Unisono.Model.Regulation in
+/-- **Both branches of `ModalPlayer` evaluate `Regulation.law` to within integer
+rounding.** Applies directly to `common_gain` and `diff_gain`. -/
+theorem regulate_for_spec (gain_q16 : Std.U32) (behind ahead duration : Std.I64) :
+    player.regulate_for gain_q16 behind ahead duration ⦃ r => ∃ z : ℤ,
+      r.val = Unisono.Fixed.clamp64 z
+      ∧ |(z : ℝ) / 2 ^ 48
+          - (modulus (realGain (playerOfGain gain_q16) duration.val) ^ 2 * ((ahead.val : ℝ) / 2 ^ 48)
+            + realGain (playerOfGain gain_q16) duration.val ^ 2
+              * modulus (realGain (playerOfGain gain_q16) duration.val)
+              * ((behind.val : ℝ) / 2 ^ 32))|
+        ≤ 4 / 2 ^ 32 * (|(ahead.val : ℝ)| / 2 ^ 48)
+          + (realGain (playerOfGain gain_q16) duration.val ^ 2 / 2 ^ 31 + 1 / 2 ^ 48)
+            * (|(behind.val : ℝ)| / 2 ^ 32)
+          + 2 / 2 ^ 48 ⦄ := by
+  have heq : player.regulate_for gain_q16 behind ahead duration =
+      player.Player.regulate (playerOfGain gain_q16) behind ahead duration :=
+    regulate_for_eq_player_regulate (playerOfGain gain_q16) behind ahead duration
+  rw [heq]
+  exact regulate_spec (playerOfGain gain_q16) behind ahead duration
+
+private theorem ediv_add_bounds_pow32 (a b : ℤ) :
+    (a + b) / 2 ^ 32 - 1 ≤ a / 2 ^ 32 + b / 2 ^ 32
+    ∧ a / 2 ^ 32 + b / 2 ^ 32 ≤ (a + b) / 2 ^ 32 := by
+  omega
+
+/-- **Equal-gain modal equivalence (`g_com = g_diff`):** when both modal branches
+use the same gain `gain_q16` and neither branch nor their combined error saturates
+64-bit arithmetic, the sum of the common-mode and differential-mode control outputs
+`regulate_for g b_com a_com dur + regulate_for g b_diff a_diff dur` equals the
+single-mode control output `regulate_for g (b_com + b_diff) (a_com + a_diff) dur`
+up to at most `2` units of `2⁻⁴⁸` frames from integer floor rounding of the two
+32-bit shifts. -/
+theorem regulate_for_equal_gain_linear (gain_q16 : Std.U32)
+    (b_com a_com b_diff a_diff b_tot a_tot duration : Std.I64)
+    (hb : b_tot.val = b_com.val + b_diff.val)
+    (ha : a_tot.val = a_com.val + a_diff.val) :
+    (do
+      let g ← player.gains_for gain_q16 duration
+      let r_com ← player.regulate_for gain_q16 b_com a_com duration
+      let r_diff ← player.regulate_for gain_q16 b_diff a_diff duration
+      let r_tot ← player.regulate_for gain_q16 b_tot a_tot duration
+      ok (g, r_com, r_diff, r_tot))
+      ⦃ q =>
+        let g := q.1
+        let z_com := g.ahead.val * a_com.val / 2 ^ 32 + g.behind.val * b_com.val / 2 ^ 32
+        let z_diff := g.ahead.val * a_diff.val / 2 ^ 32 + g.behind.val * b_diff.val / 2 ^ 32
+        let z_tot := g.ahead.val * a_tot.val / 2 ^ 32 + g.behind.val * b_tot.val / 2 ^ 32
+        q.2.1.val = Fixed.clamp64 z_com
+        ∧ q.2.2.1.val = Fixed.clamp64 z_diff
+        ∧ q.2.2.2.val = Fixed.clamp64 z_tot
+        ∧ z_tot - 2 ≤ z_com + z_diff ∧ z_com + z_diff ≤ z_tot ⦄ := by
+  have heval : ∀ (g : player.Gains) (b a : Std.I64),
+      0 ≤ g.ahead.val → g.ahead.val ≤ 2 ^ 38 → -2 ^ 51 ≤ g.behind.val → g.behind.val ≤ 2 ^ 51 →
+      player.gains_for gain_q16 duration = ok g →
+      player.regulate_for gain_q16 b a duration
+        ⦃ r => r.val = Fixed.clamp64 (g.ahead.val * a.val / 2 ^ 32 + g.behind.val * b.val / 2 ^ 32) ⦄ := by
+    intro g b a hA0 hA1 hB0 hB1 hg
+    unfold player.regulate_for
+    rw [hg, bind_ok]
+    have habsA : |g.ahead.val| ≤ 2 ^ 38 := abs_le.mpr ⟨by linarith, hA1⟩
+    have habsB : |g.behind.val| ≤ 2 ^ 51 := abs_le.mpr ⟨hB0, hB1⟩
+    have habsa : |a.val| ≤ 2 ^ 63 := abs_le.mpr ⟨by scalar_tac, by scalar_tac⟩
+    have habsb : |b.val| ≤ 2 ^ 63 := abs_le.mpr ⟨by scalar_tac, by scalar_tac⟩
+    obtain ⟨hAa0, hAa1⟩ := mul_bounds habsA habsa
+    obtain ⟨hBb0, hBb1⟩ := mul_bounds habsB habsb
+    step as ⟨i, hi⟩
+    have hiv : i.val = a.val := by rw [hi, I64.cast_I128_val]
+    step as ⟨i1, hi1⟩
+    have hi1v : i1.val = g.ahead.val * a.val := by
+      rw [hi1, I128.wrapping_mul_val _ _ (by rw [hiv]; constructor <;> linarith), hiv]
+    step as ⟨kept, hkept⟩
+    have hK : kept.val = g.ahead.val * a.val / 2 ^ 32 := by
+      rw [hkept, shr_val _ _ 32 rfl (by norm_num), hi1v]
+    step as ⟨i2, hi2⟩
+    have hi2v : i2.val = b.val := by rw [hi2, I64.cast_I128_val]
+    step as ⟨i3, hi3⟩
+    have hi3v : i3.val = g.behind.val * b.val := by
+      rw [hi3, I128.wrapping_mul_val _ _ (by rw [hi2v]; constructor <;> linarith), hi2v]
+    step as ⟨added, hadded⟩
+    have hD : added.val = g.behind.val * b.val / 2 ^ 32 := by
+      rw [hadded, shr_val _ _ 32 rfl (by norm_num), hi3v]
+    step as ⟨i4, hi4⟩
+    have hi4v : i4.val = kept.val + added.val := by
+      have hK0 : -2 ^ 70 ≤ kept.val := by omega
+      have hK1 : kept.val ≤ 2 ^ 70 := by omega
+      have hD0 : -2 ^ 83 ≤ added.val := by omega
+      have hD1 : added.val ≤ 2 ^ 83 := by omega
+      rw [hi4, I128.wrapping_add_val _ _ (by constructor <;> linarith)]
+    apply WP.spec_mono (Fixed.saturate_spec i4)
+    intro r hr; rw [hr, hi4v, hK, hD]
+  have hspec := gains_for_spec gain_q16 duration
+  cases hg : player.gains_for gain_q16 duration with
+  | div => rw [hg] at hspec; simp [WP.spec_div] at hspec
+  | vis e k => rw [hg] at hspec; simp [WP.spec_vis] at hspec
+  | ret g =>
+    rw [hg] at hspec; simp only [WP.spec_ok] at hspec
+    obtain ⟨hA0, hA1, hB0, hB1, _, _⟩ := hspec
+    rw [bind_ok]
+    step with heval g b_com a_com hA0 hA1 hB0 hB1 hg as ⟨r_com, hr_com⟩
+    step with heval g b_diff a_diff hA0 hA1 hB0 hB1 hg as ⟨r_diff, hr_diff⟩
+    step with heval g b_tot a_tot hA0 hA1 hB0 hB1 hg as ⟨r_tot, hr_tot⟩
+    have hmul_a : g.ahead.val * a_tot.val = g.ahead.val * a_com.val + g.ahead.val * a_diff.val := by
+      rw [ha, mul_add]
+    have hmul_b : g.behind.val * b_tot.val = g.behind.val * b_com.val + g.behind.val * b_diff.val := by
+      rw [hb, mul_add]
+    have hda := ediv_add_bounds_pow32 (g.ahead.val * a_com.val) (g.ahead.val * a_diff.val)
+    have hdb := ediv_add_bounds_pow32 (g.behind.val * b_com.val) (g.behind.val * b_diff.val)
+    refine ⟨hr_com, hr_diff, hr_tot, ?_, ?_⟩ <;> rw [hmul_a, hmul_b] <;> omega
+
 end Unisono.Player

@@ -2,10 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The exported text against the Prometheus text format, version 0.0.4.
-//!
-//! Every expected text here is written by hand from the description of the
-//! format, and none is copied from what the crate printed.
+//! Conformance tests validating Prometheus text exposition format 0.0.4
+//! against hand-written expected outputs.
 
 use std::io;
 

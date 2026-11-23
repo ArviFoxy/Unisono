@@ -948,7 +948,7 @@ on which requests are lost that often is the one case for a copy; it is not
 built.
 
 So the stream is protected by requests (`docs/protocol.md`,
-`unisono_runtime::asking`). A receiver measures what the frames of a packet
+`unisono_runtime::retransmission`). A receiver measures what the frames of a packet
 that was sent again needed as for any other packet, so the level takes the
 repairs in without anything further. Behind a link that loses one datagram
 in fifty, with the level held at 30 ms, 99.7% of the frames play from the

@@ -4,12 +4,19 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
+public import Unisono.Analysis.Estimation
+public import Unisono.Analysis.Level
+public import Unisono.Analysis.ModalControl
+public import Unisono.Analysis.Spectral
 public import Unisono.Arrivals
+public import Unisono.Blue
 public import Unisono.Device
 public import Unisono.Due
 public import Unisono.Estimate
 public import Unisono.Fixed
 public import Unisono.Gains
+public import Unisono.Kalman
+public import Unisono.MinRtt
 public import Unisono.Answers
 public import Unisono.Model.Exchange
 public import Unisono.Model.Gains
@@ -27,18 +34,19 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
-public import Unisono.Solutions.Optimal.Estimation
-public import Unisono.Solutions.Optimal.Level
-public import Unisono.Solutions.Optimal.ModalControl
-public import Unisono.Solutions.Optimal.SpecSolutions
-public import Unisono.Solutions.Optimal.Spectral
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
-public import Unisono.Spec.Run
+public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.Ideal
+public import Unisono.Spec.Models.SecondOrder
+public import Unisono.Spec.Models.StochasticWorld
+public import Unisono.Spec.Run
 public import Unisono.Spec.Topologies
+public import Unisono.Sync
 
 /-!
 # The axioms the theorems rest on
@@ -903,9 +911,25 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Bounds.example_within
 
-/-- info: 'Unisono.Spec.DelayModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.IdealConstantWorld.withinBounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.DelayModel.example_holds
+#print axioms Unisono.Spec.IdealConstantWorld.withinBounds
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.example_holds
+
+/-- info: 'Unisono.Spec.StationaryNetworkDisturbances.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StationaryNetworkDisturbances.example_holds
+
+/-- info: 'Unisono.Spec.StochasticWorld.Holds.network_random' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StochasticWorld.Holds.network_random
+
+/-- info: 'Unisono.Spec.StochasticWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StochasticWorld.example_holds
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1287,9 +1311,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.secondDifferenceCovariance_diag_le
 
-/-- info: 'Unisono.Spec.SecondOrderModel.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.SecondOrderMoments.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.SecondOrderModel.example_holds
+#print axioms Unisono.Spec.SecondOrderMoments.example_holds
 
 /-- info: 'Unisono.Spec.modal_sq_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1335,288 +1359,526 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.tracking_shiftHosts_lower_bound
 
-/-- info: 'Unisono.Solutions.Optimal.weight_gainForWeight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-! ## Analysis and fundamental limits -/
+
+/-- info: 'Unisono.Analysis.weight_gainForWeight' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.weight_gainForWeight
+
+/-- info: 'Unisono.Analysis.gainForWeight_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.gainForWeight_unique
+
+/-- info: 'Unisono.Analysis.single_cost_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.single_cost_split
+
+/-- info: 'Unisono.Analysis.single_law_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.single_law_optimal
+
+/-- info: 'Unisono.Analysis.single_law_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.single_law_unique_ae
+
+/-- info: 'Unisono.Analysis.multiCycleCost_modal_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multiCycleCost_modal_split
+
+/-- info: 'Unisono.Analysis.multi_lipsync_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lipsync_optimal
+
+/-- info: 'Unisono.Analysis.multi_lipsync_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lipsync_unique_ae
+
+/-- info: 'Unisono.Analysis.multi_lipsync_cost_rate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lipsync_cost_rate
+
+/-- info: 'Unisono.Analysis.multi_lipsync_law_cost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lipsync_law_cost_le
+
+/-- info: 'Unisono.Analysis.multi_lowlatency_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lowlatency_optimal
+
+/-- info: 'Unisono.Analysis.multi_lowlatency_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.multi_lowlatency_unique_ae
+
+/-- info: 'Unisono.Analysis.decentralized_star_cost_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.decentralized_star_cost_eq
+
+/-- info: 'Unisono.Analysis.symmetric_star_cost_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.symmetric_star_cost_split
+
+/-- info: 'Unisono.Analysis.decentralized_star_uncorrelated_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.decentralized_star_uncorrelated_optimal
+
+/-- info: 'Unisono.Analysis.consensus_one_hot_var' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.consensus_one_hot_var
+
+/-- info: 'Unisono.Analysis.weight_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.weight_factor
+
+/-- info: 'Unisono.Analysis.step_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.step_step
+
+/-- info: 'Unisono.Analysis.butterworth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.butterworth
+
+/-- info: 'Unisono.Analysis.filterRoot_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.filterRoot_eq
+
+/-- info: 'Unisono.Analysis.filterRoot_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.filterRoot_unique
+
+/-- info: 'Unisono.Analysis.estimate_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.estimate_factor
+
+/-- info: 'Unisono.Analysis.riccati_fixed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.riccati_fixed
+
+/-- info: 'Unisono.Analysis.posterior_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.posterior_variance
+
+/-- info: 'Unisono.Analysis.revision_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.revision_variance
+
+/-- info: 'Unisono.Analysis.clockProcessCov_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.clockProcessCov_nonneg
+
+/-- info: 'Unisono.Analysis.star_pair_error_same' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.star_pair_error_same
+
+/-- info: 'Unisono.Analysis.star_pair_error_heterogeneous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.star_pair_error_heterogeneous
+
+/-- info: 'Unisono.Analysis.disciplined_schedule_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.disciplined_schedule_error
+
+/-- info: 'Unisono.Analysis.residual_variance_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.residual_variance_sub
+
+/-- info: 'Unisono.Analysis.residual_variance_L2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.residual_variance_L2
+
+/-- info: 'Unisono.Analysis.linear_unbiased_iff_unitFlow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.linear_unbiased_iff_unitFlow
+
+/-- info: 'Unisono.Analysis.graph_estimator_bias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.graph_estimator_bias
+
+/-- info: 'Unisono.Analysis.thomson_blue_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.thomson_blue_optimal
+
+/-- info: 'Unisono.Analysis.star_effective_resistance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.star_effective_resistance
+
+/-- info: 'Unisono.Analysis.complete_graph_effective_resistance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.complete_graph_effective_resistance
+
+/-- info: 'Unisono.Analysis.complete_graph_equal_budget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.complete_graph_equal_budget
+
+/-- info: 'Unisono.Analysis.wifi_sender_wired_peers_resistance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.wifi_sender_wired_peers_resistance
+
+/-- info: 'Unisono.Analysis.triangle_blue_bias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.triangle_blue_bias
+
+/-- info: 'Unisono.Analysis.margin_best_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.margin_best_missed
+
+/-- info: 'Unisono.Analysis.margin_best_tracking' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.margin_best_tracking
+
+/-- info: 'Unisono.Analysis.fleet_average_missed_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.fleet_average_missed_cost
+
+/-- info: 'Unisono.Analysis.margin_best_exponential_with_clicks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.margin_best_exponential_with_clicks
+
+/-- info: 'Unisono.Analysis.discontinuity_nonconvex_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Analysis.discontinuity_nonconvex_example
+
+/-- info: 'Unisono.Spec.withinSpeed_of_step_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.withinSpeed_of_step_bound
+
+/-- info: 'Unisono.Spec.fixedDelay_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.fixedDelay_isStar
+
+/-- info: 'Unisono.Spec.star_states_eq_of_star_links_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.star_states_eq_of_star_links_eq
+
+/-- info: 'Unisono.Spec.star_sync_lower_bound_with_symmetric_peers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.star_sync_lower_bound_with_symmetric_peers
+
+/-- info: 'Unisono.Spec.peer_probe_recovers_exact_offset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.peer_probe_recovers_exact_offset
+
+/-- info: 'Unisono.Spec.PeerSync.usesGraph' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PeerSync.usesGraph
+
+/-- info: 'Unisono.Spec.PeerSync.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PeerSync.progress
+
+/-- info: 'Unisono.Spec.PeerSync.sync_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PeerSync.sync_eq_zero
+
+/-- info: 'Unisono.Spec.peer_beats_star_asymmetry_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.peer_beats_star_asymmetry_bound
+
+/-- info: 'Unisono.Spec.FixedDelay.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.FixedDelay.noCrossOriginCollision_sepBaseWorld
+
+/-- info: 'Unisono.Spec.ForwardStar.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ForwardStar.isStar
+
+/-- info: 'Unisono.Spec.ForwardStar.noCrossOriginCollision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ForwardStar.noCrossOriginCollision
+
+/-- info: 'Unisono.Spec.ForwardStar.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ForwardStar.progress
+
+/-- info: 'Unisono.Spec.ForwardStar.sync_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ForwardStar.sync_eq
+
+/-! ## Production v2 core proofs and `Unisono.Solutions.Core` -/
+
+/-- info: 'Unisono.Fixed.saturating_mul_i128_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.saturating_mul_i128_spec
+
+/-- info: 'Unisono.Fixed.saturating_mul_i64_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.saturating_mul_i64_spec
+
+/-- info: 'Unisono.Fixed.scale_div_pow2_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Fixed.scale_div_pow2_spec
+
+/-- info: 'Unisono.Packet.write_peer_probe_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.write_peer_probe_spec
+
+/-- info: 'Unisono.Packet.peer_probe_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Packet.peer_probe_roundtrip
+
+/-- info: 'Unisono.Packet.parse_peer_probe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.weight_gainForWeight
+#print axioms Unisono.Packet.parse_peer_probe_total
 
-/-- info: 'Unisono.Solutions.Optimal.gainForWeight_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.write_peer_probe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.gainForWeight_unique
+#print axioms Unisono.Packet.write_peer_probe_total
 
-/-- info: 'Unisono.Solutions.Optimal.single_cost_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.parse_peer_probe_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.single_cost_split
+#print axioms Unisono.Packet.parse_peer_probe_kind
 
-/-- info: 'Unisono.Solutions.Optimal.single_law_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.write_peer_echo_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.single_law_optimal
+#print axioms Unisono.Packet.write_peer_echo_spec
 
-/-- info: 'Unisono.Solutions.Optimal.single_law_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.peer_echo_roundtrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.single_law_unique_ae
+#print axioms Unisono.Packet.peer_echo_roundtrip
 
-/-- info: 'Unisono.Solutions.Optimal.multiCycleCost_modal_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.parse_peer_echo_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multiCycleCost_modal_split
+#print axioms Unisono.Packet.parse_peer_echo_total
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lipsync_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.write_peer_echo_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lipsync_optimal
+#print axioms Unisono.Packet.write_peer_echo_total
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lipsync_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.parse_peer_echo_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lipsync_unique_ae
+#print axioms Unisono.Packet.parse_peer_echo_kind
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lipsync_cost_rate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.parse_peer_relay_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lipsync_cost_rate
+#print axioms Unisono.Packet.parse_peer_relay_total
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lipsync_law_cost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.write_peer_relay_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lipsync_law_cost_le
+#print axioms Unisono.Packet.write_peer_relay_total
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lowlatency_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Packet.parse_peer_relay_kind' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lowlatency_optimal
+#print axioms Unisono.Packet.parse_peer_relay_kind
 
-/-- info: 'Unisono.Solutions.Optimal.multi_lowlatency_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.ntp_exchange_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.multi_lowlatency_unique_ae
+#print axioms Unisono.MinRtt.ntp_exchange_spec
 
-/-- info: 'Unisono.Solutions.Optimal.decentralized_star_cost_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.new_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.decentralized_star_cost_eq
+#print axioms Unisono.MinRtt.new_spec
 
-/-- info: 'Unisono.Solutions.Optimal.symmetric_star_cost_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.reset_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.symmetric_star_cost_split
+#print axioms Unisono.MinRtt.reset_spec
 
-/-- info: 'Unisono.Solutions.Optimal.decentralized_star_uncorrelated_optimal' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.MinRtt.observe_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.decentralized_star_uncorrelated_optimal
+#print axioms Unisono.MinRtt.observe_spec
 
-/-- info: 'Unisono.Solutions.Optimal.consensus_one_hot_var' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.path_ns_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.consensus_one_hot_var
+#print axioms Unisono.MinRtt.path_ns_spec
 
-/-- info: 'Unisono.Solutions.Optimal.weight_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.variance_ns2_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.weight_factor
+#print axioms Unisono.MinRtt.variance_ns2_spec
 
-/-- info: 'Unisono.Solutions.Optimal.step_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.MinRtt.uncalibrated_variance_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.step_step
+#print axioms Unisono.MinRtt.uncalibrated_variance_spec
 
-/-- info: 'Unisono.Solutions.Optimal.butterworth' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.enforce_psd_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.butterworth
+#print axioms Unisono.Kalman.enforce_psd_spec
 
-/-- info: 'Unisono.Solutions.Optimal.filterRoot_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.new_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.filterRoot_eq
+#print axioms Unisono.Kalman.new_spec
 
-/-- info: 'Unisono.Solutions.Optimal.filterRoot_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.anchor_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.filterRoot_unique
+#print axioms Unisono.Kalman.anchor_spec
 
-/-- info: 'Unisono.Solutions.Optimal.estimate_factor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.anchor_with_freq_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.estimate_factor
+#print axioms Unisono.Kalman.anchor_with_freq_spec
 
-/-- info: 'Unisono.Solutions.Optimal.riccati_fixed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.predict_psd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.riccati_fixed
+#print axioms Unisono.Kalman.predict_psd
 
-/-- info: 'Unisono.Solutions.Optimal.posterior_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.update_psd' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.posterior_variance
+#print axioms Unisono.Kalman.update_psd
 
-/-- info: 'Unisono.Solutions.Optimal.revision_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.to_line_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.revision_variance
+#print axioms Unisono.Kalman.to_line_spec
 
-/-- info: 'Unisono.Solutions.Optimal.clockProcessCov_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.predict_zero_fixed_point' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.clockProcessCov_nonneg
+#print axioms Unisono.Kalman.predict_zero_fixed_point
 
-/-- info: 'Unisono.Solutions.Optimal.star_pair_error_same' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.update_zero_innovation_fixed_point' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.star_pair_error_same
+#print axioms Unisono.Kalman.update_zero_innovation_fixed_point
 
-/-- info: 'Unisono.Solutions.Optimal.star_pair_error_heterogeneous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Kalman.to_line_zero_fixed_point' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.star_pair_error_heterogeneous
+#print axioms Unisono.Kalman.to_line_zero_fixed_point
 
-/-- info: 'Unisono.Solutions.Optimal.disciplined_schedule_error' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Blue.solve_ldlt_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.disciplined_schedule_error
+#print axioms Unisono.Blue.solve_ldlt_total
 
-/-- info: 'Unisono.Solutions.Optimal.residual_variance_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Blue.solve_ldlt_zero_rhs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.residual_variance_sub
+#print axioms Unisono.Blue.solve_ldlt_zero_rhs
 
-/-- info: 'Unisono.Solutions.Optimal.residual_variance_L2' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Blue.solve_blue_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.residual_variance_L2
+#print axioms Unisono.Blue.solve_blue_spec
 
-/-- info: 'Unisono.Solutions.Optimal.linear_unbiased_iff_unitFlow' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Blue.solve_blue_single_edge_star' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.linear_unbiased_iff_unitFlow
+#print axioms Unisono.Blue.solve_blue_single_edge_star
 
-/-- info: 'Unisono.Solutions.Optimal.graph_estimator_bias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Player.modal_cycle_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.graph_estimator_bias
+#print axioms Unisono.Player.modal_cycle_spec
 
-/-- info: 'Unisono.Solutions.Optimal.thomson_blue_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Player.modal_cycle_step_small' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.thomson_blue_optimal
+#print axioms Unisono.Player.modal_cycle_step_small
 
-/-- info: 'Unisono.Solutions.Optimal.star_effective_resistance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Player.modal_star_matches_player' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.star_effective_resistance
+#print axioms Unisono.Player.modal_star_matches_player
 
-/-- info: 'Unisono.Solutions.Optimal.complete_graph_effective_resistance' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Sync.new_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.complete_graph_effective_resistance
+#print axioms Unisono.Sync.new_total
 
-/-- info: 'Unisono.Solutions.Optimal.complete_graph_equal_budget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.add_peer_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.complete_graph_equal_budget
+#print axioms Unisono.Sync.add_peer_total
 
-/-- info: 'Unisono.Solutions.Optimal.wifi_sender_wired_peers_resistance' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Sync.on_sender_echo_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.wifi_sender_wired_peers_resistance
+#print axioms Unisono.Sync.on_sender_echo_total
 
-/-- info: 'Unisono.Solutions.Optimal.triangle_blue_bias' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.next_peer_probe_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.triangle_blue_bias
+#print axioms Unisono.Sync.next_peer_probe_total
 
-/-- info: 'Unisono.Solutions.Optimal.margin_best_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.on_peer_probe_allowlist' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.margin_best_missed
+#print axioms Unisono.Sync.on_peer_probe_allowlist
 
-/-- info: 'Unisono.Solutions.Optimal.margin_best_tracking' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.on_peer_echo_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.margin_best_tracking
+#print axioms Unisono.Sync.on_peer_echo_total
 
-/-- info: 'Unisono.Solutions.Optimal.fleet_average_missed_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.build_relay_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.fleet_average_missed_cost
+#print axioms Unisono.Sync.build_relay_total
 
-/-- info: 'Unisono.Solutions.Optimal.margin_best_exponential_with_clicks' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Sync.on_peer_relay_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.margin_best_exponential_with_clicks
+#print axioms Unisono.Sync.on_peer_relay_total
 
-/-- info: 'Unisono.Solutions.Optimal.discontinuity_nonconvex_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.publish_star_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.discontinuity_nonconvex_example
+#print axioms Unisono.Sync.publish_star_spec
 
-/-- info: 'Unisono.Solutions.Optimal.fixedDelay_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.step_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.fixedDelay_isStar
+#print axioms Unisono.Sync.step_total
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.stepSample_matches_regulation_next' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Sync.set_sender_clock_id_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.stepSample_matches_regulation_next
+#print axioms Unisono.Sync.set_sender_clock_id_total
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.reset_sender_clock_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.isStar
+#print axioms Unisono.Sync.reset_sender_clock_total
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.update_modal_filters_total' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.progress
+#print axioms Unisono.Sync.update_modal_filters_total
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.zero_peers_no_peer_traffic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.request_step
+#print axioms Unisono.Sync.zero_peers_no_peer_traffic
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.withinSpeed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Sync.step_zero_peers_star' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.withinSpeed
+#print axioms Unisono.Sync.step_zero_peers_star
 
-/-- info: 'Unisono.Solutions.Optimal.PeerProtocol.usesGraph' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.usesGraph_of_peers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerProtocol.usesGraph
+#print axioms Unisono.Solutions.Core.usesGraph_of_peers
 
-/-- info: 'Unisono.Solutions.Optimal.PeerProtocol.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.isStar_of_no_peers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerProtocol.progress
+#print axioms Unisono.Solutions.Core.isStar_of_no_peers
 
-/-- info: 'Unisono.Solutions.Optimal.PeerProtocol.request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerProtocol.request_step
+#print axioms Unisono.Solutions.Core.progress
 
-/-- info: 'Unisono.Solutions.Optimal.PeerProtocol.withinSpeed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerProtocol.withinSpeed
+#print axioms Unisono.Solutions.Core.request_step
 
-/-- info: 'Unisono.Solutions.Optimal.star_states_eq_of_star_links_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.sync_zero_peers_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.star_states_eq_of_star_links_eq
+#print axioms Unisono.Solutions.Core.sync_zero_peers_inv
 
-/-- info: 'Unisono.Solutions.Optimal.star_sync_lower_bound_with_symmetric_peers' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.star_no_peer_messages' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.star_sync_lower_bound_with_symmetric_peers
+#print axioms Unisono.Solutions.Core.star_no_peer_messages
 
-/-- info: 'Unisono.Solutions.Optimal.peer_probe_recovers_exact_offset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.star_sync_snapshot_eq_sender_kalman' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.peer_probe_recovers_exact_offset
+#print axioms Unisono.Solutions.Core.star_sync_snapshot_eq_sender_kalman
 
-/-- info: 'Unisono.Solutions.Optimal.PeerSync.usesGraph' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.star_modal_player_eq_single_mode' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerSync.usesGraph
+#print axioms Unisono.Solutions.Core.star_modal_player_eq_single_mode
 
-/-- info: 'Unisono.Solutions.Optimal.PeerSync.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.modal_cycle_full_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerSync.progress
+#print axioms Unisono.Solutions.Core.modal_cycle_full_spec
 
-/-- info: 'Unisono.Solutions.Optimal.PeerSync.sync_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.receiver_cycle_plan_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.PeerSync.sync_eq_zero
+#print axioms Unisono.Solutions.Core.receiver_cycle_plan_spec
 
-/-- info: 'Unisono.Solutions.Optimal.peer_beats_star_asymmetry_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.rcv_modal_inv' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.peer_beats_star_asymmetry_bound
+#print axioms Unisono.Solutions.Core.rcv_modal_inv
 
-/-- info: 'Unisono.Solutions.Optimal.FixedDelay.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.withinBlock_speed_bound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.FixedDelay.noCrossOriginCollision_sepBaseWorld
+#print axioms Unisono.Solutions.Core.withinBlock_speed_bound
 
-/-- info: 'Unisono.Solutions.Optimal.StarProtocol.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.boundary_step_safe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.StarProtocol.noCrossOriginCollision_sepBaseWorld
+#print axioms Unisono.Solutions.Core.boundary_step_safe
 
-/-- info: 'Unisono.Solutions.Optimal.ForwardStar.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.ideal_ntp_exchange_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.ForwardStar.isStar
+#print axioms Unisono.Solutions.Core.ideal_ntp_exchange_exact
 
-/-- info: 'Unisono.Solutions.Optimal.ForwardStar.noCrossOriginCollision' depends on axioms: [propext,
- Classical.choice,
- Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.ideal_kalman_and_sender_time_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.ForwardStar.noCrossOriginCollision
+#print axioms Unisono.Solutions.Core.ideal_kalman_and_sender_time_exact
 
-/-- info: 'Unisono.Solutions.Optimal.ForwardStar.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.ideal_modal_cycle_unity' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.ForwardStar.progress
+#print axioms Unisono.Solutions.Core.ideal_modal_cycle_unity
 
-/-- info: 'Unisono.Solutions.Optimal.ForwardStar.sync_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Core.ideal_zero_cost_objectives' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Optimal.ForwardStar.sync_eq
+#print axioms Unisono.Solutions.Core.ideal_zero_cost_objectives

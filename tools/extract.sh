@@ -5,31 +5,33 @@
 
 # Translates crates/unisono-core to Lean with Charon and Aeneas.
 #
-#   extract.sh          writes lean/UnisonoCore/Types.lean and Funs.lean
-#   extract.sh --check  fails if those files differ from a fresh translation
+#   extract.sh           writes lean/UnisonoCore/Types.lean and Funs.lean when
+#                        missing or out of date with crates/unisono-core
+#   extract.sh --force   always runs a fresh translation
 #
 # The translation fails if the crate uses a function of the standard library
 # that Aeneas has no Lean model for, because such a function would enter the
 # proofs as an axiom.
 set -euo pipefail
 
-mode="write"
+force=0
 case "${1:-}" in
     "") ;;
-    --check) mode="check" ;;
+    --force) force=1 ;;
     *)
-        echo "usage: $0 [--check]" >&2
+        echo "usage: $0 [--force]" >&2
         exit 2
         ;;
 esac
 if [ "$#" -gt 1 ]; then
-    echo "usage: $0 [--check]" >&2
+    echo "usage: $0 [--force]" >&2
     exit 2
 fi
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 aeneas="$root/.tools/aeneas"
 generated="$root/lean/UnisonoCore"
+stamp="$generated/.source-hash"
 
 if [ ! -x "$aeneas/bin/aeneas" ] || [ ! -x "$aeneas/charon/bin/charon" ]; then
     echo "Aeneas is not built; run tools/proof-tools.sh build" >&2
@@ -46,6 +48,32 @@ if [ -n "$hidden" ]; then
     echo "the core has code that the translation would not see:" >&2
     echo "$hidden" >&2
     exit 1
+fi
+
+source_hash="$(
+    {
+        for f in \
+            "$root/Cargo.toml" \
+            "$root/Cargo.lock" \
+            "$root/crates/unisono-core/Cargo.toml" \
+            "$root/tools/proof-tools.sh" \
+            "$root/tools/extract.sh"; do
+            printf '%s\n' "${f#"$root/"}"
+            sha256sum "$f"
+        done
+        find "$root/crates/unisono-core/src" -type f | LC_ALL=C sort | while IFS= read -r f; do
+            printf '%s\n' "${f#"$root/"}"
+            sha256sum "$f"
+        done
+    } | sha256sum | cut -d' ' -f1
+)"
+
+if [ "$force" -eq 0 ] \
+    && [ -f "$generated/Types.lean" ] \
+    && [ -f "$generated/Funs.lean" ] \
+    && [ -f "$stamp" ] \
+    && [ "$(cat "$stamp")" = "$source_hash" ]; then
+    exit 0
 fi
 
 work="$(mktemp -d)"
@@ -77,14 +105,10 @@ if grep -n -E '^[[:space:]]*((private|protected|noncomputable)[[:space:]]+)*axio
     exit 1
 fi
 
-if [ "$mode" = check ]; then
-    for file in Types.lean Funs.lean; do
-        if ! diff -u "$generated/$file" "$work/out/$file"; then
-            echo "lean/UnisonoCore/$file is out of date; run tools/extract.sh" >&2
-            exit 1
-        fi
-    done
-else
-    mkdir -p "$generated"
-    cp "$work/out/Types.lean" "$work/out/Funs.lean" "$generated/"
-fi
+mkdir -p "$generated"
+for file in Types.lean Funs.lean; do
+    if [ ! -f "$generated/$file" ] || ! cmp -s "$work/out/$file" "$generated/$file"; then
+        cp "$work/out/$file" "$generated/$file"
+    fi
+done
+printf '%s\n' "$source_hash" > "$stamp"

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Random numbers that are the same on every run.
+//! Deterministic seeded PRNG for reproducible simulations.
 
 /// A generator of pseudo-random numbers (xoshiro256++), started from a seed.
 ///

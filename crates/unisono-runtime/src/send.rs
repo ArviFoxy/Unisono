@@ -2,32 +2,30 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! The two threads of a sender, and what passes between them.
+//! Sender capture/network thread bridge, packetization, and transmission.
 //!
-//! The **capture thread** is the audio system's: once in each cycle of the
-//! capture device it hands over the frames of the cycle with the device's
-//! count of the first frame and the time the device reports for it, and
-//! nothing else. The **network thread** owns everything else: the core's
-//! sender, the line through the capture device's reports, and the socket. It
-//! cuts the frames into packets, stamps each with the capture time of its
-//! first frame, sends it to every receiver, takes in when packets left, and
-//! answers reports. From the needs that the reports carry it chooses the
-//! level, if it is set up to (see [`crate::level`]), and moves the level
-//! there at a set slope.
+//! Splits sender execution across two threads:
+//! - The **capture thread** (owned by the audio backend) copies each captured
+//!   block plus its device frame counter and timestamp into a preallocated
+//!   ring buffer without locking or allocating.
+//! - The **network thread** owns `unisono_core::sender::Sender`, the capture
+//!   device clock regressor, the UDP socket, the retransmission ring, and the
+//!   adaptive latency controller ([`crate::level`]). It packetizes audio,
+//!   transmits to all configured receivers, records TX departure timestamps,
+//!   answers receiver reports with echoes, and serves retransmission requests.
 //!
-//! The frames cross in buffers that are made once and go round, as in
-//! [`crate::receive`]. When the network thread does not hand buffers back,
-//! the capture thread has none to fill, drops the cycle and counts it.
+//! Audio buffers are preallocated once and recycled through SPSC rings as in
+//! [`crate::receive`]. If the network thread falls behind and no spare buffer
+//! is available, the capture thread drops the cycle and increments its drop
+//! counter.
 //!
-//! # The index and the device's count
+//! # Stream Index vs. Device Frame Counter
 //!
-//! A timeline's index counts the frames of the capture device from where the
-//! timeline began, so the index of a frame is its count minus the count at
-//! that start. When the capture thread drops cycles, the frames of those
-//! cycles are sent as silence, so that the index stays the device's count and
-//! the receivers go on. When the count goes back, or jumps further than
-//! [`LONGEST_GAP`] frames ahead, the device started anew, and so does the
-//! timeline.
+//! Timeline frame indices count frames relative to the device counter at
+//! timeline start. Dropped capture cycles are zero-filled so the timeline
+//! index stays aligned with the device counter. If the device counter moves
+//! backwards or jumps ahead by more than [`LONGEST_GAP`] frames, a new
+//! timeline is started.
 
 use std::io;
 use std::net::SocketAddr;
@@ -42,10 +40,11 @@ use unisono_dsp::format::{to_signed16, to_signed24};
 
 use crate::InvalidSettings;
 use crate::audio::Capture;
+use crate::clock;
 use crate::level::{Checks, Choice, Chooser};
 use crate::network_thread::NetworkLoop;
 use crate::ring::{Consumer, Producer, ring};
-use crate::socket::{Socket, canonical_addr, is_restricted_send_error, is_transient_send_error};
+use crate::socket::{DatagramSink, SendStatus, Socket, SocketSink, canonical_addr};
 
 /// The most frames that are sent as silence in place of dropped cycles. A
 /// longer gap starts a timeline anew: 2^20 frames, about 22 seconds at
@@ -56,6 +55,18 @@ pub const LONGEST_GAP: u64 = 1_048_576;
 /// datagram buffers, in bytes. Sharing one cap between sender validation and
 /// receiver buffers ensures valid sender packets are never truncated on receipt.
 pub const MAX_DATAGRAM: usize = 9_000;
+
+/// Shipped default sender clock-estimator span, in milliseconds (`2 s`).
+pub const SHIPPED_SPAN_MS: u32 = 2_000;
+
+/// Shipped default sender clock-estimator window, in frames (`50 ms` at 48 kHz).
+pub const SHIPPED_WINDOW_FRAMES: u32 = 2_400;
+
+/// Shipped default retransmission packet cache depth (`> 1 s` at 5 ms packets).
+pub const SHIPPED_KEPT_PACKETS: usize = 256;
+
+/// Shipped default capture ring depth, in cycles.
+pub const SHIPPED_CAPTURE_BUFFERS: usize = 64;
 
 /// Maximum incoming datagrams processed during one network turn so a burst
 /// cannot starve audio packet emission.
@@ -193,6 +204,58 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Builds validated sender settings using the shipped production defaults
+    /// ([`SHIPPED_SPAN_MS`], [`SHIPPED_WINDOW_FRAMES`],
+    /// [`SHIPPED_KEPT_PACKETS`], and [`Choice::shipped_default`]).
+    ///
+    /// Shared across the CLI (`unisono send`), the C library (`unisono-c`),
+    /// and the simulator (`unisono-sim`) so all entry points use one canonical
+    /// sender configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any stream, packet, level, or adaptive
+    /// choice parameter violates runtime invariants.
+    #[allow(clippy::too_many_arguments)]
+    pub fn shipped(
+        stream: u16,
+        rate: u32,
+        channels: u8,
+        format: Format,
+        packet: u16,
+        level: i64,
+        timeline: u64,
+        clock: u32,
+        receivers: Vec<SocketAddr>,
+        choose_level: bool,
+        protection: bool,
+    ) -> Result<Settings, InvalidSettings> {
+        let choice = if choose_level {
+            Some(Choice::shipped_default(rate, SHIPPED_WINDOW_FRAMES)?)
+        } else {
+            None
+        };
+        let settings = Settings {
+            stream: SenderSettings {
+                stream,
+                rate,
+                channels,
+                format,
+                span: SHIPPED_SPAN_MS,
+                window: SHIPPED_WINDOW_FRAMES,
+                clock,
+            },
+            packet,
+            level,
+            choice,
+            timeline,
+            receivers,
+            kept: if protection { SHIPPED_KEPT_PACKETS } else { 0 },
+        };
+        settings.validate()?;
+        Ok(settings)
+    }
+
     /// Validates that the stream, packet size, level, retransmission cache,
     /// and adaptive level choice settings satisfy runtime invariants.
     ///
@@ -275,9 +338,9 @@ pub struct SenderCounts {
 impl SenderCounts {
     /// Counts a transient send error, breaking out per-destination policy or
     /// address-availability failures (`EPERM`, `EADDRNOTAVAIL`) into `blocked`.
-    fn record_unsent(&mut self, error: &io::Error) {
+    fn record_transient(&mut self, restricted: bool) {
         self.unsent += 1;
-        if is_restricted_send_error(error) {
+        if restricted {
             self.blocked += 1;
         }
     }
@@ -305,10 +368,15 @@ struct Ramp {
 /// stream at five milliseconds a packet.
 const MOST_AGAIN: usize = 200;
 
-/// The network thread of a sender.
-pub struct SenderNetwork {
-    socket: Socket,
-    end: SenderEnd,
+/// Pure sender network state machine: packetizes captured audio, tracks TX
+/// departures, answers receiver reports with v2 echoes, runs the adaptive
+/// level [`Chooser`], and serves retransmission requests over any
+/// [`DatagramSink`].
+///
+/// Owns no OS sockets and reads no wall/monotonic clocks directly, so both
+/// [`SenderNetwork`] (over UDP) and deterministic simulators run the exact
+/// same production protocol engine.
+pub struct SenderNetEngine {
     sender: Sender,
     /// The line through the capture device's reports.
     device: Device<64>,
@@ -323,8 +391,6 @@ pub struct SenderNetwork {
     pending_frames: usize,
     /// Where a packet is written.
     bytes: Box<[u8]>,
-    /// Where datagrams are received.
-    incoming: Box<[u8]>,
     /// What chooses the level, if it is chosen.
     chooser: Option<Chooser>,
     /// The active level ramp, while the level is moving.
@@ -345,11 +411,11 @@ pub struct SenderNetwork {
 /// before is told apart.
 const INDEX_BITS: u32 = 48;
 
-impl SenderNetwork {
-    /// The network thread of a sender as `settings` say, that sends from
-    /// `socket` the frames handed over at `end`.
+impl SenderNetEngine {
+    /// Creates a pure sender network engine for `settings`, preallocating all
+    /// packet and retransmission buffers once.
     #[must_use]
-    pub fn new(socket: Socket, end: SenderEnd, settings: Settings) -> SenderNetwork {
+    pub fn new(settings: Settings) -> SenderNetEngine {
         let stream = settings.stream;
         let samples = usize::from(settings.packet).saturating_mul(usize::from(stream.channels));
         let packet_bytes =
@@ -361,9 +427,7 @@ impl SenderNetwork {
             .map(canonical_addr)
             .collect::<Vec<_>>()
             .into_boxed_slice();
-        SenderNetwork {
-            socket,
-            end,
+        SenderNetEngine {
             sender: Sender::new(stream, settings.timeline, settings.level),
             device: Device::new(stream.rate),
             allowed_receivers,
@@ -371,7 +435,6 @@ impl SenderNetwork {
             pending: vec![0.0f32; samples].into_boxed_slice(),
             pending_frames: 0,
             bytes: vec![0u8; packet_bytes].into_boxed_slice(),
-            incoming: vec![0u8; 2_048].into_boxed_slice(),
             chooser: settings
                 .choice
                 .map(|choice| Chooser::new(choice, stream.window, stream.rate)),
@@ -385,80 +448,68 @@ impl SenderNetwork {
         }
     }
 
-    /// What it has done so far.
+    /// Cumulative sender counters.
     #[must_use]
     pub fn counts(&self) -> SenderCounts {
         self.counts
     }
 
-    /// What the needs reported say about the assumptions that the choice of
-    /// the level rests on; nothing if the level is held.
+    /// Assumption checks from the adaptive level chooser, if enabled.
     #[must_use]
     pub fn checks(&self) -> Option<Checks> {
         self.chooser.as_ref().map(Chooser::checks)
     }
 
-    /// The core's sender.
+    /// Core sender state machine.
     #[must_use]
     pub fn sender(&self) -> &Sender {
         &self.sender
     }
 
-    /// Waits up to `milliseconds` for something to do on the socket (unless
-    /// captured audio is already queued), then does all there is: sends the
-    /// packets that the captured frames make, takes in departures, and answers
-    /// reports.
+    /// Sender configuration.
+    #[must_use]
+    pub fn settings(&self) -> &Settings {
+        &self.settings
+    }
+
+    /// Consumes one captured audio cycle (`frames` containing at least
+    /// `frame_count * channels` interleaved samples) and emits every complete
+    /// audio packet to `sink` without allocating.
     ///
     /// # Errors
     ///
-    /// A fatal error of the socket.
-    pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
-        let wait_ms = if self.end.full.waiting() > 0 {
-            0
-        } else {
-            milliseconds
-        };
-        self.socket.wait(wait_ms)?;
-        while let Some(captured) = self.end.full.take() {
-            let result = self.take_in_and_send(&captured);
-            // The ring holds every buffer there is, so it has room for this.
-            let _ = self.end.spare.put(captured.buffer);
-            result?;
-        }
-        self.departures()?;
-        self.answer()?;
-        Ok(())
-    }
-
-    /// Takes in a cycle of the capture device and emits every full packet
-    /// without allocating.
-    fn take_in_and_send(&mut self, captured: &Captured) -> io::Result<()> {
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_capture<S: DatagramSink>(
+        &mut self,
+        frames: &[f32],
+        frame_count: usize,
+        position: u64,
+        time: i64,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
         let packet_frames = usize::from(self.settings.packet);
         let channels = usize::from(self.settings.stream.channels);
-        if captured.frames == 0
-            || packet_frames == 0
-            || channels == 0
-            || self.settings.stream.rate == 0
+        if frame_count == 0 || packet_frames == 0 || channels == 0 || self.settings.stream.rate == 0
         {
             return Ok(());
         }
-        let Some(total_samples) = captured.frames.checked_mul(channels) else {
+        let Some(total_samples) = frame_count.checked_mul(channels) else {
             return Ok(());
         };
-        let Some(frames) = captured.buffer.get(..total_samples) else {
+        let Some(frames) = frames.get(..total_samples) else {
             return Ok(());
         };
-        self.device.observe(captured.position, captured.time);
-        let origin = *self.origin.get_or_insert(captured.position);
+        self.device.observe(position, time);
+        let origin = *self.origin.get_or_insert(position);
         // Where the cycle's first frame is in the timeline, against where
         // the next frame to be sent is.
         let expected = origin
             .saturating_add(self.sender.next())
             .saturating_add(self.pending_frames as u64);
-        if captured.position < expected || captured.position - expected > LONGEST_GAP {
-            self.restart(captured.position);
-        } else if captured.position > expected {
-            let mut missing = captured.position - expected;
+        if position < expected || position - expected > LONGEST_GAP {
+            self.restart(position);
+        } else if position > expected {
+            let mut missing = position - expected;
             self.counts.filled += missing;
             while missing > 0 {
                 let room = packet_frames - self.pending_frames;
@@ -471,13 +522,13 @@ impl SenderNetwork {
                 missing -= take as u64;
                 if self.pending_frames == packet_frames {
                     self.pending_frames = 0;
-                    self.emit_packet(None)?;
+                    self.emit_packet(None, sink)?;
                 }
             }
         }
         let mut offset = 0usize;
         if self.pending_frames > 0 {
-            let take = (packet_frames - self.pending_frames).min(captured.frames);
+            let take = (packet_frames - self.pending_frames).min(frame_count);
             let dst_start = self.pending_frames * channels;
             if let (Some(dst), Some(src)) = (
                 self.pending.get_mut(dst_start..dst_start + take * channels),
@@ -489,21 +540,21 @@ impl SenderNetwork {
             offset += take;
             if self.pending_frames == packet_frames {
                 self.pending_frames = 0;
-                self.emit_packet(None)?;
+                self.emit_packet(None, sink)?;
             }
         }
-        while captured.frames - offset >= packet_frames {
+        while frame_count - offset >= packet_frames {
             let start = offset * channels;
             if let Some(chunk) = frames.get(start..start + packet_frames * channels) {
-                self.emit_packet(Some(chunk))?;
+                self.emit_packet(Some(chunk), sink)?;
             }
             offset += packet_frames;
         }
-        let leftover = captured.frames - offset;
+        let leftover = frame_count - offset;
         if leftover > 0 {
             if let (Some(dst), Some(src)) = (
                 self.pending.get_mut(..leftover * channels),
-                frames.get(offset * channels..captured.frames * channels),
+                frames.get(offset * channels..frame_count * channels),
             ) {
                 dst.copy_from_slice(src);
             }
@@ -512,11 +563,95 @@ impl SenderNetwork {
         Ok(())
     }
 
+    /// Records one TX departure timestamp tagged by [`tag`].
+    pub fn on_departure(&mut self, departure_tag: u64, departure_ns: i64) {
+        let timeline = self.sender.timeline();
+        if departure_tag >> INDEX_BITS != timeline & ((1 << (64 - INDEX_BITS)) - 1) {
+            return;
+        }
+        let index = departure_tag & ((1 << INDEX_BITS) - 1);
+        self.sender.departed(timeline, index, departure_ns);
+    }
+
+    /// Handles one incoming datagram (`Report` or `Request`) from `from`
+    /// stamped with `arrival_ns` (RX) and `departure_ns` (TX reply timestamp).
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        let mut turn_again = 0usize;
+        self.on_datagram_budgeted(from, bytes, arrival_ns, departure_ns, &mut turn_again, sink)
+    }
+
+    /// Handles one incoming datagram while enforcing a shared per-turn
+    /// retransmission cap `turn_again`.
+    fn on_datagram_budgeted<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        turn_again: &mut usize,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        let peer = canonical_addr(from);
+        if !self.allowed_receivers.contains(&peer) {
+            self.counts.ignored += 1;
+            return Ok(());
+        }
+        if packet::kind(bytes) == Ok(KIND_REQUEST) {
+            if let Ok(request) = parse_request(bytes) {
+                self.again(&request, from, turn_again, sink)?;
+            }
+            return Ok(());
+        }
+        if packet::kind(bytes) != Ok(KIND_REPORT) {
+            return Ok(());
+        }
+        let Ok(report) = parse_report(bytes) else {
+            return Ok(());
+        };
+        if report.stream != self.settings.stream.stream {
+            return Ok(());
+        }
+        if report.timeline == self.sender.timeline()
+            && self.sender.next() > 0
+            && let Some(chooser) = self.chooser.as_mut()
+        {
+            let max_stretch =
+                (self.sender.next() - 1) / u64::from(self.settings.stream.window.max(1));
+            chooser.observe_up_to(report.timeline, &parse_needs(bytes), max_stretch);
+        }
+        // Clamp `t3 >= t2` so minor kernel-to-raw RX conversion jitter never
+        // produces a negative remote processing time rejected by `ntp_exchange`.
+        let reply_departure = departure_ns.max(arrival_ns);
+        let Some(echo) = self.sender.answer(&report, arrival_ns, reply_departure) else {
+            return Ok(());
+        };
+        let mut out = [0u8; packet::ECHO];
+        let Some(length) = write_echo(&echo, &mut out) else {
+            return Ok(());
+        };
+        match sink.send(from, &out[..length], None)? {
+            SendStatus::Sent => self.counts.answers += 1,
+            SendStatus::Transient { restricted } => self.counts.record_transient(restricted),
+        }
+        Ok(())
+    }
+
     /// Starts a timeline anew at the device's count `position`.
     fn restart(&mut self, position: u64) {
         self.pending_frames = 0;
         self.origin = Some(position);
-        self.sender.restart(first_timeline());
+        self.sender.restart(0);
         // Stop any in-progress ramp cleanly on timeline restart.
         let level = self.sender.current_level();
         self.sender.level(level, 0);
@@ -547,7 +682,11 @@ impl SenderNetwork {
     /// when `external` is `None`). Only the first successful receiver send is
     /// tagged for departure timestamping so multiple receivers do not
     /// overwrite `stamped_departure`.
-    fn emit_packet(&mut self, external: Option<&[f32]>) -> io::Result<()> {
+    fn emit_packet<S: DatagramSink>(
+        &mut self,
+        external: Option<&[f32]>,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
         let Some(origin) = self.origin else {
             return Ok(());
         };
@@ -572,17 +711,10 @@ impl SenderNetwork {
         let mut tagged = false;
         for &to in &self.settings.receivers {
             let bytes = self.bytes.get(..length).unwrap_or(&[]);
-            let sent = if tagged {
-                self.socket.send_untagged(bytes, to)
-            } else {
-                self.socket.send_to(bytes, to, packet_tag)
-            };
-            match sent {
-                Ok(_) => tagged = true,
-                Err(error) if is_transient_send_error(&error) => {
-                    self.counts.record_unsent(&error);
-                }
-                Err(error) => return Err(error),
+            let send_tag = (!tagged).then_some(packet_tag);
+            match sink.send(to, bytes, send_tag)? {
+                SendStatus::Sent => tagged = true,
+                SendStatus::Transient { restricted } => self.counts.record_transient(restricted),
             }
         }
         Ok(())
@@ -653,19 +785,6 @@ impl SenderNetwork {
         Some(length)
     }
 
-    /// Takes in when packets left.
-    fn departures(&mut self) -> io::Result<()> {
-        while let Some(departure) = self.socket.departure()? {
-            let timeline = self.sender.timeline();
-            if departure.tag >> INDEX_BITS != timeline & ((1 << (64 - INDEX_BITS)) - 1) {
-                continue;
-            }
-            let index = departure.tag & ((1 << INDEX_BITS) - 1);
-            self.sender.departed(timeline, index, departure.stamp.time);
-        }
-        Ok(())
-    }
-
     /// Keeps the packet with `header`, whose `length` bytes were just
     /// written, in the place of the oldest packet kept.
     fn remember(&mut self, header: &Audio, length: usize) {
@@ -691,12 +810,13 @@ impl SenderNetwork {
 
     /// Sends the kept packets with frames that `request` names again to the
     /// receiver at `to`, oldest first, up to the per-turn retransmission cap.
-    fn again(
+    fn again<S: DatagramSink>(
         &mut self,
         request: &Request,
         to: SocketAddr,
         sent_total: &mut usize,
-    ) -> io::Result<()> {
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
         if request.stream != self.settings.stream.stream || *sent_total >= MOST_AGAIN {
             return Ok(());
         }
@@ -721,71 +841,218 @@ impl SenderNetwork {
                 .kept
                 .get(place * room..place * room + kept.length)
                 .unwrap_or(&[]);
-            match self.socket.send_untagged(bytes, to) {
-                Ok(_) => self.counts.again += 1,
-                Err(error) if is_transient_send_error(&error) => {
-                    self.counts.record_unsent(&error);
-                }
-                Err(error) => return Err(error),
+            match sink.send(to, bytes, None)? {
+                SendStatus::Sent => self.counts.again += 1,
+                SendStatus::Transient { restricted } => self.counts.record_transient(restricted),
             }
             *sent_total += 1;
         }
         Ok(())
     }
+}
 
-    /// Answers the reports that arrived from configured receivers on this
-    /// stream, and sends again what those receivers ask for.
-    fn answer(&mut self) -> io::Result<()> {
-        let mut out = [0u8; packet::ECHO];
+/// Socket-independent bridge binding [`SenderEnd`] capture SPSC rings and
+/// [`SenderNetEngine`] together.
+///
+/// Shared directly by [`SenderNetwork`] (over a real UDP socket) and
+/// deterministic simulators so both exercise the exact capture ring capacities,
+/// buffer recycling, packetization, and datagram handling.
+pub struct SenderNetBridge {
+    end: SenderEnd,
+    engine: SenderNetEngine,
+}
+
+impl SenderNetBridge {
+    /// Creates a bridge pairing `end` with a [`SenderNetEngine`] configured by
+    /// `settings`.
+    #[must_use]
+    pub fn new(end: SenderEnd, settings: Settings) -> SenderNetBridge {
+        SenderNetBridge {
+            end,
+            engine: SenderNetEngine::new(settings),
+        }
+    }
+
+    /// What it has done so far.
+    #[must_use]
+    pub fn counts(&self) -> SenderCounts {
+        self.engine.counts()
+    }
+
+    /// What the needs reported say about the assumptions that the choice of
+    /// the level rests on; nothing if the level is held.
+    #[must_use]
+    pub fn checks(&self) -> Option<Checks> {
+        self.engine.checks()
+    }
+
+    /// The core's sender.
+    #[must_use]
+    pub fn sender(&self) -> &Sender {
+        self.engine.sender()
+    }
+
+    /// Underlying pure sender network engine.
+    #[must_use]
+    pub fn engine(&self) -> &SenderNetEngine {
+        &self.engine
+    }
+
+    /// Whether captured audio cycles are waiting in the capture-to-network
+    /// ring.
+    #[must_use]
+    pub fn has_captured(&self) -> bool {
+        self.end.full.waiting() > 0
+    }
+
+    /// Drains all waiting captured cycles from the SPSC ring into
+    /// [`SenderNetEngine::on_capture`] and returns each buffer to the spare
+    /// ring.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn drain_captured<S: DatagramSink>(&mut self, sink: &mut S) -> Result<(), S::Error> {
+        while let Some(captured) = self.end.full.take() {
+            let result = self.engine.on_capture(
+                &captured.buffer,
+                captured.frames,
+                captured.position,
+                captured.time,
+                sink,
+            );
+            // The ring holds every buffer there is, so it has room for this.
+            let _ = self.end.spare.put(captured.buffer);
+            result?;
+        }
+        Ok(())
+    }
+
+    /// Records a TX departure timestamp for a previously sent packet `tag`.
+    pub fn on_departure(&mut self, tag: u64, time_ns: i64) {
+        self.engine.on_departure(tag, time_ns);
+    }
+
+    /// Handles one incoming datagram from `from`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        self.engine
+            .on_datagram(from, bytes, arrival_ns, departure_ns, sink)
+    }
+
+    /// Handles one incoming datagram while enforcing a per-turn retransmission
+    /// budget (`turn_again`).
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_datagram_budgeted<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        turn_again: &mut usize,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        self.engine
+            .on_datagram_budgeted(from, bytes, arrival_ns, departure_ns, turn_again, sink)
+    }
+}
+
+/// The network thread of a sender: thin UDP shell around [`SenderNetBridge`].
+pub struct SenderNetwork {
+    socket: Socket,
+    bridge: SenderNetBridge,
+    /// Where datagrams are received.
+    incoming: Box<[u8]>,
+}
+
+impl SenderNetwork {
+    /// The network thread of a sender as `settings` say, that sends from
+    /// `socket` the frames handed over at `end`.
+    #[must_use]
+    pub fn new(socket: Socket, end: SenderEnd, settings: Settings) -> SenderNetwork {
+        SenderNetwork {
+            socket,
+            bridge: SenderNetBridge::new(end, settings),
+            incoming: vec![0u8; 2_048].into_boxed_slice(),
+        }
+    }
+
+    /// What it has done so far.
+    #[must_use]
+    pub fn counts(&self) -> SenderCounts {
+        self.bridge.counts()
+    }
+
+    /// What the needs reported say about the assumptions that the choice of
+    /// the level rests on; nothing if the level is held.
+    #[must_use]
+    pub fn checks(&self) -> Option<Checks> {
+        self.bridge.checks()
+    }
+
+    /// The core's sender.
+    #[must_use]
+    pub fn sender(&self) -> &Sender {
+        self.bridge.sender()
+    }
+
+    /// Underlying pure sender network engine.
+    #[must_use]
+    pub fn engine(&self) -> &SenderNetEngine {
+        self.bridge.engine()
+    }
+
+    /// Waits up to `milliseconds` for something to do on the socket (unless
+    /// captured audio is already queued), then does all there is: sends the
+    /// packets that the captured frames make, takes in departures, and answers
+    /// reports.
+    ///
+    /// # Errors
+    ///
+    /// A fatal error of the socket.
+    pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
+        let wait_ms = if self.bridge.has_captured() {
+            0
+        } else {
+            milliseconds
+        };
+        self.socket.wait(wait_ms)?;
+        self.bridge
+            .drain_captured(&mut SocketSink(&mut self.socket))?;
+        while let Some(departure) = self.socket.departure()? {
+            self.bridge
+                .on_departure(departure.tag, departure.stamp.time);
+        }
         let mut turn_again = 0usize;
         for _ in 0..MAX_INCOMING_PER_TURN {
             let Some(received) = self.socket.receive(&mut self.incoming)? else {
                 break;
             };
-            let peer = canonical_addr(received.from);
-            if !self.allowed_receivers.contains(&peer) {
-                self.counts.ignored += 1;
-                continue;
-            }
             let Some(bytes) = self.incoming.get(..received.length) else {
                 continue;
             };
-            if packet::kind(bytes) == Ok(KIND_REQUEST) {
-                if let Ok(request) = parse_request(bytes) {
-                    self.again(&request, received.from, &mut turn_again)?;
-                }
-                continue;
-            }
-            if packet::kind(bytes) != Ok(KIND_REPORT) {
-                continue;
-            }
-            let Ok(report) = parse_report(bytes) else {
-                continue;
-            };
-            if report.stream != self.settings.stream.stream {
-                continue;
-            }
-            if report.timeline == self.sender.timeline()
-                && self.sender.next() > 0
-                && let Some(chooser) = self.chooser.as_mut()
-            {
-                let max_stretch =
-                    (self.sender.next() - 1) / u64::from(self.settings.stream.window.max(1));
-                chooser.observe_up_to(report.timeline, &parse_needs(bytes), max_stretch);
-            }
-            let Some(echo) = self.sender.answer(&report, received.arrival.time) else {
-                continue;
-            };
-            let Some(length) = write_echo(&echo, &mut out) else {
-                continue;
-            };
-            match self.socket.send_untagged(&out[..length], received.from) {
-                Ok(_) => self.counts.answers += 1,
-                Err(error) if is_transient_send_error(&error) => {
-                    self.counts.record_unsent(&error);
-                }
-                Err(error) => return Err(error),
-            }
+            let reply_departure = clock::raw().max(received.arrival.time);
+            self.bridge.on_datagram_budgeted(
+                received.from,
+                bytes,
+                received.arrival.time,
+                reply_departure,
+                &mut turn_again,
+                &mut SocketSink(&mut self.socket),
+            )?;
         }
         Ok(())
     }
@@ -845,13 +1112,15 @@ mod tests {
     use std::net::{SocketAddr, UdpSocket};
     use std::time::Duration;
 
-    use unisono_core::packet::{self, Format, Recent, Report, write_needs, write_report};
+    use unisono_core::packet::{
+        self, Format, Recent, Report, parse_echo, write_needs, write_report,
+    };
     use unisono_core::sender::Settings as StreamSettings;
 
-    use super::{Ramp, SenderNetwork, Settings, link};
+    use super::{Ramp, SenderNetEngine, SenderNetwork, Settings, link};
     use crate::audio::Capture;
     use crate::level::{Choice, Weights};
-    use crate::socket::Socket;
+    use crate::socket::{DatagramSink, SendStatus, Socket};
 
     fn base_settings(receivers: Vec<SocketAddr>, choice: Option<Choice>) -> Settings {
         Settings {
@@ -998,14 +1267,14 @@ mod tests {
             base_settings(Vec::new(), Some(choice)),
         );
         // Simulate a rising ramp that has crossed its target by 1 ns.
-        sender.sender.level(30_000_001, 100);
-        sender.ramp = Some(Ramp {
+        sender.bridge.engine.sender.level(30_000_001, 100);
+        sender.bridge.engine.ramp = Some(Ramp {
             target: 30_000_000,
             rising: true,
         });
         capture_end.cycle(&[0.0f32; 480], 0, 1_000_000);
         sender.turn(0).expect("turn");
-        assert_eq!(sender.ramp, None);
+        assert_eq!(sender.bridge.engine.ramp, None);
         assert_eq!(sender.sender().current_level(), 30_000_000);
     }
 
@@ -1024,7 +1293,7 @@ mod tests {
         capture_end.cycle(&[0.25f32; 512], 0, 1_000_000);
         sender.turn(0).expect("turn 1");
         assert_eq!(sender.counts().packets, 1);
-        assert_eq!(sender.pending_frames, 16);
+        assert_eq!(sender.bridge.engine.pending_frames, 16);
 
         // Next cycle jumps ahead by 720 dropped frames (position 976 = 256 + 720).
         capture_end.cycle(&[0.5f32; 512], 976, 21_333_333);
@@ -1033,7 +1302,7 @@ mod tests {
         assert_eq!(sender.counts().restarts, 0);
         // Total frames covered = 976 + 256 = 1232 => 5 full packets (1200) + 32 pending.
         assert_eq!(sender.counts().packets, 5);
-        assert_eq!(sender.pending_frames, 32);
+        assert_eq!(sender.bridge.engine.pending_frames, 32);
     }
 
     #[test]
@@ -1063,5 +1332,49 @@ mod tests {
         let (l2, _) = r2.recv_from(&mut b2).expect("r2 recv");
         assert_eq!(l1, l2);
         assert!(packet::parse_audio(&b1[..l1]).is_ok());
+    }
+
+    #[test]
+    fn engine_echo_clamps_departure_to_at_least_arrival() {
+        struct RecordingSink(Vec<(SocketAddr, Vec<u8>, Option<u64>)>);
+        impl DatagramSink for RecordingSink {
+            type Error = std::convert::Infallible;
+            fn send(
+                &mut self,
+                to: SocketAddr,
+                bytes: &[u8],
+                tag: Option<u64>,
+            ) -> Result<SendStatus, Self::Error> {
+                self.0.push((to, bytes.to_vec(), tag));
+                Ok(SendStatus::Sent)
+            }
+        }
+
+        let peer: SocketAddr = "127.0.0.1:9001".parse().expect("addr");
+        let mut engine = SenderNetEngine::new(base_settings(vec![peer], None));
+        let mut sink = RecordingSink(Vec::new());
+        let report = Report {
+            stream: 7,
+            timeline: 10,
+            receiver: 42,
+            sequence: 3,
+        };
+        let mut buf = [0u8; 128];
+        let len = write_report(&report, &mut buf, 128).expect("report");
+
+        // Departure earlier than arrival (kernel RX clock conversion skew)
+        // must clamp to `arrival` so `t3 - t2 >= 0`.
+        let Ok(()) = engine.on_datagram(peer, &buf[..len], 5_000, 4_900, &mut sink);
+        assert_eq!(sink.0.len(), 1);
+        let echo = parse_echo(&sink.0[0].1).expect("v2 echo");
+        assert_eq!(echo.arrival, 5_000);
+        assert_eq!(echo.departure, 5_000);
+
+        // Normal departure > arrival is preserved verbatim.
+        let Ok(()) = engine.on_datagram(peer, &buf[..len], 5_000, 5_250, &mut sink);
+        assert_eq!(sink.0.len(), 2);
+        let echo2 = parse_echo(&sink.0[1].1).expect("v2 echo");
+        assert_eq!(echo2.arrival, 5_000);
+        assert_eq!(echo2.departure, 5_250);
     }
 }

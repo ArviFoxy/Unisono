@@ -1,6 +1,6 @@
 [package]
 name = "unisono"
-description = "The unisono program: sends a stream of audio to receivers, or receives one and plays it."
+description = "CLI audio streaming binary (`unisono send` and `unisono receive`)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

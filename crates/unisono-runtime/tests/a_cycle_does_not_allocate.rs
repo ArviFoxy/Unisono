@@ -2,11 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Taking in a packet and playing a cycle allocate and free no memory, also
-//! when packets are lost and when the position jumps.
+//! Verifies that audio-thread packet ingestion and playback cycles perform
+//! zero heap allocations or deallocations, including under packet loss and
+//! position jumps.
 //!
-//! This file is a test program of its own, because it replaces the
-//! allocator of the whole program by one that counts.
+//! Runs as a standalone integration test binary because it installs a custom
+//! global counting allocator.
 
 mod common;
 
@@ -18,7 +19,7 @@ use common::{CHANNELS, Line, Listener, ramp, settings};
 use unisono_core::packet::{HEADER, write_audio};
 use unisono_dsp::Parameters;
 use unisono_runtime::receive::{Intake, ReceiverAudio, Reporting, Sizes, link};
-use unisono_runtime::software::{Device, Output};
+use unisono_runtime::virtual_device::{Device, Output};
 
 thread_local! {
     /// Whether the allocator counts the calls of this thread.

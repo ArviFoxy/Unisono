@@ -311,4 +311,143 @@ theorem write_needs_total (recent : packet.Recent) (bytes : Slice Std.U8) :
   unfold packet.write_needs
   repeat' (first | split | step*)
 
+/-! ## Peer control packets (totality & kind consistency) -/
+
+theorem parse_peer_probe_total (bytes : Slice Std.U8) :
+    packet.parse_peer_probe bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_peer_probe
+  step*
+
+theorem write_peer_probe_total (p : packet.PeerProbe) (bytes : Slice Std.U8) :
+    packet.write_peer_probe p bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_peer_probe
+  simp only
+  step*
+
+theorem parse_peer_probe_kind (bytes : Slice Std.U8) :
+    packet.parse_peer_probe bytes ⦃ r =>
+      (∃ p, r = .Ok p) → kindOf bytes = .Ok packet.KIND_PEER_PROBE ⦄ := by
+  unfold packet.parse_peer_probe
+  step with kind_spec bytes as ⟨rk, hrk⟩
+  cases rk with
+  | Err _ => simp
+  | Ok found =>
+    dsimp only
+    cases hne : (found != packet.KIND_PEER_PROBE) with
+    | true => simp
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hf : found = packet.KIND_PEER_PROBE := by simpa using hne
+      have hgoal : kindOf bytes = .Ok packet.KIND_PEER_PROBE := by rw [← hrk, hf]
+      step*
+
+theorem parse_peer_echo_total (bytes : Slice Std.U8) :
+    packet.parse_peer_echo bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_peer_echo
+  step*
+
+theorem write_peer_echo_total (e : packet.PeerEcho) (bytes : Slice Std.U8) :
+    packet.write_peer_echo e bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_peer_echo
+  simp only
+  step*
+
+theorem parse_peer_echo_kind (bytes : Slice Std.U8) :
+    packet.parse_peer_echo bytes ⦃ r =>
+      (∃ e, r = .Ok e) → kindOf bytes = .Ok packet.KIND_PEER_ECHO ⦄ := by
+  unfold packet.parse_peer_echo
+  step with kind_spec bytes as ⟨rk, hrk⟩
+  cases rk with
+  | Err _ => simp
+  | Ok found =>
+    dsimp only
+    cases hne : (found != packet.KIND_PEER_ECHO) with
+    | true => simp
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hf : found = packet.KIND_PEER_ECHO := by simpa using hne
+      have hgoal : kindOf bytes = .Ok packet.KIND_PEER_ECHO := by rw [← hrk, hf]
+      step*
+
+@[step]
+theorem parse_peer_relay_loop_total (bytes : Slice Std.U8) (count_usize : Std.Usize)
+    (stream : Std.U16) (sender sequence : Std.U64) (sender_clock_id : Std.U32) (count : Std.U8)
+    (a : Array packet.RelayEdge 16#usize) (i : Std.Usize) :
+    packet.parse_peer_relay_loop bytes count_usize stream sender sequence sender_clock_id count a i
+      ⦃ _ => True ⦄ := by
+  unfold packet.parse_peer_relay_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : Array packet.RelayEdge 16#usize × Std.Usize => count_usize.val - x.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨a1, i1⟩ _
+    unfold packet.parse_peer_relay_loop.body
+    simp only
+    split
+    · have hlt : i1.val < count_usize.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i1 1#usize).val = i1.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      step*
+      simp only [lift, bind_ok, core.slice.Slice.get_mut,
+        core.slice.index.Usize.get_mut, Std.uncurry]
+      split <;> (simp only [bind_ok, WP.spec_ok]; rw [hnext]; omega)
+    · simp
+  · trivial
+
+theorem parse_peer_relay_total (bytes : Slice Std.U8) :
+    packet.parse_peer_relay bytes ⦃ _ => True ⦄ := by
+  unfold packet.parse_peer_relay
+  step*
+
+theorem parse_peer_relay_kind (bytes : Slice Std.U8) :
+    packet.parse_peer_relay bytes ⦃ r =>
+      (∃ rel, r = .Ok rel) → kindOf bytes = .Ok packet.KIND_PEER_RELAY ⦄ := by
+  unfold packet.parse_peer_relay
+  step with kind_spec bytes as ⟨rk, hrk⟩
+  cases rk with
+  | Err _ => simp
+  | Ok found =>
+    dsimp only
+    cases hne : (found != packet.KIND_PEER_RELAY) with
+    | true => simp
+    | false =>
+      simp only [Bool.false_eq_true, ↓reduceIte]
+      have hf : found = packet.KIND_PEER_RELAY := by simpa using hne
+      have hgoal : kindOf bytes = .Ok packet.KIND_PEER_RELAY := by rw [← hrk, hf]
+      step*
+
+@[step]
+theorem write_peer_relay_loop_total (a : Array packet.RelayEdge 16#usize) (bytes : Slice Std.U8)
+    (count : Std.Usize) (written : Bool) (i : Std.Usize) :
+    packet.write_peer_relay_loop a bytes count written i ⦃ _ => True ⦄ := by
+  unfold packet.write_peer_relay_loop
+  apply loop.spec_decr_nat
+    (measure := fun x : Slice Std.U8 × Bool × Std.Usize => count.val - x.2.2.val)
+    (inv := fun _ => True)
+  · rintro ⟨bytes1, written1, i1⟩ _
+    unfold packet.write_peer_relay_loop.body
+    simp only
+    split
+    · have hlt : i1.val < count.val := by scalar_tac
+      have hnext : (core.num.Usize.saturating_add i1 1#usize).val = i1.val + 1 :=
+        Usize.saturating_add_val _ _ (by scalar_tac)
+      simp only [lift, bind_ok, Array.to_slice, core.slice.Slice.get,
+        core.slice.index.Usize.get]
+      split
+      all_goals
+        simp only [bind_ok]
+        step as ⟨b0, bs1⟩
+        step as ⟨b1, bs2⟩
+        step as ⟨b2, bs3⟩
+        step as ⟨b3, bs4⟩
+        step as ⟨b4, bs5⟩
+        rw [hnext]
+        omega
+    · simp
+  · trivial
+
+theorem write_peer_relay_total (rel : packet.PeerRelay) (bytes : Slice Std.U8) :
+    packet.write_peer_relay rel bytes ⦃ _ => True ⦄ := by
+  unfold packet.write_peer_relay
+  step*
+
 end Unisono.Packet

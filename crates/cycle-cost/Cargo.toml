@@ -1,6 +1,6 @@
 [package]
 name = "cycle-cost"
-description = "Counts the instructions and measures the time that unisono's real-time functions take in one cycle, on the inputs that cost most."
+description = "Worst-case instruction-count budget verifier and microbenchmark for unisono real-time paths."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
