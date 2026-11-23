@@ -84,6 +84,25 @@ use crate::InvalidSettings;
 /// are valid on the wire.
 pub const MAX_SLOPE: i32 = 999_999_999;
 
+/// Shipped default gap cost, in seconds of a millisecond of latency.
+pub const SHIPPED_GAP_COST: f64 = 600.0;
+
+/// Shipped default missed-audio cost, in seconds per millisecond missed.
+pub const SHIPPED_MISSED_COST_S: f64 = 60.0;
+
+/// Shipped default level-move cost, in seconds of a millisecond of latency.
+pub const SHIPPED_MOVE_COST: f64 = 60.0;
+
+/// Shipped default level-ramp slope, in microseconds per second (`0.5 ms/s`).
+pub const SHIPPED_SLOPE_US: i32 = 500;
+
+/// Maximum shipped level-ramp slope, in microseconds per second (`1 ms/s`),
+/// matching the receiver's `1000 ppm` pace limit.
+pub const SHIPPED_MAX_SLOPE_US: i32 = 1_000;
+
+/// Shipped evidence history span for adaptive level selection, in seconds.
+pub const SHIPPED_HISTORY_SECONDS: u64 = 120;
+
 /// The weights of the cost of a level.
 #[derive(Clone, Copy, Debug)]
 pub struct Weights {
@@ -159,6 +178,72 @@ pub struct Choice {
 }
 
 impl Choice {
+    /// Builds the shipped default adaptive level-chooser configuration for a
+    /// stream of `rate` frames/s and clock-estimator `window` frames, validated
+    /// via [`Choice::validate`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when `window` is zero or the resulting
+    /// configuration fails validation.
+    pub fn shipped_default(rate: u32, window: u32) -> Result<Choice, InvalidSettings> {
+        Choice::shipped_with_costs(
+            rate,
+            window,
+            SHIPPED_GAP_COST,
+            SHIPPED_MISSED_COST_S,
+            SHIPPED_MOVE_COST,
+            SHIPPED_SLOPE_US,
+        )
+    }
+
+    /// Builds a validated shipped adaptive level-chooser configuration with
+    /// custom cost weights and `slope_us` in `1..=SHIPPED_MAX_SLOPE_US`
+    /// microseconds per second.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when `window` is zero, `slope_us` exceeds
+    /// the receiver pace limit (`1..=1000 us/s`), or weights fail validation.
+    pub fn shipped_with_costs(
+        rate: u32,
+        window: u32,
+        gap: f64,
+        missed_s: f64,
+        moving: f64,
+        slope_us: i32,
+    ) -> Result<Choice, InvalidSettings> {
+        if window == 0 {
+            return Err(InvalidSettings::new(
+                "clock estimator window must be positive",
+            ));
+        }
+        if !(1..=SHIPPED_MAX_SLOPE_US).contains(&slope_us) {
+            return Err(InvalidSettings::new(
+                "level slope must be between 1 and 1000 microseconds per second",
+            ));
+        }
+        let history = usize::try_from(
+            SHIPPED_HISTORY_SECONDS.saturating_mul(u64::from(rate)) / u64::from(window),
+        )
+        .unwrap_or(usize::MAX)
+        .max(1);
+        let choice = Choice {
+            weights: Weights {
+                latency: 1_000.0,
+                target: 0,
+                off_target: 0.0,
+                gap,
+                missed: missed_s * 1_000.0,
+                moving,
+            },
+            history,
+            slope: slope_us.saturating_mul(1_000),
+        };
+        choice.validate()?;
+        Ok(choice)
+    }
+
     /// Validates the weights, history length, and level-ramp slope.
     ///
     /// # Errors

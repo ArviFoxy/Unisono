@@ -6,9 +6,10 @@
 //! oscillator drift (up to 120 ppm), and link jitter, paired with
 //! fault-injection controls.
 //!
-//! Runs the production [`unisono_runtime`] engines (`SenderNetEngine`,
-//! `ReceiverNetEngine`, `ReceiverPlayback`, `ReportSchedule`) over real
-//! serialized UDP wire bytes via [`unisono_sim::scene::Scene`].
+//! Runs the shipped [`unisono_runtime`] SPSC-ring pipelines (`CaptureEnd`,
+//! `SenderNetBridge`, `ReceiverNetBridge`, `ShippedAudio`) over real
+//! serialized UDP wire bytes via [`unisono_sim::scene::Scene`], decoding
+//! playback timing directly from rendered PCM output.
 
 use unisono_core::player::Regulation;
 use unisono_runtime::receive::Reporting;
@@ -30,7 +31,9 @@ fn sender(walk: f64, level_ms: i64) -> SenderConfig {
         oscillator(1_000.0, 20.0, walk),
         oscillator(0.0, -35.0, walk),
         level_ms * 1_000_000,
-    );
+    )
+    .with_fixed_level()
+    .without_protection();
     cfg.send_delay_s = 50e-6;
     cfg.span_ms = 11_000;
     cfg.window_frames = 15_360;
@@ -57,11 +60,7 @@ fn receiver(host: usize, identity: u64, device_ppm: f64, walk: f64) -> ReceiverC
 fn hosts(link: LinkModel, walk: f64) -> Vec<HostConfig> {
     [(5_000.0, -40.0), (-7_200.0, 15.0), (86_400.0, 60.0)]
         .iter()
-        .map(|(offset, ppm)| HostConfig {
-            clock: oscillator(*offset, *ppm, walk),
-            from_sender: link,
-            to_sender: link,
-        })
+        .map(|(offset, ppm)| HostConfig::new(oscillator(*offset, *ppm, walk), link, link))
         .collect()
 }
 

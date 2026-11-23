@@ -24,7 +24,7 @@
 //! - audio -> network: recycled packet buffers.
 //!
 //! Each audio callback drains at most a bounded number of incoming items so
-//! per-cycle execution time remains strictly bounded (verified by
+//! per-cycle execution time remains strictly bounded (checked by
 //! `crates/cycle-cost`).
 
 use std::io;
@@ -410,6 +410,20 @@ pub struct Sizes {
     /// at once.
     pub messages: usize,
 }
+
+/// Shipped ring sizes shared by the CLI, C library, and simulator.
+pub const SHIPPED_SIZES: Sizes = Sizes {
+    buffers: 64,
+    datagram: crate::send::MAX_DATAGRAM,
+    messages: 64,
+};
+
+/// Maximum incoming ring items drained per shipped audio callback.
+pub const SHIPPED_INTAKE_ITEMS: usize = 16;
+
+/// Shipped receiver audio-thread wrapper matching
+/// [`crate::pump::ShippedPlayback`].
+pub type ShippedAudio = ReceiverAudio<256, 64, 8, 64>;
 
 /// The end of the network thread.
 pub struct NetworkEnd {
@@ -1239,12 +1253,248 @@ impl ReceiverNetEngine {
     }
 }
 
-/// The network thread of a receiver: thin UDP/ring shell around
-/// [`ReceiverNetEngine`].
-pub struct ReceiverNetwork {
-    socket: Socket,
+/// Socket-independent bridge binding [`NetworkEnd`] SPSC rings and
+/// [`ReceiverNetEngine`] together.
+///
+/// Shared directly by [`ReceiverNetwork`] (over a real UDP socket) and
+/// deterministic simulators so both exercise the exact ring capacities,
+/// buffer-recycling backpressure, atomic confirmation handshake, report
+/// draining, and `SyncSnapshot` handoff.
+pub struct ReceiverNetBridge {
     end: NetworkEnd,
     engine: ReceiverNetEngine,
+}
+
+impl ReceiverNetBridge {
+    /// Creates a bridge pairing `end` with a [`ReceiverNetEngine`] configured
+    /// by `config`.
+    #[must_use]
+    pub fn new(end: NetworkEnd, config: &NetConfig) -> ReceiverNetBridge {
+        ReceiverNetBridge {
+            end,
+            engine: ReceiverNetEngine::new(config),
+        }
+    }
+
+    /// Returns cumulative network counters.
+    #[must_use]
+    pub fn counts(&self) -> NetworkCounts {
+        self.engine.counts()
+    }
+
+    /// Latest [`SyncSnapshot`] from [`Sync`], or `None` in legacy hull mode.
+    #[must_use]
+    pub fn sync_snapshot(&self) -> Option<SyncSnapshot> {
+        self.engine.sync_snapshot()
+    }
+
+    /// Underlying pure receiver network engine.
+    #[must_use]
+    pub fn engine(&self) -> &ReceiverNetEngine {
+        &self.engine
+    }
+
+    /// Earliest local-clock timestamp at which this bridge needs another
+    /// [`Self::step`], returning `Some(now_ns)` immediately when outgoing
+    /// reports or a pending `SyncSnapshot` wait to be flushed.
+    #[must_use]
+    pub fn next_wake_ns(&self, now_ns: i64) -> Option<i64> {
+        if self.end.reports.waiting() > 0 || self.engine.has_pending_sync_update() {
+            return Some(now_ns);
+        }
+        self.engine.next_wake_ns(now_ns)
+    }
+
+    /// Synchronizes audio-thread confirmation state into the network engine.
+    fn sync_confirmed(&mut self) -> ConfirmedState {
+        let confirmed = self.end.confirmed.load();
+        self.engine.sync_confirmed(confirmed);
+        confirmed
+    }
+
+    /// Pushes any queued [`SyncSnapshot`] update into the audio ring, marking
+    /// it for retry if the ring is momentarily full.
+    fn flush_sync_update(&mut self) {
+        if let Some((clock_id, snapshot)) = self.engine.take_sync_update()
+            && self
+                .end
+                .incoming
+                .put(Incoming::SyncUpdate { clock_id, snapshot })
+                .is_err()
+        {
+            self.engine.counts.dropped += 1;
+            self.engine.mark_snapshot_dropped();
+        }
+    }
+
+    /// Delivers one TX departure timestamp into the engine (and forwards it to
+    /// the audio ring in legacy hull mode).
+    pub fn deliver_departure(&mut self, tag: u64, time_ns: i64) {
+        if let Some((sequence, time)) = self.engine.on_departure(tag, time_ns)
+            && self
+                .end
+                .incoming
+                .put(Incoming::Departed { sequence, time })
+                .is_err()
+        {
+            self.engine.counts.dropped += 1;
+        }
+    }
+
+    /// Drains all outgoing reports queued by [`ReceiverAudio`] and sends them
+    /// through `sink`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn flush_reports<S: DatagramSink>(&mut self, sink: &mut S) -> Result<(), S::Error> {
+        self.sync_confirmed();
+        while let Some(outgoing) = self.end.reports.take() {
+            self.engine.send_report(&outgoing, sink)?;
+        }
+        Ok(())
+    }
+
+    /// Runs periodic network duties at `now_ns`, flushing queued audio-thread
+    /// reports, running peer probes/relays/retransmissions, and pushing any
+    /// updated [`SyncSnapshot`] into the audio ring.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn step<S: DatagramSink>(&mut self, now_ns: i64, sink: &mut S) -> Result<(), S::Error> {
+        let confirmed = self.sync_confirmed();
+        while let Some(outgoing) = self.end.reports.take() {
+            self.engine.send_report(&outgoing, sink)?;
+        }
+        self.engine.step(now_ns, confirmed, sink)?;
+        self.flush_sync_update();
+        Ok(())
+    }
+
+    /// Delivers one incoming datagram buffer slice into the bridge using the
+    /// exact spare-buffer recycling and overflow backpressure of
+    /// [`ReceiverNetwork`].
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn deliver_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        if self.end.kept.is_none() {
+            self.end.kept = self.end.spare.take();
+        }
+        let confirmed = self.end.confirmed.load();
+        if let Some(buffer) = self.end.kept.as_mut()
+            && bytes.len() <= buffer.len()
+        {
+            buffer[..bytes.len()].copy_from_slice(bytes);
+            self.handle_kept_datagram(
+                from,
+                bytes.len(),
+                arrival_ns,
+                departure_ns,
+                confirmed,
+                sink,
+            )?;
+        } else {
+            self.handle_overflow_datagram(from, bytes, arrival_ns, departure_ns, confirmed, sink)?;
+        }
+        self.flush_sync_update();
+        Ok(())
+    }
+
+    /// Processes a datagram already written into `self.end.kept[..length]`.
+    fn handle_kept_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        length: usize,
+        arrival_ns: i64,
+        departure_ns: i64,
+        confirmed: ConfirmedState,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        let action = {
+            let Some(buffer) = self.end.kept.as_ref() else {
+                return Ok(());
+            };
+            let bytes = buffer.get(..length).unwrap_or(&[]);
+            self.engine
+                .on_datagram(from, bytes, arrival_ns, departure_ns, confirmed, true, sink)?
+        };
+        match action {
+            DatagramAction::Consumed => {}
+            DatagramAction::Audio(header) => {
+                if let Some(buffer) = self.end.kept.take() {
+                    let item = Incoming::Packet {
+                        buffer,
+                        header,
+                        length,
+                        arrival: arrival_ns,
+                    };
+                    match self.end.incoming.put(item) {
+                        Ok(()) => self.engine.counts.packets += 1,
+                        Err(Incoming::Packet { buffer, .. }) => {
+                            self.end.kept = Some(buffer);
+                            self.engine.counts.dropped += 1;
+                        }
+                        Err(_) => self.engine.counts.dropped += 1,
+                    }
+                }
+            }
+            DatagramAction::HullEcho(echo) => {
+                if self.end.incoming.put(Incoming::Answer(echo)).is_err() {
+                    self.engine.counts.dropped += 1;
+                } else {
+                    self.engine.counts.answers += 1;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Processes a datagram when no audio buffer is spare (control packets are
+    /// handled normally while audio packets are dropped under backpressure).
+    fn handle_overflow_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        confirmed: ConfirmedState,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        let action = self.engine.on_datagram(
+            from,
+            bytes,
+            arrival_ns,
+            departure_ns,
+            confirmed,
+            false,
+            sink,
+        )?;
+        if let DatagramAction::HullEcho(echo) = action {
+            if self.end.incoming.put(Incoming::Answer(echo)).is_err() {
+                self.engine.counts.dropped += 1;
+            } else {
+                self.engine.counts.answers += 1;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// The network thread of a receiver: thin UDP shell around
+/// [`ReceiverNetBridge`].
+pub struct ReceiverNetwork {
+    socket: Socket,
+    bridge: ReceiverNetBridge,
     /// Where datagrams go when no audio buffer is spare (control packets are
     /// still parsed and handled out of this buffer; audio packets are dropped).
     overflow: Box<[u8]>,
@@ -1267,8 +1517,7 @@ impl ReceiverNetwork {
         let datagram = config.datagram;
         ReceiverNetwork {
             socket,
-            end,
-            engine: ReceiverNetEngine::new(config),
+            bridge: ReceiverNetBridge::new(end, config),
             overflow: vec![0u8; datagram].into_boxed_slice(),
         }
     }
@@ -1276,7 +1525,7 @@ impl ReceiverNetwork {
     /// Returns cumulative network counters.
     #[must_use]
     pub fn counts(&self) -> NetworkCounts {
-        self.engine.counts()
+        self.bridge.counts()
     }
 
     /// Returns a reference to the underlying UDP socket.
@@ -1288,24 +1537,21 @@ impl ReceiverNetwork {
     /// Latest [`SyncSnapshot`] from [`Sync`], or `None` in legacy hull mode.
     #[must_use]
     pub fn sync_snapshot(&self) -> Option<SyncSnapshot> {
-        self.engine.sync_snapshot()
+        self.bridge.sync_snapshot()
     }
 
     /// Underlying pure receiver network engine.
     #[must_use]
     pub fn engine(&self) -> &ReceiverNetEngine {
-        &self.engine
+        self.bridge.engine()
     }
 
     /// Computes how long `socket.wait` should sleep, returning early if
     /// outgoing reports, a pending sync update, or any engine timer is due
     /// sooner than `milliseconds`.
     fn wait_timeout(&self, milliseconds: i32) -> i32 {
-        if self.end.reports.waiting() > 0 || self.engine.has_pending_sync_update() {
-            return 0;
-        }
         let now = clock::raw();
-        if let Some(wake_ns) = self.engine.next_wake_ns(now) {
+        if let Some(wake_ns) = self.bridge.next_wake_ns(now) {
             let remaining_ns = wake_ns.saturating_sub(now).max(0);
             let wait_ms =
                 i32::try_from(remaining_ns.saturating_add(999_999) / 1_000_000).unwrap_or(i32::MAX);
@@ -1318,36 +1564,12 @@ impl ReceiverNetwork {
         milliseconds
     }
 
-    /// Pushes any queued [`SyncSnapshot`] update into the audio ring, marking
-    /// it for retry if the ring is momentarily full.
-    fn flush_sync_update(&mut self) {
-        if let Some((clock_id, snapshot)) = self.engine.take_sync_update()
-            && self
-                .end
-                .incoming
-                .put(Incoming::SyncUpdate { clock_id, snapshot })
-                .is_err()
-        {
-            self.engine.counts.dropped += 1;
-            self.engine.mark_snapshot_dropped();
-        }
-    }
-
     /// Drains all available TX departure timestamps from the socket into the
-    /// engine (and audio ring in legacy hull mode).
+    /// bridge.
     fn drain_departures(&mut self) -> io::Result<()> {
         while let Some(departure) = self.socket.departure()? {
-            if let Some((sequence, time)) = self
-                .engine
-                .on_departure(departure.tag, departure.stamp.time)
-                && self
-                    .end
-                    .incoming
-                    .put(Incoming::Departed { sequence, time })
-                    .is_err()
-            {
-                self.engine.counts.dropped += 1;
-            }
+            self.bridge
+                .deliver_departure(departure.tag, departure.stamp.time);
         }
         Ok(())
     }
@@ -1362,8 +1584,7 @@ impl ReceiverNetwork {
     ///
     /// Returns a fatal socket I/O error.
     pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
-        let confirmed = self.end.confirmed.load();
-        self.engine.sync_confirmed(confirmed);
+        self.bridge.sync_confirmed();
         let wait_ms = self.wait_timeout(milliseconds);
         self.socket.wait(wait_ms)?;
         // Drain departures BEFORE incoming datagrams so `t1` for a sent
@@ -1374,68 +1595,31 @@ impl ReceiverNetwork {
                 break;
             }
         }
-        let confirmed = self.end.confirmed.load();
-        self.engine.sync_confirmed(confirmed);
-        while let Some(outgoing) = self.end.reports.take() {
-            self.engine
-                .send_report(&outgoing, &mut SocketSink(&mut self.socket))?;
-        }
-        self.engine
-            .step(clock::raw(), confirmed, &mut SocketSink(&mut self.socket))?;
+        self.bridge
+            .step(clock::raw(), &mut SocketSink(&mut self.socket))?;
         self.drain_departures()?;
-        self.flush_sync_update();
+        self.bridge.flush_sync_update();
         Ok(())
     }
 
     /// Takes in one datagram, if one is waiting, and says whether one was.
     fn receive(&mut self) -> io::Result<bool> {
-        if self.end.kept.is_none() {
-            self.end.kept = self.end.spare.take();
+        if self.bridge.end.kept.is_none() {
+            self.bridge.end.kept = self.bridge.end.spare.take();
         }
-        let confirmed = self.end.confirmed.load();
-        if let Some(buffer) = self.end.kept.as_mut() {
+        let confirmed = self.bridge.end.confirmed.load();
+        if let Some(buffer) = self.bridge.end.kept.as_mut() {
             let Some(received) = self.socket.receive(buffer)? else {
                 return Ok(false);
             };
-            let bytes = buffer.get(..received.length).unwrap_or(&[]);
-            let action = self.engine.on_datagram(
+            self.bridge.handle_kept_datagram(
                 received.from,
-                bytes,
+                received.length,
                 received.arrival.time,
                 clock::raw(),
                 confirmed,
-                true,
                 &mut SocketSink(&mut self.socket),
             )?;
-            match action {
-                DatagramAction::Consumed => {}
-                DatagramAction::Audio(header) => {
-                    if let Some(buffer) = self.end.kept.take() {
-                        let item = Incoming::Packet {
-                            buffer,
-                            header,
-                            length: received.length,
-                            arrival: received.arrival.time,
-                        };
-                        match self.end.incoming.put(item) {
-                            Ok(()) => self.engine.counts.packets += 1,
-                            Err(Incoming::Packet { buffer, .. }) => {
-                                // The buffer is kept for the next datagram.
-                                self.end.kept = Some(buffer);
-                                self.engine.counts.dropped += 1;
-                            }
-                            Err(_) => self.engine.counts.dropped += 1,
-                        }
-                    }
-                }
-                DatagramAction::HullEcho(echo) => {
-                    if self.end.incoming.put(Incoming::Answer(echo)).is_err() {
-                        self.engine.counts.dropped += 1;
-                    } else {
-                        self.engine.counts.answers += 1;
-                    }
-                }
-            }
             return Ok(true);
         }
         // No audio buffer is spare: still receive into `overflow` so control
@@ -1445,22 +1629,14 @@ impl ReceiverNetwork {
             return Ok(false);
         };
         let bytes = self.overflow.get(..received.length).unwrap_or(&[]);
-        let action = self.engine.on_datagram(
+        self.bridge.handle_overflow_datagram(
             received.from,
             bytes,
             received.arrival.time,
             clock::raw(),
             confirmed,
-            false,
             &mut SocketSink(&mut self.socket),
         )?;
-        if let DatagramAction::HullEcho(echo) = action {
-            if self.end.incoming.put(Incoming::Answer(echo)).is_err() {
-                self.engine.counts.dropped += 1;
-            } else {
-                self.engine.counts.answers += 1;
-            }
-        }
         Ok(true)
     }
 }
@@ -2217,8 +2393,8 @@ mod tests {
         let mut out = [0.0f32; 512];
         audio.cycle(&mut out, 0, 1_000_000);
         net.turn(0).expect("turn 2");
-        assert_eq!(net.engine.sender, Some(legit_addr));
-        assert_eq!(net.engine.sender_timeline, Some(10));
+        assert_eq!(net.bridge.engine.sender, Some(legit_addr));
+        assert_eq!(net.bridge.engine.sender_timeline, Some(10));
 
         // Packet with wrong sample rate is rejected at network ingress.
         let before_other = net.counts().other;
@@ -2227,7 +2403,7 @@ mod tests {
             .expect("send bad rate");
         net.turn(0).expect("turn 3");
         assert_eq!(net.counts().other, before_other + 1);
-        assert_eq!(net.engine.sender, Some(legit_addr));
+        assert_eq!(net.bridge.engine.sender, Some(legit_addr));
 
         // Single stray packet with a different timeline must NOT hijack `sender`.
         stray
@@ -2236,8 +2412,8 @@ mod tests {
         net.turn(0).expect("turn 4");
         audio.cycle(&mut out, 256, 6_333_333);
         net.turn(0).expect("turn 5");
-        assert_eq!(net.engine.sender, Some(legit_addr));
-        assert_eq!(net.engine.sender_timeline, Some(10));
+        assert_eq!(net.bridge.engine.sender, Some(legit_addr));
+        assert_eq!(net.bridge.engine.sender_timeline, Some(10));
     }
 
     #[test]
@@ -2255,11 +2431,11 @@ mod tests {
         };
         let (net_end, _audio_end) = link(sizes);
         let mut net = ReceiverNetwork::new(rx_sock, net_end, 3, sizes);
-        net.engine.sender = Some(sender.local_addr().expect("addr"));
+        net.bridge.engine.sender = Some(sender.local_addr().expect("addr"));
         // Even if `length` were artificially tiny (below REPORT + NEEDS),
         // `send_report()` pads to at least `REPORT + NEEDS` so needs are never
         // dropped.
-        net.engine.length = 32;
+        net.bridge.engine.length = 32;
         let mut recent = Recent::NONE;
         recent.count = 2;
         recent.newest = 5;
@@ -2274,7 +2450,8 @@ mod tests {
             },
             needs: recent,
         };
-        net.engine
+        net.bridge
+            .engine
             .send_report(&outgoing, &mut crate::socket::SocketSink(&mut net.socket))
             .expect("send report");
         let mut buf = [0u8; 256];

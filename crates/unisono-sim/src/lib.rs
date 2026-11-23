@@ -18,6 +18,7 @@ pub mod link;
 pub mod objectives;
 pub mod oracle;
 pub mod packets;
+pub mod probe;
 pub mod protection;
 pub mod random;
 pub mod scene;

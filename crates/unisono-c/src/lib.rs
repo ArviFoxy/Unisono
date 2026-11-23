@@ -15,24 +15,24 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use unisono_core::kalman::NoisePrior;
 use unisono_core::packet::Format;
-use unisono_core::player::{ModalRegulation, Regulation};
-use unisono_core::sender::Settings as StreamSettings;
+use unisono_core::player::ModalRegulation;
 use unisono_core::sync::{MAX_DIRECT_PEERS, SyncSettings, WEIGHT_UNITY_Q16};
-use unisono_dsp::Parameters;
 use unisono_runtime::audio::{Capture, Playback};
 use unisono_runtime::clock;
-use unisono_runtime::level::{Choice, Weights};
 use unisono_runtime::network_thread::NetworkThread;
-use unisono_runtime::pump::{ReceiverPlayback, Settings as PlaybackSettings};
+use unisono_runtime::pump::{Settings as PlaybackSettings, ShippedPlayback};
 use unisono_runtime::receive::{
-    self, Intake, NetConfig, PeerConfig, ReceiverAudio, ReceiverNetwork, Reporting, Sizes, SyncMode,
+    self, Intake, NetConfig, PeerConfig, ReceiverNetwork, Reporting, SHIPPED_INTAKE_ITEMS,
+    SHIPPED_SIZES, ShippedAudio, SyncMode,
 };
-use unisono_runtime::send::{self, CaptureEnd, SenderNetwork, Settings as SenderSettings};
+use unisono_runtime::send::{
+    self, CaptureEnd, SHIPPED_CAPTURE_BUFFERS, SenderNetwork, Settings as SenderSettings,
+};
 use unisono_runtime::socket::{self, Socket};
 
 /// The receiver's audio end: room for 16,384 frames, 64 samples of the
 /// sender's clock, the arrivals of 8 packets, and 64 reports of its device.
-type Audio = ReceiverAudio<256, 64, 8, 64>;
+type Audio = ShippedAudio;
 
 /// Maximum number of receivers accepted by one sender.
 const MAX_RECEIVERS: usize = 4_096;
@@ -42,7 +42,7 @@ const MAX_RECEIVERS: usize = 4_096;
 const MAX_RATE: u32 = 1_000_000;
 
 /// Number of buffers in the capture-to-network ring.
-const CAPTURE_BUFFERS: usize = 64;
+const CAPTURE_BUFFERS: usize = SHIPPED_CAPTURE_BUFFERS;
 
 /// Maximum total bytes allocated for the capture ring (`64 MiB`).
 const MAX_CAPTURE_RING_BYTES: usize = 64 * 1024 * 1024;
@@ -246,42 +246,20 @@ unsafe fn start_sender(options: &SenderOptions) -> Result<Sender, String> {
         // SAFETY: the caller says that `bind` is a text.
         unsafe { address(options.bind) }?
     };
-    let window = 2_400;
-    // The needs of the last two minutes, and the costs that the program
-    // takes when none are given.
-    let stretches = usize::try_from(120 * u64::from(options.rate) / u64::from(window))
-        .unwrap_or(usize::MAX)
-        .max(1);
-    let choice = (options.choose_level != 0).then_some(Choice {
-        weights: Weights {
-            latency: 1_000.0,
-            target: 0,
-            off_target: 0.0,
-            gap: 600.0,
-            missed: 60_000.0,
-            moving: 60.0,
-        },
-        history: stretches,
-        slope: 500_000,
-    });
-    let settings = SenderSettings {
-        stream: StreamSettings {
-            stream: options.stream,
-            rate: options.rate,
-            channels: options.channels,
-            format,
-            span: 2_000,
-            window,
-            clock: send::clock_identity(),
-        },
-        packet: options.packet_frames,
-        level: options.level,
-        choice,
-        timeline: send::first_timeline(),
+    let settings = SenderSettings::shipped(
+        options.stream,
+        options.rate,
+        options.channels,
+        format,
+        options.packet_frames,
+        options.level,
+        send::first_timeline(),
+        send::clock_identity(),
         receivers,
-        kept: if options.protection != 0 { 256 } else { 0 },
-    };
-    settings.validate().map_err(|error| error.to_string())?;
+        options.choose_level != 0,
+        options.protection != 0,
+    )
+    .map_err(|error| error.to_string())?;
 
     let channels = usize::from(options.channels);
     let cycle = usize::try_from(options.cycle_frames)
@@ -547,49 +525,32 @@ unsafe fn start_receiver(options: &ReceiverOptions) -> Result<Receiver, String> 
     }
     // SAFETY: the caller says that `listen` is null or a text.
     let listen = unsafe { address(options.listen) }?;
-    let sizes = Sizes {
-        buffers: 64,
-        datagram: send::MAX_DATAGRAM,
-        messages: 64,
-    };
     let jump = (options.rate / 200).max(1);
     // SAFETY: the caller guarantees `options` pointers follow the header contract.
     let (modal_regulation, net_config) =
-        unsafe { build_receiver_sync(options, sizes.datagram, jump) }?;
-    let playback_settings = PlaybackSettings {
-        stream: options.stream,
-        rate: options.rate,
-        channels: options.channels,
-        identity: options.identity,
-        silence: 1_000_000_000,
-        slope_limit: 200_000,
-        regulation: Regulation {
-            gain: 4 << 16,
-            limit: 1_000_000,
-            jump,
-        },
+        unsafe { build_receiver_sync(options, SHIPPED_SIZES.datagram, jump) }?;
+    let playback_settings = PlaybackSettings::shipped(
+        options.stream,
+        options.rate,
+        options.channels,
+        options.identity,
         modal_regulation,
-        concealment: Parameters::for_rate(options.rate),
-        block: 256,
-        device_range: 10_000_000,
-    };
-    playback_settings
-        .validate()
-        .map_err(|error| error.to_string())?;
+    )
+    .map_err(|error| error.to_string())?;
 
     let socket = Socket::bind(listen).map_err(|error| format!("binding {listen}: {error}"))?;
     let port = socket
         .address()
         .map_err(|error| format!("the address of the socket: {error}"))?
         .port();
-    let playback = ReceiverPlayback::new(&playback_settings);
-    let (network_end, audio_end) = receive::link(sizes);
+    let playback = ShippedPlayback::new(&playback_settings);
+    let (network_end, audio_end) = receive::link(SHIPPED_SIZES);
     let network = ReceiverNetwork::with_config(socket, network_end, &net_config);
     let audio = Audio::new(
         playback,
         audio_end,
         Intake {
-            items: 16,
+            items: SHIPPED_INTAKE_ITEMS,
             reports: Some(Reporting::USUAL),
         },
     );

@@ -56,6 +56,18 @@ pub const LONGEST_GAP: u64 = 1_048_576;
 /// receiver buffers ensures valid sender packets are never truncated on receipt.
 pub const MAX_DATAGRAM: usize = 9_000;
 
+/// Shipped default sender clock-estimator span, in milliseconds (`2 s`).
+pub const SHIPPED_SPAN_MS: u32 = 2_000;
+
+/// Shipped default sender clock-estimator window, in frames (`50 ms` at 48 kHz).
+pub const SHIPPED_WINDOW_FRAMES: u32 = 2_400;
+
+/// Shipped default retransmission packet cache depth (`> 1 s` at 5 ms packets).
+pub const SHIPPED_KEPT_PACKETS: usize = 256;
+
+/// Shipped default capture ring depth, in cycles.
+pub const SHIPPED_CAPTURE_BUFFERS: usize = 64;
+
 /// Maximum incoming datagrams processed during one network turn so a burst
 /// cannot starve audio packet emission.
 const MAX_INCOMING_PER_TURN: usize = 256;
@@ -192,6 +204,58 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Builds validated sender settings using the shipped production defaults
+    /// ([`SHIPPED_SPAN_MS`], [`SHIPPED_WINDOW_FRAMES`],
+    /// [`SHIPPED_KEPT_PACKETS`], and [`Choice::shipped_default`]).
+    ///
+    /// Shared across the CLI (`unisono send`), the C library (`unisono-c`),
+    /// and the simulator (`unisono-sim`) so all entry points use one canonical
+    /// sender configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any stream, packet, level, or adaptive
+    /// choice parameter violates runtime invariants.
+    #[allow(clippy::too_many_arguments)]
+    pub fn shipped(
+        stream: u16,
+        rate: u32,
+        channels: u8,
+        format: Format,
+        packet: u16,
+        level: i64,
+        timeline: u64,
+        clock: u32,
+        receivers: Vec<SocketAddr>,
+        choose_level: bool,
+        protection: bool,
+    ) -> Result<Settings, InvalidSettings> {
+        let choice = if choose_level {
+            Some(Choice::shipped_default(rate, SHIPPED_WINDOW_FRAMES)?)
+        } else {
+            None
+        };
+        let settings = Settings {
+            stream: SenderSettings {
+                stream,
+                rate,
+                channels,
+                format,
+                span: SHIPPED_SPAN_MS,
+                window: SHIPPED_WINDOW_FRAMES,
+                clock,
+            },
+            packet,
+            level,
+            choice,
+            timeline,
+            receivers,
+            kept: if protection { SHIPPED_KEPT_PACKETS } else { 0 },
+        };
+        settings.validate()?;
+        Ok(settings)
+    }
+
     /// Validates that the stream, packet size, level, retransmission cache,
     /// and adaptive level choice settings satisfy runtime invariants.
     ///
@@ -787,26 +851,25 @@ impl SenderNetEngine {
     }
 }
 
-/// The network thread of a sender: thin UDP/ring shell around
-/// [`SenderNetEngine`].
-pub struct SenderNetwork {
-    socket: Socket,
+/// Socket-independent bridge binding [`SenderEnd`] capture SPSC rings and
+/// [`SenderNetEngine`] together.
+///
+/// Shared directly by [`SenderNetwork`] (over a real UDP socket) and
+/// deterministic simulators so both exercise the exact capture ring capacities,
+/// buffer recycling, packetization, and datagram handling.
+pub struct SenderNetBridge {
     end: SenderEnd,
     engine: SenderNetEngine,
-    /// Where datagrams are received.
-    incoming: Box<[u8]>,
 }
 
-impl SenderNetwork {
-    /// The network thread of a sender as `settings` say, that sends from
-    /// `socket` the frames handed over at `end`.
+impl SenderNetBridge {
+    /// Creates a bridge pairing `end` with a [`SenderNetEngine`] configured by
+    /// `settings`.
     #[must_use]
-    pub fn new(socket: Socket, end: SenderEnd, settings: Settings) -> SenderNetwork {
-        SenderNetwork {
-            socket,
+    pub fn new(end: SenderEnd, settings: Settings) -> SenderNetBridge {
+        SenderNetBridge {
             end,
             engine: SenderNetEngine::new(settings),
-            incoming: vec![0u8; 2_048].into_boxed_slice(),
         }
     }
 
@@ -835,6 +898,123 @@ impl SenderNetwork {
         &self.engine
     }
 
+    /// Whether captured audio cycles are waiting in the capture-to-network
+    /// ring.
+    #[must_use]
+    pub fn has_captured(&self) -> bool {
+        self.end.full.waiting() > 0
+    }
+
+    /// Drains all waiting captured cycles from the SPSC ring into
+    /// [`SenderNetEngine::on_capture`] and returns each buffer to the spare
+    /// ring.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn drain_captured<S: DatagramSink>(&mut self, sink: &mut S) -> Result<(), S::Error> {
+        while let Some(captured) = self.end.full.take() {
+            let result = self.engine.on_capture(
+                &captured.buffer,
+                captured.frames,
+                captured.position,
+                captured.time,
+                sink,
+            );
+            // The ring holds every buffer there is, so it has room for this.
+            let _ = self.end.spare.put(captured.buffer);
+            result?;
+        }
+        Ok(())
+    }
+
+    /// Records a TX departure timestamp for a previously sent packet `tag`.
+    pub fn on_departure(&mut self, tag: u64, time_ns: i64) {
+        self.engine.on_departure(tag, time_ns);
+    }
+
+    /// Handles one incoming datagram from `from`.
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_datagram<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        self.engine
+            .on_datagram(from, bytes, arrival_ns, departure_ns, sink)
+    }
+
+    /// Handles one incoming datagram while enforcing a per-turn retransmission
+    /// budget (`turn_again`).
+    ///
+    /// # Errors
+    ///
+    /// Returns any fatal transport error from `sink`.
+    pub fn on_datagram_budgeted<S: DatagramSink>(
+        &mut self,
+        from: SocketAddr,
+        bytes: &[u8],
+        arrival_ns: i64,
+        departure_ns: i64,
+        turn_again: &mut usize,
+        sink: &mut S,
+    ) -> Result<(), S::Error> {
+        self.engine
+            .on_datagram_budgeted(from, bytes, arrival_ns, departure_ns, turn_again, sink)
+    }
+}
+
+/// The network thread of a sender: thin UDP shell around [`SenderNetBridge`].
+pub struct SenderNetwork {
+    socket: Socket,
+    bridge: SenderNetBridge,
+    /// Where datagrams are received.
+    incoming: Box<[u8]>,
+}
+
+impl SenderNetwork {
+    /// The network thread of a sender as `settings` say, that sends from
+    /// `socket` the frames handed over at `end`.
+    #[must_use]
+    pub fn new(socket: Socket, end: SenderEnd, settings: Settings) -> SenderNetwork {
+        SenderNetwork {
+            socket,
+            bridge: SenderNetBridge::new(end, settings),
+            incoming: vec![0u8; 2_048].into_boxed_slice(),
+        }
+    }
+
+    /// What it has done so far.
+    #[must_use]
+    pub fn counts(&self) -> SenderCounts {
+        self.bridge.counts()
+    }
+
+    /// What the needs reported say about the assumptions that the choice of
+    /// the level rests on; nothing if the level is held.
+    #[must_use]
+    pub fn checks(&self) -> Option<Checks> {
+        self.bridge.checks()
+    }
+
+    /// The core's sender.
+    #[must_use]
+    pub fn sender(&self) -> &Sender {
+        self.bridge.sender()
+    }
+
+    /// Underlying pure sender network engine.
+    #[must_use]
+    pub fn engine(&self) -> &SenderNetEngine {
+        self.bridge.engine()
+    }
+
     /// Waits up to `milliseconds` for something to do on the socket (unless
     /// captured audio is already queued), then does all there is: sends the
     /// packets that the captured frames make, takes in departures, and answers
@@ -844,26 +1024,16 @@ impl SenderNetwork {
     ///
     /// A fatal error of the socket.
     pub fn turn(&mut self, milliseconds: i32) -> io::Result<()> {
-        let wait_ms = if self.end.full.waiting() > 0 {
+        let wait_ms = if self.bridge.has_captured() {
             0
         } else {
             milliseconds
         };
         self.socket.wait(wait_ms)?;
-        while let Some(captured) = self.end.full.take() {
-            let result = self.engine.on_capture(
-                &captured.buffer,
-                captured.frames,
-                captured.position,
-                captured.time,
-                &mut SocketSink(&mut self.socket),
-            );
-            // The ring holds every buffer there is, so it has room for this.
-            let _ = self.end.spare.put(captured.buffer);
-            result?;
-        }
+        self.bridge
+            .drain_captured(&mut SocketSink(&mut self.socket))?;
         while let Some(departure) = self.socket.departure()? {
-            self.engine
+            self.bridge
                 .on_departure(departure.tag, departure.stamp.time);
         }
         let mut turn_again = 0usize;
@@ -875,7 +1045,7 @@ impl SenderNetwork {
                 continue;
             };
             let reply_departure = clock::raw().max(received.arrival.time);
-            self.engine.on_datagram_budgeted(
+            self.bridge.on_datagram_budgeted(
                 received.from,
                 bytes,
                 received.arrival.time,
@@ -1097,14 +1267,14 @@ mod tests {
             base_settings(Vec::new(), Some(choice)),
         );
         // Simulate a rising ramp that has crossed its target by 1 ns.
-        sender.engine.sender.level(30_000_001, 100);
-        sender.engine.ramp = Some(Ramp {
+        sender.bridge.engine.sender.level(30_000_001, 100);
+        sender.bridge.engine.ramp = Some(Ramp {
             target: 30_000_000,
             rising: true,
         });
         capture_end.cycle(&[0.0f32; 480], 0, 1_000_000);
         sender.turn(0).expect("turn");
-        assert_eq!(sender.engine.ramp, None);
+        assert_eq!(sender.bridge.engine.ramp, None);
         assert_eq!(sender.sender().current_level(), 30_000_000);
     }
 
@@ -1123,7 +1293,7 @@ mod tests {
         capture_end.cycle(&[0.25f32; 512], 0, 1_000_000);
         sender.turn(0).expect("turn 1");
         assert_eq!(sender.counts().packets, 1);
-        assert_eq!(sender.engine.pending_frames, 16);
+        assert_eq!(sender.bridge.engine.pending_frames, 16);
 
         // Next cycle jumps ahead by 720 dropped frames (position 976 = 256 + 720).
         capture_end.cycle(&[0.5f32; 512], 976, 21_333_333);
@@ -1132,7 +1302,7 @@ mod tests {
         assert_eq!(sender.counts().restarts, 0);
         // Total frames covered = 976 + 256 = 1232 => 5 full packets (1200) + 32 pending.
         assert_eq!(sender.counts().packets, 5);
-        assert_eq!(sender.engine.pending_frames, 32);
+        assert_eq!(sender.bridge.engine.pending_frames, 32);
     }
 
     #[test]

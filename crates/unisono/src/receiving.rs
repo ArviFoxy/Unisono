@@ -11,16 +11,15 @@ use std::io::{self, BufWriter, Write};
 use std::net::SocketAddr;
 
 use unisono_core::kalman::NoisePrior;
-use unisono_core::player::{ModalRegulation, Regulation};
+use unisono_core::player::ModalRegulation;
 use unisono_core::sync::{SyncSettings, SyncSnapshot, WEIGHT_UNITY_Q16};
-use unisono_dsp::Parameters;
 use unisono_metrics::{Counter, FloatGauge, Gauge};
 use unisono_runtime::audio::Playback as AudioPlayback;
 use unisono_runtime::network_thread::{NetworkLoop, NetworkThread};
-use unisono_runtime::pump::{ReceiverPlayback, Settings};
+use unisono_runtime::pump::{Settings, ShippedPlayback};
 use unisono_runtime::receive::{
-    self, Intake, NetConfig, NetworkCounts, PeerConfig, ReceiverAudio, ReceiverNetwork, Reporting,
-    Sizes, SyncMode,
+    self, Intake, NetConfig, NetworkCounts, PeerConfig, ReceiverNetwork, Reporting,
+    SHIPPED_INTAKE_ITEMS, SHIPPED_SIZES, ShippedAudio, SyncMode,
 };
 use unisono_runtime::socket::Socket;
 use unisono_runtime::virtual_device::{Device, Output};
@@ -32,10 +31,10 @@ use crate::{MAX_CYCLE, System, sleep_until, validate_drift};
 
 /// The receiver: room for 16,384 frames, 64 samples of the sender's clock,
 /// the arrivals of 8 packets, and 64 reports of its device.
-type Playback = ReceiverPlayback<256, 64, 8, 64>;
+type Playback = ShippedPlayback;
 
 /// The receiver's audio thread.
-type Audio = ReceiverAudio<256, 64, 8, 64>;
+type Audio = ShippedAudio;
 
 /// The options of `unisono receive`.
 pub(crate) const OPTIONS: &[&str] = &[
@@ -493,12 +492,7 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         .map_err(|error| Wrong(format!("the address of the socket: {error}")))?;
     println!("listening {listening}");
 
-    let sizes = Sizes {
-        buffers: 64,
-        datagram: unisono_runtime::send::MAX_DATAGRAM,
-        messages: 64,
-    };
-    let (network_end, audio_end) = receive::link(sizes);
+    let (network_end, audio_end) = receive::link(SHIPPED_SIZES);
     let network = CountedNetwork {
         network: ReceiverNetwork::with_config(socket, network_end, &config.net),
         metrics: net_metrics,
@@ -510,7 +504,14 @@ pub(crate) fn run(options: &Options) -> Result<(), Wrong> {
         after: config.report_after,
         ..Reporting::USUAL
     });
-    let audio: Audio = ReceiverAudio::new(playback, audio_end, Intake { items: 16, reports });
+    let audio: Audio = Audio::new(
+        playback,
+        audio_end,
+        Intake {
+            items: SHIPPED_INTAKE_ITEMS,
+            reports,
+        },
+    );
     let start = clock::raw();
     let device = Device {
         rate: config.rate,
@@ -661,26 +662,14 @@ fn write_record(path: &str, output: &Output) -> std::io::Result<()> {
 
 /// The receiver's playback as `config` sets it up.
 fn playback(config: &Config) -> Result<Playback, Wrong> {
-    let settings = Settings {
-        stream: config.stream,
-        rate: config.rate,
-        channels: config.channels,
-        identity: config.identity,
-        silence: 1_000_000_000,
-        slope_limit: 200_000,
-        regulation: Regulation {
-            gain: 4 << 16,
-            limit: 1_000_000,
-            jump: (config.rate / 200).max(1),
-        },
-        modal_regulation: config.modal_regulation,
-        concealment: Parameters::for_rate(config.rate),
-        block: 256,
-        device_range: 10_000_000,
-    };
-    settings
-        .validate()
-        .map_err(|error| Wrong(error.to_string()))?;
+    let settings = Settings::shipped(
+        config.stream,
+        config.rate,
+        config.channels,
+        config.identity,
+        config.modal_regulation,
+    )
+    .map_err(|error| Wrong(error.to_string()))?;
     let mut playback = Playback::new(&settings);
     if config.sync_mode == SyncMode::Hull
         && let Some(path) = config.fixed_path

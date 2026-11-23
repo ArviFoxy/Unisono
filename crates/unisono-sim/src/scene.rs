@@ -2,58 +2,49 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Faithful discrete-event simulator driving the production [`unisono_runtime`]
-//! engines (`SenderNetEngine`, `ReceiverNetEngine`, `ReceiverPlayback`,
-//! `ReportSchedule`) over real serialized UDP wire bytes and simulated
-//! IEEE 1139 clocks and impaired links.
+//! Faithful discrete-event simulator driving the shipped [`unisono_runtime`]
+//! pipeline (`CaptureEnd`, `SenderNetBridge`, `ReceiverNetBridge`,
+//! `ShippedAudio` / `ReceiverAudio<256, 64, 8, 64>`) through real preallocated
+//! SPSC rings and serialized UDP wire bytes over simulated IEEE 1139 clocks
+//! and impaired links.
 //!
-//! Supports both [`AudioMode::FastCore`] (bypassing only FIR resampling and
-//! concealment DSP via `packet_header_only` / `cycle_plan_only` while running
-//! identical protocol bytes, timestamps, sync, and core playback planning) and
-//! [`AudioMode::FullDsp`] (end-to-end PCM encoding, `Store`, `Pump`,
-//! `Resampler`, and `Concealment`). Scores playback against all six canonical
-//! objectives of `Unisono.Spec.Objectives` with exact resampler lookahead
-//! playability enforcement.
+//! The simulator treats both sender and receiver as black boxes: the sender
+//! captures a deterministic bandlimited stereo probe waveform ([`crate::probe`])
+//! and every canonical objective in `Unisono.Spec.Objectives` is scored
+//! directly from the receiver's actual rendered `f32` PCM output via
+//! [`ProbeDecoder`], without inspecting internal playback plans or held-frame
+//! bitmaps.
 
 use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::convert::Infallible;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
-use unisono_core::packet::{self, Audio, Format};
-use unisono_core::player::{ModalRegulation, Plan, Regulation};
-use unisono_core::sender::Settings as CoreSenderSettings;
+use unisono_core::packet::{self, Format};
+use unisono_core::player::{ModalRegulation, Regulation};
 use unisono_core::sync::{SyncSettings, SyncSnapshot, WEIGHT_UNITY_Q16};
-use unisono_dsp::Parameters;
-use unisono_runtime::audio::Playback;
+use unisono_runtime::audio::{Capture, Playback};
 use unisono_runtime::level::Choice;
-use unisono_runtime::pump::{ReceiverPlayback, Settings as PlaybackSettings};
+use unisono_runtime::pump::{
+    SHIPPED_LEAD_NS, SHIPPED_REGULATION_GAIN, SHIPPED_REGULATION_LIMIT, SHIPPED_SILENCE_NS,
+    SHIPPED_SLOPE_LIMIT, Settings as PlaybackSettings, ShippedPlayback,
+};
 use unisono_runtime::receive::{
-    ConfirmedState, DatagramAction, NetConfig, NetworkCounts, Outgoing, PeerConfig,
-    ReceiverNetEngine, ReportSchedule, Reporting, SyncMode,
+    self, Intake, NetConfig, NetworkCounts, PeerConfig, ReceiverNetBridge, Reporting,
+    SHIPPED_INTAKE_ITEMS, SHIPPED_SIZES, ShippedAudio, SyncMode,
 };
 use unisono_runtime::send::{
-    MAX_DATAGRAM, SenderCounts, SenderNetEngine, Settings as RuntimeSenderSettings,
+    self, CaptureEnd, MAX_DATAGRAM, SHIPPED_CAPTURE_BUFFERS, SHIPPED_KEPT_PACKETS, SHIPPED_SPAN_MS,
+    SHIPPED_WINDOW_FRAMES, SenderCounts, SenderNetBridge, Settings as RuntimeSenderSettings,
 };
 use unisono_runtime::socket::{DatagramSink, SendStatus};
 
 use crate::clock::{Course, OscillatorModel};
 use crate::link::{Link, LinkModel, SharedContention, SharedContentionModel};
-use crate::objectives::{
-    ObjectiveRecorder, ObjectiveReport, ObjectiveWeights, playable as check_playable,
-};
+use crate::objectives::{ObjectiveRecorder, ObjectiveReport, ObjectiveWeights};
+use crate::probe::{self, ProbeDecoder};
 use crate::random::Generator;
 use crate::{TrueTime, nanos_to_seconds, seconds_to_nanos};
-
-/// Default device clock range accepted by `ReceiverPlayback` (1% = 10,000 ppm).
-const DEFAULT_DEVICE_RANGE: u32 = 10_000_000;
-
-/// Triangle-wave half-period (frames) for [`SignalMode::Ramp`].
-pub const RAMP_HALF_PERIOD: u64 = 4_096;
-
-/// Slope per source frame of [`SignalMode::Ramp`], keeping peak amplitude in
-/// `[-0.8, 0.8]` for exact 24-bit linear recovery.
-pub const RAMP_SLOPE: f64 = 1.6 / 4_096.0;
 
 /// Converts a `u64` frame count to `f64` (exact below `2^53`).
 fn u64_to_f64(value: u64) -> f64 {
@@ -67,81 +58,6 @@ fn usize_to_f64(value: usize) -> f64 {
     #[allow(clippy::cast_precision_loss)]
     let float = value as f64;
     float
-}
-
-/// Converts a `2^-64`-frame fixed-point fractional stream position to `f64`
-/// frames.
-fn position_to_f64(pos: unisono_core::timing::Position) -> f64 {
-    u64_to_f64(pos.frame()) + u64_to_f64(pos.fraction()) / 18_446_744_073_709_551_616.0
-}
-
-/// Deterministic triangle-wave sample value at source frame `frame` for
-/// [`SignalMode::Ramp`].
-#[must_use]
-pub fn ramp_sample(frame: u64) -> f32 {
-    let period = RAMP_HALF_PERIOD * 2;
-    let phase = frame % period;
-    let linear = if phase <= RAMP_HALF_PERIOD {
-        -0.8 + u64_to_f64(phase) * RAMP_SLOPE
-    } else {
-        0.8 - u64_to_f64(phase - RAMP_HALF_PERIOD) * RAMP_SLOPE
-    };
-    #[allow(clippy::cast_possible_truncation)]
-    let sample = linear as f32;
-    sample
-}
-
-/// Decodes a [`SignalMode::Ramp`] sample near `expected_frame` back into a
-/// fractional source frame index, returning `None` if `expected_frame` is
-/// within `margin_frames` of a triangle turnaround corner (where FIR taps
-/// span both slopes).
-#[must_use]
-pub fn decode_ramp_position(sample: f32, expected_frame: f64, margin_frames: f64) -> Option<f64> {
-    if !expected_frame.is_finite() || expected_frame < 0.0 {
-        return None;
-    }
-    let half = u64_to_f64(RAMP_HALF_PERIOD);
-    let period = half * 2.0;
-    let cycle = (expected_frame / period).floor();
-    let phase = expected_frame - cycle * period;
-    if phase < margin_frames
-        || (half - phase).abs() < margin_frames
-        || (period - phase) < margin_frames
-    {
-        return None;
-    }
-    let val = f64::from(sample);
-    let decoded_phase = if phase < half {
-        (val + 0.8) / RAMP_SLOPE
-    } else {
-        half + (0.8 - val) / RAMP_SLOPE
-    };
-    Some(cycle * period + decoded_phase)
-}
-
-/// Audio payload execution mode for a simulated receiver.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum AudioMode {
-    /// Skips FIR resampling and concealment DSP via `packet_header_only` /
-    /// `cycle_plan_only` while running identical serialized wire bytes,
-    /// `SenderNetEngine`, `ReceiverNetEngine`, `Sync`, `ReportSchedule`, and
-    /// `ReceiverPlayback` core planning.
-    #[default]
-    FastCore,
-    /// Runs full PCM encoding/decoding, `Store`, `Pump`, Kaiser-sinc
-    /// `Resampler`, and Burg `Concealment`.
-    FullDsp,
-}
-
-/// Source waveform generated by the simulated sender.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum SignalMode {
-    /// Zero-filled PCM frames (fast path).
-    #[default]
-    Silent,
-    /// Linear triangle-wave ramp ([`ramp_sample`]) for end-to-end `FullDsp`
-    /// fractional-position verification.
-    Ramp,
 }
 
 /// How a receiver learns how long a cycle of its device takes.
@@ -164,7 +80,8 @@ pub enum PathDelay {
     /// to the link's true minimum propagation delay; no reports sent.
     Told,
     /// Measured online via `Report` / `Echo` exchanges scheduled by
-    /// `ReportSchedule` under the given [`Reporting`] cadence.
+    /// `ReceiverAudio`'s built-in `ReportSchedule` under the given
+    /// [`Reporting`] cadence.
     Measured(Reporting),
     /// Leaves path delay at zero with no reports sent (fault-injection
     /// control).
@@ -206,17 +123,36 @@ pub struct SenderConfig {
     pub kept_packets: usize,
     /// Optional adaptive playout-level chooser configuration.
     pub choice: Option<Choice>,
-    /// Source PCM waveform mode.
-    pub signal: SignalMode,
     /// Standard deviation of Gaussian capture-device timestamp noise, in
     /// seconds.
     pub capture_timestamp_std_s: f64,
+    /// Uncalibrated capture hardware latency, in seconds. Audio frame `f`
+    /// physically enters the ADC at `device_time - hidden_latency_s` while the
+    /// driver reports `device_time`.
+    pub hidden_latency_s: f64,
+    /// Software processing delay on the sender between kernel RX arrival (`T2`)
+    /// and reading `clock::raw()` (`T3`) before replying to a report, in
+    /// seconds.
+    pub reply_processing_s: f64,
+    /// Kernel/NIC send latency on the sender after `T3 = clock::raw()` is
+    /// stamped and before an `Echo` reply departs onto the wire, in seconds.
+    /// Models the real runtime (`send.rs`) reading `T3` prior to `socket.send`,
+    /// which adds `-reply_send_latency_s / 2` bias to the four-timestamp edge.
+    pub reply_send_latency_s: f64,
 }
 
 impl SenderConfig {
-    /// Standard 48 kHz stereo 240-frame packet sender configuration.
+    /// Standard 48 kHz stereo 240-frame sender configuration using the exact
+    /// shipped CLI/runtime defaults (`span = 2000 ms`, `window = 2400 frames`,
+    /// `kept = 256` retransmission cache, adaptive [`Choice::shipped_default`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the compile-time shipped default parameters fail validation.
     #[must_use]
     pub fn standard(clock: OscillatorModel, device: OscillatorModel, level_ns: i64) -> Self {
+        let choice = Choice::shipped_default(48_000, SHIPPED_WINDOW_FRAMES)
+            .expect("shipped default choice is valid");
         Self {
             clock,
             device,
@@ -229,13 +165,39 @@ impl SenderConfig {
             packet_frames: 240,
             level_ns,
             send_delay_s: 50e-6,
-            span_ms: 11_000,
-            window_frames: 15_360,
-            kept_packets: 0,
-            choice: None,
-            signal: SignalMode::Silent,
+            span_ms: SHIPPED_SPAN_MS,
+            window_frames: SHIPPED_WINDOW_FRAMES,
+            kept_packets: SHIPPED_KEPT_PACKETS,
+            choice: Some(choice),
             capture_timestamp_std_s: 0.0,
+            hidden_latency_s: 0.0,
+            reply_processing_s: 0.0,
+            reply_send_latency_s: 0.0,
         }
+    }
+
+    /// Disables adaptive level control (`--level-choice off`), holding the
+    /// playout level fixed at `level_ns`.
+    #[must_use]
+    pub fn with_fixed_level(mut self) -> Self {
+        self.choice = None;
+        self
+    }
+
+    /// Disables packet retransmission caching (`--protection off`).
+    #[must_use]
+    pub fn without_protection(mut self) -> Self {
+        self.kept_packets = 0;
+        self
+    }
+
+    /// Sets responder processing delay (`T2 -> T3`) and post-`T3` wire send
+    /// latency on outgoing sender replies.
+    #[must_use]
+    pub fn with_reply_latency(mut self, processing_s: f64, send_latency_s: f64) -> Self {
+        self.reply_processing_s = processing_s;
+        self.reply_send_latency_s = send_latency_s;
+        self
     }
 }
 
@@ -249,6 +211,35 @@ pub struct HostConfig {
     pub from_sender: LinkModel,
     /// Directed link from this host back to sender (node `0`).
     pub to_sender: LinkModel,
+    /// Software processing delay between kernel RX arrival (`T2`) and reading
+    /// `clock::raw()` (`T3`) when answering a `PeerProbe`, in seconds.
+    pub reply_processing_s: f64,
+    /// Kernel/NIC send latency after `T3 = clock::raw()` and before a
+    /// `PeerEcho` reply leaves onto the wire, in seconds.
+    pub reply_send_latency_s: f64,
+}
+
+impl HostConfig {
+    /// Builds a host with zero responder processing and send latency.
+    #[must_use]
+    pub fn new(clock: OscillatorModel, from_sender: LinkModel, to_sender: LinkModel) -> Self {
+        Self {
+            clock,
+            from_sender,
+            to_sender,
+            reply_processing_s: 0.0,
+            reply_send_latency_s: 0.0,
+        }
+    }
+
+    /// Sets responder processing delay (`T2 -> T3`) and post-`T3` wire send
+    /// latency on outgoing `PeerEcho` replies from this host.
+    #[must_use]
+    pub fn with_reply_latency(mut self, processing_s: f64, send_latency_s: f64) -> Self {
+        self.reply_processing_s = processing_s;
+        self.reply_send_latency_s = send_latency_s;
+        self
+    }
 }
 
 /// Configuration of one simulated receiver speaker.
@@ -263,11 +254,12 @@ pub struct ReceiverConfig {
     /// Audio output frames per playback cycle.
     pub cycle_frames: u32,
     /// Scheduling lead before a cycle's first frame leaves the DAC, in
-    /// seconds.
+    /// seconds (defaults to [`SHIPPED_LEAD_NS`] = `4 ms`).
     pub lead_s: f64,
     /// Clock synchronization mode (`SyncMode::Peer` or `SyncMode::Hull`).
     pub sync_mode: SyncMode,
-    /// `Sync` settings used when `sync_mode == SyncMode::Peer`.
+    /// `Sync` settings used when `sync_mode == SyncMode::Peer` (defaults to
+    /// `SyncSettings::standard`, which uses `NoisePrior::CONSUMER_QUARTZ`).
     pub sync_settings: SyncSettings,
     /// Q16 link weight multiplier for the direct sender link.
     pub sender_weight_q16: u32,
@@ -288,42 +280,46 @@ pub struct ReceiverConfig {
     pub cycle_length: CycleLength,
     /// Optional single device stall `(at_cycle, duration_s)` for fault tests.
     pub stands_still: Option<(u64, f64)>,
-    /// Execution mode (`FastCore` or `FullDsp`).
-    pub audio_mode: AudioMode,
-    /// Whether to retain decoded `FullDsp` cycle PCM and plan metadata.
+    /// Uncalibrated DAC/output hardware latency, in seconds. The driver
+    /// reports `leaves_s` while sound physically exits the converter at
+    /// `leaves_s + hidden_latency_s`.
+    pub hidden_latency_s: f64,
+    /// Whether to retain rendered PCM and black-box decoded source positions
+    /// for every cycle.
     pub record_pcm: bool,
 }
 
 impl ReceiverConfig {
-    /// Creates a `SyncMode::Peer` receiver configuration on `host` with
-    /// standard settings and zero initial peers (Star mode until peers are
+    /// Creates a `SyncMode::Peer` receiver configuration on `host` using the
+    /// exact shipped CLI/runtime defaults (`lead = 4 ms`,
+    /// `NoisePrior::CONSUMER_QUARTZ`, `ModalRegulation::lipsync`,
+    /// `Reporting::USUAL`) and zero initial peers (Star mode until peers are
     /// added).
     #[must_use]
     pub fn peer(host: usize, identity: u64, device: OscillatorModel) -> Self {
-        let mut sync_settings = SyncSettings::standard(1, identity);
-        sync_settings.stream = 1;
+        let sync_settings = SyncSettings::standard(1, identity);
         Self {
             host,
             identity,
             device,
             cycle_frames: 256,
-            lead_s: 8e-3,
+            lead_s: nanos_to_seconds(SHIPPED_LEAD_NS),
             sync_mode: SyncMode::Peer,
             sync_settings,
             sender_weight_q16: WEIGHT_UNITY_Q16,
             peers: Vec::new(),
             regulation: Regulation {
-                gain: 4 << 16,
-                limit: 1_000_000,
+                gain: SHIPPED_REGULATION_GAIN,
+                limit: SHIPPED_REGULATION_LIMIT,
                 jump: 240,
             },
-            modal_regulation: Some(ModalRegulation::lipsync(1_000_000, 240)),
-            silence_ns: 1_000_000_000,
-            slope_limit: 200_000,
+            modal_regulation: Some(ModalRegulation::lipsync(SHIPPED_REGULATION_LIMIT, 240)),
+            silence_ns: SHIPPED_SILENCE_NS,
+            slope_limit: SHIPPED_SLOPE_LIMIT,
             path: PathDelay::Measured(Reporting::USUAL),
             cycle_length: CycleLength::Measured,
             stands_still: None,
-            audio_mode: AudioMode::FastCore,
+            hidden_latency_s: 0.0,
             record_pcm: false,
         }
     }
@@ -360,13 +356,19 @@ pub struct SceneConfig {
     pub objective_window: Option<(f64, f64)>,
     /// Objective weights passed to [`ObjectiveRecorder`].
     pub objective_weights: ObjectiveWeights,
-    /// Optional target latency `L*` (seconds) for `tracking_s2`; defaults to
-    /// `sender.level_ns * 1e-9`.
+    /// Fixed application target latency `L*` (seconds) for `tracking_s2`
+    /// (`World.target`); defaults to `sender.level_ns * 1e-9` and never tracks
+    /// adaptive changes to the sender's current playout level.
     pub target_latency_s: Option<f64>,
     /// When `true` (default), speakers co-located on the same receiver host
     /// receive the same NIC arrival time for a single sender audio packet
     /// emission.
     pub share_same_host_audio_arrival: bool,
+    /// When `true` (default), decodes every cycle from `t = 0` into per-speaker
+    /// [`Trace`] diagnostics. Set to `false` on long multi-seed steady-state
+    /// runs to skip decoding cycles strictly earlier than `window_start - 1 s`
+    /// (the real production DSP still runs on every cycle from `t = 0`).
+    pub record_trace: bool,
 }
 
 impl SceneConfig {
@@ -389,6 +391,7 @@ impl SceneConfig {
             objective_weights: ObjectiveWeights::ZERO,
             target_latency_s: None,
             share_same_host_audio_arrival: true,
+            record_trace: true,
         }
     }
 }
@@ -396,152 +399,38 @@ impl SceneConfig {
 /// Per-cycle timing trace for one receiver (used by timing regression tests).
 #[derive(Clone, Debug, Default)]
 pub struct Trace {
-    /// `(true_out_time_s, timing_error_s)` for each non-idle cycle's first
-    /// frame (positive error = playing late relative to `capture + level`).
+    /// `(true_out_time_s, timing_error_s)` decoded from rendered PCM for each
+    /// cycle with at least one valid probe sample (positive error = playing
+    /// late relative to `capture + level`).
     pub errors: Vec<(f64, f64)>,
-    /// True output times (seconds) of cycles whose playback plan jumped.
+    /// True acoustic output times (seconds) of cycles whose playback jumped.
     pub jumps: Vec<f64>,
-    /// Number of idle playback cycles (`plan.frames == 0`).
+    /// Number of silent/idle playback cycles (`played == 0`).
     pub idle_cycles: u64,
-    /// Total stream frames marked held while advancing playhead.
+    /// Total stream frames marked held by `ReceiverPlayback` diagnostics.
     pub held: u64,
-    /// Total stream frames marked absent/concealed while advancing playhead.
+    /// Total stream frames marked absent/concealed by `ReceiverPlayback`
+    /// diagnostics.
     pub absent: u64,
 }
 
-/// Recorded PCM output and exact plan metadata from one `FullDsp` cycle.
+/// Recorded rendered PCM output and black-box decoded source frame positions
+/// from one playback cycle.
 #[derive(Clone, Debug)]
 pub struct RecordedCycle {
-    /// True output time of the cycle's first frame, in seconds.
+    /// True acoustic output time of the cycle's first frame, in seconds.
     pub out_start_s: f64,
-    /// True output time of the next cycle's first frame, in seconds.
+    /// True acoustic output time of the next cycle's first frame, in seconds.
     pub out_end_s: f64,
-    /// Playback plan executed for this cycle.
-    pub plan: Plan,
-    /// Channel-0 output PCM samples rendered by `ReceiverPlayback::cycle`.
+    /// Black-box decoded global source frame position (`Option<f64>`) per
+    /// output frame in this cycle.
+    pub decoded: Vec<Option<f64>>,
+    /// Channel-0 output PCM samples rendered by `ShippedAudio::cycle`.
     pub channel0: Vec<f32>,
 }
 
-/// Compact rolling bitmap of held frame indices for one timeline, providing
-/// O(1) contiguous range checks and exact membership queries matching
-/// `Unisono.Spec.playable`.
-#[derive(Clone, Debug)]
-struct HeldFrames {
-    /// Lowest frame index represented by word 0 (always a multiple of 64).
-    base: u64,
-    /// Bitset words covering `[base, base + words.len() * 64)`.
-    words: VecDeque<u64>,
-    /// Exclusive upper bound of the contiguous held prefix starting at
-    /// `contiguous_start`.
-    contiguous_start: u64,
-    contiguous_end: u64,
-    /// Maximum frames retained before pruning old words from the front.
-    max_words: usize,
-}
-
-impl HeldFrames {
-    fn new(max_frames: usize) -> Self {
-        let max_words = (max_frames / 64).max(128);
-        Self {
-            base: 0,
-            words: VecDeque::new(),
-            contiguous_start: 0,
-            contiguous_end: 0,
-            max_words,
-        }
-    }
-
-    fn reset(&mut self) {
-        self.base = 0;
-        self.words.clear();
-        self.contiguous_start = 0;
-        self.contiguous_end = 0;
-    }
-
-    fn mark_range(&mut self, first: u64, count: u64) {
-        if count == 0 {
-            return;
-        }
-        let end = first.saturating_add(count);
-        if self.words.is_empty() {
-            self.base = first & !63;
-            self.contiguous_start = first;
-            self.contiguous_end = first;
-        }
-        if end <= self.base {
-            return;
-        }
-        let effective_first = first.max(self.base);
-        let needed_words = usize::try_from(((end - 1) - self.base) / 64 + 1).unwrap_or(0);
-        if needed_words > self.max_words.saturating_mul(2) {
-            // Far forward jump: restart bitmap near `first`.
-            self.reset();
-            self.base = first & !63;
-            self.contiguous_start = first;
-            self.contiguous_end = first;
-            self.mark_range(first, count);
-            return;
-        }
-        while self.words.len() < needed_words {
-            self.words.push_back(0);
-        }
-        for frame in effective_first..end {
-            let rel = frame - self.base;
-            let word = usize::try_from(rel / 64).unwrap_or(usize::MAX);
-            let bit = (rel % 64) as u32;
-            if let Some(slot) = self.words.get_mut(word) {
-                *slot |= 1u64 << bit;
-            }
-        }
-        // Advance the contiguous prefix cursor when new frames extend it.
-        if effective_first <= self.contiguous_end && end > self.contiguous_end {
-            let mut cursor = end;
-            while self.is_held(cursor) {
-                cursor += 1;
-            }
-            self.contiguous_end = cursor;
-        }
-        // Prune very old words from the front to keep memory bounded.
-        while self.words.len() > self.max_words {
-            self.words.pop_front();
-            self.base += 64;
-            if self.contiguous_start < self.base {
-                self.contiguous_start = self.base;
-                if self.contiguous_end < self.base {
-                    self.contiguous_end = self.base;
-                }
-            }
-        }
-    }
-
-    fn is_held(&self, frame: u64) -> bool {
-        if frame < self.base {
-            return false;
-        }
-        let rel = frame - self.base;
-        let word = usize::try_from(rel / 64).unwrap_or(usize::MAX);
-        let bit = (rel % 64) as u32;
-        self.words
-            .get(word)
-            .is_some_and(|bits| (bits & (1u64 << bit)) != 0)
-    }
-
-    fn range_fully_held(&self, lo: u64, hi_inclusive: u64) -> bool {
-        if lo > hi_inclusive {
-            return true;
-        }
-        if lo >= self.contiguous_start && hi_inclusive < self.contiguous_end {
-            return true;
-        }
-        if lo < self.base {
-            return false;
-        }
-        (lo..=hi_inclusive).all(|f| self.is_held(f))
-    }
-}
-
-/// Outgoing datagram collected from a [`SenderNetEngine`] or
-/// [`ReceiverNetEngine`] during a simulation event.
+/// Outgoing datagram collected from a [`SenderNetBridge`] or
+/// [`ReceiverNetBridge`] during a simulation event.
 #[derive(Clone, Debug)]
 struct SentDatagram {
     to: SocketAddr,
@@ -578,6 +467,10 @@ impl DatagramSink for SimSink {
 enum Event {
     /// Sender capture block handoff for packet emission.
     Capture { epoch: u64, block_index: u64 },
+    /// Deferred wire emission of sender replies after `reply_processing_s +
+    /// reply_send_latency_s` so `Link::deliver` is always called in strict
+    /// chronological order.
+    EmitFromSender { epoch: u64, sent: Vec<SentDatagram> },
     /// Sender TX departure timestamp arriving back from the NIC.
     SenderDeparture { epoch: u64, tag: u64, tx_ns: i64 },
     /// Datagram arriving at the sender socket.
@@ -585,6 +478,13 @@ enum Event {
         from_node: usize,
         from_addr: SocketAddr,
         bytes: Vec<u8>,
+    },
+    /// Deferred wire emission of receiver replies after `reply_processing_s +
+    /// reply_send_latency_s`.
+    EmitFromReceiver {
+        speaker: usize,
+        epoch: u64,
+        sent: Vec<SentDatagram>,
     },
     /// Datagram arriving at a receiver speaker socket.
     DeliverToReceiver {
@@ -614,55 +514,28 @@ enum Event {
     },
 }
 
-/// Metadata recorded for a sender timeline so per-cycle traces and
-/// `ObjectiveRecorder` map timeline frame indices to exact true capture times.
-#[derive(Clone, Debug)]
-struct TimelineInfo {
-    /// Monotonic frame offset in `ObjectiveRecorder` for frame 0 of this
-    /// timeline.
-    global_frame_base: u64,
-    /// True-time start of frame 0 on the capture device's clock (seconds).
-    origin_capture_frame: u64,
-    /// Capture device course snapshot offset (frame count at timeline start).
-    level_ns: i64,
-}
-
-/// Runtime state of one simulated receiver speaker.
+/// Runtime state of one simulated receiver speaker driving the shipped
+/// `ReceiverNetBridge` + `ShippedAudio` SPSC-ring pipeline.
 struct Speaker {
     config: ReceiverConfig,
     addr: SocketAddr,
-    playback: ReceiverPlayback<64, 64, 8, 64>,
-    net: ReceiverNetEngine,
-    report_schedule: ReportSchedule,
+    audio: ShippedAudio,
+    net: ReceiverNetBridge,
     device: Course,
     device_noise_rng: Generator,
-    held_frames: HeldFrames,
     pcm_buf: Vec<f32>,
+    decoder: ProbeDecoder,
     recorded_cycles: Vec<RecordedCycle>,
     trace: Trace,
     epoch: u64,
     net_wake_gen: u64,
-    last_timeline: Option<u64>,
-    /// True-time stamp (seconds) of the last cycle recorded in `Trace`.
     next_cycle_index: u64,
-    /// Next cycle frame counter passed to `ReceiverPlayback`.
     device_frame_cursor: u64,
 }
 
 impl Speaker {
-    fn confirmed_state(&self) -> ConfirmedState {
-        let rx = self.playback.receiver();
-        ConfirmedState {
-            attached: true,
-            active: rx.timeline().is_some(),
-            timeline: rx.timeline().unwrap_or(0),
-            clock_id: rx.clock_id().unwrap_or(0),
-            rate: self.playback.rate(),
-            channels: self.playback.channels_u8(),
-        }
-    }
-
-    /// True time (seconds) when playback device frame `frame` leaves the DAC.
+    /// True time (seconds) when playback device frame `frame` is scheduled to
+    /// leave the driver (before adding uncalibrated `hidden_latency_s`).
     fn leaves_s(&mut self, frame: f64, rate: f64) -> f64 {
         let counted = self.device.when_seconds(frame / rate);
         match self.config.stands_still {
@@ -690,40 +563,42 @@ fn receiver_addr(host: usize, speaker: usize) -> SocketAddr {
     SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, h, s)), port)
 }
 
-/// Builds a [`PlaybackSettings`] and [`NetConfig`] pair for speaker `index`.
+/// Builds a validated [`ShippedAudio`] + [`ReceiverNetBridge`] pair wired via
+/// the shipped SPSC rings ([`SHIPPED_SIZES`], [`SHIPPED_INTAKE_ITEMS`]).
 fn build_receiver_parts(
     sender_cfg: &SenderConfig,
     rec_cfg: &ReceiverConfig,
     all_addrs: &[(u64, SocketAddr)],
     true_min_delay_ns: i64,
-) -> (ReceiverPlayback<64, 64, 8, 64>, ReceiverNetEngine) {
+) -> (ShippedAudio, ReceiverNetBridge) {
     let jump = (sender_cfg.rate / 200).max(1);
     let modal_regulation = match rec_cfg.sync_mode {
         SyncMode::Hull => None,
         SyncMode::Peer => Some(
             rec_cfg
                 .modal_regulation
-                .unwrap_or_else(|| ModalRegulation::lipsync(1_000_000, jump)),
+                .unwrap_or_else(|| ModalRegulation::lipsync(SHIPPED_REGULATION_LIMIT, jump)),
         ),
     };
-    let device_range = match rec_cfg.cycle_length {
-        CycleLength::Nominal => 0,
-        CycleLength::Measured | CycleLength::Fitted(_) => DEFAULT_DEVICE_RANGE,
-    };
-    let pb_settings = PlaybackSettings {
-        stream: sender_cfg.stream,
-        rate: sender_cfg.rate,
-        channels: sender_cfg.channels,
-        identity: rec_cfg.identity,
-        silence: rec_cfg.silence_ns,
-        slope_limit: rec_cfg.slope_limit,
-        regulation: rec_cfg.regulation,
+    let mut pb_settings = PlaybackSettings::shipped(
+        sender_cfg.stream,
+        sender_cfg.rate,
+        sender_cfg.channels,
+        rec_cfg.identity,
         modal_regulation,
-        concealment: Parameters::for_rate(sender_cfg.rate),
-        block: 256,
-        device_range,
-    };
-    let mut playback = ReceiverPlayback::new(&pb_settings);
+    )
+    .expect("shipped playback settings must validate");
+    pb_settings.silence = rec_cfg.silence_ns;
+    pb_settings.slope_limit = rec_cfg.slope_limit;
+    pb_settings.regulation = rec_cfg.regulation;
+    if matches!(rec_cfg.cycle_length, CycleLength::Nominal) {
+        pb_settings.device_range = 0;
+    }
+    pb_settings
+        .validate()
+        .expect("receiver playback settings failed validation");
+
+    let mut playback = ShippedPlayback::new(&pb_settings);
     if matches!(rec_cfg.path, PathDelay::Told) {
         playback.path(true_min_delay_ns);
     }
@@ -762,40 +637,70 @@ fn build_receiver_parts(
         peers,
         datagram: MAX_DATAGRAM,
     };
-    let net = ReceiverNetEngine::new(&net_config);
-    (playback, net)
+    net_config
+        .validate()
+        .expect("receiver net config failed validation");
+
+    let (net_end, audio_end) = receive::link(SHIPPED_SIZES);
+    let reports = match rec_cfg.path {
+        PathDelay::Measured(reporting) => Some(reporting),
+        PathDelay::Told | PathDelay::Unknown => None,
+    };
+    let audio = ShippedAudio::new(
+        playback,
+        audio_end,
+        Intake {
+            items: SHIPPED_INTAKE_ITEMS,
+            reports,
+        },
+    );
+    let net = ReceiverNetBridge::new(net_end, &net_config);
+    (audio, net)
 }
 
-/// Builds a [`SenderNetEngine`] from [`SenderConfig`] and receiver addresses.
-fn build_sender_engine(
+/// Builds a validated [`CaptureEnd`] + [`SenderNetBridge`] pair wired via the
+/// shipped capture SPSC ring ([`SHIPPED_CAPTURE_BUFFERS`]).
+fn build_sender_parts(
     cfg: &SenderConfig,
     timeline: u64,
     clock_id: u32,
     level_ns: i64,
     receiver_addrs: &[SocketAddr],
-) -> SenderNetEngine {
-    let runtime_settings = RuntimeSenderSettings {
-        stream: CoreSenderSettings {
-            stream: cfg.stream,
-            rate: cfg.rate,
-            channels: cfg.channels,
-            format: cfg.format,
-            span: cfg.span_ms,
-            window: cfg.window_frames,
-            clock: clock_id,
-        },
-        packet: cfg.packet_frames,
-        level: level_ns,
+) -> (CaptureEnd, SenderNetBridge) {
+    let mut runtime_settings = RuntimeSenderSettings::shipped(
+        cfg.stream,
+        cfg.rate,
+        cfg.channels,
+        cfg.format,
+        cfg.packet_frames,
+        level_ns,
         timeline,
-        receivers: receiver_addrs.to_vec(),
-        kept: cfg.kept_packets,
-        choice: cfg.choice,
-    };
-    SenderNetEngine::new(runtime_settings)
+        clock_id,
+        receiver_addrs.to_vec(),
+        cfg.choice.is_some(),
+        cfg.kept_packets > 0,
+    )
+    .expect("shipped sender settings must validate");
+    runtime_settings.stream.span = cfg.span_ms;
+    runtime_settings.stream.window = cfg.window_frames;
+    runtime_settings.kept = cfg.kept_packets;
+    runtime_settings.choice = cfg.choice;
+    runtime_settings
+        .validate()
+        .expect("sender settings failed validation");
+
+    let (capture_end, sender_end) = send::link(
+        SHIPPED_CAPTURE_BUFFERS,
+        usize::from(cfg.packet_frames),
+        usize::from(cfg.channels),
+    );
+    let bridge = SenderNetBridge::new(sender_end, runtime_settings);
+    (capture_end, bridge)
 }
 
-/// Faithful multi-host discrete-event simulation scene driving production
-/// `unisono-runtime` engines over real serialized UDP datagrams.
+/// Faithful multi-host discrete-event simulation scene driving shipped
+/// `unisono-runtime` SPSC-ring pipelines over real serialized UDP datagrams
+/// and scoring black-box PCM output via [`ProbeDecoder`].
 pub struct Scene {
     config: SceneConfig,
     /// Host clocks: index `0` is sender, index `h + 1` is receiver host `h`.
@@ -809,7 +714,8 @@ pub struct Scene {
     /// Sender audio capture device oscillator.
     sender_device: Course,
     sender_stamp_rng: Generator,
-    sender_engine: SenderNetEngine,
+    capture_end: CaptureEnd,
+    sender_bridge: SenderNetBridge,
     sender_addr: SocketAddr,
     sender_epoch: u64,
     sender_timeline: u64,
@@ -818,9 +724,12 @@ pub struct Scene {
     sender_capture_cursor: u64,
     /// Preallocated capture PCM buffer reused across `on_capture` calls.
     capture_buf: Vec<f32>,
-    /// Map from `timeline` -> [`TimelineInfo`].
-    timelines: HashMap<u64, TimelineInfo>,
-    /// Monotonic count of captured frames recorded into `objectives`.
+    /// Rolling true physical capture times for `Trace` evaluation (populated
+    /// only when `config.record_trace` is `true`).
+    capture_times: VecDeque<f64>,
+    capture_times_base: u64,
+    max_capture_history: usize,
+    /// Monotonic count of captured frames across the simulation.
     global_captured_frames: u64,
     /// Receiver speakers.
     speakers: Vec<Speaker>,
@@ -885,7 +794,6 @@ fn build_speakers(
     config: &SceneConfig,
     speaker_addrs: &[(u64, SocketAddr)],
     host_true_min_delay_ns: &[i64],
-    max_held: usize,
     generator: &Generator,
 ) -> Vec<Speaker> {
     let mut speakers = Vec::with_capacity(config.receivers.len());
@@ -894,27 +802,25 @@ fn build_speakers(
             .get(rec_cfg.host)
             .copied()
             .unwrap_or(0);
-        let (playback, net) =
+        let (audio, net) =
             build_receiver_parts(&config.sender, rec_cfg, speaker_addrs, min_delay_ns);
         let pcm_len = (rec_cfg.cycle_frames as usize) * usize::from(config.sender.channels);
         speakers.push(Speaker {
             config: rec_cfg.clone(),
             addr: speaker_addrs[idx].1,
-            playback,
+            audio,
             net,
-            report_schedule: ReportSchedule::new(),
             device: Course::new(
                 rec_cfg.device,
                 generator.fork(20_000 + u64::try_from(idx).unwrap_or(0)),
             ),
             device_noise_rng: generator.fork(30_000 + u64::try_from(idx).unwrap_or(0)),
-            held_frames: HeldFrames::new(max_held),
             pcm_buf: vec![0.0; pcm_len],
+            decoder: ProbeDecoder::new(),
             recorded_cycles: Vec::new(),
             trace: Trace::default(),
             epoch: 0,
             net_wake_gen: 0,
-            last_timeline: None,
             next_cycle_index: 0,
             device_frame_cursor: 0,
         });
@@ -963,7 +869,7 @@ impl Scene {
             .collect();
         let raw_rx_addrs: Vec<SocketAddr> = speaker_addrs.iter().map(|&(_, a)| a).collect();
 
-        let sender_engine = build_sender_engine(
+        let (capture_end, sender_bridge) = build_sender_parts(
             &config.sender,
             config.sender.timeline,
             config.sender.clock_id,
@@ -972,14 +878,8 @@ impl Scene {
         );
         let capture_samples =
             usize::from(config.sender.packet_frames) * usize::from(config.sender.channels);
-        let max_held = (config.sender.rate as usize).saturating_mul(4).max(65_536);
-        let speakers = build_speakers(
-            &config,
-            &speaker_addrs,
-            &host_true_min_delay_ns,
-            max_held,
-            generator,
-        );
+        let max_history = (config.sender.rate as usize).saturating_mul(4).max(65_536);
+        let speakers = build_speakers(&config, &speaker_addrs, &host_true_min_delay_ns, generator);
 
         let objectives = config.objective_window.map(|(start_s, end_s)| {
             let cycle_frames = config
@@ -993,18 +893,8 @@ impl Scene {
                 cycle_frames,
                 config.objective_weights,
             )
-            .with_max_buffered_frames(max_held)
+            .with_max_buffered_frames(max_history)
         });
-
-        let mut timelines = HashMap::new();
-        timelines.insert(
-            config.sender.timeline,
-            TimelineInfo {
-                global_frame_base: 0,
-                origin_capture_frame: 0,
-                level_ns: config.sender.level_ns,
-            },
-        );
 
         let initial_timeline = config.sender.timeline;
         let initial_clock_id = config.sender.clock_id;
@@ -1017,14 +907,17 @@ impl Scene {
             contention,
             sender_device,
             sender_stamp_rng: generator.fork(3),
-            sender_engine,
+            capture_end,
+            sender_bridge,
             sender_addr: sender_addr(),
             sender_epoch: 0,
             sender_timeline: initial_timeline,
             sender_clock_id: initial_clock_id,
             sender_capture_cursor: 0,
             capture_buf: vec![0.0; capture_samples],
-            timelines,
+            capture_times: VecDeque::new(),
+            capture_times_base: 0,
+            max_capture_history: max_history,
             global_captured_frames: 0,
             speakers,
             addr_to_speaker,
@@ -1085,15 +978,17 @@ impl Scene {
     pub fn restart_sender(&mut self) {
         self.sender_epoch += 1;
         self.sender_timeline = self.sender_timeline.wrapping_add(1);
-        let level_ns = self.sender_engine.sender().current_level();
+        let level_ns = self.sender_bridge.sender().current_level();
         let raw_rx_addrs: Vec<SocketAddr> = self.speaker_addrs.iter().map(|&(_, a)| a).collect();
-        self.sender_engine = build_sender_engine(
+        let (capture_end, sender_bridge) = build_sender_parts(
             &self.config.sender,
             self.sender_timeline,
             self.sender_clock_id,
             level_ns,
             &raw_rx_addrs,
         );
+        self.capture_end = capture_end;
+        self.sender_bridge = sender_bridge;
         let rate = f64::from(self.config.sender.rate);
         let current_frame_f = (self.sender_device.read_seconds(self.now.seconds()) * rate)
             .ceil()
@@ -1101,14 +996,6 @@ impl Scene {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let next_frame = (current_frame_f as u64).max(self.sender_capture_cursor);
         self.sender_capture_cursor = next_frame;
-        self.timelines.insert(
-            self.sender_timeline,
-            TimelineInfo {
-                global_frame_base: self.global_captured_frames,
-                origin_capture_frame: next_frame,
-                level_ns,
-            },
-        );
         self.schedule_capture(self.sender_epoch, 0);
     }
 
@@ -1126,8 +1013,8 @@ impl Scene {
     }
 
     /// Restarts receiver speaker `speaker`, resetting its playback pipeline,
-    /// sync engine, and report schedule while preserving its host clock and
-    /// playback DAC oscillator.
+    /// SPSC rings, sync engine, and output decoder while preserving its host
+    /// clock and playback DAC oscillator.
     pub fn restart_receiver(&mut self, speaker: usize) {
         let Some(sp) = self.speakers.get_mut(speaker) else {
             return;
@@ -1139,17 +1026,15 @@ impl Scene {
             .get(sp.config.host)
             .copied()
             .unwrap_or(0);
-        let (playback, net) = build_receiver_parts(
+        let (audio, net) = build_receiver_parts(
             &self.config.sender,
             &sp.config,
             &self.speaker_addrs,
             min_delay_ns,
         );
-        sp.playback = playback;
+        sp.audio = audio;
         sp.net = net;
-        sp.report_schedule.reset();
-        sp.held_frames.reset();
-        sp.last_timeline = None;
+        sp.decoder.reset();
         let next_cycle = sp.next_cycle_index;
         let wake_at = self.now.plus_seconds(1e-3);
         self.schedule_play_cycle(speaker, next_cycle);
@@ -1180,7 +1065,7 @@ impl Scene {
     pub fn followed(&self, speaker: usize) -> Option<u64> {
         self.speakers
             .get(speaker)
-            .and_then(|sp| sp.playback.receiver().timeline())
+            .and_then(|sp| sp.audio.playback().receiver().timeline())
     }
 
     /// Current estimated forward path delay (ns) on speaker `speaker`.
@@ -1188,10 +1073,10 @@ impl Scene {
     pub fn delay(&self, speaker: usize) -> Option<i64> {
         self.speakers
             .get(speaker)
-            .map(|sp| sp.playback.receiver().delay())
+            .map(|sp| sp.audio.playback().receiver().delay())
     }
 
-    /// Latest [`SyncSnapshot`] from speaker `speaker`'s network engine, or
+    /// Latest [`SyncSnapshot`] from speaker `speaker`'s network bridge, or
     /// `None` in legacy hull mode.
     #[must_use]
     pub fn sync_snapshot(&self, speaker: usize) -> Option<SyncSnapshot> {
@@ -1209,13 +1094,13 @@ impl Scene {
     /// Cumulative sender network counters.
     #[must_use]
     pub fn sender_counts(&self) -> SenderCounts {
-        self.sender_engine.counts()
+        self.sender_bridge.counts()
     }
 
     /// Current sender playout latency level, in nanoseconds.
     #[must_use]
     pub fn sender_level_ns(&self) -> i64 {
-        self.sender_engine.sender().current_level()
+        self.sender_bridge.sender().current_level()
     }
 
     /// Per-speaker timing traces recorded over the simulation.
@@ -1224,7 +1109,7 @@ impl Scene {
         self.speakers.iter().map(|sp| &sp.trace).collect()
     }
 
-    /// Recorded `FullDsp` cycle PCM outputs for speaker `speaker`.
+    /// Recorded rendered PCM and decoded frame positions for speaker `speaker`.
     #[must_use]
     pub fn recorded_cycles(&self, speaker: usize) -> &[RecordedCycle] {
         self.speakers
@@ -1237,6 +1122,41 @@ impl Scene {
     #[must_use]
     pub fn finish_objectives(self) -> Option<ObjectiveReport> {
         self.objectives.map(ObjectiveRecorder::finish)
+    }
+
+    /// Linearly interpolates the true physical capture time of fractional
+    /// global source frame `position` from `self.capture_times`.
+    fn capture_time_at(&self, position: f64) -> Option<f64> {
+        if self.capture_times.is_empty() || !position.is_finite() {
+            return None;
+        }
+        let base_f = u64_to_f64(self.capture_times_base);
+        let nominal_dt = 1.0 / f64::from(self.config.sender.rate);
+        if position < base_f {
+            return Some(self.capture_times[0] + (position - base_f) * nominal_dt);
+        }
+        let floored = position.floor();
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let frame_u64 = floored as u64;
+        let frac = position - floored;
+        let rel = usize::try_from(frame_u64.saturating_sub(self.capture_times_base))
+            .unwrap_or(usize::MAX);
+        if rel + 1 < self.capture_times.len() {
+            let t0 = self.capture_times[rel];
+            let t1 = self.capture_times[rel + 1];
+            Some(t0 + frac * (t1 - t0))
+        } else if rel < self.capture_times.len() && frac.abs() <= 1e-15 {
+            Some(self.capture_times[rel])
+        } else {
+            let last = self.capture_times.len() - 1;
+            let last_f = base_f + usize_to_f64(last);
+            let step = if last >= 1 {
+                self.capture_times[last] - self.capture_times[last - 1]
+            } else {
+                nominal_dt
+            };
+            Some(self.capture_times[last] + (position - last_f) * step)
+        }
     }
 
     fn push_event(&mut self, at: TrueTime, event: Event) {
@@ -1307,11 +1227,23 @@ impl Scene {
             return;
         };
         let host_node = self.speakers[speaker].config.host + 1;
+        let min_step_ns = if self.speakers[speaker]
+            .net
+            .engine()
+            .has_pending_sync_update()
+        {
+            // If the incoming audio ring was momentarily full, retry after a
+            // short poll interval instead of tight-spinning until the next
+            // audio callback drains the ring.
+            500_000
+        } else {
+            1_000
+        };
         let wake_true = if wake_ns <= local_now_ns {
-            TrueTime(self.now.0.saturating_add(1_000))
+            TrueTime(self.now.0.saturating_add(min_step_ns))
         } else {
             let t_s = self.host_clocks[host_node].when_seconds(nanos_to_seconds(wake_ns));
-            TrueTime::from_seconds(t_s).max(TrueTime(self.now.0.saturating_add(1_000)))
+            TrueTime::from_seconds(t_s).max(TrueTime(self.now.0.saturating_add(min_step_ns)))
         };
         self.schedule_net_step_at(speaker, wake_true);
     }
@@ -1323,9 +1255,14 @@ impl Scene {
                     self.on_capture(at, epoch, block_index);
                 }
             }
+            Event::EmitFromSender { epoch, sent } => {
+                if epoch == self.sender_epoch {
+                    self.deliver_from_sender(at, epoch, sent);
+                }
+            }
             Event::SenderDeparture { epoch, tag, tx_ns } => {
                 if epoch == self.sender_epoch {
-                    self.sender_engine.on_departure(tag, tx_ns);
+                    self.sender_bridge.on_departure(tag, tx_ns);
                 }
             }
             Event::DeliverToSender {
@@ -1334,6 +1271,15 @@ impl Scene {
                 bytes,
             } => {
                 self.on_sender_datagram(at, from_node, from_addr, &bytes);
+            }
+            Event::EmitFromReceiver {
+                speaker,
+                epoch,
+                sent,
+            } => {
+                if self.speakers[speaker].epoch == epoch {
+                    self.deliver_from_receiver(at, speaker, sent);
+                }
             }
             Event::DeliverToReceiver {
                 speaker,
@@ -1349,10 +1295,8 @@ impl Scene {
                 tag,
                 tx_ns,
             } => {
-                if self.speakers[speaker].epoch == epoch
-                    && let Some((seq, dep_ns)) = self.speakers[speaker].net.on_departure(tag, tx_ns)
-                {
-                    self.speakers[speaker].playback.reported(seq, dep_ns);
+                if self.speakers[speaker].epoch == epoch {
+                    self.speakers[speaker].net.deliver_departure(tag, tx_ns);
                 }
             }
             Event::ReceiverNetStep {
@@ -1383,56 +1327,53 @@ impl Scene {
         let channels = usize::from(self.config.sender.channels);
         let rate = f64::from(self.config.sender.rate);
         let first_frame = self.sender_capture_cursor;
-        let first_cap_s = self
+        let first_device_s = self
             .sender_device
             .when_seconds(u64_to_f64(first_frame) / rate);
+        // Fixed application target latency `World.target` (never tracks
+        // adaptive changes to the sender's current playout level).
         let target_lat_s = self
             .config
             .target_latency_s
-            .unwrap_or_else(|| nanos_to_seconds(self.sender_engine.sender().current_level()));
+            .unwrap_or_else(|| nanos_to_seconds(self.config.sender.level_ns));
+        let hidden_cap = self.config.sender.hidden_latency_s;
 
-        if let Some(rec) = self.objectives.as_mut() {
-            for offset in 0..packet_frames {
-                let f_idx = first_frame + offset as u64;
-                let cap_s = self.sender_device.when_seconds(u64_to_f64(f_idx) / rate);
-                rec.record_capture_frame(cap_s, target_lat_s);
+        probe::fill_capture(
+            self.global_captured_frames,
+            channels,
+            packet_frames,
+            &mut self.capture_buf,
+        );
+
+        let record_trace = self.config.record_trace;
+        for offset in 0..packet_frames {
+            let f_idx = first_frame + offset as u64;
+            let device_s = self.sender_device.when_seconds(u64_to_f64(f_idx) / rate);
+            let true_cap_s = device_s - hidden_cap;
+            if let Some(rec) = self.objectives.as_mut() {
+                rec.record_capture_frame(true_cap_s, target_lat_s);
+            }
+            if record_trace {
+                self.capture_times.push_back(true_cap_s);
+                while self.capture_times.len() > self.max_capture_history {
+                    self.capture_times.pop_front();
+                    self.capture_times_base = self.capture_times_base.saturating_add(1);
+                }
             }
         }
         self.global_captured_frames = self
             .global_captured_frames
             .saturating_add(packet_frames as u64);
 
-        match self.config.sender.signal {
-            SignalMode::Silent => {}
-            SignalMode::Ramp => {
-                let tl_base = self
-                    .timelines
-                    .get(&self.sender_timeline)
-                    .map_or(0, |info| info.origin_capture_frame);
-                for offset in 0..packet_frames {
-                    let timeline_frame = (first_frame + offset as u64).saturating_sub(tl_base);
-                    let val = ramp_sample(timeline_frame);
-                    let base = offset * channels;
-                    for ch in 0..channels {
-                        self.capture_buf[base + ch] = val;
-                    }
-                }
-            }
-        }
-
         let report_ns = self.host_clocks[0].read_noisy(
-            TrueTime::from_seconds(first_cap_s),
+            TrueTime::from_seconds(first_device_s),
             self.config.sender.capture_timestamp_std_s,
             &mut self.sender_stamp_rng,
         );
+        self.capture_end
+            .cycle(&self.capture_buf, first_frame, report_ns);
         let mut sink = SimSink::default();
-        let _ = self.sender_engine.on_capture(
-            &self.capture_buf,
-            packet_frames,
-            first_frame,
-            report_ns,
-            &mut sink,
-        );
+        let _ = self.sender_bridge.drain_captured(&mut sink);
         self.deliver_from_sender(at, epoch, sink.sent);
 
         self.sender_capture_cursor = self
@@ -1448,14 +1389,32 @@ impl Scene {
         from_addr: SocketAddr,
         bytes: &[u8],
     ) {
-        let true_ns = self.host_clocks[0].read(at);
-        let arrival_ns = self.links[from_node][0].stamp_rx(true_ns);
-        let reply_ns = self.links[0][from_node].stamp_tx(true_ns);
+        let true_arrival_ns = self.host_clocks[0].read(at);
+        let arrival_ns = self.links[from_node][0].stamp_rx(true_arrival_ns);
+        let t3_true = at.plus_seconds(self.config.sender.reply_processing_s.max(0.0));
+        // Production `SenderNetwork` reads software `clock::raw()` before
+        // `socket.send()`, so `reply_ns` reflects `t3_true` while the reply
+        // leaves onto the wire at `t3_true + reply_send_latency_s`.
+        let reply_ns = self.host_clocks[0].read(t3_true).max(arrival_ns);
         let mut sink = SimSink::default();
         let _ = self
-            .sender_engine
+            .sender_bridge
             .on_datagram(from_addr, bytes, arrival_ns, reply_ns, &mut sink);
-        self.deliver_from_sender(at, self.sender_epoch, sink.sent);
+        if !sink.sent.is_empty() {
+            let wire_depart =
+                t3_true.plus_seconds(self.config.sender.reply_send_latency_s.max(0.0));
+            if wire_depart > at {
+                self.push_event(
+                    wire_depart,
+                    Event::EmitFromSender {
+                        epoch: self.sender_epoch,
+                        sent: sink.sent,
+                    },
+                );
+            } else {
+                self.deliver_from_sender(at, self.sender_epoch, sink.sent);
+            }
+        }
     }
 
     fn deliver_from_sender(&mut self, at: TrueTime, epoch: u64, sent: Vec<SentDatagram>) {
@@ -1573,15 +1532,6 @@ impl Scene {
         }
     }
 
-    fn apply_pending_sync(&mut self, speaker: usize) {
-        let sp = &mut self.speakers[speaker];
-        if let Some((clock_id, snap)) = sp.net.take_sync_update()
-            && sp.playback.receiver().clock_id() == Some(clock_id)
-        {
-            sp.playback.apply_sync(snap);
-        }
-    }
-
     fn on_receiver_datagram(
         &mut self,
         at: TrueTime,
@@ -1590,67 +1540,44 @@ impl Scene {
         from_addr: SocketAddr,
         bytes: &[u8],
     ) {
-        let dst_node = self.speakers[speaker].config.host + 1;
-        let true_ns = self.host_clocks[dst_node].read(at);
-        let arrival_ns = self.links[from_node][dst_node].stamp_rx(true_ns);
-        let reply_ns = self.links[dst_node][from_node].stamp_tx(true_ns);
-        let confirmed = self.speakers[speaker].confirmed_state();
+        let host_idx = self.speakers[speaker].config.host;
+        let dst_node = host_idx + 1;
+        let host_cfg = self.config.hosts[host_idx];
+        let true_arrival_ns = self.host_clocks[dst_node].read(at);
+        let arrival_ns = self.links[from_node][dst_node].stamp_rx(true_arrival_ns);
+        let t3_true = at.plus_seconds(host_cfg.reply_processing_s.max(0.0));
+        // Production `ReceiverNetwork` reads software `clock::raw()` before
+        // `socket.send()`, so `reply_ns` reflects `t3_true` while any
+        // `PeerEcho` leaves onto the wire at `t3_true + reply_send_latency_s`.
+        let reply_ns = self.host_clocks[dst_node].read(t3_true).max(arrival_ns);
         let mut sink = SimSink::default();
-        let action = self.speakers[speaker]
+        let _ = self.speakers[speaker]
             .net
-            .on_datagram(
-                from_addr, bytes, arrival_ns, reply_ns, confirmed, true, &mut sink,
-            )
-            .unwrap_or(DatagramAction::Consumed);
-        match action {
-            DatagramAction::Consumed => {}
-            DatagramAction::Audio(header) => {
-                self.ingest_audio(speaker, &header, bytes, arrival_ns);
-            }
-            DatagramAction::HullEcho(echo) => {
-                self.speakers[speaker].playback.echo(&echo);
-            }
-        }
-        self.apply_pending_sync(speaker);
+            .deliver_datagram(from_addr, bytes, arrival_ns, reply_ns, &mut sink);
         if !sink.sent.is_empty() {
-            self.deliver_from_receiver(at, speaker, sink.sent);
+            let wire_depart = t3_true.plus_seconds(host_cfg.reply_send_latency_s.max(0.0));
+            if wire_depart > at {
+                let epoch = self.speakers[speaker].epoch;
+                self.push_event(
+                    wire_depart,
+                    Event::EmitFromReceiver {
+                        speaker,
+                        epoch,
+                        sent: sink.sent,
+                    },
+                );
+            } else {
+                self.deliver_from_receiver(at, speaker, sink.sent);
+            }
         }
         self.schedule_next_net_wake(speaker, arrival_ns);
-    }
-
-    fn ingest_audio(&mut self, speaker: usize, header: &Audio, bytes: &[u8], arrival_ns: i64) {
-        let sp = &mut self.speakers[speaker];
-        let heard = match sp.config.audio_mode {
-            AudioMode::FastCore => sp.playback.packet_header_only(header, arrival_ns),
-            AudioMode::FullDsp => {
-                let payload = bytes.get(packet::HEADER..).unwrap_or(&[]);
-                sp.playback.packet(header, payload, arrival_ns)
-            }
-        };
-        if let Some(heard) = heard {
-            if heard.adopted || heard.restarted {
-                sp.report_schedule.reset();
-                sp.held_frames.reset();
-                sp.last_timeline = Some(header.timeline);
-                let confirmed = sp.confirmed_state();
-                sp.net.sync_confirmed(confirmed);
-            }
-            if !heard.ignored {
-                sp.held_frames
-                    .mark_range(header.index, u64::from(header.frames));
-            }
-        }
     }
 
     fn on_receiver_net_step(&mut self, at: TrueTime, speaker: usize) {
         let host_node = self.speakers[speaker].config.host + 1;
         let local_now_ns = self.host_clocks[host_node].read(at);
-        let confirmed = self.speakers[speaker].confirmed_state();
         let mut sink = SimSink::default();
-        let _ = self.speakers[speaker]
-            .net
-            .step(local_now_ns, confirmed, &mut sink);
-        self.apply_pending_sync(speaker);
+        let _ = self.speakers[speaker].net.step(local_now_ns, &mut sink);
         if !sink.sent.is_empty() {
             self.deliver_from_receiver(at, speaker, sink.sent);
         }
@@ -1659,15 +1586,16 @@ impl Scene {
 
     fn on_play_cycle(&mut self, at: TrueTime, speaker: usize, cycle: u64) {
         let rate = f64::from(self.config.sender.rate);
+        let channels = usize::from(self.config.sender.channels);
         let host_node = self.speakers[speaker].config.host + 1;
         let frame_count = self.speakers[speaker].config.cycle_frames;
         let first_dev_frame = cycle.saturating_mul(u64::from(frame_count));
 
-        let (out_start_s, out_end_s) = {
+        let (out_start_s, out_end_s, hidden_out) = {
             let sp = &mut self.speakers[speaker];
             let s0 = sp.leaves_s(u64_to_f64(first_dev_frame), rate);
             let s1 = sp.leaves_s(u64_to_f64(first_dev_frame + u64::from(frame_count)), rate);
-            (s0, s1)
+            (s0, s1, sp.config.hidden_latency_s)
         };
         let true_start_ns = self.host_clocks[host_node].read(TrueTime::from_seconds(out_start_s));
         let reported_start_ns = match self.speakers[speaker].config.cycle_length {
@@ -1685,227 +1613,168 @@ impl Scene {
             }
         };
 
-        let (plan, played) = {
+        let mut report_sink = SimSink::default();
+        let played = {
             let sp = &mut self.speakers[speaker];
             let dev_pos = sp.device_frame_cursor;
             sp.device_frame_cursor = sp
                 .device_frame_cursor
                 .saturating_add(u64::from(frame_count));
             sp.next_cycle_index = cycle + 1;
-            match sp.config.audio_mode {
-                AudioMode::FastCore => {
-                    let plan = sp
-                        .playback
-                        .cycle_plan_only(dev_pos, reported_start_ns, frame_count);
-                    (plan, sp.playback.last())
-                }
-                AudioMode::FullDsp => {
-                    sp.playback
-                        .cycle(&mut sp.pcm_buf, dev_pos, reported_start_ns);
-                    let plan = sp.playback.last_plan();
-                    if sp.config.record_pcm {
-                        let ch_count = usize::from(sp.playback.channels_u8()).max(1);
-                        let channel0 = sp
-                            .pcm_buf
-                            .chunks_exact(ch_count)
-                            .map(|frame| frame[0])
-                            .collect();
-                        sp.recorded_cycles.push(RecordedCycle {
-                            out_start_s,
-                            out_end_s,
-                            plan,
-                            channel0,
-                        });
-                    }
-                    (plan, sp.playback.last())
-                }
-            }
+            sp.audio.cycle(&mut sp.pcm_buf, dev_pos, reported_start_ns);
+            let _ = sp.net.flush_reports(&mut report_sink);
+            sp.audio.playback().last()
         };
+        if !report_sink.sent.is_empty() {
+            self.deliver_from_receiver(at, speaker, report_sink.sent);
+        }
 
-        self.record_cycle_trace_and_objectives(speaker, out_start_s, out_end_s, &plan, played);
-        self.maybe_send_report(at, speaker);
+        let acoustic_start_s = out_start_s + hidden_out;
+        let acoustic_end_s = out_end_s + hidden_out;
+
+        let need_decode = self.config.record_trace
+            || self.speakers[speaker].config.record_pcm
+            || self
+                .config
+                .objective_window
+                .is_some_and(|(ws, _)| acoustic_end_s >= ws - 1.0);
+
+        if need_decode {
+            let max_captured = self.global_captured_frames;
+            self.score_decoded_cycle(
+                speaker,
+                channels,
+                frame_count as usize,
+                acoustic_start_s,
+                acoustic_end_s,
+                played,
+                max_captured,
+            );
+        }
+
         self.schedule_play_cycle(speaker, cycle + 1);
     }
 
-    fn record_cycle_trace_and_objectives(
+    #[allow(clippy::too_many_arguments)]
+    fn score_decoded_cycle(
         &mut self,
         speaker: usize,
-        out_start_s: f64,
-        out_end_s: f64,
-        plan: &Plan,
+        channels: usize,
+        frame_count: usize,
+        acoustic_start_s: f64,
+        acoustic_end_s: f64,
         played: unisono_runtime::pump::Played,
+        max_captured: u64,
     ) {
-        let rate = f64::from(self.config.sender.rate);
-        let frame_count = self.speakers[speaker].config.cycle_frames as usize;
-        let followed_tl = self.speakers[speaker].playback.receiver().timeline();
-        let tl_info = followed_tl.and_then(|tl| self.timelines.get(&tl).cloned());
+        let count_f = usize_to_f64(frame_count.max(1));
+        let dt_cycle = acoustic_end_s - acoustic_start_s;
+        let record_trace = self.config.record_trace;
 
-        // Update legacy Trace diagnostics.
-        {
-            let trace = &mut self.speakers[speaker].trace;
-            trace.held = trace.held.saturating_add(u64::from(played.held));
-            trace.absent = trace.absent.saturating_add(u64::from(played.concealed));
-            if plan.frames == 0 {
-                trace.idle_cycles += 1;
-            } else {
-                if plan.jumped {
-                    trace.jumps.push(out_start_s);
-                }
-                if let Some(info) = &tl_info {
-                    let pos = position_to_f64(plan.start);
-                    let cap_frame = u64_to_f64(info.origin_capture_frame) + pos;
-                    let cap_true_s = self.sender_device.when_seconds(cap_frame / rate);
-                    let cap_sender_s = self.host_clocks[0].read_seconds(cap_true_s);
-                    let due_true_s = self.host_clocks[0]
-                        .when_seconds(cap_sender_s + nanos_to_seconds(info.level_ns));
-                    trace.errors.push((out_start_s, out_start_s - due_true_s));
+        let first_valid = {
+            let sp = &mut self.speakers[speaker];
+            let decoded = sp.decoder.decode_cycle(&sp.pcm_buf, channels, max_captured);
+
+            if sp.config.record_pcm {
+                let ch_count = channels.max(1);
+                let first_channel = sp
+                    .pcm_buf
+                    .chunks_exact(ch_count)
+                    .map(|frame| frame[0])
+                    .collect();
+                sp.recorded_cycles.push(RecordedCycle {
+                    out_start_s: acoustic_start_s,
+                    out_end_s: acoustic_end_s,
+                    decoded: decoded.to_vec(),
+                    channel0: first_channel,
+                });
+            }
+
+            if let Some(rec) = self.objectives.as_mut() {
+                for (idx, &pos) in decoded.iter().enumerate() {
+                    let out_s = acoustic_start_s + (usize_to_f64(idx) / count_f) * dt_cycle;
+                    rec.record_playback_sample(speaker, out_s, pos);
                 }
             }
-        }
 
-        // Update canonical sample-level ObjectiveRecorder if enabled.
-        let Some(rec) = self.objectives.as_mut() else {
-            return;
-        };
-        let sp = &self.speakers[speaker];
-        let lookahead = sp.playback.reach();
-        let count_f = usize_to_f64(frame_count.max(1));
-        let dt_cycle = out_end_s - out_start_s;
-        let wanted = usize::try_from(plan.frames).unwrap_or(0).min(frame_count);
-        let global_base = tl_info.as_ref().map_or(0, |info| info.global_frame_base);
-
-        // Fast path: check if the entire planned cycle's resampler window is
-        // contiguously held, avoiding per-sample `is_playable` scans.
-        let all_playable = if wanted > 0 {
-            let first_pos = position_to_f64(plan.start);
-            let last_pos = plan
-                .start
-                .advance(plan.step, (wanted - 1) as u64)
-                .map_or(first_pos, position_to_f64);
-            let reach = usize_to_f64(lookahead);
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let lo = (first_pos - reach).floor().max(0.0) as u64;
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-            let hi = (last_pos + reach).ceil().max(0.0) as u64;
-            sp.held_frames.range_fully_held(lo, hi)
-        } else {
-            false
-        };
-
-        for idx in 0..frame_count {
-            let out_s = out_start_s + (usize_to_f64(idx) / count_f) * dt_cycle;
-            let effective = if idx < wanted {
-                plan.start.advance(plan.step, idx as u64).and_then(|pos| {
-                    let local_pos = position_to_f64(pos);
-                    let checked = if all_playable {
-                        Some(local_pos)
-                    } else {
-                        check_playable(Some(local_pos), lookahead, |f| sp.held_frames.is_held(f))
-                    };
-                    checked.map(|p| p + u64_to_f64(global_base))
-                })
+            if record_trace {
+                sp.trace.held = sp.trace.held.saturating_add(u64::from(played.held));
+                sp.trace.absent = sp.trace.absent.saturating_add(u64::from(played.concealed));
+                if played.played == 0 {
+                    sp.trace.idle_cycles += 1;
+                } else if played.jumped {
+                    sp.trace.jumps.push(acoustic_start_s);
+                }
+                decoded
+                    .iter()
+                    .enumerate()
+                    .find_map(|(idx, &opt)| opt.map(|pos| (idx, pos)))
             } else {
                 None
-            };
-            rec.record_playback_sample(speaker, out_s, effective);
-        }
-    }
+            }
+        };
 
-    fn maybe_send_report(&mut self, at: TrueTime, speaker: usize) {
-        let PathDelay::Measured(reporting) = self.speakers[speaker].config.path else {
-            return;
-        };
-        let host_node = self.speakers[speaker].config.host + 1;
-        let local_now_ns = self.host_clocks[host_node].read(at);
-        let sp = &mut self.speakers[speaker];
-        if sp.playback.receiver().timeline().is_none() {
-            return;
-        }
-        if !sp.report_schedule.due(reporting, local_now_ns) {
-            return;
-        }
-        let Some(report) = sp.playback.report() else {
-            return;
-        };
-        sp.report_schedule.record_sent(reporting, local_now_ns);
-        let outgoing = Outgoing {
-            report,
-            needs: sp.playback.recent(),
-        };
-        let confirmed = sp.confirmed_state();
-        sp.net.sync_confirmed(confirmed);
-        let mut sink = SimSink::default();
-        let _ = sp.net.send_report(&outgoing, &mut sink);
-        if !sink.sent.is_empty() {
-            self.deliver_from_receiver(at, speaker, sink.sent);
+        if let Some((idx, global_pos)) = first_valid
+            && let Some(cap_true_s) = self.capture_time_at(global_pos)
+        {
+            let out_s = acoustic_start_s + (usize_to_f64(idx) / count_f) * dt_cycle;
+            let cap_sender_s = self.host_clocks[0].read_seconds(cap_true_s);
+            let due_true_s = self.host_clocks[0]
+                .when_seconds(cap_sender_s + nanos_to_seconds(self.config.sender.level_ns));
+            self.speakers[speaker]
+                .trace
+                .errors
+                .push((out_s, out_s - due_true_s));
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AudioMode, HeldFrames, ReceiverConfig, Scene, SceneConfig, SenderConfig, SignalMode,
-        decode_ramp_position, ramp_sample,
-    };
+    use unisono_core::kalman::NoisePrior;
+    use unisono_core::sync::WEIGHT_UNITY_Q16;
+
+    use super::{HostConfig, ReceiverConfig, Scene, SceneConfig, SenderConfig};
     use crate::TrueTime;
-    use crate::clock::{FrequencyNoise, OscillatorModel};
+    use crate::clock::OscillatorModel;
     use crate::link::LinkModel;
-    use crate::objectives::{ObjectiveWeights, is_playable};
+    use crate::objectives::ObjectiveWeights;
     use crate::random::Generator;
-    use crate::scene::HostConfig;
 
     #[test]
-    fn held_frames_bitmap_matches_naive_playable_checks() {
-        let mut held = HeldFrames::new(4_096);
-        held.mark_range(0, 240);
-        held.mark_range(240, 240);
-        held.mark_range(720, 240); // gap at [480, 720)
-        assert!(held.range_fully_held(0, 479));
-        assert!(!held.range_fully_held(0, 480));
-        assert!(is_playable(200.5, 24, |f| held.is_held(f)));
-        assert!(!is_playable(470.5, 24, |f| held.is_held(f)));
-        assert!(!is_playable(730.0, 24, |f| held.is_held(f)));
-        assert!(is_playable(800.25, 24, |f| held.is_held(f)));
-    }
-
-    #[test]
-    fn ramp_signal_roundtrips_fractional_positions_away_from_corners() {
-        for &frame in &[100u32, 5_000, 13_000, 13_200, 20_000, 30_000] {
-            let sample = ramp_sample(u64::from(frame));
-            let expected = f64::from(frame);
-            let decoded =
-                decode_ramp_position(sample, expected, 30.0).expect("interior frame should decode");
-            assert!(
-                (decoded - expected).abs() < 1e-3,
-                "frame {frame}: decoded {decoded}"
-            );
-        }
-    }
-
-    #[test]
-    fn fast_core_and_full_dsp_produce_identical_plans_and_accurate_ramp_pcm() {
-        let build = |mode: AudioMode| {
-            let mut sender = SenderConfig::standard(
+    fn black_box_pcm_scoring_recovers_ideal_playback_and_detects_faults() {
+        let build = |hidden_out_s: f64, sender_reply_send_s: f64| {
+            let sender = SenderConfig::standard(
                 OscillatorModel::ideal(5.0),
                 OscillatorModel::ideal(0.0),
                 20_000_000,
-            );
-            sender.signal = SignalMode::Ramp;
-            let hosts = vec![HostConfig {
-                clock: OscillatorModel {
-                    offset: -10.0,
-                    frequency: 20e-6,
-                    noise: FrequencyNoise::ZERO,
-                },
-                from_sender: LinkModel::IDEAL,
-                to_sender: LinkModel::IDEAL,
-            }];
-            let mut rx = ReceiverConfig::peer(0, 1, OscillatorModel::ideal(0.0));
-            rx.audio_mode = mode;
-            rx.record_pcm = mode == AudioMode::FullDsp;
-            let mut cfg = SceneConfig::new(sender, hosts, vec![rx]);
-            cfg.objective_window = Some((0.8, 1.5));
+            )
+            .with_fixed_level()
+            .with_reply_latency(0.0, sender_reply_send_s);
+            let hosts = vec![
+                HostConfig::new(
+                    OscillatorModel::ideal(-10.0),
+                    LinkModel::IDEAL,
+                    LinkModel::IDEAL,
+                ),
+                HostConfig::new(
+                    OscillatorModel::ideal(12.0),
+                    LinkModel::IDEAL,
+                    LinkModel::IDEAL,
+                ),
+            ];
+            let mut rx0 = ReceiverConfig::peer(0, 1, OscillatorModel::ideal(0.0));
+            let mut rx1 = ReceiverConfig::peer(1, 2, OscillatorModel::ideal(0.0));
+            rx0.sync_settings.sender_prior = NoisePrior::TCXO;
+            rx0.sync_settings.local_prior = NoisePrior::TCXO;
+            rx1.sync_settings.sender_prior = NoisePrior::TCXO;
+            rx1.sync_settings.local_prior = NoisePrior::TCXO;
+            rx1.hidden_latency_s = hidden_out_s;
+            rx0.peers = vec![(1, WEIGHT_UNITY_Q16)];
+            rx1.peers = vec![(0, WEIGHT_UNITY_Q16)];
+            rx0.record_pcm = true;
+            let mut cfg = SceneConfig::new(sender, hosts, vec![rx0, rx1]);
+            cfg.peer_link = LinkModel::IDEAL;
+            cfg.objective_window = Some((4.0, 5.5));
             cfg.objective_weights = ObjectiveWeights {
                 sync: 1e6,
                 latency: 1.0,
@@ -1915,65 +1784,93 @@ mod tests {
                 discontinuities: 1.0,
             };
             let mut scene = Scene::new(cfg, &Generator::new(7));
-            scene.run(TrueTime::from_seconds(1.6));
+            scene.run(TrueTime::from_seconds(5.7));
             scene
         };
 
-        let fast = build(AudioMode::FastCore);
-        let full = build(AudioMode::FullDsp);
-
-        // Plans and timing traces must match identically between FastCore and FullDsp.
-        assert_eq!(fast.traces()[0].errors.len(), full.traces()[0].errors.len());
-        for (a, b) in fast.traces()[0].errors.iter().zip(&full.traces()[0].errors) {
-            assert!((a.0 - b.0).abs() < 1e-12);
-            assert!((a.1 - b.1).abs() < 1e-12);
-        }
-
-        // Verify FullDsp decoded PCM ramp matches exact planned source positions.
-        let mut checked = 0usize;
-        let mut max_err = 0.0_f64;
-        let mut worst_info = (0.0_f64, 0.0_f32, 0.0_f64, 0.0_f64);
-        for cycle in full.recorded_cycles(0) {
-            if cycle.out_start_s < 0.8 || cycle.plan.frames == 0 {
-                continue;
-            }
-            for (i, &sample) in cycle.channel0.iter().enumerate() {
-                if i >= cycle.plan.frames as usize {
-                    break;
-                }
-                let Some(pos) = cycle.plan.start.advance(cycle.plan.step, i as u64) else {
-                    continue;
-                };
-                let expected = super::position_to_f64(pos);
-                if let Some(decoded) = decode_ramp_position(sample, expected, 40.0) {
-                    let err = (decoded - expected).abs();
-                    if err > max_err {
-                        max_err = err;
-                        worst_info = (cycle.out_start_s, sample, expected, decoded);
-                    }
-                    checked += 1;
-                }
-            }
-        }
+        // 1. Clean ideal run: near-zero sync, tracking, roughness, zero misses.
+        let clean = build(0.0, 0.0);
+        let decoded_cycles = clean
+            .recorded_cycles(0)
+            .iter()
+            .filter(|c| c.out_start_s >= 4.0 && c.decoded.iter().all(Option::is_some))
+            .count();
         assert!(
-            checked > 20_000,
-            "expected >20k checked samples, got {checked}"
+            decoded_cycles > 250,
+            "expected >250 fully decoded clean cycles, got {decoded_cycles}"
+        );
+        let clean_obj = clean.finish_objectives().expect("clean objectives");
+        assert!(
+            clean_obj.sync_rms_us < 0.1,
+            "clean sync_rms_us={}",
+            clean_obj.sync_rms_us
         );
         assert!(
-            max_err < 1e-3,
-            "FullDsp ramp error {max_err} frames exceeds 1e-3 (out={:.4}, sample={}, expected={:.3}, decoded={:.3})",
-            worst_info.0,
-            worst_info.1,
-            worst_info.2,
-            worst_info.3
+            clean_obj.tracking_s2.sqrt() * 1e6 < 0.5,
+            "clean tracking_rms_us={}",
+            clean_obj.tracking_s2.sqrt() * 1e6
+        );
+        assert!(
+            clean_obj.roughness_per_s2 < 1e-6,
+            "clean roughness={}",
+            clean_obj.roughness_per_s2
+        );
+        assert_eq!(clean_obj.missed_per_s, 0.0);
+        assert_eq!(clean_obj.discontinuities_per_s, 0.0);
+
+        // 2. Uncalibrated 200 us DAC latency on speaker 1 shifts playback 1:1
+        //    (RMS spread across 2 speakers = 200 / 2 = 100 us).
+        let hidden = build(200e-6, 0.0).finish_objectives().expect("hidden");
+        assert!(
+            (hidden.sync_rms_us - 100.0).abs() < 2.0,
+            "expected ~100 us RMS spread for 200 us hidden DAC latency, got {}",
+            hidden.sync_rms_us
         );
 
-        let fast_obj = fast.finish_objectives().expect("fast objectives");
-        let full_obj = full.finish_objectives().expect("full objectives");
+        // 3. Sender post-T3 send latency of 40 us introduces a 20 us edge bias
+        //    into tracking (half of responder send latency).
+        let reply_bias = build(0.0, 40e-6).finish_objectives().expect("reply bias");
+        let tracking_rms_us = reply_bias.tracking_s2.sqrt() * 1e6;
         assert!(
-            (fast_obj.tracking_s2 - full_obj.tracking_s2).abs() < 1e-15
-                && (fast_obj.roughness_per_s2 - full_obj.roughness_per_s2).abs() < 1e-15,
-            "FastCore and FullDsp objectives diverged: {fast_obj:?} vs {full_obj:?}"
+            (tracking_rms_us - 20.0).abs() < 2.0,
+            "expected ~20 us tracking bias for 40 us sender reply send latency, got {tracking_rms_us}"
+        );
+    }
+
+    #[test]
+    fn black_box_pcm_decoder_scores_packet_loss_concealment_as_missed() {
+        let sender = SenderConfig::standard(
+            OscillatorModel::ideal(0.0),
+            OscillatorModel::ideal(0.0),
+            30_000_000,
+        )
+        .with_fixed_level()
+        .without_protection();
+        let hosts = vec![HostConfig::new(
+            OscillatorModel::ideal(0.0),
+            LinkModel::IDEAL,
+            LinkModel::IDEAL,
+        )];
+        let rx = ReceiverConfig::peer(0, 1, OscillatorModel::ideal(0.0));
+        let mut cfg = SceneConfig::new(sender, hosts, vec![rx]);
+        cfg.objective_window = Some((0.5, 2.5));
+        let mut scene = Scene::new(cfg, &Generator::new(13));
+        scene.run(TrueTime::from_seconds(1.2));
+        // Partition audio from sender -> receiver for 40 ms so packets drop
+        // and the receiver must conceal them.
+        scene.set_link_partitioned(0, 1, true);
+        scene.run(TrueTime::from_seconds(1.24));
+        scene.set_link_partitioned(0, 1, false);
+        scene.run(TrueTime::from_seconds(2.6));
+        let report = scene.finish_objectives().expect("objectives");
+        assert!(
+            report.missed_per_s > 400.0,
+            "40 ms partition (~1920 frames over 2 s = ~960/s) must be caught as missed PCM, got {}",
+            report.missed_per_s
+        );
+        assert!(
+            report.discontinuities_per_s > 0.0,
+            "partition must produce at least one discontinuity in decoded PCM"
         );
     }
 }

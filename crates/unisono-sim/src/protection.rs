@@ -2,14 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! Packet-loss protection strategy comparison (retransmission, duplication,
-//! and forward error correction).
+//! Offline packet-loss protection comparison study (retransmission,
+//! duplication, and forward error correction).
 //!
-//! Simulates a periodic packet stream over a link with burst outages and
-//! compares each strategy's earliest frame arrival times, optimal playout
-//! level cost ([`evaluate`]: latency, discontinuities, and missed frames), and
-//! bandwidth overhead. Link pauses that delay originals and repairs equally
-//! are excluded because no loss-recovery scheme alters them.
+//! Standalone historical design comparison referenced by `docs/model.md` to
+//! compare alternative loss-recovery schemes (unprotected, fixed copy, block
+//! Reed-Solomon, burst-erasure codes, and idealized request/retry) on a
+//! stylized outage channel. This module is NOT the production retransmission
+//! protocol (`unisono_runtime::retransmission`), which is simulated end-to-end
+//! over real wire packets inside [`crate::scene::Scene`].
 
 use crate::random::Generator;
 

@@ -684,12 +684,48 @@ pub fn score_samples(trace: &SampleTrace<'_>) -> ObjectiveReport {
     build_report(r_count, horizon, frame_accum, outputs, trace.weights)
 }
 
+/// Inline per-frame speaker slot count avoiding per-frame heap allocation in
+/// [`ObjectiveRecorder`] for typical speaker counts (`<= 8`).
+const INLINE_SPEAKERS: usize = 8;
+
+/// Compact per-frame first-play-time storage avoiding heap allocations for up
+/// to [`INLINE_SPEAKERS`] speakers.
+#[derive(Clone, Debug)]
+enum PlayTimes {
+    Inline([Option<f64>; INLINE_SPEAKERS], usize),
+    Heap(Vec<Option<f64>>),
+}
+
+impl PlayTimes {
+    fn new(speakers: usize) -> Self {
+        if speakers <= INLINE_SPEAKERS {
+            Self::Inline([None; INLINE_SPEAKERS], speakers)
+        } else {
+            Self::Heap(vec![None; speakers])
+        }
+    }
+
+    fn as_slice(&self) -> &[Option<f64>] {
+        match self {
+            Self::Inline(buf, len) => &buf[..*len],
+            Self::Heap(vec) => vec.as_slice(),
+        }
+    }
+
+    fn get_mut(&mut self, index: usize) -> Option<&mut Option<f64>> {
+        match self {
+            Self::Inline(buf, len) => buf.get_mut(..*len).and_then(|s| s.get_mut(index)),
+            Self::Heap(vec) => vec.get_mut(index),
+        }
+    }
+}
+
 /// Stored metadata for one buffered source frame inside [`ObjectiveRecorder`].
 #[derive(Clone, Debug)]
 struct FrameRecord {
     capture_time: f64,
     target_latency: f64,
-    play_times: Vec<Option<f64>>,
+    play_times: PlayTimes,
 }
 
 /// Most recent continuous step seen on a speaker (for cross-break roughness).
@@ -796,7 +832,7 @@ impl ObjectiveRecorder {
         self.frames.push_back(FrameRecord {
             capture_time: capture_time_s,
             target_latency: target_latency_s,
-            play_times: vec![None; self.speakers.len()],
+            play_times: PlayTimes::new(self.speakers.len()),
         });
         while self.frames.len() > self.max_buffered_frames {
             self.retire_oldest_frame();
@@ -814,7 +850,7 @@ impl ObjectiveRecorder {
                 record.capture_time,
                 next_cap,
                 record.target_latency,
-                &record.play_times,
+                record.play_times.as_slice(),
                 self.window_start,
                 self.window_end,
             );

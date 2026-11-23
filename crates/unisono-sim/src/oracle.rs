@@ -2,13 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! `[ORACLE / CENTRALIZED BENCHMARK]` Analytical calculators, centralized
-//! performance lower bounds, and floating-point reference estimators.
+//! `[ORACLE / MODEL BENCHMARK]` Offline analytical calculators, Graph-BLUE
+//! variance/bias identities, per-cycle Lyapunov cost evaluators, and
+//! floating-point reference estimators.
 //!
 //! Nothing in this module is a deployable protocol. Every function and type
-//! here is an offline analytical benchmark or floating-point reference used
-//! strictly to compute theoretical optima and validate fixed-point protocol
-//! implementations in `unisono_core`.
+//! here uses known true model parameters strictly to compute offline
+//! analytical reference values (`multiCycleCost` per-cycle Lyapunov cost,
+//! Graph-BLUE effective resistance, continuous-time Campbell pause cost
+//! `J_buf`) and to cross-check the fixed-point implementations in
+//! `unisono_core`. None of the per-cycle Lyapunov evaluators here is a
+//! lower bound over all policies on the six canonical `Unisono.Spec.Objectives`.
 
 use crate::clock::FrequencyNoise;
 use crate::random::Generator;
@@ -117,9 +121,10 @@ pub fn decentralized_star_weight(receivers: usize, c_sync: f64, c_track: f64) ->
     ((count - 1.0) / count) * c_sync + c_track
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Optimal `Regulation.law` gain `g` in
-/// `(0, 1)` for quadratic position weight `c > 0`, inverting
-/// `g^4 / ((2 - g)^2 * (1 - g)) = c` by bisection.
+/// `[ORACLE / MODEL BENCHMARK]` Per-cycle `Regulation.law` gain `g` in `(0, 1)`
+/// minimizing the single-mode `multiCycleCost` quadratic objective for
+/// position weight `c > 0`, inverting `g^4 / ((2 - g)^2 * (1 - g)) = c` by
+/// bisection.
 #[must_use]
 pub fn gain_for_weight(c: f64) -> f64 {
     if c <= 0.0 {
@@ -282,9 +287,9 @@ pub fn star_lyapunov_cost(
         + mode_lyapunov_cost(gain, c_sync + c_track, sigma_diff)
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Optimal shared scalar `Regulation.law`
-/// gain `g` in `(0, 1)` minimizing [`star_lyapunov_cost`] via golden-section
-/// search.
+/// `[ORACLE / MODEL BENCHMARK]` Numerical golden-section search over scalar
+/// `Regulation.law` gains `g` in `(0, 1)` minimizing [`star_lyapunov_cost`]
+/// in the per-cycle quadratic model.
 #[must_use]
 pub fn optimal_shared_star_gain(
     receivers: usize,
@@ -459,9 +464,13 @@ fn filtered_mode_lyapunov_cost(
     total / as_float(m)
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Configuration for the coupled
-/// Kalman-filter plus `Regulation.law` star Lyapunov solver
+/// `[ORACLE / MODEL BENCHMARK]` Configuration for the coupled Kalman-filter
+/// plus `Regulation.law` star Lyapunov model
 /// ([`filtered_star_lyapunov_cost`], [`optimal_filtered_star_gain`]).
+///
+/// Evaluates one specific decentralized star design (steady-state 2-state
+/// Kalman filter followed by `Regulation.law(gain)`) with known true noise
+/// parameters; it is a model-specific reference, not a centralized lower bound.
 #[derive(Clone, Copy, Debug)]
 pub struct FilteredStarLyapunov {
     /// Number of star receivers `R >= 1`.
@@ -482,10 +491,11 @@ pub struct FilteredStarLyapunov {
     pub meas_stride: usize,
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Exact stationary per-cycle cost
-/// `E[c_sync Var(e) + c_track mean(e^2) + mean(du^2)]` for `R` symmetric star
-/// receivers running the steady-state 2-state Kalman filter followed by
-/// `Regulation.law(gain)` on every cycle.
+/// `[ORACLE / MODEL BENCHMARK]` Stationary per-cycle quadratic cost
+/// `E[c_sync Var(e) + c_track mean(e^2) + mean(du^2)]` for one specific
+/// decentralized star architecture (`R` symmetric receivers running a
+/// steady-state 2-state Kalman filter followed by `Regulation.law(gain)` on
+/// every cycle) given known true noise parameters.
 #[must_use]
 pub fn filtered_star_lyapunov_cost(cfg: FilteredStarLyapunov, gain: f64) -> f64 {
     let r = as_float(cfg.receivers.max(1));
@@ -514,9 +524,10 @@ pub fn filtered_star_lyapunov_cost(cfg: FilteredStarLyapunov, gain: f64) -> f64 
     j_com + j_priv
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Optimal shared scalar `Regulation.law`
-/// gain `g` in `(0, 1)` minimizing [`filtered_star_lyapunov_cost`] via
-/// golden-section search in log-gain space.
+/// `[ORACLE / MODEL BENCHMARK]` Numerical golden-section search in log-gain
+/// space for the scalar `Regulation.law` gain `g` in `(0, 1)` minimizing
+/// [`filtered_star_lyapunov_cost`] for one specific decentralized filter +
+/// regulator design with known true noise parameters.
 #[must_use]
 pub fn optimal_filtered_star_gain(cfg: FilteredStarLyapunov) -> f64 {
     let phi = 0.5 * (5.0_f64.sqrt() - 1.0);
@@ -797,10 +808,10 @@ pub fn pure_pause_block_metrics(
     (missed_frac, as_float(clicks) / duration, clicks)
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Closed-form optimal playout margin for
-/// Poisson exponential pauses of rate `rate` and mean duration `mean`,
-/// minimizing linear latency, missed audio, and discontinuity rate over
-/// `m >= 0`. Returns `None` when `w_lat <= 0.0`.
+/// `[ORACLE / MODEL BENCHMARK]` Closed-form minimizer of the continuous-time
+/// exponential-pause linear buffer cost `J_buf` (latency, missed audio, and
+/// discontinuity rate over `m >= 0`) for Poisson exponential pauses of rate
+/// `rate` and mean duration `mean`. Returns `None` when `w_lat <= 0.0`.
 #[must_use]
 pub fn hold_margin_with_clicks(
     rate: f64,
@@ -823,7 +834,7 @@ pub fn hold_margin_with_clicks(
     Some(if ratio <= 1.0 { 0.0 } else { mean * ratio.ln() })
 }
 
-/// `[ORACLE / CENTRALIZED BENCHMARK]` Closed-form optimal playout margin when
+/// `[ORACLE / MODEL BENCHMARK]` Closed-form minimizer of `J_buf` when
 /// discontinuities are unpriced (`w_click = 0`).
 #[must_use]
 pub fn hold_margin(rate: f64, mean: f64, price_ratio: f64) -> Option<f64> {
@@ -890,6 +901,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn lyapunov_and_optimal_star_gains_match_analytical_benchmarks() {
         assert!((law(0.5, 1.0, 0.0) - (0.25 / 1.5)).abs() < 1e-12);
         let c_pos = cycle_position_weight(1e6, 1.0, 0.01);
@@ -923,17 +935,43 @@ mod tests {
 
         let sigma_s = cycle_clock_innovation_cov(FrequencyNoise::WANDERING_QUARTZ, dt);
         let g_opt = optimal_shared_star_gain(receivers, c_sync, c_track, sigma_s, sigma_rx);
+        let j_opt = star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_opt);
+        assert!(j_opt < star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_indep));
+        // Finite-difference local minimality around `g_opt`.
         assert!(
-            star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_opt)
-                < star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_indep)
+            star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_opt * 0.9) > j_opt
+        );
+        assert!(
+            star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_opt * 1.1) > j_opt
         );
 
-        let k_ss = steady_state_kalman_gain(
-            FrequencyNoise::WANDERING_QUARTZ.combine(FrequencyNoise::CONSUMER_QUARTZ),
-            1.0,
-            (10e-6_f64).powi(2),
-        );
+        let total_noise = FrequencyNoise::WANDERING_QUARTZ.combine(FrequencyNoise::CONSUMER_QUARTZ);
+        let meas_var = (10e-6_f64).powi(2);
+        let k_ss = steady_state_kalman_gain(total_noise, 1.0, meas_var);
         assert!(k_ss[0] > 0.0 && k_ss[0] < 1.0 && k_ss[1] > 0.0);
+        // Verify `k_ss` satisfies the steady-state 2x2 Lyapunov equation for the
+        // posterior estimation error covariance `P = F_cl P F_cl^T + Q_cl` and
+        // reproduces `k_ss = P_pred H^T / (P_pred[0][0] + R)`.
+        let q1 = process_covariance(total_noise, 1.0);
+        // Iterate posterior covariance to fixed point with fixed `k_ss` and verify
+        // the optimal gain for that covariance matches `k_ss`.
+        let mut p = [[meas_var, 0.0], [0.0, 1e-12]];
+        for _ in 0..2_000 {
+            let p_pred_00 = p[0][0] + 2.0 * p[0][1] + p[1][1] + q1[0][0];
+            let p_pred_01 = p[0][1] + p[1][1] + q1[0][1];
+            let p_pred_11 = p[1][1] + q1[1][1];
+            let np00 = (1.0 - k_ss[0]).powi(2) * p_pred_00 + k_ss[0].powi(2) * meas_var;
+            let np01 =
+                (1.0 - k_ss[0]) * (p_pred_01 - k_ss[1] * p_pred_00) + k_ss[0] * k_ss[1] * meas_var;
+            let np11 =
+                p_pred_11 - 2.0 * k_ss[1] * p_pred_01 + k_ss[1].powi(2) * (p_pred_00 + meas_var);
+            p = [[np00, np01], [np01, np11]];
+        }
+        let pred_00 = p[0][0] + 2.0 * p[0][1] + p[1][1] + q1[0][0];
+        let pred_01 = p[0][1] + p[1][1] + q1[0][1];
+        let s_innov = pred_00 + meas_var;
+        assert!((pred_00 / s_innov - k_ss[0]).abs() < 1e-12);
+        assert!((pred_01 / s_innov - k_ss[1]).abs() < 1e-12);
 
         let cfg = FilteredStarLyapunov {
             receivers,
@@ -946,10 +984,86 @@ mod tests {
             meas_stride: 100,
         };
         let g_filt = optimal_filtered_star_gain(cfg);
+        let j_filt = filtered_star_lyapunov_cost(cfg, g_filt);
         assert!(g_filt < g_track);
-        assert!(
-            filtered_star_lyapunov_cost(cfg, g_filt) < filtered_star_lyapunov_cost(cfg, g_track)
+        assert!(j_filt < filtered_star_lyapunov_cost(cfg, g_track));
+        // Finite-difference local minimality around `g_filt`.
+        assert!(filtered_star_lyapunov_cost(cfg, g_filt * 0.9) > j_filt);
+        assert!(filtered_star_lyapunov_cost(cfg, g_filt * 1.1) > j_filt);
+        assert!(filtered_star_lyapunov_cost(cfg, g_filt * 0.99) > j_filt);
+        assert!(filtered_star_lyapunov_cost(cfg, g_filt * 1.01) > j_filt);
+
+        // Limiting case 1: for pure white FM (constant frequency, `walk = 0`),
+        // noiseless stride-1 phase observation gives full state information, so
+        // `filtered_star_lyapunov_cost` matches `star_lyapunov_cost` directly.
+        let white_s = FrequencyNoise {
+            h0_white: 1e-12,
+            h1_flicker: 0.0,
+            h2_walk: 0.0,
+        };
+        let white_r = FrequencyNoise {
+            h0_white: 3e-13,
+            h1_flicker: 0.0,
+            h2_walk: 0.0,
+        };
+        let noiseless_white = FilteredStarLyapunov {
+            receivers,
+            c_sync,
+            c_track,
+            sender_noise: white_s,
+            receiver_noise: white_r,
+            meas_var: 1e-26,
+            cycle: dt,
+            meas_stride: 1,
+        };
+        let j_lim_white = filtered_star_lyapunov_cost(noiseless_white, 0.2);
+        let j_direct_white = star_lyapunov_cost(
+            receivers,
+            c_sync,
+            c_track,
+            cycle_clock_innovation_cov(white_s, dt),
+            cycle_clock_innovation_cov(white_r, dt),
+            0.2,
         );
+        assert!(
+            (j_lim_white - j_direct_white).abs() < 1e-2 * j_direct_white,
+            "pure white-FM noiseless stride-1 filtered cost ({j_lim_white}) should match direct Lyapunov cost ({j_direct_white})"
+        );
+
+        // Limiting case 2: with random-walk FM, phase-only observation cannot
+        // observe instantaneous frequency directly, so even noiseless stride-1
+        // filtered cost is strictly above full-state `star_lyapunov_cost`, and
+        // cost increases monotonically with measurement variance and stride.
+        let noiseless_rw = FilteredStarLyapunov {
+            receivers,
+            c_sync,
+            c_track,
+            sender_noise: FrequencyNoise::WANDERING_QUARTZ,
+            receiver_noise: FrequencyNoise::CONSUMER_QUARTZ,
+            meas_var: 1e-22,
+            cycle: dt,
+            meas_stride: 1,
+        };
+        let j_lim_rw = filtered_star_lyapunov_cost(noiseless_rw, 0.2);
+        let j_direct_rw = star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, 0.2);
+        let j_noisy_rw = filtered_star_lyapunov_cost(
+            FilteredStarLyapunov {
+                meas_var: (2.8e-6_f64).powi(2),
+                ..noiseless_rw
+            },
+            0.2,
+        );
+        let j_strided_rw = filtered_star_lyapunov_cost(
+            FilteredStarLyapunov {
+                meas_var: (2.8e-6_f64).powi(2),
+                meas_stride: 100,
+                ..noiseless_rw
+            },
+            0.2,
+        );
+        assert!(j_lim_rw > j_direct_rw);
+        assert!(j_noisy_rw > j_lim_rw);
+        assert!(j_strided_rw > j_noisy_rw);
 
         let res_var = residual_measurement_variance(16e-12, 4e-12);
         assert!((res_var - 12e-12).abs() < 1e-24);

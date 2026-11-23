@@ -571,6 +571,31 @@ impl Pump {
     }
 }
 
+/// Shipped receiver silence timeout before adopting a new timeline, in ns.
+pub const SHIPPED_SILENCE_NS: i64 = 1_000_000_000;
+
+/// Shipped receiver clock-estimator slope limit, in ns/s.
+pub const SHIPPED_SLOPE_LIMIT: i64 = 200_000;
+
+/// Shipped single-mode regulator gain in Q16 (`4.0 / s`).
+pub const SHIPPED_REGULATION_GAIN: u32 = 4 << 16;
+
+/// Shipped playback pace limit, in ppb (`1000 ppm`).
+pub const SHIPPED_REGULATION_LIMIT: u32 = 1_000_000;
+
+/// Shipped pump resampling sub-block size, in output frames.
+pub const SHIPPED_BLOCK: usize = 256;
+
+/// Shipped accepted audio-device clock-rate deviation, in ppb (`1%`).
+pub const SHIPPED_DEVICE_RANGE: u32 = 10_000_000;
+
+/// Shipped default playback request lead, in nanoseconds (`4 ms`).
+pub const SHIPPED_LEAD_NS: i64 = 4_000_000;
+
+/// Shipped receiver playback dimensions: 16,384 held frames (`256 * 64`),
+/// 64 lower-hull clock samples, 8 packet-arrival slots, and 64 device reports.
+pub type ShippedPlayback = ReceiverPlayback<256, 64, 8, 64>;
+
 /// What a receiver that plays on a device is set up with.
 #[derive(Clone, Copy, Debug)]
 pub struct Settings {
@@ -608,6 +633,40 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// Builds the shipped validated receiver [`Settings`] shared by the CLI, C
+    /// library, and simulator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InvalidSettings`] when any field violates [`Settings::validate`].
+    pub fn shipped(
+        stream: u16,
+        rate: u32,
+        channels: u8,
+        identity: u64,
+        modal_regulation: Option<ModalRegulation>,
+    ) -> Result<Settings, InvalidSettings> {
+        let settings = Settings {
+            stream,
+            rate,
+            channels,
+            identity,
+            silence: SHIPPED_SILENCE_NS,
+            slope_limit: SHIPPED_SLOPE_LIMIT,
+            regulation: Regulation {
+                gain: SHIPPED_REGULATION_GAIN,
+                limit: SHIPPED_REGULATION_LIMIT,
+                jump: (rate / 200).max(1),
+            },
+            modal_regulation,
+            concealment: Parameters::for_rate(rate),
+            block: SHIPPED_BLOCK,
+            device_range: SHIPPED_DEVICE_RANGE,
+        };
+        settings.validate()?;
+        Ok(settings)
+    }
+
     /// Validates that rate, channels, silence timeout, clock slope limit,
     /// regulator jump threshold, and block size satisfy runtime invariants.
     ///
@@ -684,7 +743,6 @@ pub struct ReceiverPlayback<const N: usize, const M: usize, const K: usize, cons
     carried: i64,
     rate: u32,
     channels: u8,
-    last_plan: Plan,
     last: Played,
     totals: Totals,
 }
@@ -724,15 +782,6 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
             carried: 0,
             rate: settings.rate,
             channels: settings.channels,
-            last_plan: Plan {
-                frames: 0,
-                start: timing::Position {
-                    frame: 0,
-                    fraction: 0,
-                },
-                step: timing::Step::UNITY,
-                jumped: false,
-            },
             last: Played::default(),
             totals: Totals::default(),
         }
@@ -828,7 +877,12 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         {
             return None;
         }
-        let heard = self.accept_header(header, arrival);
+        let heard = self.receiver.packet(header, arrival);
+        if heard.adopted || heard.restarted {
+            self.needs.clear();
+            self.timeline_played = false;
+        }
+        self.observe_need(header, &heard);
         if !heard.ignored {
             let receiver = &self.receiver;
             self.store
@@ -837,28 +891,6 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
                 });
         }
         Some(heard)
-    }
-
-    /// Processes an audio packet header without decoding or storing PCM
-    /// samples. Shares the exact core state transition, timeline adoption,
-    /// presence marking, and need tracking with [`ReceiverPlayback::packet`].
-    pub fn packet_header_only(&mut self, header: &Audio, arrival: i64) -> Option<Heard> {
-        if header.rate != self.rate || header.channels != self.channels {
-            return None;
-        }
-        Some(self.accept_header(header, arrival))
-    }
-
-    /// Common header ingestion shared by [`Self::packet`] and
-    /// [`Self::packet_header_only`].
-    fn accept_header(&mut self, header: &Audio, arrival: i64) -> Heard {
-        let heard = self.receiver.packet(header, arrival);
-        if heard.adopted || heard.restarted {
-            self.needs.clear();
-            self.timeline_played = false;
-        }
-        self.observe_need(header, &heard);
-        heard
     }
 
     /// Takes in the need of the first frame of a packet that the receiver
@@ -964,74 +996,6 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> ReceiverPla
         let start = if usable { fitted_start } else { time };
         (start, duration)
     }
-    /// Most recent playback [`Plan`] produced by a cycle.
-    #[must_use]
-    pub fn last_plan(&self) -> Plan {
-        self.last_plan
-    }
-
-    /// Runs one playback cycle's device-clock fitting, core schedule planning,
-    /// and monotonic playhead advancement without running the FIR resampler or
-    /// concealment DSP. Returns the exact [`Plan`] produced by `Receiver::cycle`.
-    pub fn cycle_plan_only(&mut self, position: u64, time: i64, count: u32) -> Plan {
-        let plan = self.plan_cycle(position, time, count);
-        let done = self.advance_playhead_for_plan(&plan, count);
-        self.last = done;
-        if self.last.played > 0 {
-            self.timeline_played = true;
-        }
-        self.totals.add(&self.last);
-        plan
-    }
-
-    /// Common cycle planning shared by [`Playback::cycle`] and
-    /// [`Self::cycle_plan_only`].
-    fn plan_cycle(&mut self, position: u64, time: i64, count: u32) -> Plan {
-        let (start, duration) = self.step_device(position, time, count);
-        let due = self.receiver.due_at(start);
-        let plan = self.receiver.cycle(start, duration, count);
-        self.revise(due, plan.jumped);
-        self.expected = self.receiver.due_at(start.saturating_add(duration));
-        self.last_plan = plan;
-        plan
-    }
-
-    /// Advances the core receiver playhead for `plan` identically to
-    /// [`Pump::play`] without rendering audio samples.
-    fn advance_playhead_for_plan(&mut self, plan: &Plan, cycle: u32) -> Played {
-        let mut done = Played::default();
-        let wanted = plan.frames.min(cycle);
-        if wanted > 0 {
-            done.jumped = plan.jumped;
-            let before = self.pump.filter().before() as u64;
-            let ahead = self.pump.filter().ahead() as u64;
-            if let Some(last) = plan.start.advance(plan.step, u64::from(wanted) - 1) {
-                let first_needed = plan.start.frame().saturating_sub(before);
-                let end_exclusive = last.frame().saturating_add(ahead).saturating_add(1);
-                if first_needed > self.receiver.playhead() {
-                    done.skipped = done
-                        .skipped
-                        .saturating_add(self.receiver.skip(first_needed));
-                }
-                while self.receiver.playhead() < end_exclusive {
-                    let rem =
-                        u32::try_from(end_exclusive - self.receiver.playhead()).unwrap_or(u32::MAX);
-                    let seg = self.receiver.take(rem);
-                    if seg.frames == 0 {
-                        break;
-                    }
-                    if seg.held {
-                        done.held = done.held.saturating_add(seg.frames);
-                    } else {
-                        done.concealed = done.concealed.saturating_add(seg.frames);
-                    }
-                }
-                done.played = wanted;
-            }
-        }
-        done.silent = cycle.saturating_sub(done.played);
-        done
-    }
 }
 
 impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
@@ -1043,7 +1007,11 @@ impl<const N: usize, const M: usize, const K: usize, const W: usize> Playback
 
     fn cycle(&mut self, frames: &mut [f32], position: u64, time: i64) {
         let count = narrow(frames.len() / usize::from(self.channels).max(1));
-        let plan = self.plan_cycle(position, time, count);
+        let (start, duration) = self.step_device(position, time, count);
+        let due = self.receiver.due_at(start);
+        let plan = self.receiver.cycle(start, duration, count);
+        self.revise(due, plan.jumped);
+        self.expected = self.receiver.due_at(start.saturating_add(duration));
         self.last = self
             .pump
             .play(&mut self.receiver, &self.store, &plan, frames);
