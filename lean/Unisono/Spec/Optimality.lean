@@ -48,6 +48,13 @@ That is possible only for an index that a solution can learn from what it
 observes. Whatever cannot be learned has to be drawn at random inside each
 member, with a stated law; otherwise a solution designed for one member wins
 there and no solution is optimal.
+
+The expected cost is a lower integral. When the cost of a solution is not a
+measurable function of the outcome, its lower integral can lie below its cost
+in almost every outcome, so such a solution can appear better than every
+solution whose cost is measurable. A statement of optimality therefore has
+to restrict the class of solutions to those whose cost is a measurable
+function of what is drawn. That class is not defined here yet.
 -/
 
 @[expose] public noncomputable section

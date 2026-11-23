@@ -956,6 +956,18 @@ are not carried out in Lean, so the model is not yet shown to have such
 members. The generative model is not proved to belong to the classes above;
 its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
 
+A member is \emph{noiseless} when its links carry no other traffic, its
+clocks do not wander and the mean rates of its clocks have no spread,
+$\mu_{ij} = 0$, $\nu_i = 0$ and $\sigma = 0$
+(\lean{Member.Noiseless}). What stays random in such a member is what no
+host can learn: the offsets and the splits. Almost every outcome of a
+noiseless member is an ideal constant world whose constant delays are the
+least delays of the outcome, and it satisfies the tight bounds of that world
+(\lean{Prior.ae\_idealConstantWorld}, \lean{Prior.ae\_withinBounds} in
+\path{lean/Unisono/Spec/Models/GenerativeNoiseless.lean}). The theorems about
+ideal constant worlds and bounded worlds therefore hold in almost every
+outcome of a noiseless member.
+
 \paragraph{Limitations.}
 The model leaves out, or simplifies, the following. Each item says what the
 simplification distorts.
@@ -1065,7 +1077,13 @@ law for them as well.
 
 \begin{remark}[The class of solutions]
 The class \lean{allSolutions} compares all solutions. A statement about a
-smaller class has to name it. A speaker that does not play a frame adds
+smaller class has to name it. The expected cost is a lower integral
+(\lean{Solution.\allowbreak expectedCost}). When the cost of a solution is
+not a measurable function of the outcome, its lower integral can lie below
+its cost in almost every outcome, and such a solution can appear better than
+every solution whose cost is measurable. A statement of optimality therefore
+has to restrict the class to solutions whose cost is a measurable function
+of what is drawn; this class is not yet defined in Lean. A speaker that does not play a frame adds
 nothing to that frame's synchronization and tracking costs, so with
 $w_M = 0$ a solution that plays nothing has cost zero and is optimal. A
 statement about synchronization and tracking alone therefore needs either

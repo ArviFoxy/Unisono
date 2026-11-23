@@ -1,6 +1,6 @@
 # The theorems
 
-All 464 theorems indexed below live in `lean/Unisono` and are checked in
+All 472 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -48,7 +48,7 @@ argument, whether or not reachable in a run.
 | `Spec.Solution.views_succ`, `views_append`, `handled_before`, `handled_of_mem_views`, `handled_time`, `handled_of_views_eq`, `exists_handed_step`, `askedNext_mono`, `askedNext_succ`, `exists_asked_step`, `plays_of_asked_step`, `handled_of_asked`, `handled_asked`, `no_request_between`, `Solution.progress` | Structural run invariants connecting host views, handled events, playback-block requests, playback decisions, and sufficient conditions for non-Zeno progress. |
 | `Spec.longRun_le`, `missed_eq_zero`, `discontinuities_eq_zero`, `meanLatency_le`, `sync_le`, `tracking_le` | Linear accrual bounds long-run averages; any playback within `E` of fixed latency `L` from some sample onward has zero long-run missed samples and discontinuities, mean latency at most `L + E + δ`, synchronization cost at most `(E + δ)²`, and tracking cost at most `(D + E + δ)²`, where `δ` bounds output sample spacing and `D` bounds `|L* - L|` for target latency `L*`. |
 
-### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld}`)
+### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld,GenerativeNoiseless}`)
 
 | Theorem | Model | What it says |
 |---|---|---|
@@ -59,6 +59,7 @@ argument, whether or not reachable in a run.
 | `Spec.ClockNoise.density_nonneg`, `secondDifferenceCovariance_integrableOn`, `secondDifferenceCovariance_diag_le`, `SecondOrderMoments.example_holds` | `SecondOrderMoments` | The band-limited IEEE Std 1139-2008 power-law one-sided frequency-noise spectral density `S(f)` is nonnegative and yields convergent phase second-difference covariances bounded by `4 τ² ∫ S(f) df` at every lag `τ`; a three-host witness with nonzero uncorrelated per-packet link jitter proves satisfiability. |
 | `Spec.StochasticWorld.Holds.network_random`, `StochasticWorld.example_holds` | `StochasticWorld` | Every composite stochastic world satisfies `StationaryNetworkDisturbances.Random`; the composite model class is non-empty. |
 | `Spec.GenerativeWorld.Prior.leastDelay_pos`, `Prior.leastDelay_add`, `trafficLaw_univ`, `trafficLaw_zero`, `betaPDF_one_sub`, `betaMeasure_map_one_sub`, `betaMeasure_compl_Ioo`, `GenerativeWorld.example_holds` | `GenerativeWorld` | In every outcome both least delays of a pair of hosts are positive and add up to the pair's least round-trip time; the law of the work that other traffic brings to a link is a probability law, and no traffic brings no work; the Beta law of a split gives no mass outside `(0, 1)` and is the same for a split and for one minus it, so it prefers no direction; a random world with three hosts, random splits, clock offsets and mean clock rates, no other traffic and no wander satisfies the model. |
+| `Spec.World.finite_hosts`, `GenerativeWorld.Prior.logRate_ae_eq_zero`, `Prior.wander_ae_eq_zero`, `Prior.traffic_ae_const`, `Draw.isBacklog_zero_of_const`, `Draw.reading_of_noiseless`, `Prior.ae_idealConstantWorld`, `Prior.ae_withinBounds` | `GenerativeWorld` (noiseless members) | A world has finitely many hosts. In a member with no other traffic, no clock wander and no spread of the clocks' mean rates (`Member.Noiseless`), almost every outcome has clocks that read true time plus their drawn offset, links that receive no work and have no backlog, and is therefore an ideal constant world (`IdealConstantWorld.Holds`) whose constant delays are the least delays of the outcome; it satisfies the tight bounds of that world (`World.WithinBounds`), so the theorems about bounded worlds apply to it. |
 
 ### 1.3 Communication topologies, modal split, and shift invariance (`Spec.Topologies`)
 

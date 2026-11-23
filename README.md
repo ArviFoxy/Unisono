@@ -42,6 +42,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Spec/Optimality.lean`) and the generative model
     `GenerativeWorld`, with checks of its definitions and a random world that
     satisfies it (a member with no other traffic and no clock wander).
+  - In a member of `GenerativeWorld` with no other traffic, no clock wander and
+    no spread of clock rates, almost every outcome is an ideal constant world
+    and satisfies `World.WithinBounds`
+    (`lean/Unisono/Spec/Models/GenerativeNoiseless.lean`), so the theorems
+    about those models apply to it.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

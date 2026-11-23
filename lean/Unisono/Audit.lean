@@ -41,6 +41,7 @@ public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
@@ -968,6 +969,38 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.example_holds
+
+/-- info: 'Unisono.Spec.World.finite_hosts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.finite_hosts
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.logRate_ae_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.logRate_ae_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.wander_ae_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.wander_ae_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.traffic_ae_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.traffic_ae_const
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.isBacklog_zero_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.isBacklog_zero_of_const
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.reading_of_noiseless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.reading_of_noiseless
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_idealConstantWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_idealConstantWorld
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_withinBounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_withinBounds
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
