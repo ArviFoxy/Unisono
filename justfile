@@ -6,10 +6,9 @@ default:
     @just --list
 
 # Everything that continuous integration runs.
-check: sizes format-check lint test targets realtime cost translation prove translation-check pdfs-check pdfs
+check: sizes format-check lint test targets realtime cost prove translation-check pdfs-check pdfs
 
-# No file of the repository is larger than a megabyte: the largest by far is
-# the translation of the core, a quarter of that.
+# No tracked file in the repository is larger than a megabyte.
 sizes:
     @git ls-files -z | xargs -0 sh -c 'large=0; for f in "$@"; do [ -f "$f" ] || continue; n=$(wc -c < "$f"); if [ "$n" -gt 1048576 ]; then echo "too large: $f ($n bytes)"; large=1; fi; done; exit $large' _
 
@@ -73,22 +72,16 @@ targets:
 proof-tools:
     tools/proof-tools.sh build
 
-# Translate the core to Lean again, after its Rust has changed.
+# Translate the core to Lean (skipped when crates/unisono-core is unchanged).
 translate: proof-tools
     tools/extract.sh
 
-# Fail if the Lean translation in the repository is not that of the current Rust.
-translation: proof-tools
-    tools/extract.sh --check
-
-# Check the proofs.
-prove:
-    tools/proof-tools.sh fetch
+# Check the proofs against a fresh or up-to-date translation of the core.
+prove: translate
     cd lean && lake exe cache get && lake build
 
 # Evaluate the Lean translation on the inputs the Rust was run on, and compare.
-translation-check:
-    tools/proof-tools.sh fetch
+translation-check: translate
     mkdir -p target
     cargo run --quiet --package translation-check > target/translation-check.txt
     cd lean && lake env lean --run TranslationCheck.lean ../target/translation-check.txt

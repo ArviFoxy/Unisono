@@ -73,17 +73,18 @@ lists what is proved, and `docs/protocol.md` gives the packets.
 3. an inspection of the machine code of the functions that run on real-time
    threads: it must not enter the kernel, call an allocator, or be able to
    panic;
-4. a fresh translation of the core, which must equal the one in `lean/UnisonoCore`;
+4. generating the Lean translation of the core (`lean/UnisonoCore/{Types,Funs}.lean`, gitignored);
 5. the proofs;
 6. the comparison of the translation with the Rust on the same inputs.
 
 It needs [rustup](https://rustup.rs), [just](https://just.systems),
-[elan](https://github.com/leanprover/elan) and, for step 4,
+[elan](https://github.com/leanprover/elan) and, for the proofs,
 [opam](https://opam.ocaml.org). The first run builds Aeneas and its Lean
-library, which takes a while; later runs take about a minute.
+library, which takes a while; later runs reuse the cached build and take about a
+minute.
 
-After a change to the Rust of the core, `just translate` writes the translation
-again.
+`just prove` automatically regenerates the translation whenever
+`crates/unisono-core` changes (`just translate` runs only the translation step).
 
 ## How the proofs relate to the Rust
 
@@ -91,8 +92,9 @@ A theorem in `lean/Unisono` is about a function in `lean/UnisonoCore`. It
 says something about the Rust to the extent that the translation is faithful,
 and three things support that:
 
-- the translation is regenerated and compared on every check, so it cannot go
-  stale;
+- `lean/UnisonoCore/{Types,Funs}.lean` are generated directly from
+  `crates/unisono-core` before every proof build rather than checked in, so the
+  translation cannot go stale;
 - a function of the standard library without a Lean model fails the
   translation, so none enters the proofs as an axiom, and
   `lean/Unisono/Audit.lean` pins the axioms each theorem uses;

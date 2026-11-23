@@ -1,4 +1,7 @@
 /target/
 /.tools/
 /lean/.lake/
+/lean/UnisonoCore/Types.lean
+/lean/UnisonoCore/Funs.lean
+/lean/UnisonoCore/.source-hash
 *.llbc

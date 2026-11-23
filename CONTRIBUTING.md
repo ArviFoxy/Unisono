@@ -6,8 +6,9 @@
 for what it checks and which tools it requires. Make sure it passes before
 considering a change ready.
 
-Whenever you modify `crates/unisono-core`, run `just translate` to regenerate
-the Lean translation and verify that all proofs in `lean/Unisono` still pass.
+Whenever you modify `crates/unisono-core`, `just prove` automatically
+regenerates the gitignored Lean translation in `lean/UnisonoCore/` via
+`tools/extract.sh` before checking the proofs in `lean/Unisono`.
 
 CI also checks dependencies against `deny.toml` for known security advisories,
 allowed licences, and approved sources. If `cargo-deny` is installed locally,
