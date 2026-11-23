@@ -33,10 +33,12 @@ public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay
+public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays

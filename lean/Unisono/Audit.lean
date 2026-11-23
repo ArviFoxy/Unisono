@@ -35,10 +35,12 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.Core
+public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.GenerativeNoiseless
@@ -1001,6 +1003,70 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_withinBounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.ae_withinBounds
+
+/-- info: 'Unisono.Spec.limsup_weighted' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limsup_weighted
+
+/-- info: 'Unisono.Spec.World.cost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.cost_le
+
+/-- info: 'Unisono.Spec.World.weighted_tracking_le_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.weighted_tracking_le_cost
+
+/-- info: 'Unisono.Spec.World.PlaysAtLatencies.playsAtLatency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.PlaysAtLatencies.playsAtLatency
+
+/-- info: 'Unisono.Spec.World.missed_eq_zero_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.missed_eq_zero_of_exact
+
+/-- info: 'Unisono.Spec.World.discontinuities_eq_zero_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.discontinuities_eq_zero_of_exact
+
+/-- info: 'Unisono.Spec.World.latency_eq_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.latency_eq_of_exact
+
+/-- info: 'Unisono.Spec.World.capture_step_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.capture_step_of_linear
+
+/-- info: 'Unisono.Spec.World.tracking_le_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.tracking_le_of_exact
+
+/-- info: 'Unisono.Spec.World.sync_le_of_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.sync_le_of_exact
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.Holds.captured_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.Holds.captured_eq
+
+/-- info: 'Unisono.Spec.Solution.plays_shiftStarKeepPeers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_shiftStarKeepPeers
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.Holds.starNet' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.Holds.starNet
+
+/-- info: 'Unisono.Spec.IdealConstantWorld.Holds.shiftStarKeepPeers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.IdealConstantWorld.Holds.shiftStarKeepPeers
+
+/-- info: 'Unisono.Solutions.FixedDelay.latencyError_ideal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.latencyError_ideal
+
+/-- info: 'Unisono.Solutions.FixedDelay.cost_le_of_ideal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.cost_le_of_ideal
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

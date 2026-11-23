@@ -38,6 +38,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     separation directly in `Unisono.Spec` (`lean/Unisono/Spec/Limits.lean`),
     plus end-to-end objective bounds for the abstract real-valued reference
     `Unisono.Solutions.FixedDelay` under `World.WithinBounds`.
+  - The exact cost of `Unisono.Solutions.FixedDelay` in an ideal constant world
+    with any number of receiving hosts
+    (`lean/Unisono/Solutions/FixedDelay/Exact.lean`): each speaker plays every
+    frame late by half the difference between the delay from the sender to
+    its host and the delay back. The theorem assumes that no two messages
+    from different hosts arrive at one host at the same time, and zero
+    weights on latency and roughness.
   - The definition of optimality in expected cost (`OptimalWithin` in
     `lean/Unisono/Spec/Optimality.lean`), the class of solutions that it
     compares under the generative model (`GenerativeWorld.measurableCost`:
