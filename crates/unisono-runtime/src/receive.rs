@@ -1992,34 +1992,45 @@ mod tests {
             panic!("expected audio action");
         };
 
-        // Feed a sender Echo -> enables first relay broadcast and queues a snapshot.
-        let echo = Echo {
-            stream: 3,
-            receiver: 1,
-            sequence: 42,
-            arrival: t0 + 120_000,
-            departure: t0 + 130_000,
-        };
-        let mut echo_buf = [0u8; packet::ECHO];
-        let e_len = write_echo(&echo, &mut echo_buf).expect("echo");
-        let Ok(DatagramAction::Consumed) = engine.on_datagram(
-            sender_addr,
-            &echo_buf[..e_len],
-            t0 + 230_000,
-            t0 + 230_000,
-            ConfirmedState::UNATTACHED,
-            true,
-            &mut sink,
-        ) else {
-            panic!("expected consumed");
-        };
-        let (cid, snap) = engine.take_sync_update().expect("sync snapshot");
-        assert_eq!(cid, 77);
-        assert!(snap.valid);
+        // Feed 4 sender Echoes so `sender_min_rtt` calibrates its variance
+        // estimator (`len >= 4`, gating `(0, self)` relaying) and queues a
+        // valid sync snapshot on the very first echo.
+        for i in 0..4u32 {
+            let seq = 42 + u64::from(i);
+            let dt = i64::from(i) * 40_000;
+            if i > 0 {
+                assert_eq!(engine.on_departure(seq, t0 + 20_000 + dt), None);
+            }
+            let echo = Echo {
+                stream: 3,
+                receiver: 1,
+                sequence: seq,
+                arrival: t0 + 120_000 + dt,
+                departure: t0 + 130_000 + dt,
+            };
+            let mut echo_buf = [0u8; packet::ECHO];
+            let e_len = write_echo(&echo, &mut echo_buf).expect("echo");
+            let Ok(DatagramAction::Consumed) = engine.on_datagram(
+                sender_addr,
+                &echo_buf[..e_len],
+                t0 + 230_000 + dt,
+                t0 + 230_000 + dt,
+                ConfirmedState::UNATTACHED,
+                true,
+                &mut sink,
+            ) else {
+                panic!("expected consumed");
+            };
+            if i == 0 {
+                let (cid, snap) = engine.take_sync_update().expect("sync snapshot");
+                assert_eq!(cid, 77);
+                assert!(snap.valid);
+            }
+        }
 
-        // Step now emits a PeerRelay to the peer.
+        // Step now emits a calibrated PeerRelay to the peer.
         sink.0.clear();
-        let Ok(()) = engine.step(t0 + 300_000, ConfirmedState::UNATTACHED, &mut sink);
+        let Ok(()) = engine.step(t0 + 400_000, ConfirmedState::UNATTACHED, &mut sink);
         assert_eq!(engine.counts().peer_relays_sent, 1);
         assert_eq!(sink.0.len(), 1);
         let relay = parse_peer_relay(&sink.0[0].1).expect("peer relay");

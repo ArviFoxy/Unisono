@@ -589,9 +589,10 @@ theorem modal_cycle_spec (p : player.ModalPlayer) (now later : timing.Position) 
           · intro ⟨_, _, _, _, _⟩ _
             step*
         · simp only [↓reduceIte]
-          apply WP.spec_bind (Pₘ := fun _ => True)
+          apply WP.spec_bind (Pₘ := fun t => t.1 = p.regulation)
           · repeat' (first | split | step*)
-          · intro ⟨_, _, _, _, _⟩ _
+          · intro ⟨mr, _, _, _, _, _, _⟩ hmr
+            subst hmr
             step*
       · simp only [↓reduceIte]
         step as ⟨st, hlo, hhi⟩

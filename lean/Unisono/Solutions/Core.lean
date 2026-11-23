@@ -1025,7 +1025,6 @@ private theorem on_sender_echo_peer_count (s : sync.Sync) (ec : packet.Echo) (t 
         | none => simp [hs1]
         | some samp =>
           dsimp only
-          step as ⟨v⟩
           step as ⟨_, kf⟩
           exact hs1
 
@@ -1410,9 +1409,10 @@ theorem modal_cycle_full_spec (m : player.ModalPlayer) (now later : timing.Posit
         cases peer_active with
         | true =>
           simp only [↓reduceIte]
-          apply WP.spec_bind (Pₘ := fun _ => True)
+          apply WP.spec_bind (Pₘ := fun t => t.1 = m.regulation)
           · repeat' (first | split | step*)
-          · intro ⟨i, i1, i2, b, i3⟩ _
+          · intro ⟨mr, i, i1, i2, i3, b, i4⟩ hmr
+            subst hmr
             step; step; step; step; step; step; step; step; step; step
             step; step; step; step; step; step; step; step; step; step
             step; step; step; step; step; step; step; step; step; step

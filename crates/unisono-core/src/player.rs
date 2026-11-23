@@ -761,8 +761,17 @@ impl ModalPlayer {
                 // Peer-to-peer membership change: preserve `com_behind` smoothly.
                 self.com_pos_q32 = saturate(0i128.wrapping_sub(self.last_com_behind_q32 as i128));
             } else {
-                // Entering Peer from Star: keep prior pace continuous.
-                self.com_pace = 0;
+                // Entering Peer from Star: split the existing total pace
+                // bumplessly into `(com_pace, diff_pace)` matched to
+                // `com_sched` so common mode does not start with a step error.
+                let com_sched_init =
+                    ns_to_frames_q32(schedule, com_then_ns.saturating_sub(com_now_ns));
+                let reach = reach_for(self.regulation.limit);
+                let raw_com_pace =
+                    div_floor((com_sched_init as i128).wrapping_shl(32), frames as i64);
+                let init_com_pace = saturate(clamp_sym_i128(raw_com_pace, reach));
+                self.diff_pace = self.diff_pace.wrapping_sub(init_com_pace);
+                self.com_pace = init_com_pace;
                 self.com_pos_q32 = 0;
                 self.last_com_behind_q32 = 0;
             }

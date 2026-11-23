@@ -48,20 +48,12 @@ impl OneWay {
     pub fn new(assumptions: &OneWayAssumptions, generator: &Generator) -> OneWay {
         let walk = assumptions.frequency_walk;
         let receiver = Oscillator::new(
-            OscillatorModel {
-                offset: -7.0,
-                frequency: -18e-6,
-                walk,
-            },
+            OscillatorModel::from_walk_rate(-7.0, -18e-6, walk),
             generator.fork(2),
         );
         OneWay {
             sender: Oscillator::new(
-                OscillatorModel {
-                    offset: 12.0,
-                    frequency: 31e-6,
-                    walk,
-                },
+                OscillatorModel::from_walk_rate(12.0, 31e-6, walk),
                 generator.fork(1),
             ),
             receiver_earliest: receiver.clone(),

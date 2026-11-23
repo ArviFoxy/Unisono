@@ -33,10 +33,7 @@ pub const WIRED_CALM: OneWayAssumptions = OneWayAssumptions {
         clear_excess: 5e-6,
         queued: 0.1,
         queued_excess: 200e-6,
-        pause_rate: 0.0,
-        pause_length: 0.0,
-        overtaken: 0.0,
-        overtaken_excess: 0.0,
+        ..LinkModel::IDEAL
     },
     frequency_walk: 1e-19,
     packet_rate: 750.0,
@@ -53,8 +50,7 @@ pub const WIRED_BUSY: OneWayAssumptions = OneWayAssumptions {
         queued_excess: 500e-6,
         pause_rate: 1.0 / 60.0,
         pause_length: 30e-3,
-        overtaken: 0.0,
-        overtaken_excess: 0.0,
+        ..LinkModel::IDEAL
     },
     frequency_walk: 1e-18,
     packet_rate: 750.0,
@@ -72,8 +68,7 @@ pub const WIRELESS: OneWayAssumptions = OneWayAssumptions {
         queued_excess: 3e-3,
         pause_rate: 1.0 / 60.0,
         pause_length: 1.0,
-        overtaken: 0.0,
-        overtaken_excess: 0.0,
+        ..LinkModel::IDEAL
     },
     frequency_walk: 1e-18,
     packet_rate: 750.0,

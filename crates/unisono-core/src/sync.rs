@@ -75,13 +75,13 @@ const BILLION: i128 = 1_000_000_000;
 /// Maximum variance cap for extrapolated/weighted edges (`(1 s)^2`).
 const MAX_EDGE_VAR_NS2: u64 = 1_000_000_000_000_000_000;
 
-/// Maximum fractional frequency magnitude tracked on a relayed edge (`500 ppm`
-/// in Q48).
-const MAX_RELAY_FREQ_Q48: i64 = 140_737_488_355;
+/// Maximum fractional frequency magnitude tracked on a relayed edge (`200 ppm`
+/// in Q48, matching `Receiver`'s clock slope limit).
+const MAX_RELAY_FREQ_Q48: i64 = 56_294_995_342;
 
 /// Minimum elapsed time between relayed measurements before updating the
-/// per-edge frequency slope (`50 ms`).
-const MIN_RELAY_SLOPE_DT_NS: i64 = 50_000_000;
+/// per-edge frequency slope (`500 ms`).
+const MIN_RELAY_SLOPE_DT_NS: i64 = 500_000_000;
 
 /// A zero-valued [`Line`] used before lock or for unused modal components.
 pub const ZERO_LINE: Line = Line {
@@ -337,6 +337,58 @@ fn clamp_var_u64(v: i128) -> u64 {
     }
 }
 
+/// Combines a link Kalman filter's posterior variance with its sliding
+/// minimum-RTT variance, taking the tighter estimate floored at `floor_ns2`.
+fn link_variance_ns2(filter_var: u64, rtt_var: u64, floor_ns2: u64) -> u64 {
+    let raw = if filter_var < rtt_var {
+        filter_var
+    } else {
+        rtt_var
+    };
+    if raw > floor_ns2 { raw } else { floor_ns2 }
+}
+
+/// Evaluates a direct link's `(offset_ns, variance_ns2, age_ns)` for a
+/// [`PeerRelay`] message from its Kalman filter, sliding min-RTT variance,
+/// and latest measurement.
+fn link_relay_obs(
+    filter: &KalmanFilter,
+    rtt_var: u64,
+    last: Measurement,
+    now_ns: i64,
+    age_ns: i64,
+    floor_ns2: u64,
+) -> (i64, u64, u32) {
+    let pred = filter.predict_offset_ns(now_ns);
+    let f_var = filter.offset_variance_ns2();
+    match pred {
+        Some(filtered) => (filtered, link_variance_ns2(f_var, rtt_var, floor_ns2), 0u32),
+        None => (last.offset_ns, last.variance_ns2, age_to_u32(age_ns)),
+    }
+}
+
+/// Evaluates a direct link's `(offset_ns, variance_ns2)` for BLUE graph
+/// assembly in [`Sync::step`].
+fn link_step_obs(
+    filter: &KalmanFilter,
+    rtt_var: u64,
+    last: Measurement,
+    now_ns: i64,
+    age_ns: i64,
+    floor_ns2: u64,
+) -> (i64, u64) {
+    let pred = filter.predict_offset_ns(now_ns);
+    let f_var = filter.offset_variance_ns2();
+    let fq = filter.freq_q48();
+    match pred {
+        Some(filtered) => (filtered, link_variance_ns2(f_var, rtt_var, floor_ns2)),
+        None => (
+            extrapolate_offset(last.offset_ns, fq, age_ns),
+            last.variance_ns2,
+        ),
+    }
+}
+
 /// Applies an optional Q16 static link-weight multiplier to a variance
 /// (`weight_q16 = 65_536` leaves `var_ns2` unchanged; larger weights reduce
 /// effective variance proportionally).
@@ -468,6 +520,7 @@ pub struct Sync {
     diff_filter: KalmanFilter,
     peer_active: bool,
     last_active_mask: u32,
+    last_sender_relay_mask: u32,
     epoch: u32,
     dirty: bool,
     has_fused: bool,
@@ -513,6 +566,7 @@ impl Sync {
             diff_filter: KalmanFilter::new(settings.local_prior, settings.jump_ns),
             peer_active: false,
             last_active_mask: 0,
+            last_sender_relay_mask: 0,
             epoch: 0,
             dirty: false,
             has_fused: false,
@@ -651,6 +705,7 @@ impl Sync {
             }
             i = i.saturating_add(1);
         }
+        self.last_sender_relay_mask = 0;
         self.epoch = self.epoch.wrapping_add(1);
         self.snapshot = SyncSnapshot::EMPTY;
         self.has_fused = false;
@@ -686,9 +741,8 @@ impl Sync {
         };
         self.sender_has_meas = true;
         self.sender_last_meas = meas;
-        let weighted_var = apply_weight_q16(meas.variance_ns2, self.sender_weight_q16);
         self.sender_filter
-            .update(meas.midpoint_ns, meas.offset_ns, weighted_var);
+            .update(meas.midpoint_ns, meas.offset_ns, meas.variance_ns2);
         self.dirty = true;
         true
     }
@@ -831,9 +885,8 @@ impl Sync {
         };
         p.has_meas = true;
         p.last_meas = meas;
-        let weighted_var = apply_weight_q16(meas.variance_ns2, p.weight_q16);
         p.filter
-            .update(meas.midpoint_ns, meas.offset_ns, weighted_var);
+            .update(meas.midpoint_ns, meas.offset_ns, meas.variance_ns2);
         self.dirty = true;
         true
     }
@@ -859,7 +912,7 @@ impl Sync {
             return false;
         }
         if !self.has_relayed {
-            return self.sender_has_meas;
+            return self.sender_has_meas && self.sender_min_rtt.len() >= 4;
         }
         now_ns >= self.next_relay_ns
     }
@@ -877,22 +930,27 @@ impl Sync {
         relay.sender = self.settings.identity;
         let mut count = 0usize;
 
-        if self.sender_has_meas {
+        if self.sender_has_meas && self.sender_min_rtt.len() >= 4 {
             let age = now_ns.saturating_sub(self.sender_last_meas.midpoint_ns);
             if age >= 0 && age <= self.settings.peer_stale_ns {
-                let weighted_var =
-                    apply_weight_q16(self.sender_last_meas.variance_ns2, self.sender_weight_q16);
+                let (sender_minus_self, base_var, edge_age) = link_relay_obs(
+                    &self.sender_filter,
+                    self.sender_min_rtt.variance_ns2(),
+                    self.sender_last_meas,
+                    now_ns,
+                    age,
+                    self.settings.variance_floor_ns2,
+                );
+                let weighted_var = apply_weight_q16(base_var, self.sender_weight_q16);
                 if let Some(dst) = relay.edges.get_mut(count) {
                     // Sender measurement is `clock(0) - clock(self)`, so
                     // `clock(self) - clock(0) = -offset_ns`.
                     *dst = RelayEdge {
                         from_id: 0,
                         to_id: self.settings.identity,
-                        offset_ns: saturate(
-                            0i128.wrapping_sub(self.sender_last_meas.offset_ns as i128),
-                        ),
+                        offset_ns: saturate(0i128.wrapping_sub(sender_minus_self as i128)),
                         variance_ns2: weighted_var,
-                        age_ns: age_to_u32(age),
+                        age_ns: edge_age,
                     };
                     count = count.saturating_add(1);
                 }
@@ -907,14 +965,22 @@ impl Sync {
             {
                 let age = now_ns.saturating_sub(p.last_meas.midpoint_ns);
                 if age >= 0 && age <= self.settings.peer_stale_ns {
-                    let weighted_var = apply_weight_q16(p.last_meas.variance_ns2, p.weight_q16);
+                    let (peer_offset, base_var, edge_age) = link_relay_obs(
+                        &p.filter,
+                        p.rtt_selector.variance_ns2(),
+                        p.last_meas,
+                        now_ns,
+                        age,
+                        self.settings.variance_floor_ns2,
+                    );
+                    let weighted_var = apply_weight_q16(base_var, p.weight_q16);
                     if let Some(dst) = relay.edges.get_mut(count) {
                         *dst = RelayEdge {
                             from_id: self.settings.identity,
                             to_id: p.identity,
-                            offset_ns: p.last_meas.offset_ns,
+                            offset_ns: peer_offset,
                             variance_ns2: weighted_var,
-                            age_ns: age_to_u32(age),
+                            age_ns: edge_age,
                         };
                         count = count.saturating_add(1);
                     }
@@ -1199,6 +1265,7 @@ impl Sync {
         if self.peer_active {
             self.peer_active = false;
             self.last_active_mask = 0;
+            self.last_sender_relay_mask = 0;
             self.epoch = self.epoch.wrapping_add(1);
         }
         let Some(line) = self.sender_filter.to_line() else {
@@ -1238,7 +1305,41 @@ impl Sync {
             return self.publish_star();
         }
 
-        let membership_changed = !self.peer_active || active_mask != self.last_active_mask;
+        // Compute the bitmask of sender edges `(0, self)` (bit 0) and fresh
+        // relayed `(0, peer)` edges (bit `p_idx + 1`) so BLUE re-anchors
+        // cleanly whenever the set of sender edges contributing to the graph
+        // changes, preventing single-sender startup bias from turning into a
+        // huge Kalman frequency spike.
+        let mut sender_relay_mask = 0u32;
+        if self.sender_has_meas && self.sender_min_rtt.len() >= 4 {
+            sender_relay_mask = 1u32;
+        }
+        let mut sr = 0usize;
+        while sr < MAX_RELAY_TABLE {
+            if let Some(slot) = self.relayed.get(sr)
+                && slot.used
+                && slot.from_id == 0
+            {
+                let age = now_ns.saturating_sub(slot.meas_time_ns);
+                if age >= 0
+                    && age <= self.settings.peer_stale_ns
+                    && let Some(p_idx) = self.find_peer(slot.to_id)
+                {
+                    #[allow(clippy::cast_possible_truncation)]
+                    let active_bit = 1u32.wrapping_shl(p_idx as u32);
+                    if (active_mask & active_bit) != 0 {
+                        #[allow(clippy::cast_possible_truncation)]
+                        let relay_bit = 1u32.wrapping_shl(p_idx.saturating_add(1) as u32);
+                        sender_relay_mask |= relay_bit;
+                    }
+                }
+            }
+            sr = sr.saturating_add(1);
+        }
+
+        let membership_changed = !self.peer_active
+            || active_mask != self.last_active_mask
+            || sender_relay_mask != self.last_sender_relay_mask;
         let fusion_due = !self.has_fused
             || now_ns.saturating_sub(self.last_fuse_ns) >= self.fusion_interval_ns(now_ns);
         if !membership_changed && (!self.dirty || !fusion_due) {
@@ -1261,24 +1362,27 @@ impl Sync {
             .combine(self.settings.local_prior);
         let peer_pair_prior = self.settings.local_prior.combine(self.settings.local_prior);
 
-        // 1. Direct sender edge `0 -> 1` (`clock(self) - clock(0) = -sender_offset`).
+        // 1. Direct sender edge `0 -> 1` (`clock(self) - clock(0) = -sender_offset`),
+        // evaluated at `now_ns` from the link's Kalman state with its
+        // weight-adjusted measurement variance so graph weights stay symmetric
+        // across probe phases.
         if self.sender_has_meas {
             let age = now_ns.saturating_sub(self.sender_last_meas.midpoint_ns);
-            let extrap_sender_minus_self = extrapolate_offset(
-                self.sender_last_meas.offset_ns,
-                self.sender_filter.freq_q48(),
+            let (extrap_sender_minus_self, raw_var) = link_step_obs(
+                &self.sender_filter,
+                self.sender_min_rtt.variance_ns2(),
+                self.sender_last_meas,
+                now_ns,
                 age,
+                self.settings.variance_floor_ns2,
             );
-            let (_, _, p11) = self.sender_filter.covariance_raw();
-            let base_var =
-                apply_weight_q16(self.sender_last_meas.variance_ns2, self.sender_weight_q16);
-            let var_eff = inflate_variance(base_var, age, sender_pair_prior, p11);
+            let base_var = apply_weight_q16(raw_var, self.sender_weight_q16);
             if let Some(dst) = edges.get_mut(edge_count) {
                 *dst = EdgeObs {
                     from: 0,
                     to: 1,
                     offset_ns: saturate(0i128.wrapping_sub(extrap_sender_minus_self as i128)),
-                    variance_ns2: var_eff,
+                    variance_ns2: base_var,
                 };
                 edge_count = edge_count.saturating_add(1);
             }
@@ -1294,10 +1398,15 @@ impl Sync {
                 && p.has_meas
             {
                 let age = now_ns.saturating_sub(p.last_meas.midpoint_ns);
-                let extrap = extrapolate_offset(p.last_meas.offset_ns, p.filter.freq_q48(), age);
-                let (_, _, p11) = p.filter.covariance_raw();
-                let base_var = apply_weight_q16(p.last_meas.variance_ns2, p.weight_q16);
-                let var_eff = inflate_variance(base_var, age, peer_pair_prior, p11);
+                let (extrap, raw_var) = link_step_obs(
+                    &p.filter,
+                    p.rtt_selector.variance_ns2(),
+                    p.last_meas,
+                    now_ns,
+                    age,
+                    self.settings.variance_floor_ns2,
+                );
+                let base_var = apply_weight_q16(raw_var, p.weight_q16);
                 let to_host = i.saturating_add(2);
                 if to_host < host_count
                     && let Some(dst) = edges.get_mut(edge_count)
@@ -1306,7 +1415,7 @@ impl Sync {
                         from: 1,
                         to: to_host,
                         offset_ns: extrap,
-                        variance_ns2: var_eff,
+                        variance_ns2: base_var,
                     };
                     edge_count = edge_count.saturating_add(1);
                 }
@@ -1382,11 +1491,13 @@ impl Sync {
         self.common_filter.set_prior(com_prior);
         self.diff_filter.set_prior(diff_prior);
 
+        let sender_relays_changed = sender_relay_mask != self.last_sender_relay_mask;
         let actual_membership_changed =
-            !self.peer_active || reachable_mask != self.last_active_mask;
+            !self.peer_active || reachable_mask != self.last_active_mask || sender_relays_changed;
         if actual_membership_changed {
             self.epoch = self.epoch.wrapping_add(1);
             if self.peer_active
+                && !sender_relays_changed
                 && self.common_filter.is_anchored()
                 && self.diff_filter.is_anchored()
             {
@@ -1400,6 +1511,18 @@ impl Sync {
                     self.diff_filter.shift_offset_ns(shift);
                     self.common_filter.shift_offset_ns(neg_shift);
                 }
+            } else if self.peer_active && sender_relays_changed && self.diff_filter.is_anchored() {
+                // Set of sender edges `(0, self)` / `(0, peer)` changed:
+                // re-anchor `common_filter` cleanly on the new full-graph BLUE
+                // common estimate and shift `diff_filter` to the new
+                // differential offset while preserving its peer frequency.
+                self.common_filter.reset();
+                self.common_filter.set_prior(com_prior);
+                if let Some(d_old) = self.diff_filter.predict_offset_ns(now_ns) {
+                    let d_shift =
+                        saturate((solved.self_diff_offset_ns as i128).wrapping_sub(d_old as i128));
+                    self.diff_filter.shift_offset_ns(d_shift);
+                }
             } else {
                 // Entering Peer mode from Star or startup: anchor modal filters
                 // directly on the BLUE common/differential decomposition.
@@ -1412,6 +1535,7 @@ impl Sync {
             }
             self.peer_active = true;
             self.last_active_mask = reachable_mask;
+            self.last_sender_relay_mask = sender_relay_mask;
         }
 
         self.common_filter

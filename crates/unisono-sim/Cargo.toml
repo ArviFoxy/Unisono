@@ -7,6 +7,8 @@ license.workspace = true
 
 [dependencies]
 unisono-core.workspace = true
+unisono-dsp.workspace = true
+unisono-runtime.workspace = true
 
 [lints]
 workspace = true
