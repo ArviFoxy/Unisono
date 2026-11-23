@@ -104,10 +104,12 @@ a draw that has the law above.
 
 ## The solutions that are compared (`GenerativeWorld.measurableCost`)
 
-Optimality under this model compares the solutions whose cost is, in almost
-every outcome, a measurable function of what is drawn. A solution outside
-this class has a cost that is not a random variable, and its expected cost,
-a lower integral, can lie below its cost in almost every outcome.
+Optimality under this model compares, at each member, the solutions whose
+cost in that member is, in almost every outcome, a measurable function of
+what is drawn. A solution outside this class has a cost that is not a random
+variable, and its expected cost, a lower integral, can lie below its cost in
+almost every outcome. Optimality under the model is always stated for every
+member (`GenerativeWorld.OptimalWithin`).
 
 ## What the model leaves out
 
@@ -401,19 +403,30 @@ def Holds (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
 def laws (m : GenerativeWorld H R) : Member H R → RandomWorlds H R :=
   fun f _ _ P world => m.Holds f P world
 
-/-- **The solutions that are compared.** The solutions whose cost is a
-measurable function of what is drawn: for each member in `members` there is
+/-- **The solutions that are compared at a member.** The solutions whose
+cost, in the member `f`, is a measurable function of what is drawn: there is
 a measurable function `F` of the draw such that, in every random world of the
 member, the cost of the solution is `F` of the draw in almost every outcome.
-`members` are the members that the comparison is about. The weights `c` and
+The class asks nothing of a solution in other members. The weights `c` and
 the lookahead are those for which the cost is taken. -/
-def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (members : Member H R → Prop)
+def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (f : Member H R)
     (lookahead : ℕ+) (c : Weights) : SolutionClass H R :=
-  fun _ τ => ∀ f : Member H R, members f → ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
+  fun _ τ => ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
     ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H)
       (world : Ω' → World H R),
       m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →
         ∀ᵐ ω ∂P, τ.cost (world ω) lookahead c = F (D ω)
+
+/-- **Optimality under the generative model.** In every random world of
+every member `f` of the model, the expected cost of the solution `σ` exceeds
+that of no solution compared at `f` by more than `ε f`
+(`Unisono.Spec.OptimalWithin`). The statement is always about every member:
+a statement that covers only some members gives each of the others the
+margin `⊤`. -/
+def OptimalWithin [DecidableEq H] (m : GenerativeWorld H R)
+    (allowed : Member H R → SolutionClass H R) (lookahead : ℕ+) (c : Weights)
+    (ε : Member H R → ℝ≥0∞) {Msg : Type} (σ : Solution H R Msg) : Prop :=
+  Unisono.Spec.OptimalWithin m.laws allowed lookahead c ε σ
 
 /-! ## Checks of the definitions -/
 

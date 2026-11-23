@@ -26,12 +26,26 @@ turn out badly.
   not draw at random: numbers that a solution has to measure for itself.
 * A **class of solutions** (`SolutionClass`) says which solutions are
   compared, whatever messages they exchange. `allSolutions` compares all of
-  them.
+  them. The class may depend on the member: at each member, it holds the
+  solutions that `σ` is compared with there.
 * `OptimalWithin` says that the expected cost of one solution `σ` exceeds
-  that of no allowed solution by more than a margin, in every random world of
-  every member of the family. The margin `ε f` may depend on the member,
+  that of no compared solution by more than a margin, in every random world
+  of every member of the family. The margin `ε f` may depend on the member,
   because a cost in seconds squared cannot have one margin for networks of
   all sizes.
+
+A statement of optimality can be weak in three places, and each is visible
+in the statement.
+
+* **The members.** A statement about a model takes the model's whole family:
+  every member. A statement that covers only some members gives every other
+  member the margin `⊤`, about which it then says nothing. The members that a
+  statement does not cover therefore appear in the statement itself.
+* **The compared solutions.** The class at a member depends on that member
+  alone. It cannot require anything of a solution in other members, which
+  would remove solutions from the comparison for no reason.
+* **The margin.** Of two statements about the same class, the one with the
+  smaller margin at every member is the stronger.
 
 The weights `c` of the objectives and the lookahead come first: a solution
 is designed for them and may depend on them, and a statement of optimality
@@ -55,7 +69,7 @@ in almost every outcome, so such a solution can appear better than every
 solution whose cost is measurable. A statement of optimality therefore has
 to restrict the class of solutions to those whose cost is a measurable
 function of what is drawn. For the generative world that class is
-`GenerativeWorld.measurableCost`.
+`GenerativeWorld.measurableCost`, which is defined member by member.
 -/
 
 @[expose] public noncomputable section
@@ -79,22 +93,25 @@ abbrev SolutionClass (H : Type) (R : ℕ) : Type 1 :=
 /-- The class of all solutions. -/
 def allSolutions : SolutionClass H R := fun _ _ => True
 
-/-- The solution `σ` is allowed, and in every random world of every member
-`f` of the family `laws` its expected cost exceeds that of no allowed
-solution by more than `ε f`, for a resampler lookahead of `lookahead` frames
-and weights `c`. With `ε = 0` no allowed solution does better. -/
-def OptimalWithin {ι : Type} (laws : ι → RandomWorlds H R) (allowed : SolutionClass H R)
+/-- In every random world of every member `f` of the family `laws`, the
+expected cost of the solution `σ` exceeds that of no solution compared at `f`
+by more than `ε f`, for a resampler lookahead of `lookahead` frames and
+weights `c`. `allowed f` holds the solutions that are compared at the member
+`f`. At every member with a finite margin, `σ` is itself one of them. A
+margin of `⊤` at a member says nothing about that member. With `ε = 0` no
+compared solution does better at any member. -/
+def OptimalWithin {ι : Type} (laws : ι → RandomWorlds H R) (allowed : ι → SolutionClass H R)
     (lookahead : ℕ+) (c : Weights) (ε : ι → ℝ≥0∞) (σ : Solution H R Msg) : Prop :=
-  allowed Msg σ ∧
+  (∀ f, ε f ≠ ⊤ → allowed f Msg σ) ∧
     ∀ (f : ι) (Ω : Type) [MeasurableSpace Ω] (P : Measure Ω) (world : Ω → World H R),
-      laws f Ω P world → ∀ (Msg' : Type) (τ : Solution H R Msg'), allowed Msg' τ →
+      laws f Ω P world → ∀ (Msg' : Type) (τ : Solution H R Msg'), allowed f Msg' τ →
         σ.expectedCost P world lookahead c ≤ τ.expectedCost P world lookahead c + ε f
 
 /-- **The least expected cost is one number.** Two solutions that are both
 optimal with no margin have the same expected cost in every random world of
 every member. -/
 theorem OptimalWithin.expectedCost_eq {ι : Type} {laws : ι → RandomWorlds H R}
-    {allowed : SolutionClass H R} {lookahead : ℕ+} {c : Weights}
+    {allowed : ι → SolutionClass H R} {lookahead : ℕ+} {c : Weights}
     {σ : Solution H R Msg} {Msg' : Type} {τ : Solution H R Msg'}
     (hσ : OptimalWithin laws allowed lookahead c 0 σ)
     (hτ : OptimalWithin laws allowed lookahead c 0 τ)
@@ -102,7 +119,7 @@ theorem OptimalWithin.expectedCost_eq {ι : Type} {laws : ι → RandomWorlds H 
     (h : laws f Ω P world) :
     σ.expectedCost P world lookahead c = τ.expectedCost P world lookahead c := by
   refine le_antisymm ?_ ?_
-  · simpa using hσ.2 f Ω P world h Msg' τ hτ.1
-  · simpa using hτ.2 f Ω P world h Msg σ hσ.1
+  · simpa using hσ.2 f Ω P world h Msg' τ (hτ.1 f (by simp))
+  · simpa using hτ.2 f Ω P world h Msg σ (hσ.1 f (by simp))
 
 end Unisono.Spec

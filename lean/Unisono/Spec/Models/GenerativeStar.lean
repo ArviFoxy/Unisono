@@ -16,12 +16,13 @@ speakers, every star solution of a class pays at least `starLowerBound` in
 expected cost (`StarSolutions.le_expectedCost`). A star
 solution is one whose hosts exchange messages only with the sender.
 
-* `StarSolutions` is the class of solutions that the bound holds for: the
-  star solutions whose cost is a measurable function of what is drawn, whose
-  run has an event after every true time, in whose run no two messages from
-  different hosts arrive at one host at the same time, and which play every
-  frame from some frame on. The last three are required in almost every
-  outcome of every random world of the members in question.
+* `StarSolutions` is the class of solutions that the bound holds for at a
+  member: the star solutions whose cost in that member is a measurable
+  function of what is drawn, whose run has an event after every true time,
+  in whose run no two messages from different hosts arrive at one host at the
+  same time, and which play every frame from some frame on. The last three
+  are required in almost every outcome of every random world of the member.
+  The class asks nothing of a solution in other members.
 * `starLowerBound` is the mean, over the outcomes of the concrete random
   world, of the cost of half the shifts of the reflection
   (`Unisono.Spec.Models.GenerativeReflection`).
@@ -50,22 +51,21 @@ def AlmostSurely (m : GenerativeWorld H R) (f : Member H R) (p : World H R → P
   ∀ (Ω : Type) [MeasurableSpace Ω] (P : Measure Ω) (D : Ω → Draw H) (world : Ω → World H R),
     m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) → ∀ᵐ ω ∂P, p (world ω)
 
-/-- **The solutions that a solution through the sender is compared with**,
-for the members in `members`, a lookahead and weights. -/
-structure StarSolutions (m : GenerativeWorld H R) (members : Member H R → Prop)
-    (lookahead : ℕ+) (c : Weights) (Msg : Type) (τ : Solution H R Msg) : Prop where
+/-- **The solutions that a solution through the sender is compared with at
+the member `f`**, for a lookahead and weights. -/
+structure StarSolutions (m : GenerativeWorld H R) (f : Member H R) (lookahead : ℕ+)
+    (c : Weights) (Msg : Type) (τ : Solution H R Msg) : Prop where
   /-- Hosts exchange messages only with the sender. -/
   star : τ.IsStar m.sender
-  /-- The cost is a measurable function of what is drawn. -/
-  measurable : m.measurableCost members lookahead c Msg τ
+  /-- The cost in the member is a measurable function of what is drawn. -/
+  measurable : m.measurableCost f lookahead c Msg τ
   /-- Almost surely, the run has an event after every true time. -/
-  progress : ∀ f, members f → m.AlmostSurely f fun w =>
-    ∀ T : Time, ∃ n, T < τ.eventTime w lookahead n
+  progress : m.AlmostSurely f fun w => ∀ T : Time, ∃ n, T < τ.eventTime w lookahead n
   /-- Almost surely, no two messages from different hosts arrive at one host
   at the same time. -/
-  no_collision : ∀ f, members f → m.AlmostSurely f fun w => τ.NoCrossOriginCollision w lookahead
+  no_collision : m.AlmostSurely f fun w => τ.NoCrossOriginCollision w lookahead
   /-- Almost surely, every speaker plays every frame from some frame on. -/
-  plays : ∀ f, members f → m.AlmostSurely f fun w =>
+  plays : m.AlmostSurely f fun w =>
     ∃ N, ∀ n, N ≤ n → ∀ r, (w.playTime (τ.plays w lookahead) r n).isSome
 
 section Canonical
@@ -83,27 +83,27 @@ theorem almostSurely_iff (m : GenerativeWorld H R) (f : Member H R) (hf : f.Nois
 
 /-- The cost of a solution whose cost is a measurable function of what is
 drawn is measurable on the concrete random world of a noiseless member. -/
-theorem aemeasurable_cost {members : Member H R → Prop} {τ : Solution H R Msg}
-    (hτ : m.measurableCost members lookahead c Msg τ) (hmem : members f) (hf : f.Noiseless)
+theorem aemeasurable_cost {τ : Solution H R Msg}
+    (hτ : m.measurableCost f lookahead c Msg τ) (hf : f.Noiseless)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) :
     AEMeasurable (fun y => τ.cost (canonicalWorld m f hex y) lookahead c)
       (Measure.pi (canonicalLaw m f)) := by
-  obtain ⟨F, hF, hFeq⟩ := hτ f hmem
+  obtain ⟨F, hF, hFeq⟩ := hτ
   have h := hFeq _ (Measure.pi (canonicalLaw m f)) canonicalDraw (canonicalWorld m f hex)
     (canonicalDraw_prior m f hf) (canonicalWorld_builds m f hex)
   exact (hF.comp measurable_canonicalDraw).aemeasurable.congr (Filter.EventuallyEq.symm h)
 
 /-- **The expected cost of a solution is the same in every random world of a
 noiseless member**: its mean cost in the concrete random world. -/
-theorem expectedCost_eq_canonical {members : Member H R → Prop} {τ : Solution H R Msg}
-    (hτ : m.measurableCost members lookahead c Msg τ) (hmem : members f) (hf : f.Noiseless)
+theorem expectedCost_eq_canonical {τ : Solution H R Msg}
+    (hτ : m.measurableCost f lookahead c Msg τ) (hf : f.Noiseless)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) {Ω : Type} [MeasurableSpace Ω]
     {P : Measure Ω} {world : Ω → World H R} (hW : m.Holds f P world) :
     τ.expectedCost P world lookahead c
       = ∫⁻ y, τ.cost (canonicalWorld m f hex y) lookahead c ∂Measure.pi (canonicalLaw m f) := by
   obtain ⟨D, hD, hB⟩ := hW
   exact hD.lintegral_eq_canonical hf hB hex (F := fun w => τ.cost w lookahead c)
-    (aemeasurable_cost hτ hmem hf hex)
+    (aemeasurable_cost hτ hf hex)
 
 omit [Fintype H] in
 /-- The capture device of the world of an outcome captures frames after
@@ -125,15 +125,15 @@ def starLowerBound (m : GenerativeWorld H R) (f : Member H R) (c : Weights) : �
     ∂Measure.pi (canonicalLaw m f)
 
 /-- The lower bound holds on the concrete random world. -/
-theorem StarSolutions.le_canonical {members : Member H R → Prop} {τ : Solution H R Msg}
-    (hτ : m.StarSolutions members lookahead c Msg τ) (hmem : members f) (hf : f.Noiseless)
+theorem StarSolutions.le_canonical {τ : Solution H R Msg}
+    (hτ : m.StarSolutions f lookahead c Msg τ) (hf : f.Noiseless)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) :
     starLowerBound m f c
       ≤ ∫⁻ y, τ.cost (canonicalWorld m f hex y) lookahead c ∂Measure.pi (canonicalLaw m f) := by
-  have hcostm := aemeasurable_cost hτ.measurable hmem hf hex
-  have hprog := (almostSurely_iff m f hf hex _).mp (hτ.progress f hmem)
-  have hcoll := (almostSurely_iff m f hf hex _).mp (hτ.no_collision f hmem)
-  have hplay := (almostSurely_iff m f hf hex _).mp (hτ.plays f hmem)
+  have hcostm := aemeasurable_cost hτ.measurable hf hex
+  have hprog := (almostSurely_iff m f hf hex _).mp hτ.progress
+  have hcoll := (almostSurely_iff m f hf hex _).mp hτ.no_collision
+  have hplay := (almostSurely_iff m f hf hex _).mp hτ.plays
   have hT := measurePreserving_reflect m f
   have hprog' := hT.quasiMeasurePreserving.ae hprog
   -- In almost every outcome, the costs in the outcome and in its reflection
@@ -174,13 +174,13 @@ theorem StarSolutions.le_canonical {members : Member H R → Prop} {τ : Solutio
 /-- **What no solution through the sender can avoid.** In every random world
 of a noiseless member, with any number of hosts and speakers, the expected
 cost of every compared star solution is at least `starLowerBound`. -/
-theorem StarSolutions.le_expectedCost {members : Member H R → Prop}
-    {τ : Solution H R Msg} (hτ : m.StarSolutions members lookahead c Msg τ) (hmem : members f)
-    (hf : f.Noiseless) (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) {Ω : Type}
+theorem StarSolutions.le_expectedCost {τ : Solution H R Msg}
+    (hτ : m.StarSolutions f lookahead c Msg τ) (hf : f.Noiseless)
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) {Ω : Type}
     [MeasurableSpace Ω] {P : Measure Ω} {world : Ω → World H R} (hW : m.Holds f P world) :
     starLowerBound m f c ≤ τ.expectedCost P world lookahead c := by
-  rw [expectedCost_eq_canonical hτ.measurable hmem hf hex hW]
-  exact hτ.le_canonical hmem hf hex hR
+  rw [expectedCost_eq_canonical hτ.measurable hf hex hW]
+  exact hτ.le_canonical hf hex hR
 
 end Canonical
 

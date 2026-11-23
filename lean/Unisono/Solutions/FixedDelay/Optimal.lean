@@ -15,7 +15,9 @@ public import Unisono.Spec.Models.GenerativeTies
 In the noiseless members of the generative model, with any number of hosts
 and speakers, the baseline's expected cost exceeds that of no compared star
 solution by more than a known margin (`optimalWithin`). A star solution is
-one whose hosts exchange messages only with the sender.
+one whose hosts exchange messages only with the sender. The theorem is
+stated for every member of the model: for every other member its margin is
+`⊤`, and it says nothing about them.
 
 * **The members.** `NoiselessWithMargin`: the noiseless members in which the
   target latency exceeds the baseline's delivery margin for every speaker.
@@ -397,17 +399,17 @@ theorem ae_cost_eq (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.
   funext r
   exact asymmetry_idealWorld hmem.noiseless y (m.host r)
 
-/-- **The baseline is one of the compared solutions**, for the noiseless
-members within the delivery margin. -/
+/-- **The baseline is one of the compared solutions** at every noiseless
+member within the delivery margin. -/
 theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hcl : c.latency = 0)
-    (hcr : c.roughness = 0) (hR : 0 < R) :
-    m.StarSolutions (m.NoiselessWithMargin lookahead) lookahead c Payload (solution p) where
+    (hmem : m.NoiselessWithMargin lookahead f) (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h)
+    (hcl : c.latency = 0) (hcr : c.roughness = 0) (hR : 0 < R) :
+    m.StarSolutions f lookahead c Payload (solution p) where
   star := by
     have h := fixedDelay_isStar (R := R) p
     rw [hp.sender] at h
     exact h
-  measurable := fun f hmem =>
+  measurable :=
     ⟨fun d => ENNReal.ofReal (shiftCost c fun r => d.asymmetry m f (m.host r)),
       ENNReal.measurable_ofReal.comp ((measurable_shiftCost c).comp
         (Measurable.of_eval fun r => Draw.measurable_asymmetry m f (m.host r))),
@@ -415,15 +417,15 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
         (p := fun d w => (solution p : Solution H R Payload).cost w lookahead c
           = ENNReal.ofReal (shiftCost c fun r => d.asymmetry m f (m.host r)))
         (ae_cost_eq p hp hnos hmem hex hcl hcr hR)⟩
-  progress := fun f hmem => (almostSurely_iff m f hmem.noiseless hex _).mpr (by
+  progress := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
     filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
       with y hy
     exact progress p _ _ (IdealConstantWorld.withinBounds hy.1) lookahead)
-  no_collision := fun f hmem => (almostSurely_iff m f hmem.noiseless hex _).mpr (by
+  no_collision := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
     filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
       with y hy
     exact hy.2)
-  plays := fun f hmem => (almostSurely_iff m f hmem.noiseless hex _).mpr (by
+  plays := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
     filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
       with y hy
     obtain ⟨N, hN⟩ := playTime_of_ideal p _ _ hy.1 hnos lookahead hp.sender hp.rate
@@ -431,36 +433,46 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
       (margin_idealWorld hmem y) hy.2
     exact ⟨N, fun n hn r => by rw [hN n hn r]; rfl⟩)
 
+open Classical in
 /-- **The baseline is optimal among solutions through the sender, within a
 known margin.** Consider a generative model in which no speaker is on the
 sender's host, and weights with no weight on latency or roughness. Let the
 baseline be configured for the model. In every random world of every
 noiseless member within the delivery margin, with any number of hosts and
-speakers, the baseline's expected cost exceeds that of no compared star
-solution by more than `starMargin`. -/
+speakers, the baseline's expected cost exceeds that of no star solution
+compared at that member by more than `starMargin`. The statement is about
+every member of the model: for every other member the margin is `⊤`, and the
+theorem says nothing about it. -/
 theorem optimalWithin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hcl : c.latency = 0)
     (hcr : c.roughness = 0) (hR : 0 < R) :
-    OptimalWithin (fun f : {f : Member H R // m.NoiselessWithMargin lookahead f} => m.laws f.1)
-      (m.StarSolutions (m.NoiselessWithMargin lookahead) lookahead c) lookahead c
-      (fun f => starMargin m f.1 c) (solution p : Solution H R Payload) := by
-  have hσ := starSolutions (lookahead := lookahead) (c := c) p hp hnos hex hcl hcr hR
-  refine ⟨hσ, fun f Ω _ P world hW Msg' τ hτ => ?_⟩
-  obtain ⟨f, hmem⟩ := f
-  have hf := hmem.noiseless
-  have hW' : m.Holds f P world := hW
-  calc (solution p : Solution H R Payload).expectedCost P world lookahead c
-      = ∫⁻ y, (solution p : Solution H R Payload).cost (canonicalWorld m f hex y) lookahead c
-          ∂Measure.pi (canonicalLaw m f) :=
-        expectedCost_eq_canonical hσ.measurable hmem hf hex hW'
-    _ = ∫⁻ y, ENNReal.ofReal
-            (shiftCost c fun r => (canonicalDraw y).asymmetry m f (m.host r))
-          ∂Measure.pi (canonicalLaw m f) :=
-        lintegral_congr_ae (ae_cost_eq p hp hnos hmem hex hcl hcr hR)
-    _ ≤ starLowerBound m f c + starMargin m f c := lintegral_asymmetry_le m f c hnos hR
-    _ ≤ τ.expectedCost P world lookahead c + starMargin m f c := by
-        gcongr
-        exact hτ.le_expectedCost hmem hf hex hR hW'
+    m.OptimalWithin (fun f => m.StarSolutions f lookahead c) lookahead c
+      (fun f => if m.NoiselessWithMargin lookahead f then starMargin m f c else ⊤)
+      (solution p : Solution H R Payload) := by
+  refine ⟨fun f hε => ?_, fun f Ω _ P world hW Msg' τ hτ => ?_⟩
+  · by_cases hmem : m.NoiselessWithMargin lookahead f
+    · exact starSolutions p hp hnos hmem hex hcl hcr hR
+    · exact (hε (ite_eq_right hmem)).elim
+  · beta_reduce
+    by_cases hmem : m.NoiselessWithMargin lookahead f
+    · have hσ := starSolutions (c := c) p hp hnos hmem hex hcl hcr hR
+      have hf := hmem.noiseless
+      have hW' : m.Holds f P world := hW
+      rw [ite_eq_left hmem]
+      calc (solution p : Solution H R Payload).expectedCost P world lookahead c
+          = ∫⁻ y, (solution p : Solution H R Payload).cost (canonicalWorld m f hex y)
+                lookahead c ∂Measure.pi (canonicalLaw m f) :=
+            expectedCost_eq_canonical hσ.measurable hf hex hW'
+        _ = ∫⁻ y, ENNReal.ofReal
+                (shiftCost c fun r => (canonicalDraw y).asymmetry m f (m.host r))
+              ∂Measure.pi (canonicalLaw m f) :=
+            lintegral_congr_ae (ae_cost_eq p hp hnos hmem hex hcl hcr hR)
+        _ ≤ starLowerBound m f c + starMargin m f c := lintegral_asymmetry_le m f c hnos hR
+        _ ≤ τ.expectedCost P world lookahead c + starMargin m f c := by
+            gcongr
+            exact hτ.le_expectedCost hf hex hR hW'
+    · rw [ite_eq_right hmem, add_top]
+      exact le_top
 
 /-! ## The conditions of the theorem can be met -/
 

@@ -46,9 +46,12 @@ simulation and integration tests (see `PRINCIPLES.md`):
     from different hosts arrive at one host at the same time, and zero
     weights on latency and roughness.
   - The definition of optimality in expected cost (`OptimalWithin` in
-    `lean/Unisono/Spec/Optimality.lean`), the class of solutions that it
-    compares under the generative model (`GenerativeWorld.measurableCost`:
-    those whose cost is a measurable function of what is drawn), and the
+    `lean/Unisono/Spec/Optimality.lean`). Under the generative model it is
+    stated for every member (`GenerativeWorld.OptimalWithin`): a member
+    that a statement does not cover has the margin `⊤` in the statement. The
+    solutions compared at a member depend on that member alone
+    (`GenerativeWorld.measurableCost`: those whose cost in the member is a
+    measurable function of what is drawn). Also the
     generative model `GenerativeWorld`, with checks of its definitions and a random world that
     satisfies it (a member with no other traffic and no clock wander).
   - In a member of `GenerativeWorld` with no other traffic, no clock wander and
@@ -64,11 +67,12 @@ simulation and integration tests (see `PRINCIPLES.md`):
   - The baseline is optimal among star solutions within a known margin
     (`Unisono.Solutions.FixedDelay.optimalWithin` in
     `lean/Unisono/Solutions/FixedDelay/Optimal.lean`). A star solution is one
-    whose hosts exchange messages only with the sender. In every noiseless
-    member of `GenerativeWorld` within the baseline's delivery margin, with
-    any number of hosts and speakers, the expected cost of
-    `Unisono.Solutions.FixedDelay` exceeds that of no compared star solution
-    (`GenerativeWorld.StarSolutions`) by more than the sum of the weights of
+    whose hosts exchange messages only with the sender. The theorem is
+    stated for every member of `GenerativeWorld`, with the margin `⊤` for
+    every member that it does not cover. In every noiseless member within
+    the baseline's delivery margin, with any number of hosts and speakers,
+    the expected cost of `Unisono.Solutions.FixedDelay` exceeds that of no
+    compared star solution (`GenerativeWorld.StarSolutions`) by more than the sum of the weights of
     synchronization and tracking times `ρ³ / (4 Θ)`, where `ρ` is the sum
     over the speakers of the least round-trip time between the sender and the
     speaker's host and `Θ` bounds the clock offsets. The theorem needs zero
