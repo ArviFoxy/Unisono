@@ -7,6 +7,7 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
@@ -1330,87 +1331,6 @@ section Example
 
 open GenerativeWorld MeasureTheory ProbabilityTheory
 
-variable {Ω : Type} [MeasurableSpace Ω]
-
-/-- Random variables that are constant are independent. -/
-private theorem iIndepFun_of_const {ι : Type} {β : ι → Type} [∀ i, MeasurableSpace (β i)]
-    (P : Measure Ω) [IsProbabilityMeasure P] (c : ∀ i, β i) :
-    iIndepFun (fun i (_ : Ω) => c i) P := by
-  rw [iIndepFun_iff_measure_inter_preimage_eq_mul]
-  intro S sets _
-  by_cases h : ∀ i ∈ S, c i ∈ sets i
-  · have h1 : (⋂ i ∈ S, (fun _ : Ω => c i) ⁻¹' sets i) = Set.univ := by
-      ext ω
-      simp only [Set.mem_iInter, Set.mem_preimage, Set.mem_univ, iff_true]
-      exact h
-    rw [h1, measure_univ]
-    symm
-    refine Finset.prod_eq_one fun i hi => ?_
-    have h2 : (fun _ : Ω => c i) ⁻¹' sets i = Set.univ := by
-      ext ω
-      simp [h i hi]
-    rw [h2, measure_univ]
-  · push Not at h
-    obtain ⟨i, hi, hci⟩ := h
-    have h0 : (fun _ : Ω => c i) ⁻¹' sets i = ∅ := by
-      ext ω
-      simp [hci]
-    have h1 : (⋂ i ∈ S, (fun _ : Ω => c i) ⁻¹' sets i) = ∅ := by
-      refine Set.eq_empty_of_subset_empty ?_
-      rw [← h0]
-      exact Set.biInter_subset_of_mem hi
-    rw [h1, measure_empty]
-    symm
-    exact Finset.prod_eq_zero hi (by rw [h0, measure_empty])
-
-/-- The process that is zero at all times is a Gaussian process. -/
-private theorem isGaussianProcess_zero (P : Measure Ω) [IsProbabilityMeasure P] :
-    IsGaussianProcess (fun (_ : Time) (_ : Ω) => (0 : ℝ)) P where
-  hasGaussianLaw I :=
-    { aemeasurable := aemeasurable_const
-      isGaussian_map := by
-        rw [Measure.map_const, measure_univ, one_smul]
-        infer_instance }
-
-/-- The components of a draw are finitely many when the hosts are. -/
-private def componentEquiv (H : Type) :
-    Component H ≃ ({z : Sym2 H // ¬ z.IsDiag} ⊕ H) ⊕ (H ⊕ H) ⊕ (H × H) where
-  toFun
-    | .split z => .inl (.inl z)
-    | .offset h => .inl (.inr h)
-    | .logRate h => .inr (.inl (.inl h))
-    | .wander h => .inr (.inl (.inr h))
-    | .traffic i j => .inr (.inr (i, j))
-  invFun
-    | .inl (.inl z) => .split z
-    | .inl (.inr h) => .offset h
-    | .inr (.inl (.inl h)) => .logRate h
-    | .inr (.inl (.inr h)) => .wander h
-    | .inr (.inr (i, j)) => .traffic i j
-  left_inv := by rintro (_ | _ | _ | _ | _) <;> rfl
-  right_inv := by rintro ((_ | _) | (_ | _) | ⟨_, _⟩) <;> rfl
-
-private instance : Fintype (Component (Fin 3)) := Fintype.ofEquiv _ (componentEquiv (Fin 3)).symm
-
-/-- A number moved into the interval from zero to one: itself if it lies
-there, one half otherwise. -/
-private def toSplit (u : ℝ) : ℝ := if 0 < u ∧ u < 1 then u else 1 / 2
-
-private theorem toSplit_mem (u : ℝ) : toSplit u ∈ Set.Ioo (0 : ℝ) 1 := by
-  unfold toSplit
-  split_ifs with h
-  · exact h
-  · constructor <;> norm_num
-
-private theorem measurable_toSplit : Measurable toSplit :=
-  Measurable.ite (measurableSet_Ioo (a := (0 : ℝ)) (b := 1)) measurable_id measurable_const
-
-private theorem toSplit_ae_eq : toSplit =ᵐ[betaMeasure 2 2] id := by
-  rw [Filter.EventuallyEq, ae_iff]
-  refine measure_mono_null (fun u hu => ?_) (betaMeasure_compl_Ioo 2 2)
-  intro hmem
-  exact hu (by simp [toSplit, hmem.1, hmem.2])
-
 /-- The example's model: three hosts, the sender and two speakers on their
 own hosts, devices at one frame per second in blocks of one frame, a request
 lead of half a second, a target latency of one second, and shape two. -/
@@ -1477,8 +1397,8 @@ space; the wander and the other traffic are zero. -/
 private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
   split := fun i j =>
     if h : i = j then 1 / 2
-    else if i < j then toSplit (ω (.split (examplePair i j h)))
-    else 1 - toSplit (ω (.split (examplePair i j h)))
+    else if i < j then splitOf (ω (.split (examplePair i j h)))
+    else 1 - splitOf (ω (.split (examplePair i j h)))
   offset := fun h => ω (.offset h)
   logRate := fun h => ω (.logRate h)
   wander := fun _ _ => 0
@@ -1493,8 +1413,8 @@ private theorem exampleDraw_split_mem (ω : Component (Fin 3) → ℝ) (i j : Fi
   simp only [exampleDraw]
   split_ifs with h h'
   · constructor <;> norm_num
-  · exact toSplit_mem _
-  · have := toSplit_mem (ω (.split (examplePair i j h)))
+  · exact splitOf_mem _
+  · have := splitOf_mem (ω (.split (examplePair i j h)))
     exact ⟨by linarith [this.2], by linarith [this.1]⟩
 
 private theorem exampleDraw_split_swap (ω : Component (Fin 3) → ℝ) (i j : Fin 3) :
@@ -1517,16 +1437,17 @@ private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
   have hcoord : HasLaw (fun ω : Component (Fin 3) → ℝ => ω (.split (examplePair i j hij)))
       (betaMeasure 2 2) (Measure.pi exampleLaw) :=
     (measurePreserving_eval exampleLaw (.split (examplePair i j hij))).hasLaw
-  have hto : HasLaw toSplit (betaMeasure 2 2) (betaMeasure 2 2) := HasLaw.id.congr toSplit_ae_eq
+  have hto : HasLaw splitOf (betaMeasure 2 2) (betaMeasure 2 2) :=
+    HasLaw.id.congr (splitOf_ae_eq 2 2)
   rcases lt_or_gt_of_ne hij with hlt | hgt
   · have heq : (fun ω => (exampleDraw ω).split i j)
-        = fun ω => toSplit (ω (.split (examplePair i j hij))) := by
+        = fun ω => splitOf (ω (.split (examplePair i j hij))) := by
       funext ω
       simp only [exampleDraw, dite_eq_right hij, ite_eq_left hlt]
     rw [heq]
     exact hto.fun_comp hcoord
   · have heq : (fun ω => (exampleDraw ω).split i j)
-        = fun ω => 1 - toSplit (ω (.split (examplePair i j hij))) := by
+        = fun ω => 1 - splitOf (ω (.split (examplePair i j hij))) := by
       funext ω
       simp only [exampleDraw, dite_eq_right hij, ite_eq_right hgt.not_gt]
     rw [heq]
@@ -1536,7 +1457,7 @@ private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
 
 /-- How each component of the example's draw depends on its coordinate. -/
 private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 3)) → ℝ → p.Val
-  | .split z => fun u => if (o z).1.1 < (o z).1.2 then toSplit u else 1 - toSplit u
+  | .split z => fun u => if (o z).1.1 < (o z).1.2 then splitOf u else 1 - splitOf u
   | .offset _ => fun u => u
   | .logRate _ => fun u => u
   | .wander _ => fun _ _ => 0
@@ -1546,7 +1467,7 @@ private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Co
     Measurable (exampleComponentMap o p) := by
   cases p with
   | split z =>
-    exact Measurable.ite (MeasurableSet.const _) measurable_toSplit (measurable_toSplit.const_sub 1)
+    exact Measurable.ite (MeasurableSet.const _) measurable_splitOf (measurable_splitOf.const_sub 1)
   | offset h => exact measurable_id
   | logRate h => exact measurable_id
   | wander h => exact measurable_const

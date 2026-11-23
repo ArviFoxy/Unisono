@@ -1,6 +1,6 @@
 # The theorems
 
-All 488 theorems indexed below live in `lean/Unisono` and are checked in
+All 516 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -48,7 +48,7 @@ argument, whether or not reachable in a run.
 | `Spec.Solution.views_succ`, `views_append`, `handled_before`, `handled_of_mem_views`, `handled_time`, `handled_of_views_eq`, `exists_handed_step`, `askedNext_mono`, `askedNext_succ`, `exists_asked_step`, `plays_of_asked_step`, `handled_of_asked`, `handled_asked`, `no_request_between`, `Solution.progress` | Structural run invariants connecting host views, handled events, playback-block requests, playback decisions, and sufficient conditions for non-Zeno progress. |
 | `Spec.longRun_le`, `missed_eq_zero`, `discontinuities_eq_zero`, `meanLatency_le`, `sync_le`, `tracking_le` | Linear accrual bounds long-run averages; any playback within `E` of fixed latency `L` from some sample onward has zero long-run missed samples and discontinuities, mean latency at most `L + E + δ`, synchronization cost at most `(E + δ)²`, and tracking cost at most `(D + E + δ)²`, where `δ` bounds output sample spacing and `D` bounds `|L* - L|` for target latency `L*`. |
 
-### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld,GenerativeNoiseless}`)
+### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld,GenerativeNoiseless,GenerativeCanonical}`)
 
 | Theorem | Model | What it says |
 |---|---|---|
@@ -60,6 +60,7 @@ argument, whether or not reachable in a run.
 | `Spec.StochasticWorld.Holds.network_random`, `StochasticWorld.example_holds` | `StochasticWorld` | Every composite stochastic world satisfies `StationaryNetworkDisturbances.Random`; the composite model class is non-empty. |
 | `Spec.GenerativeWorld.Prior.leastDelay_pos`, `Prior.leastDelay_add`, `trafficLaw_univ`, `trafficLaw_zero`, `betaPDF_one_sub`, `betaMeasure_map_one_sub`, `betaMeasure_compl_Ioo`, `GenerativeWorld.example_holds` | `GenerativeWorld` | In every outcome both least delays of a pair of hosts are positive and add up to the pair's least round-trip time; the law of the work that other traffic brings to a link is a probability law, and no traffic brings no work; the Beta law of a split gives no mass outside `(0, 1)` and is the same for a split and for one minus it, so it prefers no direction; a random world with three hosts, random splits, clock offsets and mean clock rates, no other traffic and no wander satisfies the model. |
 | `Spec.World.finite_hosts`, `GenerativeWorld.Prior.logRate_ae_eq_zero`, `Prior.wander_ae_eq_zero`, `Prior.traffic_ae_const`, `Draw.isBacklog_zero_of_const`, `Draw.reading_of_noiseless`, `Prior.ae_idealConstantWorld`, `Prior.ae_withinBounds` | `GenerativeWorld` (noiseless members) | A world has finitely many hosts. In a member with no other traffic, no clock wander and no spread of the clocks' mean rates (`Member.Noiseless`), almost every outcome has clocks that read true time plus their drawn offset, links that receive no work and have no backlog, and is therefore an ideal constant world (`IdealConstantWorld.Holds`) whose constant delays are the least delays of the outcome; it satisfies the tight bounds of that world (`World.WithinBounds`), so the theorems about bounded worlds apply to it. |
+| `Spec.iIndepFun_of_const`, `isGaussianProcess_zero`, `GenerativeWorld.splitOf_mem`, `measurable_splitOf`, `splitOf_ae_eq`, `splitOf_one_sub`, `pairOf_swap`, `refOrientation_pairOf`, `canonicalDraw_split_mem`, `canonicalDraw_split_swap`, `measurable_canonicalMap`, `canonicalDraw_component`, `canonicalDraw_split_law`, `canonicalDraw_prior`, `idealWorld_builds`, `canonicalWorld_builds`, `exists_holds_of_noiseless` | `GenerativeWorld` (noiseless members) | Every noiseless member has a random world, for any hosts and speakers. The outcomes are one real number for each component of a draw, drawn independently with the law of the component; the draw of an outcome takes its splits and offsets from these numbers and has the law of the member, and the world of an outcome is the ideal constant world with those offsets and the least delays that the splits give, which is the world built from the draw. |
 
 ### 1.3 Communication topologies, modal split, and shift invariance (`Spec.Topologies`)
 
@@ -94,6 +95,7 @@ production core) proved end to end under `World.WithinBounds`:
 | `Solutions.FixedDelay.speaker_at_latency`, `plays_at_latency`, `guarantees`, `plays_at_latency_example` | From some output sample onward, every speaker plays continuously within `latencyError` of `L`, yielding zero long-run missed samples and discontinuities and explicit bounds on mean latency, synchronization, and tracking; `plays_at_latency_example` exhibits a two-host world meeting all hypotheses. |
 | `Spec.limsup_weighted`, `World.cost_le`, `World.weighted_tracking_le_cost`, `World.PlaysAtLatencies.playsAtLatency`, `World.missed_eq_zero_of_exact`, `World.discontinuities_eq_zero_of_exact`, `World.latency_eq_of_exact`, `World.capture_step_of_linear`, `World.tracking_le_of_exact`, `World.sync_le_of_exact`, `IdealConstantWorld.Holds.captured_eq` | The cost of a playback is at most the weighted sum of the long-run values of the six objectives and at least the weighted long-run tracking. When every output sample of each speaker `r` plays the sound captured exactly `L r` seconds before it leaves, in a world whose capture times are linear in the position, every frame that speaker `r` plays has latency exactly `L r`; the long-run tracking is at most the mean over the speakers of the squares of `L r` minus the target latency, the long-run synchronization is at most the sum over the pairs of speakers of the squared differences of their latencies divided by the square of the number of speakers, and no samples are missed and playback has no discontinuities in the long run. |
 | `Spec.Solution.plays_shiftStarKeepPeers`, `IdealConstantWorld.Holds.starNet`, `IdealConstantWorld.Holds.shiftStarKeepPeers` | A star solution that makes progress, in whose run no two messages from different hosts arrive at one host at the same time, plays the same when the timelines of the hosts are shifted along the links to and from the sender while the other links stay as they are; an ideal constant world shifted in this way is an ideal constant world with the shifted delays. |
+| `Spec.shiftCost_nonneg`, `frameCost_nonneg`, `meanFin_add`, `meanFin_sub`, `varFin_add_add_varFin_sub`, `two_mul_shiftCost_le`, `World.accruedFrames_mono`, `World.accruedFrames_weighted`, `World.longRun_frames_le_cost`, `playTime_shiftStarKeepPeers`, `Solution.cost_shiftStarKeepPeers_add_ge` | A star solution that makes progress and eventually plays every frame, in whose run no two messages from different hosts arrive at one host at the same time, has costs in a world and in the same world with the star links shifted that add up to at least twice the cost of half the shift, for any number of hosts and speakers. The cost of a shift at one frame is the weight of synchronization times the variance of the speakers' shifts plus the weight of tracking times the mean of their squares. |
 | `Solutions.FixedDelay.latencyError_ideal`, `cost_le_of_ideal` | In an ideal constant world with any number of receiving hosts and no speaker on the sender's host, the baseline at the target latency, under the delivery margin and with no two messages from different hosts arriving at one host at the same time, has a cost of at most the weight of synchronization times the sum over the pairs of speakers of the squared differences of their hosts' asymmetries divided by the square of the number of speakers, plus the weight of tracking times the mean over the speakers of the squared asymmetry of the host, when the weights of latency and roughness are zero. The asymmetry of a host is half the difference between the delay from the sender to it and the delay back. |
 
 ### 1.6 Optimality in expected cost (`Spec.Optimality`)
@@ -376,10 +378,10 @@ rather than a proof about the runtime threads.
    (ALSA).
 7. **Optimality in expected cost under `GenerativeWorld`:** no solution is
    proved optimal (`OptimalWithin`), and no lower bound on expected cost is
-   proved under the model. The model is shown non-empty only for a member
-   with no other traffic and no clock wander; a random world with other
-   traffic needs a Poisson process and one with wander needs a stationary
-   Gaussian process with continuous paths, and neither is constructed in
-   Lean. The expectation that a solution loses nothing in the long run by not
+   proved under the model. Random worlds are constructed for every
+   noiseless member and for one member with random mean clock rates; a
+   random world with other traffic needs a Poisson process and one with
+   wander needs a stationary Gaussian process with continuous paths, and
+   neither is constructed in Lean. The expectation that a solution loses nothing in the long run by not
    being told the numbers of its member is not proved. The generative
    model is not shown to belong to the model classes above.

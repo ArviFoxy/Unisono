@@ -42,6 +42,7 @@ public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
@@ -51,6 +52,7 @@ public import Unisono.Spec.Objectives
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.Solution
+public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Spec.World
 public import Unisono.Sync

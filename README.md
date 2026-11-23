@@ -56,6 +56,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     and satisfies `World.WithinBounds`
     (`lean/Unisono/Spec/Models/GenerativeNoiseless.lean`), so the theorems
     about those models apply to it.
+  - Every noiseless member of `GenerativeWorld` has a random world, for any
+    hosts and speakers (`lean/Unisono/Spec/Models/GenerativeCanonical.lean`).
+  - A star solution's costs in a world and in the same world with the links
+    to and from the sender shifted add up to at least twice the cost of half
+    the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
@@ -71,9 +76,9 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `SecondOrderMoments`, `StochasticWorld`, and `GenerativeWorld`).
   - No solution is proved optimal in expected cost (`OptimalWithin`) under
     `GenerativeWorld`, and no lower bound on expected cost is proved under it.
-    The model is shown non-empty only for a member with no other traffic and
-    no clock wander; random worlds with either are not yet constructed in
-    Lean. The expectation that a solution loses nothing in the long run by
+    Random worlds are constructed for every noiseless member and for one
+    member with random mean clock rates; random worlds with other traffic or
+    with clock wander are not yet constructed in Lean. The expectation that a solution loses nothing in the long run by
     not being told the numbers of its member is not proved.
   - Unconditional `Solution.WithinSpeed` across all block boundaries (including
     silence restarts and arbitrary `jump` values) for `Core.solution` remains
