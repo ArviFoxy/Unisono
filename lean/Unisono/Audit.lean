@@ -70,6 +70,8 @@ public import Unisono.Spec.MoreInMessages
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.SameMessages
+public import Unisono.Spec.ShiftedPlayback
+public import Unisono.Spec.Skips
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Sync
@@ -1152,6 +1154,206 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.cost_shiftStarKeepPeers_add_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.cost_shiftStarKeepPeers_add_ge
+
+/-- info: 'Unisono.Spec.lastPlayed_succ_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lastPlayed_succ_some
+
+/-- info: 'Unisono.Spec.lastPlayed_succ_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lastPlayed_succ_none
+
+/-- info: 'Unisono.Spec.eq_none_of_lastPlayed_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.eq_none_of_lastPlayed_none
+
+/-- info: 'Unisono.Spec.lastPlayed_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lastPlayed_some
+
+/-- info: 'Unisono.Spec.eq_none_of_trailing' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.eq_none_of_trailing
+
+/-- info: 'Unisono.Spec.findGreatest_isSome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.findGreatest_isSome
+
+/-- info: 'Unisono.Spec.missedAt_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_of_none
+
+/-- info: 'Unisono.Spec.missedAt_of_lastPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_of_lastPlayed
+
+/-- info: 'Unisono.Spec.one_le_missedAt_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.one_le_missedAt_add
+
+/-- info: 'Unisono.Spec.missedBefore_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedBefore_succ
+
+/-- info: 'Unisono.Spec.missedBefore_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedBefore_mono
+
+/-- info: 'Unisono.Spec.missedBefore_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedBefore_of_none
+
+/-- info: 'Unisono.Spec.continuousBefore_succ_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuousBefore_succ_of
+
+/-- info: 'Unisono.Spec.continuousBefore_succ_of_not' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuousBefore_succ_of_not
+
+/-- info: 'Unisono.Spec.continuousBefore_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuousBefore_le
+
+/-- info: 'Unisono.Spec.le_continuousBefore_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_continuousBefore_add
+
+/-- info: 'Unisono.Spec.le_lastPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_lastPlayed
+
+/-- info: 'Unisono.Spec.mem_unpassed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mem_unpassed
+
+/-- info: 'Unisono.Spec.PassedBefore.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PassedBefore.mono
+
+/-- info: 'Unisono.Spec.firstFrames_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.firstFrames_eq
+
+/-- info: 'Unisono.Spec.card_unpassed_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.card_unpassed_le
+
+/-- info: 'Unisono.Spec.neverPlayed_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.neverPlayed_le
+
+/-- info: 'Unisono.Spec.neverPlayed_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.neverPlayed_mono
+
+/-- info: 'Unisono.Spec.neverPlayed_le_of_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.neverPlayed_le_of_missed
+
+/-- info: 'Unisono.Spec.exists_time_paid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_time_paid
+
+/-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.unplayedAt_of
+
+/-- info: 'Unisono.Spec.unplayedAt_of_not' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.unplayedAt_of_not
+
+/-- info: 'Unisono.Spec.neverPlayed_eq_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.neverPlayed_eq_sum
+
+/-- info: 'Unisono.Spec.playTime_isSome_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.playTime_isSome_iff
+
+/-- info: 'Unisono.Spec.ofReal_sum_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ofReal_sum_le
+
+/-- info: 'Unisono.Spec.speakerShiftCost_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.speakerShiftCost_nonneg
+
+/-- info: 'Unisono.Spec.World.pairCost_add_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.pairCost_add_ge
+
+/-- info: 'Unisono.Spec.World.trackingAt_add_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.trackingAt_add_ge
+
+/-- info: 'Unisono.Spec.World.frame_add_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.frame_add_ge
+
+/-- info: 'Unisono.Spec.find_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.find_of_linear
+
+/-- info: 'Unisono.Spec.exists_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_of_linear
+
+/-- info: 'Unisono.Spec.World.accruedFrames_eq_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.accruedFrames_eq_sum
+
+/-- info: 'Unisono.Spec.World.accruedFrames_congr_source' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.accruedFrames_congr_source
+
+/-- info: 'Unisono.Spec.World.weighted_missed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.weighted_missed_eq
+
+/-- info: 'Unisono.Spec.World.weighted_frames_add_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.weighted_frames_add_ge
+
+/-- info: 'Unisono.Spec.World.cost_add_ge_of_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.cost_add_ge_of_shift
+
+/-- info: 'Unisono.Spec.le_longRun_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_longRun_of_linear
+
+/-- info: 'Unisono.Spec.missedBefore_ge_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedBefore_ge_of_none
+
+/-- info: 'Unisono.Spec.World.cost_ge_of_eventually_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.cost_ge_of_eventually_none
+
+/-- info: 'Unisono.Spec.World.captured_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_of_linear
+
+/-- info: 'Unisono.Spec.World.advance_of_speed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.advance_of_speed
+
+/-- info: 'Unisono.Spec.Solution.nonneg_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.nonneg_of_plays
+
+/-- info: 'Unisono.Spec.Solution.plays_eq_none_of_stalled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_eq_none_of_stalled
+
+/-- info: 'Unisono.Spec.mul_shiftCost_le_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mul_shiftCost_le_sum
+
+/-- info: 'Unisono.Spec.Solution.cost_shiftStar_add_ge_of_speed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.cost_shiftStar_add_ge_of_speed
 
 /-- info: 'Unisono.Spec.iIndepFun_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

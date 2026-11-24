@@ -63,6 +63,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
   - A star solution's costs in a world and in the same world with the links
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
+    The same holds without assuming that the solution plays every frame or
+    that its run keeps going, for a solution whose speed stays within a
+    bound below one, when the weight of missed samples is large enough
+    (`lean/Unisono/Spec/ShiftedPlayback.lean`): the missed samples pay for
+    the frames that are never played (`lean/Unisono/Spec/Skips.lean`).
   - A bound for the baseline against solutions through the sender
     (`Unisono.Solutions.FixedDelay.within_starMargin` in
     `lean/Unisono/Solutions/FixedDelay/StarMargin.lean`). It does not make

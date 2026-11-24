@@ -71,6 +71,8 @@ public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.SameMessages
 public import Unisono.Spec.Solution
+public import Unisono.Spec.ShiftedPlayback
+public import Unisono.Spec.Skips
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Spec.World
