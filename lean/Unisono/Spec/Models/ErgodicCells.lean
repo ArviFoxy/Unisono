@@ -515,6 +515,46 @@ theorem measure_inter_preimage_shiftCells (ν : Measure S) [IsProbabilityMeasure
   rw [hsame] at hmul
   exact hmul
 
+open Classical in
+/-- **Sets that depend on the cells of two disjoint sets of cells are
+independent.** The set `A` depends only on the cells of `I₁`: an outcome
+with the same cells of `I₁` as an outcome of `A` is in `A`. The set `B`
+depends only on the cells of `I₂`. -/
+theorem measure_inter_of_disjoint_cells (ν : Measure S) [IsProbabilityMeasure ν]
+    {I₁ I₂ : Set ℤ} (hdisj : Disjoint I₁ I₂) {A B : Set (ℤ → S)} (hA : MeasurableSet A)
+    (hB : MeasurableSet B)
+    (hA' : ∀ ω ω' : ℤ → S, (∀ c ∈ I₁, ω c = ω' c) → ω ∈ A → ω' ∈ A)
+    (hB' : ∀ ω ω' : ℤ → S, (∀ c ∈ I₂, ω c = ω' c) → ω ∈ B → ω' ∈ B) :
+    (Measure.infinitePi fun _ : ℤ => ν) (A ∩ B)
+      = (Measure.infinitePi fun _ : ℤ => ν) A * (Measure.infinitePi fun _ : ℤ => ν) B := by
+  obtain ⟨s₀⟩ : Nonempty S := nonempty_of_isProbabilityMeasure ν
+  -- An outcome rebuilt from its cells of a set `I`, with a fixed cell elsewhere.
+  let ext : (I : Set ℤ) → (↥I → S) → (ℤ → S) := fun I g c =>
+    if h : c ∈ I then g ⟨c, h⟩ else s₀
+  have hext : ∀ I : Set ℤ, Measurable (ext I) := fun I =>
+    measurable_pi_iff.mpr fun c => by
+      by_cases h : c ∈ I
+      · simp only [ext, dite_eq_left h]
+        exact measurable_pi_apply _
+      · simp only [ext, dite_eq_right h]
+        exact measurable_const
+  have hagree : ∀ (I : Set ℤ) (ω : ℤ → S), ∀ c ∈ I,
+      ω c = ext I (fun i : ↥I => ω i) c := fun I ω c hc => by
+    simp only [ext, dite_eq_left hc]
+  have hind := (iIndepFun_infinitePi (P := fun _ : ℤ => ν) (X := fun _ x => x)
+    (fun _ => measurable_id)).indepFun_set I₁ I₂ hdisj fun c => measurable_pi_apply c
+  have hmul := (hind.comp (hext I₁) (hext I₂)).measure_inter_preimage_eq_mul A B hA hB
+  have hA_eq : (ext I₁ ∘ fun (ω : ℤ → S) (i : ↥I₁) => ω i) ⁻¹' A = A := by
+    ext ω
+    exact ⟨fun h => hA' _ ω (fun c hc => (hagree I₁ ω c hc).symm) h,
+      fun h => hA' ω _ (hagree I₁ ω) h⟩
+  have hB_eq : (ext I₂ ∘ fun (ω : ℤ → S) (i : ↥I₂) => ω i) ⁻¹' B = B := by
+    ext ω
+    exact ⟨fun h => hB' _ ω (fun c hc => (hagree I₂ ω c hc).symm) h,
+      fun h => hB' ω _ (hagree I₂ ω) h⟩
+  rw [hA_eq, hB_eq] at hmul
+  exact hmul
+
 /-- **Moving independent cells with one law is ergodic.** -/
 theorem ergodic_shiftCells (ν : Measure S) [IsProbabilityMeasure ν] {k : ℤ} (hk : k ≠ 0) :
     Ergodic (shiftCells k) (Measure.infinitePi fun _ : ℤ => ν) where

@@ -58,7 +58,9 @@ public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
+public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeNoiseless
+public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
@@ -67,6 +69,7 @@ public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.PauseProcess
 public import Unisono.Spec.Models.Ideal
+public import Unisono.Spec.Models.IncrementLaw
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.MoreInMessages

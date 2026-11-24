@@ -1034,6 +1034,18 @@ world of a member with steady clocks, almost every outcome is a world whose
 clocks run at constant rates
 (\lean{Prior.ae\_\allowbreak constantRates}).
 
+The three properties that the model asks of a paused time fix the law of its
+path. In every random world of a member, with or without steady clocks, the
+paused times of all links and hosts, as functions of true time, have one
+joint law (\lean{Prior.map\_\allowbreak paused} in
+\path{lean/Unisono/Spec/Models/GenerativePauseLaw.lean}). In almost every
+outcome of every random world, all links and all hosts are without a backlog
+together during periods of any length, again and again: for every number of
+seconds $M$ and every true time $N$ there is a later true time $a$ such
+that no link and no host has a backlog from $a$ to $a + M$
+(\lean{Prior.ae\_\allowbreak idle} in
+\path{lean/Unisono/Spec/Models/GenerativeIdle.lean}).
+
 A random world with wander, or with errors of the timestamps, needs a
 stationary Gaussian process with continuous paths, which exists by a
 standard construction that is not carried out in Lean. The model is therefore
