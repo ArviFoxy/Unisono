@@ -54,6 +54,7 @@ public import Unisono.Solutions.FixedDelay.NoLoss
 public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
+public import Unisono.Spec.Causality
 public import Unisono.Spec.Checks
 public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
@@ -2881,6 +2882,58 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.arrival_lt_asked_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.arrival_lt_asked_of_plays
+
+/-- info: 'Unisono.Spec.earliest_eq_of_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.earliest_eq_of_agree
+
+/-- info: 'Unisono.Spec.forall₂_getElem?' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.forall₂_getElem?
+
+/-- info: 'Unisono.Spec.forall₂_eraseIdx' depends on axioms: [propext] -/
+#guard_msgs in
+#print axioms Unisono.Spec.forall₂_eraseIdx
+
+/-- info: 'Unisono.Spec.InFlight.SameBefore.refl' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.InFlight.SameBefore.refl
+
+/-- info: 'Unisono.Spec.InFlight.SameBefore.eq_of_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.InFlight.SameBefore.eq_of_lt
+
+/-- info: 'Unisono.Spec.State.SameBefore.due_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.due_eq
+
+/-- info: 'Unisono.Spec.State.SameBefore.send' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.send
+
+/-- info: 'Unisono.Spec.State.SameBefore.sendAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.sendAll
+
+/-- info: 'Unisono.Spec.State.SameBefore.handle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.handle
+
+/-- info: 'Unisono.Spec.State.SameBefore.key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.key
+
+/-- info: 'Unisono.Spec.State.SameBefore.step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.SameBefore.step
+
+/-- info: 'Unisono.Spec.Solution.sameBefore_states' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.sameBefore_states
+
+/-- info: 'Unisono.Spec.Solution.plays_eq_of_sameBefore' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_eq_of_sameBefore
 
 /-- info: 'Unisono.Spec.earliest_spec_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

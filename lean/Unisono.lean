@@ -52,6 +52,7 @@ public import Unisono.Solutions.FixedDelay.NoLoss
 public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
+public import Unisono.Spec.Causality
 public import Unisono.Spec.Checks
 public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
