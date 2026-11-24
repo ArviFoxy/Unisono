@@ -74,6 +74,7 @@ public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
+public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
@@ -1748,6 +1749,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.stall_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.stall_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.stall_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.stall_le
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

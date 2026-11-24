@@ -73,6 +73,7 @@ public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
+public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
