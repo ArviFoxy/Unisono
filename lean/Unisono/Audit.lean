@@ -73,6 +73,7 @@ public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.PauseProcess
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.IncrementLaw
+public import Unisono.Spec.Models.MeasurableDelay
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.MoreInMessages
@@ -1559,6 +1560,86 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.ae_idle
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_ratAfter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_ratAfter
+
+/-- info: 'Unisono.Spec.GenerativeWorld.lt_ratAfter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.lt_ratAfter
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ratAfter_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ratAfter_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.tendsto_ratAfter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.tendsto_ratAfter
+
+/-- info: 'Unisono.Spec.GenerativeWorld.valueAfter_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.valueAfter_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_valueAfter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_valueAfter
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_backlogM' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_backlogM
+
+/-- info: 'Unisono.Spec.GenerativeWorld.backlogM_eq_iSup' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.backlogM_eq_iSup
+
+/-- info: 'Unisono.Spec.GenerativeWorld.backlogM_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.backlogM_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.backlogM_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.backlogM_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_backlogM_comp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_backlogM_comp
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_arrivalM' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_arrivalM
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_arrivalM' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_eq_arrivalM
+
+/-- info: 'Unisono.Spec.GenerativeWorld.arrivalM_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.arrivalM_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedPath_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedPath_shiftCells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellPaused_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellPaused_monotone
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellPaused_rightContinuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellPaused_rightContinuous
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellPaused_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellPaused_shiftCells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.arrivalM_cellPaused_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.arrivalM_cellPaused_shiftCells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_tendsto_lateFrequency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_tendsto_lateFrequency
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

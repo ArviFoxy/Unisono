@@ -72,6 +72,7 @@ public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.PauseProcess
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.IncrementLaw
+public import Unisono.Spec.Models.MeasurableDelay
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.MoreInMessages
