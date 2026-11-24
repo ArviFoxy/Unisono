@@ -56,6 +56,7 @@ public import Unisono.Spec.Held
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.ErgodicCells
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeNoiseless
@@ -1289,6 +1290,74 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.exists_holds_with_pauses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.exists_holds_with_pauses
+
+/-- info: 'Unisono.Spec.abs_birkhoffAverage_apply_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.abs_birkhoffAverage_apply_sub_le
+
+/-- info: 'Unisono.Spec.frequently_lt_of_abs_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.frequently_lt_of_abs_sub_le
+
+/-- info: 'Unisono.Spec.preimage_frequentlyAbove' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.preimage_frequentlyAbove
+
+/-- info: 'Unisono.Spec.measurableSet_frequentlyAbove' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurableSet_frequentlyAbove
+
+/-- info: 'Unisono.Spec.iterate_mem_iff_of_preimage_eq' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.iterate_mem_iff_of_preimage_eq
+
+/-- info: 'Unisono.Spec.birkhoffSum_indicator_of_preimage_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.birkhoffSum_indicator_of_preimage_eq
+
+/-- info: 'Unisono.Spec.measure_frequentlyAbove_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measure_frequentlyAbove_eq_zero
+
+/-- info: 'Unisono.Spec.ae_eventually_birkhoffAverage_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_eventually_birkhoffAverage_le
+
+/-- info: 'Unisono.Spec.tendsto_birkhoffAverage_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.tendsto_birkhoffAverage_ae
+
+/-- info: 'Unisono.Spec.frequently_succ_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.frequently_succ_iff
+
+/-- info: 'Unisono.Spec.ae_frequently_mem_of_ergodic' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_frequently_mem_of_ergodic
+
+/-- info: 'Unisono.Spec.preErgodic_of_mixing' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.preErgodic_of_mixing
+
+/-- info: 'Unisono.Spec.measurable_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_shiftCells
+
+/-- info: 'Unisono.Spec.iterate_shiftCells' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.iterate_shiftCells
+
+/-- info: 'Unisono.Spec.measurePreserving_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurePreserving_shiftCells
+
+/-- info: 'Unisono.Spec.measure_inter_preimage_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measure_inter_preimage_shiftCells
+
+/-- info: 'Unisono.Spec.ergodic_shiftCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ergodic_shiftCells
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
