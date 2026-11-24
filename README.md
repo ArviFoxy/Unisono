@@ -77,6 +77,16 @@ simulation and integration tests (see `PRINCIPLES.md`):
     over the speakers of the least round-trip time between the sender and the
     speaker's host and `Θ` bounds the clock offsets. The theorem needs zero
     weights on latency and roughness and no speaker on the sender's host.
+  - The controller (`Unisono.Solutions.Controller`): the sender announces a
+    level with every block, the latency that every speaker is to hold, and
+    the hosts estimate the sender's clock and the clocks of their audio
+    devices as lines. In a world whose clocks of hosts and of audio devices
+    run at constant rates, each its own, it plays every frame at the level
+    divided by the rate of the sender's clock, plus the asymmetry of the
+    speaker's host (`Unisono.Solutions.Controller.playsAtLatencies` in
+    `lean/Unisono/Solutions/Controller/Exact.lean`). It does not yet change
+    its pace smoothly or choose the level, and nothing is proved about it in
+    worlds with pauses.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

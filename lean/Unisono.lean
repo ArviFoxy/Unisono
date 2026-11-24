@@ -32,6 +32,8 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.Controller
+public import Unisono.Solutions.Controller.Exact
+public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay
 public import Unisono.Solutions.FixedDelay.Arrivals
@@ -48,6 +50,7 @@ public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeNoiseless
+public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTies

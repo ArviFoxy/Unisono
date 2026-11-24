@@ -35,6 +35,8 @@ public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
 public import Unisono.Solutions.Controller
+public import Unisono.Solutions.Controller.Exact
+public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay.Arrivals
 public import Unisono.Solutions.FixedDelay.Exact
@@ -49,6 +51,7 @@ public import Unisono.Spec.Limits
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeNoiseless
+public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTies
@@ -1711,6 +1714,134 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.plays_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.plays_asked
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.clock' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.clock
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.deviceReading' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.deviceReading
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.deliver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.deliver
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.capture' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.capture
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.capture_reported' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.capture_reported
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.out' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.out
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.speaker_reported' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.speaker_reported
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.asked
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.captured
+
+/-- info: 'Unisono.Spec.GenerativeWorld.abs_inv_sub_one_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.abs_inv_sub_one_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.withinBounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.withinBounds
+
+/-- info: 'Unisono.Spec.CaptureDevice.head?_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.head?_block
+
+/-- info: 'Unisono.Spec.PlaybackDevice.head?_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.head?_block
+
+/-- info: 'Unisono.Solutions.FixedDelay.act_sends_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.act_sends_block
+
+/-- info: 'Unisono.Solutions.Controller.exchangesOf_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exchangesOf_eq
+
+/-- info: 'Unisono.Solutions.Controller.mem_plainExchangesOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_plainExchangesOf
+
+/-- info: 'Unisono.Solutions.Controller.plainExchangesOf_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.plainExchangesOf_mem
+
+/-- info: 'Unisono.Solutions.Controller.headerOf_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.headerOf_append
+
+/-- info: 'Unisono.Solutions.Controller.headerOf_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.headerOf_mem
+
+/-- info: 'Unisono.Solutions.Controller.headerOf_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.headerOf_latest
+
+/-- info: 'Unisono.Solutions.Controller.mem_playbackReports' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_playbackReports
+
+/-- info: 'Unisono.Solutions.Controller.mem_captureReports' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_captureReports
+
+/-- info: 'Unisono.Solutions.Controller.sends_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.sends_block
+
+/-- info: 'Unisono.Solutions.Controller.block_header' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.block_header
+
+/-- info: 'Unisono.Solutions.Controller.exchange_of_view' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exchange_of_view
+
+/-- info: 'Unisono.Solutions.Controller.exists_two_exchanges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_two_exchanges
+
+/-- info: 'Unisono.Solutions.Controller.handedNext_of_handled' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.handedNext_of_handled
+
+/-- info: 'Unisono.Solutions.Controller.captureLine_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.captureLine_exact
+
+/-- info: 'Unisono.Solutions.Controller.playbackLine_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.playbackLine_exact
+
+/-- info: 'Unisono.Solutions.Controller.speaker_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.speaker_exact
+
+/-- info: 'Unisono.Solutions.Controller.playsAtLatencies' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.playsAtLatencies
+
+/-- info: 'Unisono.Solutions.Controller.playsAtLatencies_example' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.playsAtLatencies_example
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
