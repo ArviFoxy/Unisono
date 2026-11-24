@@ -16,9 +16,12 @@ correction of at most its slew.
 * `step_le_slew`: in any world, when two consecutive output samples of a
   speaker both play the source, the second position is one frame after the
   first, within the slew.
+* `withinStep`: so the baseline keeps the speed bound of the specification
+  (`Solution.WithinStep`) in every world, for every bound that is at least
+  its slew.
 * `withinSpeed_of_linear`: when frames are captured and output samples leave
-  at the same rate, the baseline's speed stays within its slew of one, at
-  every output sample from the first on.
+  at the same rate, the baseline's speed in true time stays within its slew
+  of one, at every output sample from the first on.
 -/
 
 @[expose] public noncomputable section
@@ -134,9 +137,16 @@ theorem step_le_slew (w : World H R) (lookahead : ℕ+) (hslew : 0 ≤ p.slew) {
       rw [ite_eq_left hfirst.symm] at hc₂
       exact hadv goal hc₂
 
-/-- **The baseline's speed stays within its slew of one**, at every output
-sample, when frames are captured and output samples leave at the same
-rate. -/
+/-- **The baseline keeps the speed bound.** In every world, in every step of
+continuous playback, the baseline's position advances by one frame per
+output sample within every bound `u` that is at least its slew. -/
+theorem withinStep (w : World H R) (lookahead : ℕ+) (hslew : 0 ≤ p.slew) {u : ℝ}
+    (hu : p.slew ≤ u) : (solution p : Solution H R Payload).WithinStep w lookahead u :=
+  fun _ _ _ _ hx hy _ _ => (step_le_slew p w lookahead hslew hx hy).trans hu
+
+/-- **The baseline's speed in true time stays within its slew of one**, at
+every output sample, when frames are captured and output samples leave at
+the same rate. -/
 theorem withinSpeed_of_linear (w : World H R) (lookahead : ℕ+) (hslew : 0 ≤ p.slew)
     {ρ t₀ : ℝ} (hρ : 0 < ρ) (hcap : ∀ n, w.source.capture n = t₀ + (n : ℝ) / ρ)
     (o : Fin R → ℝ) (hout : ∀ r k, (w.speaker r).out k = o r + (k : ℝ) / ρ) {u : ℝ}

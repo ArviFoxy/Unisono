@@ -20,22 +20,23 @@ exchange messages only with the sender.
 
 * `StarSolutions` is the class of solutions that the bound holds for at a
   member, for a speed bound `u`: the star solutions whose cost in that
-  member is a measurable function of what is drawn, and whose speed stays
-  within `u` of one in almost every outcome of every random world of the
+  member is a measurable function of what is drawn, and whose position
+  advances by one frame per output sample within `u`, in every step of
+  continuous playback, in almost every outcome of every random world of the
   member. The class asks nothing about which frames a solution plays,
   nothing about its run, and nothing of a solution in other members.
 * `starLowerBound` is the mean, over the outcomes of the concrete random
   world, of the cost of half the shifts of the reflection
   (`Unisono.Spec.Models.GenerativeReflection`).
 
-Without a bound on the speed no lower bound holds: a playback whose position
+Without the speed bound no lower bound holds: a playback whose position
 creeps forward without ever reaching the next frame plays no frame, counts
 no missed sample and no discontinuity, and costs nothing.
 
 The proof pairs every outcome with its reflection. A star solution plays the
 same in the worlds of the two outcomes, which differ by a shift of the
 hosts' timelines, so its costs in the two add up to at least twice the cost
-of half the shift (`Solution.cost_shiftStar_add_ge_of_speed`); the missed
+of half the shift (`Solution.cost_shiftStar_add_ge_of_step`); the missed
 samples pay for the frames that a speaker never plays. The reflection keeps
 the law of the outcomes, so the two costs have the same mean.
 -/
@@ -64,9 +65,9 @@ structure StarSolutions (m : GenerativeWorld H R) (f : Member H R) (lookahead : 
   star : τ.IsStar m.sender
   /-- The cost in the member is a measurable function of what is drawn. -/
   measurable : m.measurableCost f lookahead c Msg τ
-  /-- Almost surely, the speed of continuous playback stays within `u` of
-  one. -/
-  withinSpeed : m.AlmostSurely f fun w => τ.WithinSpeed w lookahead u
+  /-- Almost surely, the position advances by one frame per output sample
+  within `u`, in every step of continuous playback. -/
+  withinStep : m.AlmostSurely f fun w => τ.WithinStep w lookahead u
 
 section Canonical
 
@@ -134,7 +135,7 @@ theorem StarSolutions.le_canonical {τ : Solution H R Msg} {u : ℝ}
     starLowerBound m f c
       ≤ ∫⁻ y, τ.cost (canonicalWorld m f hex y) lookahead c ∂Measure.pi (canonicalLaw m f) := by
   have hcostm := aemeasurable_cost hτ.measurable hf hex
-  have hspeed := (almostSurely_iff m f hf hex _).mp hτ.withinSpeed
+  have hstep := (almostSurely_iff m f hf hex _).mp hτ.withinStep
   have hT := measurePreserving_reflect m f
   -- In almost every outcome, the costs in the outcome and in its reflection
   -- add up to at least twice the cost of half the shift.
@@ -142,9 +143,9 @@ theorem StarSolutions.le_canonical {τ : Solution H R Msg} {u : ℝ}
       ENNReal.ofReal (2 * shiftCost c fun r => reflectShift m f y (m.host r) / 2)
         ≤ τ.cost (canonicalWorld m f hex y) lookahead c
           + τ.cost (canonicalWorld m f hex (reflect m f y)) lookahead c := by
-    filter_upwards [hspeed] with y h1
+    filter_upwards [hstep] with y h1
     rw [canonicalWorld_reflect m f hex y]
-    refine τ.cost_shiftStar_add_ge_of_speed (canonicalWorld m f hex y) lookahead c hτ.star
+    refine τ.cost_shiftStar_add_ge_of_step (canonicalWorld m f hex y) lookahead c hτ.star
       (reflectShift m f y) (reflectShift_sender m f y) (reflectShift_star m f hex y) hR
       m.rate_pos (t₀ := f.captureStart - (canonicalDraw y).offset m.sender) (fun n => rfl)
       (fun r => f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))

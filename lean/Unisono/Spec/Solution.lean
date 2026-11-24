@@ -51,7 +51,7 @@ Two constraints hold for every solution.
 
 The lookahead is a parameter of the run. Two more constraints are parameters
 that statements assume: the network's capacity (`Solution.WithinBudget`) and the
-speed bound (`Solution.WithinSpeed`, with the objectives).
+speed bound (`Solution.WithinStep`, with the objectives).
 
 A solution that schedules infinitely many events before some finite time (a
 Zeno solution) never advances past that time: the run never reaches the devices' later

@@ -84,8 +84,9 @@ simulation and integration tests (see `PRINCIPLES.md`):
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
     The same holds without assuming that the solution plays every frame or
-    that its run keeps going, for a solution whose speed stays within a
-    bound below one, when the weight of missed samples is large enough
+    that its run keeps going, for a solution whose position advances by one
+    frame per output sample within a bound below one, when the weight of
+    missed samples is large enough
     (`lean/Unisono/Spec/ShiftedPlayback.lean`): the missed samples pay for
     the frames that are never played (`lean/Unisono/Spec/Skips.lean`).
   - A bound for the baseline against solutions through the sender
@@ -96,9 +97,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     solution is one whose hosts exchange messages only with the sender. The theorem is
     stated for every member of `GenerativeWorld`, with the margin `⊤` for
     every member that it does not cover. The compared star solutions
-    (`GenerativeWorld.StarSolutions`) are those with measurable cost whose
-    speed stays within a bound `u < 1` of one; nothing is assumed about
-    which frames they play. In every noiseless member within the baseline's
+    (`GenerativeWorld.StarSolutions`) are those with measurable cost that
+    keep the speed bound: their position advances by one frame per output
+    sample within a bound `u < 1`, at every step of continuous playback
+    (`Solution.WithinStep`). Nothing is assumed about which frames they
+    play. In every noiseless member within the baseline's
     delivery margin in which the weight of missed samples is large enough
     (`GenerativeWorld.MissedWeightPays`), with any number of hosts and
     speakers, the expected cost of `Unisono.Solutions.FixedDelay` exceeds

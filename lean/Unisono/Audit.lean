@@ -2180,9 +2180,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.mul_shiftCost_le_sum
 
-/-- info: 'Unisono.Spec.Solution.cost_shiftStar_add_ge_of_speed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.Solution.cost_shiftStar_add_ge_of_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.Solution.cost_shiftStar_add_ge_of_speed
+#print axioms Unisono.Spec.Solution.cost_shiftStar_add_ge_of_step
 
 /-- info: 'Unisono.Spec.iIndepFun_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2571,6 +2571,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.step_le_slew' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.step_le_slew
+
+/-- info: 'Unisono.Solutions.FixedDelay.withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.withinStep
 
 /-- info: 'Unisono.Solutions.FixedDelay.withinSpeed_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

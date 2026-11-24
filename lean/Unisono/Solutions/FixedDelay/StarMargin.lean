@@ -25,7 +25,8 @@ stated for every member of the model: for every other member its margin is
   large enough that not playing frames does not pay.
 * **The compared solutions.** `StarSolutions`
   (`Unisono.Spec.Models.GenerativeStar`): the star solutions with measurable
-  cost whose speed stays within a bound `u < 1` of one. The baseline is one
+  cost whose position advances by one frame per output sample within a
+  bound `u < 1`, in every step of continuous playback. The baseline is one
   of them when its slew is at most `u`.
 * **The margin.** `starMargin`: the sum of the weights of synchronization
   and of tracking, times `ρ ^ 3 / (4 * Θ)`, where `ρ` is the sum, over the
@@ -489,12 +490,8 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
         (p := fun d w => (solution p : Solution H R Payload).cost w lookahead c
           = ENNReal.ofReal (shiftCost c fun r => d.asymmetry m f (m.host r)))
         (ae_cost_eq p hp hnos hmem hex hcl hcr hR)⟩
-  withinSpeed := (almostSurely_iff m f hmem.noiseless hex _).mpr
-    (Filter.Eventually.of_forall fun y =>
-      withinSpeed_of_linear p (canonicalWorld m f hex y) lookahead hp.slew_pos.le m.rate_pos
-        (t₀ := f.captureStart - (canonicalDraw y).offset m.sender) (fun n => rfl)
-        (fun r => f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))
-        (fun r k => rfl) hslew)
+  withinStep := fun _ _ _ _ world _ _ =>
+    Filter.Eventually.of_forall fun ω => withinStep p (world ω) lookahead hp.slew_pos.le hslew
 
 open Classical in
 /-- **The baseline against solutions through the sender within a speed
@@ -506,8 +503,9 @@ within the delivery margin in which the weight of missed samples pays
 (`MissedWeightPays`). In every random world of each of them, with any number
 of hosts and speakers, the baseline's expected cost exceeds that of no star
 solution compared at that member by more than `starMargin`. The compared
-solutions are the star solutions with measurable cost whose speed stays
-within `u` of one; nothing is assumed about which frames they play. The
+solutions are the star solutions with measurable cost whose position
+advances by one frame per output sample within `u`; nothing is assumed about
+which frames they play. The
 statement is about every member of the model: for every other member the
 margin is `⊤`, and the theorem says nothing about it. -/
 theorem within_starMargin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)

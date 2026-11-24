@@ -34,8 +34,9 @@ the two costs from below without assuming that every frame is played.
   (`Unisono.Spec.Skips`).
 * **A playback that stops** (`World.cost_ge_of_eventually_none`) costs the
   weight of missed samples at every output sample.
-* **A star solution** (`Solution.cost_shiftStar_add_ge_of_speed`). A star
-  solution whose speed stays within `u < 1` of one pays, in a world and in
+* **A star solution** (`Solution.cost_shiftStar_add_ge_of_step`). A star
+  solution whose position advances by one frame per output sample within
+  `u < 1`, in every step of continuous playback, pays, in a world and in
   the same world with the links to and from the sender shifted, at least
   twice the cost of half the shift. Nothing is assumed about which frames it
   plays, or about its run: a run that stops decides nothing more
@@ -844,8 +845,9 @@ cannot tell apart, whatever it plays.** Let frames be captured and output
 samples leave at `ρ` per second in the world `w`, and let every playback
 device request blocks without end. Let `X` be a shift of the hosts'
 timelines along the links to and from the sender, which leaves the sender's
-timeline in place. Let `σ` be a star solution whose speed in `w` stays
-within `u < 1` of one. If the weight of missed samples is large enough,
+timeline in place. Let `σ` be a star solution whose position in `w`
+advances, in every step of continuous playback, by one frame per output
+sample within `u < 1`. If the weight of missed samples is large enough,
 `6 * speakerShiftCost c (X / 2) r ≤ c.missed * (1 - u) * ρ` for every speaker
 `r`, then the costs of `σ` in `w` and in the shifted world add up to at
 least twice `shiftCost c` of half the speakers' shifts.
@@ -853,7 +855,7 @@ least twice `shiftCost c` of half the speakers' shifts.
 Nothing is assumed about which frames `σ` plays, or about its run: if the
 run stops in one of the worlds, the speakers play nothing from then on, and
 the missed samples alone cost more than the bound. -/
-theorem Solution.cost_shiftStar_add_ge_of_speed (σ : Solution H R Msg)
+theorem Solution.cost_shiftStar_add_ge_of_step (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (c : Weights) (hstar : σ.IsStar w.sender) (X : H → ℝ)
     (hXs : X w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
@@ -862,7 +864,7 @@ theorem Solution.cost_shiftStar_add_ge_of_speed (σ : Solution H R Msg)
     (hcap : ∀ n, w.source.capture n = t₀ + (n : ℝ) / ρ) (o : Fin R → ℝ)
     (hout : ∀ r k, (w.speaker r).out k = o r + (k : ℝ) / ρ)
     (hasked : ∀ r (T : Time), ∃ b, T < (w.speaker r).asked b)
-    {u : ℝ} (hu0 : 0 ≤ u) (hu1 : u < 1) (hspeed : σ.WithinSpeed w lookahead u)
+    {u : ℝ} (hu0 : 0 ≤ u) (hu1 : u < 1) (hstep : σ.WithinStep w lookahead u)
     (hthr : ∀ r, 6 * speakerShiftCost c (fun r => X (w.host r) / 2) r
       ≤ (c.missed : ℝ) * (1 - u) * ρ) :
     ENNReal.ofReal (2 * shiftCost c fun r => X (w.host r) / 2)
@@ -924,7 +926,9 @@ theorem Solution.cost_shiftStar_add_ge_of_speed (σ : Solution H R Msg)
         (fun r => X (w.host r) / 2) rfl rfl hshift hρ hcap o (fun r => o r + X (w.host r)) hout
         hout' (s := 1 - u) (by linarith) (by linarith)
         (fun r k y hy => σ.nonneg_of_plays w lookahead hy)
-        (w.advance_of_speed (σ.plays w lookahead) hρ hcap o hout hspeed) hthr
+        (fun r k y z hy hz h1 h2 => by
+          have h3 := (abs_le.mp (hstep r k y z hy hz h1 h2)).1
+          linarith) hthr
       unfold Solution.cost
       rw [hplays]
       exact hmain

@@ -232,10 +232,17 @@ Four constraints apply to every solution.
 \item \emph{Capacity.} In any second, each host sends each other host at
   most $M$ messages carrying at most $F$ frames in total; $M$ and $F$ are
   parameters (\lean{Solution.WithinBudget}).
-\item \emph{Speed bound.} At every step of continuous playback, every
-  speaker's speed $v$ (Section~\ref{sec:objectives}) satisfies
-  $|v - 1| \le u_{\max}$, where the parameter $u_{\max}$ is the
-  resampler's limit (\lean{Solution.WithinSpeed}).
+\item \emph{Speed bound.} At every step of continuous playback, from the
+  position $x$ that one output sample plays to the position $y$ that the
+  next one plays, every speaker's position advances by one frame within
+  $u_{\max}$: $|y - x - 1| \le u_{\max}$, where the parameter
+  $u_{\max}$ is the resampler's limit (\lean{Solution.WithinStep}). This
+  is the ratio at which the resampler plays against its own device, and the
+  solution chooses it. The speed $v$ of Section~\ref{sec:objectives} is
+  measured in true time: it is this advance divided by the rate of the
+  capture device's clock relative to the playback device's. No solution
+  chooses those rates, so a bound on $v$ itself
+  (\lean{Solution.WithinSpeed}) is not among the limits.
 \end{enumerate}
 
 \begin{definition}[Run]
@@ -466,13 +473,13 @@ $\int \dot v(t)^2\,dt$ of the squared derivative of the speed, the
 $\dot H^1$ seminorm. It charges how fast the speed changes, not how far it
 is from one: fast changes of pitch are heard, while a slowly varying small
 offset is not. The offset is limited instead by the speed bound $u_{\max}$
-of Section~\ref{sec:solutions}, the resampler's limit. The design document
-\lean{docs/model.md} (its section on the objective) uses the same cost and
-the same bound on the rate at which a receiver's resampler plays fast,
-against its own device, whose steady value is the clocks' drift. The speed
-here is that of the source as heard, against its capture in true time,
-whose steady value is one. The two derivatives differ only by how fast the
-clocks' own rates change.
+of Section~\ref{sec:solutions}, the resampler's limit: a bound on the rate
+at which a receiver's resampler plays against its own device, whose steady
+value is the clocks' drift. The design document \lean{docs/model.md} (its
+section on the objective) uses the same cost and the same bound. The speed
+in the roughness is that of the source as heard, against its capture in
+true time, whose steady value is one. The two derivatives differ only by
+how fast the clocks' own rates change.
 
 Without the speed bound, the best recovery from an excess latency
 $\Delta L$ under latency and roughness costs alone deviates in speed, and
@@ -1291,8 +1298,9 @@ properties in that member
 \item The cost in the member is a measurable function of what is drawn
   (\lean{measurableCost}).
 \item In almost every outcome of every random world of the member, the
-  speed stays within $u_{\max}$ of one at every step of continuous
-  playback (\lean{Solution.WithinSpeed}).
+  solution keeps the speed bound: its position advances by one frame per
+  output sample within $u_{\max}$ at every step of continuous playback
+  (\lean{Solution.WithinStep}).
 \end{itemize}
 Nothing is required about which frames a solution plays, or about its run.
 \end{definition}
@@ -1347,7 +1355,7 @@ The proof has three parts.
   messages only with the sender observes the same in the worlds of the two
   outcomes. A star solution therefore plays the same in both, and its costs
   in the two add up to at least twice the shift cost of the asymmetries
-  (\lean{Solution.\allowbreak cost\_shiftStar\_add\_ge\_of\_speed}). A
+  (\lean{Solution.\allowbreak cost\_shiftStar\_add\_ge\_of\_step}). A
   speaker that plays a frame pays for its own shift, and two speakers that
   both play it pay for the difference of their shifts. A frame that a
   speaker never plays is paid for by missed samples: within the speed bound

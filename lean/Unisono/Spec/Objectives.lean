@@ -35,7 +35,12 @@ weights: low-latency mode has a zero weight for tracking, lip-sync mode a
 zero weight for latency.
 
 A speed bound, a parameter like the network's capacity, limits how far from
-one the speed may be (`Solution.WithinSpeed`).
+one frame the position may advance per output sample in continuous playback
+(`Solution.WithinStep`). This is the ratio at which the resampler plays
+against its own device, which a solution chooses. The speed in true time is
+that advance divided by the rate of the capture device's clock relative to
+the playback device's, which no solution chooses; `Solution.WithinSpeed`
+states a bound on it.
 -/
 
 @[expose] public noncomputable section
@@ -292,10 +297,23 @@ def Solution.expectedCost {Ω : Type} [MeasurableSpace Ω] (P : MeasureTheory.Me
     (world : Ω → World H R) (σ : Solution H R Msg) (lookahead : ℕ+) (c : Weights) : ℝ≥0∞ :=
   ∫⁻ ω, σ.cost (world ω) lookahead c ∂P
 
-/-- The run stays within the speed bound `uMax`: at every step of continuous
-playback, every speaker's speed is within `uMax` of one. -/
+/-- The speed of the run in true time stays within `uMax` of one: at every
+step of continuous playback, every speaker's speed is within `uMax` of one.
+The speed depends on the rates of the devices' clocks, so a solution cannot
+keep this bound by its own choices; the limit on solutions is
+`Solution.WithinStep`. -/
 def Solution.WithinSpeed (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+) (uMax : ℝ) :
     Prop :=
   ∀ r k v, w.speed (σ.plays w lookahead) r k = some v → |v - 1| ≤ uMax
+
+/-- The run stays within the speed bound `uMax`: at every step of continuous
+playback, every speaker's position advances by between `1 - uMax` and
+`1 + uMax` frames per output sample. This is the ratio at which the
+resampler plays against its own device. A solution chooses the positions, so
+it can keep the bound in every world. -/
+def Solution.WithinStep (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+) (uMax : ℝ) :
+    Prop :=
+  ∀ r k x y, σ.plays w lookahead r k = some x → σ.plays w lookahead r (k + 1) = some y →
+    x < y → y < x + 2 → |y - x - 1| ≤ uMax
 
 end Unisono.Spec
