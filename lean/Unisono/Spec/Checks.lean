@@ -327,6 +327,84 @@ theorem earliest_exists {α : Type} (key : α → Time × ℕ) {l : List α} (hl
   | nil => exact absurd rfl hl
   | cons c l => exact Option.ne_none_iff_exists'.mp (earliest_ne_none key c l)
 
+/-- **Among the earliest elements of least rank, `earliest` selects the first
+of the list.** Every element before the selected one has a strictly larger
+key: a later time, or the same time and a higher rank. -/
+theorem earliest_spec_first {α : Type} (key : α → Time × ℕ) :
+    ∀ (l : List α) (a : α), earliest key l = some a →
+      ∃ l₁ l₂, l = l₁ ++ a :: l₂ ∧ ∀ b ∈ l₁,
+        (key a).1 < (key b).1 ∨ ((key a).1 = (key b).1 ∧ (key a).2 < (key b).2)
+  | [], a, h => by simp [earliest] at h
+  | c :: l, a, h => by
+      simp only [earliest] at h
+      cases hl : earliest key l with
+      | none =>
+          simp only [hl, Option.some.injEq] at h
+          subst h
+          exact ⟨[], l, rfl, by simp⟩
+      | some b =>
+          simp only [hl] at h
+          split_ifs at h with hc
+          · simp only [Option.some.injEq] at h
+            subst h
+            exact ⟨[], l, rfl, by simp⟩
+          · simp only [Option.some.injEq] at h
+            subst h
+            obtain ⟨l₁, l₂, hsplit, hbefore⟩ := earliest_spec_first key l b hl
+            refine ⟨c :: l₁, l₂, by rw [hsplit]; rfl, fun x hx => ?_⟩
+            rcases List.mem_cons.mp hx with rfl | hx
+            · rw [not_or, not_lt, not_and, not_le] at hc
+              rcases hc.1.lt_or_eq with hlt | heq
+              · exact Or.inl hlt
+              · exact Or.inr ⟨heq, hc.2 heq.symm⟩
+            · exact hbefore x hx
+
+/-- The number of a host is at most one more than the number of speakers. -/
+theorem World.hostIndex_le [DecidableEq H] (w : World H R) (h : H) : w.hostIndex h ≤ R + 1 := by
+  unfold World.hostIndex
+  split_ifs
+  · exact Nat.zero_le _
+  · cases hf : (List.finRange R).find? fun r => decide (w.host r = h) with
+    | none => simp
+    | some r =>
+      simp only [Option.elim]
+      have := r.isLt
+      omega
+
+/-- **Different hosts have different numbers.** -/
+theorem World.hostIndex_injective [DecidableEq H] (w : World H R) :
+    Function.Injective w.hostIndex := by
+  intro a b hab
+  have hfind : ∀ h, h ≠ w.sender →
+      ∃ r, (List.finRange R).find? (fun r => decide (w.host r = h)) = some r ∧ w.host r = h := by
+    intro h hs
+    rcases w.hosts h with rfl | ⟨r₀, hr₀⟩
+    · exact absurd rfl hs
+    · cases hf : (List.finRange R).find? (fun r => decide (w.host r = h)) with
+      | none =>
+        have hnone := List.find?_eq_none.mp hf r₀ (List.mem_finRange r₀)
+        simp [hr₀] at hnone
+      | some r =>
+        have hsome := List.find?_some hf
+        exact ⟨r, rfl, by simpa using hsome⟩
+  unfold World.hostIndex at hab
+  by_cases ha : a = w.sender <;> by_cases hb : b = w.sender
+  · rw [ha, hb]
+  · obtain ⟨r, hr, -⟩ := hfind b hb
+    rw [ite_eq_left ha, ite_eq_right hb, hr] at hab
+    simp only [Option.elim] at hab
+    omega
+  · obtain ⟨r, hr, -⟩ := hfind a ha
+    rw [ite_eq_right ha, ite_eq_left hb, hr] at hab
+    simp only [Option.elim] at hab
+    omega
+  · obtain ⟨ra, hra, ha'⟩ := hfind a ha
+    obtain ⟨rb, hrb, hb'⟩ := hfind b hb
+    rw [ite_eq_right ha, ite_eq_right hb, hra, hrb] at hab
+    simp only [Option.elim] at hab
+    have hr : ra = rb := Fin.ext (by omega)
+    rw [← ha', ← hb', hr]
+
 theorem Clock.read_timeAt {clock : Clock} {c : ℝ} {u : Time} (h : clock.timeAt c = some u) :
     clock.read u = c := by
   unfold Clock.timeAt at h
@@ -364,12 +442,76 @@ theorem mem_due {e : Due R} (he : e ∈ st.due) :
   · exact Or.inr (Or.inr (Or.inl ⟨p, hp, rfl⟩))
   · exact Or.inr (Or.inr (Or.inr ⟨p, hp, rfl⟩))
 
+/-- The index of a pending arrival among the messages in transit. -/
+def arrivalIndex : Due R → Option ℕ
+  | .arrival p => some p
+  | _ => none
+
+/-- The pending arrivals are listed in the order of the messages in
+transit. -/
+theorem due_filterMap_arrivalIndex :
+    st.due.filterMap arrivalIndex = List.range st.inFlight.length := by
+  have h1 : ((List.finRange R).map fun r => Due.asked r (st.askedNext r)).filterMap
+      arrivalIndex = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro d hd
+    obtain ⟨r, -, rfl⟩ := List.mem_map.mp hd
+    rfl
+  have h2 : ((List.range st.inFlight.length).map Due.arrival).filterMap (arrivalIndex (R := R))
+      = List.range st.inFlight.length := by
+    rw [List.filterMap_map]
+    exact List.filterMap_some
+  have h3 : ((List.range st.timers.length).map Due.timer).filterMap (arrivalIndex (R := R))
+      = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro d hd
+    obtain ⟨x, -, rfl⟩ := List.mem_map.mp hd
+    rfl
+  unfold due
+  rw [List.filterMap_append, List.filterMap_append, List.filterMap_cons, h2, h3]
+  simp only [arrivalIndex, h1, List.append_nil, List.nil_append]
+
+/-- In the list of pending events, an arrival of a lower index comes before
+an arrival of a higher index. -/
+theorem arrival_mem_of_lt {l₁ l₂ : List (Due R)} {p q : ℕ}
+    (hsplit : st.due = l₁ ++ Due.arrival p :: l₂) (hqp : q < p) : Due.arrival q ∈ l₁ := by
+  have hrange := st.due_filterMap_arrivalIndex
+  rw [hsplit, List.filterMap_append, List.filterMap_cons] at hrange
+  simp only [arrivalIndex] at hrange
+  have hpw : List.Pairwise (· < ·)
+      (l₁.filterMap arrivalIndex ++ p :: l₂.filterMap arrivalIndex) := by
+    rw [hrange]
+    exact List.pairwise_lt_range
+  have hp_mem : p ∈ List.range st.inFlight.length := by
+    rw [← hrange]
+    simp
+  have hq_mem : q ∈ l₁.filterMap arrivalIndex ++ p :: l₂.filterMap arrivalIndex := by
+    rw [hrange, List.mem_range]
+    exact lt_trans hqp (List.mem_range.mp hp_mem)
+  rw [List.pairwise_append] at hpw
+  obtain ⟨-, hpw₂, -⟩ := hpw
+  rcases List.mem_append.mp hq_mem with h | h
+  · obtain ⟨d, hd, hdq⟩ := List.mem_filterMap.mp h
+    cases d with
+    | arrival x =>
+      simp only [arrivalIndex, Option.some.injEq] at hdq
+      subst hdq
+      exact hd
+    | handed b => simp [arrivalIndex] at hdq
+    | asked r b => simp [arrivalIndex] at hdq
+    | timer x => simp [arrivalIndex] at hdq
+  · rcases List.mem_cons.mp h with rfl | h
+    · exact absurd hqp (lt_irrefl _)
+    · have hlt := (List.pairwise_cons.mp hpw₂).1 q h
+      omega
+
 /-- Every pending event of a state occurs at true time `t` or later. -/
 def DueFrom (t : Time) : Prop :=
   t ≤ w.source.handed st.handedNext ∧ (∀ r, t ≤ (w.speaker r).asked (st.askedNext r))
     ∧ (∀ m ∈ st.inFlight, t ≤ m.arrival) ∧ (∀ u ∈ st.timers, t ≤ u.time)
 
-theorem DueFrom.le_key {st : State H R Msg} {t : Time} (h : st.DueFrom w t) {e : Due R}
+theorem DueFrom.le_key [DecidableEq H] {st : State H R Msg} {t : Time} (h : st.DueFrom w t)
+    {e : Due R}
     (he : e ∈ st.due) : t ≤ (st.key w e).1 := by
   rcases st.mem_due he with rfl | ⟨r, rfl⟩ | ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
   · exact h.1
@@ -379,7 +521,7 @@ theorem DueFrom.le_key {st : State H R Msg} {t : Time} (h : st.DueFrom w t) {e :
   · simp only [key, List.getElem?_eq_getElem hp, Option.map_some, Option.getD_some]
     exact h.2.2.2 _ (List.getElem_mem hp)
 
-theorem dueFrom_of_le_key {t : Time} (h : ∀ e ∈ st.due, t ≤ (st.key w e).1) :
+theorem dueFrom_of_le_key [DecidableEq H] {t : Time} (h : ∀ e ∈ st.due, t ≤ (st.key w e).1) :
     st.DueFrom w t := by
   refine ⟨h _ st.handed_mem_due, fun r => h _ (st.asked_mem_due r), ?_, ?_⟩
   · intro m hm

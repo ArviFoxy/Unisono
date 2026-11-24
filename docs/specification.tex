@@ -249,8 +249,14 @@ that it is dropped, and a host's clock determines when it reaches the
 reading of a timer. The host adds the event to its view and does what the
 solution chooses for that view. Simultaneous events are processed in a
 fixed order: capture events first, then speaker requests in speaker index
-order, then message arrivals and timers in the order in which they were
-sent or set. What speaker $r$ plays at output sample $k$ is what was decided
+order, then message arrivals, then timers in the order in which they were
+set. Messages that arrive at the same true time are handled in the order of
+a fixed numbering of the hosts that sent them, the sender's host first and
+then the hosts of the speakers in speaker order (\lean{World.hostIndex}),
+and messages from one host in the order in which that host sent them. The
+order does not depend on which of two hosts sent first in true time, which
+no host can observe. What speaker $r$ plays at output sample $k$ is what
+was decided
 when its device requested the block holding $k$ (\lean{Solution.plays}).
 \end{definition}
 
@@ -1232,8 +1238,7 @@ the star solutions with the following properties in that member
 \item The cost in the member is a measurable function of what is drawn
   (\lean{measurableCost}).
 \item In almost every outcome of every random world of the member, the run
-  has an event after every true time, no two messages from different hosts
-  arrive at one host at the same time, and from some frame on every speaker
+  has an event after every true time, and from some frame on every speaker
   plays every frame.
 \end{itemize}
 \end{definition}
@@ -1308,11 +1313,9 @@ receiving hosts, a solution whose receiving hosts also exchange messages
 with each other can have a lower expected cost, so the baseline is not
 optimal among all solutions. The theorem covers noiseless members only:
 for members with pauses or with clock wander its margin is $\infty$. The
-compared solutions leave out every solution in whose run two messages from
-different hosts arrive at one host at the same time with positive
-probability. The run handles such messages in the order in which they were
-sent (Section~\ref{sec:solutions}), and that order could tell a host what it
-cannot otherwise observe. The margin
+compared solutions leave out every star solution that, with positive
+probability, does not play every frame from some frame on, or whose run
+does not advance past every true time, whatever its cost. The margin
 is small when the offsets of the clocks are spread over a range much larger
 than the round-trip times, as for clocks that nothing has synchronized; it
 is not small otherwise. No solution is proved optimal among all solutions,
@@ -1350,10 +1353,9 @@ by $\Delta(h)$ with $\Delta(\mathrm{sender}) = 0$ (\lean{World.shiftHosts})
 adds $\Delta(j) - \Delta(i)$ to link $(i, j)$'s one-way delay while leaving
 every round-trip time unchanged
 (\lean{World.\allowbreak shiftHosts\_\allowbreak rtt\_\allowbreak eq}).
-Under non-Zeno progress and no simultaneous arrivals from distinct origins
-at the same host (\lean{Solution.\allowbreak NoCrossOriginCollision}), every
-host observes the identical local view and produces identical playback
-decisions (\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
+Under non-Zeno progress, every host observes the identical local view and
+produces identical playback decisions
+(\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
 Because a star solution never sends on receiver-to-receiver links, its run
 states and playback decisions are completely invariant to modifications of
 non-star links
@@ -1371,8 +1373,7 @@ one-way delay shifts $\pm(\Delta(j) - \Delta(i))$ on star links while
 leaving all direct receiver-to-receiver links identical to $w$ (including
 arbitrarily fast, symmetric peer links). Then for every star solution
 $\sigma$ (\lean{Solution.IsStar}) that is non-Zeno in $w$, $w^+$, and
-$w^-$, satisfies \lean{Solution.\allowbreak NoCrossOriginCollision} in $w$,
-and plays every frame from some index $N$ onward on every speaker,
+$w^-$ and plays every frame from some index $N$ onward on every speaker,
 \[
   \max\bigl(w^+.\mathrm{sync}(\sigma),\, w^-.\mathrm{sync}(\sigma)\bigr)
   \ge \operatorname{Var}_r\bigl(\Delta(\mathrm{host}(r))\bigr),
@@ -1388,7 +1389,7 @@ To establish tightness and strict separation inside the ideal constant model
 \lean{sepBaseWorld}: sender $0$, speaker $0$ on host $1$, speaker $1$ on
 host $2$, unit frame rate $\rho = 1$, constant star-link delay $1/2$,
 symmetric direct peer-link delay $1/10$, and staggered speaker block-request
-offsets ($0$ and $1/3$) preventing cross-origin arrival collisions. For any
+offsets ($0$ and $1/3$). For any
 asymmetry $A \in (0, 1/4)$, applying $\Delta = (0, A, -A)$ and $-\Delta$
 produces the pair
 $(w^+(A), w^-(A)) = (\text{\lean{sepWorldPlus}}, \text{\lean{sepWorldMinus}})$;
@@ -1406,8 +1407,8 @@ For every $A \in (0, 1/4)$ on $(w^+(A), w^-(A))$:
     \max\bigl(w^+(A).\mathrm{sync},\; w^-(A).\mathrm{sync}\bigr) \ge A^2 .
   \]
   The forwarding-only star witness \lean{ForwardStar.solution} satisfies the
-  hypotheses via \lean{isStar}, \lean{noCrossOriginCollision}, and
-  \lean{progress} in the \lean{ForwardStar} namespace, plays every frame
+  hypotheses via \lean{isStar} and \lean{progress} in the
+  \lean{ForwardStar} namespace, plays every frame
   $n \ge 2$ on both speakers, and achieves
   $w^+(A).\mathrm{sync} = w^-(A).\mathrm{sync} = A^2$
   (\lean{ForwardStar.\allowbreak sync\_\allowbreak eq}).

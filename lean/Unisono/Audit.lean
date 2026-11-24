@@ -61,7 +61,6 @@ public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeStar
-public import Unisono.Spec.Models.GenerativeTies
 public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
@@ -1418,34 +1417,6 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.StarSolutions.le_expectedCost
 
-/-- info: 'Unisono.Spec.cond_volume_singleton' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.cond_volume_singleton
-
-/-- info: 'Unisono.Spec.measure_pi_graph_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.measure_pi_graph_eq_zero
-
-/-- info: 'Unisono.Spec.GenerativeWorld.canonicalDraw_split_update' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.canonicalDraw_split_update
-
-/-- info: 'Unisono.Spec.GenerativeWorld.measurable_requestArrival' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.measurable_requestArrival
-
-/-- info: 'Unisono.Spec.GenerativeWorld.ae_requestArrival_ne_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.ae_requestArrival_ne_of_ne
-
-/-- info: 'Unisono.Spec.GenerativeWorld.ae_requestArrival_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.ae_requestArrival_ne
-
-/-- info: 'Unisono.Spec.GenerativeWorld.canonicalWorld_deliver_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.canonicalWorld_deliver_request
-
 /-- info: 'Unisono.Spec.meanFin_const_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.meanFin_const_add
@@ -1493,10 +1464,6 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.inFlight_provenance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.inFlight_provenance
-
-/-- info: 'Unisono.Solutions.FixedDelay.noCrossOriginCollision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.noCrossOriginCollision
 
 /-- info: 'Unisono.Spec.IdealConstantWorld.Holds.out_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1561,10 +1528,6 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.margin_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.margin_idealWorld
-
-/-- info: 'Unisono.Solutions.FixedDelay.noCollision_canonicalWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.noCollision_canonicalWorld
 
 /-- info: 'Unisono.Solutions.FixedDelay.ae_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1873,6 +1836,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.handed_step_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.handed_step_unique
+
+/-- info: 'Unisono.Spec.earliest_spec_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.earliest_spec_first
+
+/-- info: 'Unisono.Spec.World.hostIndex_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.hostIndex_le
+
+/-- info: 'Unisono.Spec.World.hostIndex_injective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.hostIndex_injective
+
+/-- info: 'Unisono.Spec.State.arrival_mem_of_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.arrival_mem_of_lt
 
 /-- info: 'Unisono.Spec.GenerativeWorld.IsBacklog.backlog_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2784,17 +2763,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.peer_beats_star_asymmetry_bound
 
-/-- info: 'Unisono.Spec.FixedDelay.noCrossOriginCollision_sepBaseWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.FixedDelay.noCrossOriginCollision_sepBaseWorld
-
 /-- info: 'Unisono.Spec.ForwardStar.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.ForwardStar.isStar
-
-/-- info: 'Unisono.Spec.ForwardStar.noCrossOriginCollision' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.ForwardStar.noCrossOriginCollision
 
 /-- info: 'Unisono.Spec.ForwardStar.progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

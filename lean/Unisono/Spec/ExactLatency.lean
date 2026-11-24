@@ -341,16 +341,13 @@ variable [DecidableEq H] {Msg : Type}
 /-- **A star solution plays the same when the star links are shifted.**
 Shift the timeline of every host by `Δ` along the links to and from the
 sender, and keep the links between the other hosts as they are. A star
-solution that makes progress in both worlds, and in whose run no two messages
-from different hosts arrive at one host at the same time, plays the same in
-both worlds. -/
+solution that makes progress in both worlds plays the same in both worlds. -/
 theorem Solution.plays_shiftStarKeepPeers (σ : Solution H R Msg) (w : World H R)
     (lookahead : ℕ+) (hstar : σ.IsStar w.sender) (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
       w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
-    (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w Δ hstar₁) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead) :
+    (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w Δ hstar₁) lookahead n) :
     σ.plays (shiftStarKeepPeers w Δ hstar₁) lookahead = σ.plays w lookahead := by
   set wPlus := shiftStarKeepPeers w Δ hstar₁
   set wAux := dropPeerLinks w
@@ -366,27 +363,23 @@ theorem Solution.plays_shiftStarKeepPeers (σ : Solution H R Msg) (w : World H R
       change i = w.sender ∨ j = w.sender at hs
       simp [wPlus, shiftStarKeepPeers, wAux, dropPeerLinks, World.shiftHosts, hs])
   have hevEq : ∀ (w₁ w₂ : World H R),
-      w₂.source = w₁.source → w₂.speaker = w₁.speaker →
+      w₂.source = w₁.source → w₂.speaker = w₁.speaker → w₂.hostIndex = w₁.hostIndex →
       (∀ n, σ.states w₂ lookahead n = σ.states w₁ lookahead n) →
       ∀ n, σ.eventTime w₂ lookahead n = σ.eventTime w₁ lookahead n := by
-    intro w₁ w₂ hsrc hspk hst n
+    intro w₁ w₂ hsrc hspk hidx hst n
     unfold Solution.eventTime
     have hkey : (σ.states w₂ lookahead n).key w₂ = (σ.states w₁ lookahead n).key w₁ := by
       funext d
       rw [hst n]
-      cases d <;> simp [State.key, hsrc, hspk]
+      cases d <;> simp [State.key, hsrc, hspk, hidx]
     rw [hkey, hst n]
   have hprogAux : ∀ T, ∃ n, T < σ.eventTime wAux lookahead n := fun T => by
     obtain ⟨n, hn⟩ := hprog T
-    exact ⟨n, by rw [hevEq w wAux rfl rfl heqW.1 n]; exact hn⟩
+    exact ⟨n, by rw [hevEq w wAux rfl rfl rfl heqW.1 n]; exact hn⟩
   have hprogAux₁ : ∀ T, ∃ n, T < σ.eventTime (wAux.shiftHosts Δ hnet₁) lookahead n := fun T => by
     obtain ⟨n, hn⟩ := hprog₁ T
-    exact ⟨n, by rw [← hevEq (wAux.shiftHosts Δ hnet₁) wPlus rfl rfl heqPlus.1 n]; exact hn⟩
-  have harrAux : σ.NoCrossOriginCollision wAux lookahead := by
-    intro n m₁ m₂ hm₁ hm₂ hd ha
-    rw [heqW.1 n] at hm₁ hm₂
-    exact harr n m₁ m₂ hm₁ hm₂ hd ha
-  have hshift := σ.plays_shiftHosts wAux lookahead Δ hΔs hnet₁ hprogAux hprogAux₁ harrAux
+    exact ⟨n, by rw [← hevEq (wAux.shiftHosts Δ hnet₁) wPlus rfl rfl rfl heqPlus.1 n]; exact hn⟩
+  have hshift := σ.plays_shiftHosts wAux lookahead Δ hΔs hnet₁ hprogAux hprogAux₁
   rw [heqPlus.2, hshift, heqW.2]
 
 namespace IdealConstantWorld

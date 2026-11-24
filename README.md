@@ -42,9 +42,8 @@ simulation and integration tests (see `PRINCIPLES.md`):
     with any number of receiving hosts
     (`lean/Unisono/Solutions/FixedDelay/Exact.lean`): each speaker plays every
     frame late by half the difference between the delay from the sender to
-    its host and the delay back. The theorem assumes that no two messages
-    from different hosts arrive at one host at the same time, and zero
-    weights on latency and roughness.
+    its host and the delay back. The theorem assumes zero weights on
+    latency and roughness.
   - The definition of optimality in expected cost (`OptimalWithin` in
     `lean/Unisono/Spec/Optimality.lean`). Under the generative model it is
     stated for every member (`GenerativeWorld.OptimalWithin`): a member

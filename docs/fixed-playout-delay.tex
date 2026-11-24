@@ -370,10 +370,9 @@ speaker $r$
   L^* > \frac{a + 2(m_B - 1)}{\rho} + \frac{d_{s h(r)} + d_{h(r) s}}{2}
     + \lambda,
 \]
-where $a$ is the resampler's lookahead in frames, and that no two messages
-from different hosts arrive at one host at the same time. When the weights
-of latency and of roughness in the specification's cost are zero, the cost
-of the baseline is at most
+where $a$ is the resampler's lookahead in frames. When the weights of
+latency and of roughness in the specification's cost are zero, the cost of
+the baseline is at most
 \[
   w_S\,\frac{1}{R^2}\sum_{r < r'}
       \bigl(\alpha_{h(r)} - \alpha_{h(r')}\bigr)^2
@@ -394,28 +393,21 @@ the same in both worlds (\lean{Solution.plays\_shiftStarKeepPeers}). In
 the given world, every output sample of speaker $r$ therefore plays the
 sound captured exactly $L + \alpha_{h(r)}$ before the sample leaves
 (\lean{World.PlaysAtLatencies}), and the cost follows
-(\path{lean/Unisono/Spec/ExactLatency.lean}). The condition on
-simultaneous arrivals is needed because the run breaks such ties by the
-order of sending, which the shift can change.
+(\path{lean/Unisono/Spec/ExactLatency.lean}). Messages that arrive at a
+host at the same time are handled in the order of the hosts that sent them,
+which the shift does not change.
 
 The bound of Theorem~\ref{thm:exact} is attained: under the same conditions
 the cost of the baseline equals it (\lean{cost\_eq\_of\_ideal}). From some
 frame on, every speaker $r$ plays every frame exactly $L + \alpha_{h(r)}$
-after its capture (\lean{playTime\_of\_ideal}). Two of the baseline's
-messages from different hosts can arrive at one host at the same time only
-at the sender, and only when two clock queries do. A host sends a query only
-when one of its playback devices requests a block
-(\lean{inFlight\_provenance}, \lean{noCrossOriginCollision} in
-\path{lean/Unisono/Solutions/FixedDelay/Arrivals.lean}).
+after its capture (\lean{playTime\_of\_ideal}).
 
 \subsection{The baseline under the generative world}
 
 The generative world of the specification draws at random the offset of each
 clock and how the least round-trip time of each pair of hosts divides
 between its two directions. In its noiseless members, almost every outcome
-is an ideal constant world, and two requests of playback devices on
-different hosts reach the sender at the same time with probability zero
-(\lean{ae\_requestArrival\_ne}). The conditions of Theorem~\ref{thm:exact}
+is an ideal constant world. The conditions of Theorem~\ref{thm:exact}
 therefore hold in almost every outcome, and the baseline's expected cost is
 the mean of that cost over the outcomes.
 

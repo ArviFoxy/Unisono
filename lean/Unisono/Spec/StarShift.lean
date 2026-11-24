@@ -187,11 +187,10 @@ theorem playTime_shiftStarKeepPeers [DecidableEq H] (w : World H R) (Δ : H → 
 /-- **A star solution pays in one of two worlds that it cannot tell apart.**
 Let `w` be a world and `X` a shift of the hosts' timelines along the links to
 and from the sender, which leaves the sender's timeline in place. Let `σ` be
-a star solution that makes progress in `w` and in the shifted world, in whose
-run in `w` no two messages from different hosts arrive at one host at the
-same time, and which plays every frame from frame `N` on in `w`. Then the
-costs of `σ` in `w` and in the shifted world add up to at least twice
-`shiftCost c` of half the speakers' shifts. -/
+a star solution that makes progress in `w` and in the shifted world, and
+which plays every frame from frame `N` on in `w`. Then the costs of `σ` in
+`w` and in the shifted world add up to at least twice `shiftCost c` of half
+the speakers' shifts. -/
 theorem Solution.cost_shiftStarKeepPeers_add_ge (σ : Solution H R Msg) (w : World H R)
     (lookahead : ℕ+) (c : Weights) (hstar : σ.IsStar w.sender) (X : H → ℝ)
     (hXs : X w.sender = 0)
@@ -199,7 +198,7 @@ theorem Solution.cost_shiftStarKeepPeers_add_ge (σ : Solution H R Msg) (w : Wor
       w.network.deliver i j s q = some a → s + X i < a + X j)
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w X hstar₁) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead) (hR : 0 < R) (N : ℕ)
+    (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime (σ.plays w lookahead) r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
     ENNReal.ofReal (2 * shiftCost c fun r => X (w.host r) / 2)
@@ -208,7 +207,7 @@ theorem Solution.cost_shiftStarKeepPeers_add_ge (σ : Solution H R Msg) (w : Wor
   set w' := shiftStarKeepPeers w X hstar₁ with hw'
   set p := σ.plays w lookahead with hp
   have hplays : σ.plays w' lookahead = p :=
-    σ.plays_shiftStarKeepPeers w lookahead hstar X hXs hstar₁ hprog hprog₁ harr
+    σ.plays_shiftStarKeepPeers w lookahead hstar X hXs hstar₁ hprog hprog₁
   -- The latencies in `w`.
   let ℓ : ℕ → Fin R → ℝ := fun n r => (w.playTime p r n).getD 0 - w.source.capture n
   have hT : ∀ n, N ≤ n → ∀ r, w.playTime p r n = some ((w.playTime p r n).getD 0) := by

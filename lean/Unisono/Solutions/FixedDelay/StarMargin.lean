@@ -7,7 +7,6 @@ module
 public import Unisono.Solutions.FixedDelay.Arrivals
 public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Spec.Models.GenerativeStar
-public import Unisono.Spec.Models.GenerativeTies
 
 /-!
 # A bound for the baseline against solutions through the sender
@@ -352,36 +351,14 @@ theorem margin_idealWorld (hmem : m.NoiselessWithMargin lookahead f) (y : Compon
   rw [f.roundTrip_symm (m.host r) m.sender, e]
   exact h2
 
-omit [Fintype H] in
-/-- In the world of an outcome in which no two requests from different hosts
-reach the sender at the same time, no two of the baseline's messages from
-different hosts arrive at one host at the same time. -/
-theorem noCollision_canonicalWorld (p : Params H) (hps : p.sender = m.sender)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ)
-    (hy : ∀ (r₁ r₂ : Fin R) (b₁ b₂ : ℕ), m.host r₁ ≠ m.host r₂ →
-      requestArrival m f y r₁ b₁ ≠ requestArrival m f y r₂ b₂) :
-    (solution p : Solution H R Payload).NoCrossOriginCollision (canonicalWorld m f hex y)
-      lookahead := by
-  refine noCrossOriginCollision p _ lookahead fun r₁ r₂ b₁ b₂ q₁ q₂ a hne h1 h2 => ?_
-  rw [hps] at h1 h2
-  have e1 : some (requestArrival m f y r₁ b₁) = some a :=
-    (canonicalWorld_deliver_request m f hex y r₁ b₁ q₁).symm.trans h1
-  have e2 : some (requestArrival m f y r₂ b₂) = some a :=
-    (canonicalWorld_deliver_request m f hex y r₂ b₂ q₂).symm.trans h2
-  exact hy r₁ r₂ b₁ b₂ hne ((Option.some.inj e1).trans (Option.some.inj e2).symm)
-
 /-- In almost every outcome of a noiseless member, the world is an ideal
-constant world in which no two of the baseline's messages from different
-hosts arrive at one host at the same time. -/
-theorem ae_idealWorld (p : Params H) (hps : p.sender = m.sender) (hf : f.Noiseless)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) :
+constant world. -/
+theorem ae_idealWorld (hf : f.Noiseless) (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) :
     ∀ᵐ y ∂Measure.pi (canonicalLaw m f),
-      ((canonicalDraw_prior m f hf).idealWorld y).Holds (canonicalWorld m f hex y)
-        ∧ (solution p : Solution H R Payload).NoCrossOriginCollision (canonicalWorld m f hex y)
-            lookahead := by
+      ((canonicalDraw_prior m f hf).idealWorld y).Holds (canonicalWorld m f hex y) := by
   filter_upwards [(canonicalDraw_prior m f hf).ae_idealConstantWorld hf
-    (canonicalWorld_builds m f hex), ae_requestArrival_ne m f] with y h1 h2
-  exact ⟨h1.1, noCollision_canonicalWorld p hps hex y h2⟩
+    (canonicalWorld_builds m f hex)] with y h1
+  exact h1.1
 
 /-- **The baseline's cost in almost every outcome** is the shift cost of the
 asymmetries of the speakers' hosts. -/
@@ -392,11 +369,10 @@ theorem ae_cost_eq (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.
       (solution p : Solution H R Payload).cost (canonicalWorld m f hex y) lookahead c
         = ENNReal.ofReal
             (shiftCost c fun r => (canonicalDraw y).asymmetry m f (m.host r)) := by
-  filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
-    with y hy
-  rw [cost_eq_of_ideal p _ _ hy.1 hnos lookahead c hcl hcr hp.sender hp.rate hp.speakers
+  filter_upwards [ae_idealWorld hmem.noiseless hex] with y hy
+  rw [cost_eq_of_ideal p _ _ hy hnos lookahead c hcl hcr hp.sender hp.rate hp.speakers
     hp.nodup hp.latency hp.copies hp.period hp.slew_pos hp.slew_lt
-    (margin_idealWorld hmem y) hy.2 hR]
+    (margin_idealWorld hmem y) hR]
   congr 2
   funext r
   exact asymmetry_idealWorld hmem.noiseless y (m.host r)
@@ -420,19 +396,13 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
           = ENNReal.ofReal (shiftCost c fun r => d.asymmetry m f (m.host r)))
         (ae_cost_eq p hp hnos hmem hex hcl hcr hR)⟩
   progress := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
-    filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
-      with y hy
-    exact progress p _ _ (IdealConstantWorld.withinBounds hy.1) lookahead)
-  no_collision := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
-    filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
-      with y hy
-    exact hy.2)
+    filter_upwards [ae_idealWorld hmem.noiseless hex] with y hy
+    exact progress p _ _ (IdealConstantWorld.withinBounds hy) lookahead)
   plays := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
-    filter_upwards [ae_idealWorld (lookahead := lookahead) p hp.sender hmem.noiseless hex]
-      with y hy
-    obtain ⟨N, hN⟩ := playTime_of_ideal p _ _ hy.1 hnos lookahead hp.sender hp.rate
+    filter_upwards [ae_idealWorld hmem.noiseless hex] with y hy
+    obtain ⟨N, hN⟩ := playTime_of_ideal p _ _ hy hnos lookahead hp.sender hp.rate
       hp.speakers hp.nodup hp.latency hp.copies hp.period hp.slew_pos hp.slew_lt
-      (margin_idealWorld hmem y) hy.2
+      (margin_idealWorld hmem y)
     exact ⟨N, fun n hn r => by rw [hN n hn r]; rfl⟩)
 
 open Classical in

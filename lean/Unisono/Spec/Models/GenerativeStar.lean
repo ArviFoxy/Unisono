@@ -19,9 +19,8 @@ solution is one whose hosts exchange messages only with the sender.
 * `StarSolutions` is the class of solutions that the bound holds for at a
   member: the star solutions whose cost in that member is a measurable
   function of what is drawn, whose run has an event after every true time,
-  in whose run no two messages from different hosts arrive at one host at the
-  same time, and which play every frame from some frame on. The last three
-  are required in almost every outcome of every random world of the member.
+  and which play every frame from some frame on. The last two are required
+  in almost every outcome of every random world of the member.
   The class asks nothing of a solution in other members.
 * `starLowerBound` is the mean, over the outcomes of the concrete random
   world, of the cost of half the shifts of the reflection
@@ -61,9 +60,6 @@ structure StarSolutions (m : GenerativeWorld H R) (f : Member H R) (lookahead : 
   measurable : m.measurableCost f lookahead c Msg τ
   /-- Almost surely, the run has an event after every true time. -/
   progress : m.AlmostSurely f fun w => ∀ T : Time, ∃ n, T < τ.eventTime w lookahead n
-  /-- Almost surely, no two messages from different hosts arrive at one host
-  at the same time. -/
-  no_collision : m.AlmostSurely f fun w => τ.NoCrossOriginCollision w lookahead
   /-- Almost surely, every speaker plays every frame from some frame on. -/
   plays : m.AlmostSurely f fun w =>
     ∃ N, ∀ n, N ≤ n → ∀ r, (w.playTime (τ.plays w lookahead) r n).isSome
@@ -132,7 +128,6 @@ theorem StarSolutions.le_canonical {τ : Solution H R Msg}
       ≤ ∫⁻ y, τ.cost (canonicalWorld m f hex y) lookahead c ∂Measure.pi (canonicalLaw m f) := by
   have hcostm := aemeasurable_cost hτ.measurable hf hex
   have hprog := (almostSurely_iff m f hf hex _).mp hτ.progress
-  have hcoll := (almostSurely_iff m f hf hex _).mp hτ.no_collision
   have hplay := (almostSurely_iff m f hf hex _).mp hτ.plays
   have hT := measurePreserving_reflect m f
   have hprog' := hT.quasiMeasurePreserving.ae hprog
@@ -142,11 +137,11 @@ theorem StarSolutions.le_canonical {τ : Solution H R Msg}
       ENNReal.ofReal (2 * shiftCost c fun r => reflectShift m f y (m.host r) / 2)
         ≤ τ.cost (canonicalWorld m f hex y) lookahead c
           + τ.cost (canonicalWorld m f hex (reflect m f y)) lookahead c := by
-    filter_upwards [hprog, hcoll, hplay, hprog'] with y h1 h2 h3 h4
+    filter_upwards [hprog, hplay, hprog'] with y h1 h3 h4
     obtain ⟨N, hN⟩ := h3
     rw [canonicalWorld_reflect m f hex y] at h4 ⊢
     exact τ.cost_shiftStarKeepPeers_add_ge (canonicalWorld m f hex y) lookahead c hτ.star
-      (reflectShift m f y) (reflectShift_sender m f y) (reflectShift_star m f hex y) h1 h4 h2
+      (reflectShift m f y) (reflectShift_sender m f y) (reflectShift_star m f hex y) h1 h4
       hR N hN (capture_unbounded_canonical m f hex y)
   -- The reflection keeps the law, so the two costs have the same mean.
   have hinv : ∫⁻ y, τ.cost (canonicalWorld m f hex (reflect m f y)) lookahead c

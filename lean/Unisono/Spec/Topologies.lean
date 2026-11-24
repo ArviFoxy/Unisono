@@ -1667,12 +1667,56 @@ def remAsked [DecidableEq H] (v : World H R) (h : H) (t : Time) (st : State H R 
         .asked r ((v.speaker r).block (st.askedNext r)) ((v.speaker r).reported (st.askedNext r))⟩
     else none
 
+/-- The arrivals at host `h` at exact true time `t` that are still in
+transit, in the order in which the run handles them: by the number of the
+host that sent them, and for one host in the order in which it sent them. -/
 def remArrivals [DecidableEq H] (v : World H R) (h : H) (t : Time) (st : State H R Msg) :
     List (Event H R Msg) :=
-  st.inFlight.filterMap fun m =>
-    if m.destination = h ∧ m.arrival = t then
-      some ⟨(v.clock h).read t, .received m.origin m.contents m.frames⟩
-    else none
+  (List.range (R + 2)).flatMap fun idx =>
+    st.inFlight.filterMap fun m =>
+      if v.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t then
+        some ⟨(v.clock h).read t, .received m.origin m.contents m.frames⟩
+      else none
+
+/-- No arrival remains at host `h` at time `t` when no message in transit to
+`h` arrives then. -/
+theorem remArrivals_eq_nil [DecidableEq H] (v : World H R) (h : H) (t : Time)
+    (st : State H R Msg) (hno : ∀ m ∈ st.inFlight, m.destination = h → m.arrival ≠ t) :
+    remArrivals v h t st = [] := by
+  unfold remArrivals
+  rw [List.flatMap_eq_nil_iff]
+  intro idx _
+  rw [List.filterMap_eq_nil_iff]
+  intro m hm
+  by_cases hd : m.destination = h
+  · simp [hno m hm hd]
+  · simp [hd]
+
+/-- Two families of lists, indexed by the numbers below `n`, that are empty
+below `i₀`, agree above `i₀`, and differ at `i₀` by a prefix `a`, have
+concatenations that differ by the prefix `a`. -/
+theorem flatMap_range_of_eq {α : Type} {i₀ : ℕ} {f f' : ℕ → List α} {a : List α}
+    (hlt : ∀ j < i₀, f j = [] ∧ f' j = []) (heq : f i₀ = a ++ f' i₀)
+    (hgt : ∀ j, i₀ < j → f j = f' j) :
+    ∀ n, (n ≤ i₀ → (List.range n).flatMap f = [] ∧ (List.range n).flatMap f' = [])
+      ∧ (i₀ < n → (List.range n).flatMap f = a ++ (List.range n).flatMap f')
+  | 0 => ⟨fun _ => ⟨rfl, rfl⟩, fun h => absurd h (Nat.not_lt_zero _)⟩
+  | n + 1 => by
+      obtain ⟨ih1, ih2⟩ := flatMap_range_of_eq hlt heq hgt n
+      rw [List.range_succ, List.flatMap_append, List.flatMap_append, List.flatMap_singleton,
+        List.flatMap_singleton]
+      constructor
+      · intro hn
+        obtain ⟨e1, e2⟩ := ih1 (by omega)
+        obtain ⟨e3, e4⟩ := hlt n (by omega)
+        rw [e1, e2, e3, e4]
+        exact ⟨rfl, rfl⟩
+      · intro hn
+        rcases Nat.lt_succ_iff_lt_or_eq.mp hn with hlt' | rfl
+        · rw [ih2 hlt', hgt n hlt', List.append_assoc]
+        · obtain ⟨e1, e2⟩ := ih1 le_rfl
+          rw [e1, e2, heq]
+          rfl
 
 def remTimers [DecidableEq H] (v : World H R) (h : H) (t : Time) (st : State H R Msg) :
     List (Event H R Msg) :=
@@ -1697,8 +1741,7 @@ private theorem sendAll_remArrivals_gt [DecidableEq H] (v : World H R) (st : Sta
     | none => rfl
     | some a =>
       have hne : a ≠ t := ne_of_gt (v.network.after h₀ m.1 t (st.sentCount h₀ m.1) a hd)
-      rw [List.filterMap_append]
-      simp [hne]
+      simp [List.filterMap_append, hne]
 
 private theorem handle_remTimers_gt [DecidableEq H] (σ : Solution H R Msg) (v : World H R)
     (lookahead : ℕ+) (st : State H R Msg) (h₀ h : H) (t : Time) (obs : Observation H R Msg) :
@@ -1896,13 +1939,25 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
       · simp only [State.key] at h2
         have := r.isLt
         omega
-    have hnoEarlier : ∀ (q : ℕ) (hqp : q < p), (st.inFlight[q]'(lt_trans hqp hp)).arrival ≠ t := by
+    -- Every message that arrives at `t` comes from a host whose number is at least
+    -- that of the origin of `m`,
+    have hnoLower : ∀ x ∈ st.inFlight, x.arrival = t →
+        v.hostIndex m.origin ≤ v.hostIndex x.origin := by
+      intro x hx heq
+      obtain ⟨q, hq, rfl⟩ := List.getElem_of_mem hx
+      rcases hlex (.arrival q) (st.arrival_mem_due hq) with h1 | ⟨_, h2⟩
+      · simp [State.key, hget, hmt, List.getElem?_eq_getElem hq, heq] at h1
+      · simpa [State.key, hget, List.getElem?_eq_getElem hq] using h2
+    -- and from one of a strictly higher number if it is earlier among the
+    -- messages in transit.
+    obtain ⟨l₁, l₂, hsplit, hbefore⟩ := earliest_spec_first (st.key v) st.due _ he₀
+    have hnoEarlier : ∀ (q : ℕ) (hqp : q < p), (st.inFlight[q]'(lt_trans hqp hp)).arrival = t →
+        v.hostIndex m.origin < v.hostIndex (st.inFlight[q]'(lt_trans hqp hp)).origin := by
       intro q hqp heq
       have hqlen : q < st.inFlight.length := lt_trans hqp hp
-      rcases hlex (.arrival q) (st.arrival_mem_due hqlen) with h1 | ⟨_, h2⟩
+      rcases hbefore _ (st.arrival_mem_of_lt hsplit hqp) with h1 | ⟨_, h2⟩
       · simp [State.key, hget, hmt, List.getElem?_eq_getElem hqlen, heq] at h1
-      · simp only [State.key] at h2
-        omega
+      · simpa [State.key, hget, List.getElem?_eq_getElem hqlen] using h2
     rw [hget]
     dsimp only
     set st₀ : State H R Msg := { st with inFlight := st.inFlight.eraseIdx p }
@@ -1926,7 +1981,8 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
       dsimp only [st1, State.handle]
       exact sendAll_remArrivals_gt v _ m.destination h t _ _
     have htake_nil : ((st.inFlight.take p).filterMap
-        (fun x => if x.destination = h ∧ x.arrival = t then
+        (fun x => if v.hostIndex x.origin = v.hostIndex m.origin ∧ x.destination = h
+            ∧ x.arrival = t then
           some (⟨(v.clock h).read t, .received x.origin x.contents x.frames⟩ : Event H R Msg)
         else none) : List (Event H R Msg)) = [] := by
       rw [List.filterMap_eq_nil_iff]
@@ -1936,17 +1992,42 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
         have := List.length_take_le p st.inFlight
         omega
       simp only [List.getElem_take]
-      simp [hnoEarlier q hqp]
+      by_cases hxt : (st.inFlight[q]'(lt_trans hqp hp)).arrival = t
+      · have hne : v.hostIndex (st.inFlight[q]'(lt_trans hqp hp)).origin
+            ≠ v.hostIndex m.origin := ne_of_gt (hnoEarlier q hqp hxt)
+        simp [hne]
+      · simp [hxt]
     have hsplit_arr : remArrivals v h t st
         = (if m.destination = h then [⟨(v.clock h).read t, obs⟩] else [])
           ++ remArrivals v h t st₀ := by
       unfold remArrivals
       simp only [st₀]
-      conv_lhs => rw [← List.take_append_drop p st.inFlight]
-      rw [List.eraseIdx_eq_take_drop_succ, List.drop_eq_getElem_cons hp,
-        List.filterMap_append, List.filterMap_append, List.filterMap_cons, htake_nil]
-      simp only [List.nil_append, m, hmt, and_true, obs]
-      split_ifs <;> simp
+      refine (flatMap_range_of_eq (i₀ := v.hostIndex m.origin) (fun j hj => ⟨?_, ?_⟩) ?_
+        (fun j hj => ?_) (R + 2)).2 (by have := v.hostIndex_le m.origin; omega)
+      · rw [List.filterMap_eq_nil_iff]
+        intro x hx
+        by_cases hxt : x.arrival = t
+        · have hle := hnoLower x hx hxt
+          have hne : v.hostIndex x.origin ≠ j := by omega
+          simp [hne]
+        · simp [hxt]
+      · rw [List.filterMap_eq_nil_iff]
+        intro x hx
+        by_cases hxt : x.arrival = t
+        · have hle := hnoLower x (List.mem_of_mem_eraseIdx hx) hxt
+          have hne : v.hostIndex x.origin ≠ j := by omega
+          simp [hne]
+        · simp [hxt]
+      · conv_lhs => rw [← List.take_append_drop p st.inFlight]
+        rw [List.eraseIdx_eq_take_drop_succ, List.drop_eq_getElem_cons hp,
+          List.filterMap_append, List.filterMap_append, List.filterMap_cons, htake_nil]
+        simp only [List.nil_append, m, hmt, and_true, obs, true_and]
+        split_ifs <;> simp
+      · conv_lhs => rw [← List.take_append_drop p st.inFlight]
+        rw [List.eraseIdx_eq_take_drop_succ, List.drop_eq_getElem_cons hp,
+          List.filterMap_append, List.filterMap_append, List.filterMap_cons]
+        have hne : v.hostIndex (st.inFlight[p]).origin ≠ j := ne_of_lt hj
+        simp [hne]
     unfold remAll
     rw [hmt]
     change st1.views h ++ (remHanded v h t st1 ++ remAsked v h t st1 ++ remArrivals v h t st1 ++ remTimers v h t st1)
@@ -1983,7 +2064,9 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
       obtain ⟨q, hq, rfl⟩ := List.getElem_of_mem hm
       rcases hlex (.arrival q) (st.arrival_mem_due hq) with h1 | ⟨_, h2⟩
       · simp [State.key, hget, hut, List.getElem?_eq_getElem hq, heq] at h1
-      · simp only [State.key] at h2
+      · simp only [State.key, List.getElem?_eq_getElem hq, Option.map_some,
+          Option.getD_some] at h2
+        have := v.hostIndex_le (st.inFlight[q]).origin
         omega
     rw [hget]
     dsimp only
@@ -2001,10 +2084,8 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
       rw [State.handle_askedNext]
       rw [List.filterMap_eq_nil_iff]
       intro r _; simp [st₀, hnoQ r]
-    have hremA0 : remArrivals v h t st = [] := by
-      unfold remArrivals
-      rw [List.filterMap_eq_nil_iff]
-      intro m hm; simp [hnoA m hm]
+    have hremA0 : remArrivals v h t st = [] :=
+      remArrivals_eq_nil v h t st fun m hm _ => hnoA m hm
     have hremA1 : remArrivals v h t st1 = [] := by
       have : remArrivals v h t st1 = remArrivals v h t st₀ := by
         dsimp only [st1, State.handle]
@@ -2060,12 +2141,9 @@ theorem Solution.remAll_eq_nil_of_lt_eventTime [DecidableEq H] (σ : Solution H 
     have : t < (v.speaker r).asked ((σ.states v lookahead n).askedNext r) :=
       lt_of_lt_of_le hn (hdue.2.1 r)
     simp [ne_of_gt this]
-  have h3 : remArrivals v h t (σ.states v lookahead n) = [] := by
-    unfold remArrivals
-    rw [List.filterMap_eq_nil_iff]
-    intro m hm
-    have : t < m.arrival := lt_of_lt_of_le hn (hdue.2.2.1 m hm)
-    simp [ne_of_gt this]
+  have h3 : remArrivals v h t (σ.states v lookahead n) = [] :=
+    remArrivals_eq_nil v h t _ fun m hm _ =>
+      ne_of_gt (lt_of_lt_of_le hn (hdue.2.2.1 m hm))
   have h4 : remTimers v h t (σ.states v lookahead n) = [] := by
     unfold remTimers
     have hzero : (σ.states v lookahead n).timers.countP (fun u => decide (u.host = h ∧ u.time = t)) = 0 := by
@@ -2188,27 +2266,11 @@ private theorem list_prefix_eq_of_not_mem {α : Type} {l₁ l₂ l₁' l₂' : L
       exact ih (fun hm => h1 (List.mem_cons_of_mem _ hm))
         (fun hm => h1' (List.mem_cons_of_mem _ hm)) hrest
 
-/-- No two in-flight messages from distinct origins in `σ`'s run on `w` arrive at
-the same host at the same true time. Because `Unisono.Spec.Solution.State.step`
-breaks exact arrival-time ties by global send order, this hypothesis excludes
-cross-origin simultaneous arrivals whose relative send order could otherwise
-leak host shifts. (Note: in `StationaryNetworkDisturbances`, two links into the same host that
-share a pause release simultaneous arrivals with positive probability, so this
-is a genuine structural restriction rather than an almost-sure property.) -/
-def Solution.NoCrossOriginCollision [DecidableEq H] (σ : Solution H R Msg) (w : World H R)
-    (lookahead : ℕ+) : Prop :=
-  ∀ n (m₁ m₂ : InFlight H Msg),
-    m₁ ∈ (σ.states w lookahead n).inFlight →
-    m₂ ∈ (σ.states w lookahead n).inFlight →
-    m₁.destination = m₂.destination →
-    m₁.arrival = m₂.arrival →
-    m₁.origin = m₂.origin
-
-/-- **Host-local view invariance under host shifts (no `horder` assumption).**
+/-- **Host-local view invariance under host shifts.**
 Assume non-Zeno progress in both `w` and `w' = w.shiftHosts Δ hnet` (with
-`Δ w.sender = 0`), and that no two in-flight messages from distinct origins in
-`w` arrive at the same host at the exact same instant
-(`σ.NoCrossOriginCollision w lookahead`). Then every host observes the
+`Δ w.sender = 0`). Messages that arrive at a host at the same true time are
+handled in the order of the numbers of the hosts that sent them, which a
+shift does not change. Then every host observes the
 identical sequence of local events up to `w`-time `t` in `w` and up to
 `w'`-time `t + Δ h` in `w'` — even with drifting clocks and changed cross-host
 interleavings — and `σ` produces identical playback decisions
@@ -2217,8 +2279,7 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
     (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
-    (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead) :
+    (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet) lookahead n) :
     σ.plays (w.shiftHosts Δ hnet) lookahead = σ.plays w lookahead := by
   classical
   set w' := w.shiftHosts Δ hnet with hw'
@@ -2412,68 +2473,63 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
             have := w'.network.after i h s q (t + Δ h) hdel
             linarith
         rw [halign, hbefore_eq i, sentArrivalsFromView_shiftHosts]
-      have hExistsInW : ∀ m ∈ (σ.states w' lookahead n₂).inFlight,
-          m.destination = h → m.arrival = t + Δ h →
-          ∃ m₁ ∈ (σ.states w lookahead n₁).inFlight,
-            m₁.origin = m.origin ∧ m₁.destination = h ∧ m₁.arrival = t := by
-        intro m hm hd ha
-        have hne' : filterOriginArrivals w' m.origin h (t + Δ h)
-            (σ.states w' lookahead n₂).inFlight ≠ [] := by
-          intro hnil
-          have hnone := List.filterMap_eq_nil_iff.mp hnil m hm
-          simp [hd, ha] at hnone
-        rw [hOriginEq m.origin] at hne'
-        cases hlst : filterOriginArrivals w m.origin h t (σ.states w lookahead n₁).inFlight with
-        | nil => exact absurd hlst hne'
-        | cons e _ =>
-          have hmem : e ∈ filterOriginArrivals w m.origin h t (σ.states w lookahead n₁).inFlight := by
-            rw [hlst]; simp
-          unfold filterOriginArrivals at hmem
-          rw [List.mem_filterMap] at hmem
-          obtain ⟨m₁, hm₁, hsome⟩ := hmem
-          split_ifs at hsome with hcond
-          exact ⟨m₁, hm₁, hcond.1, hcond.2.1, hcond.2.2⟩
-      by_cases hex : ∃ m₀ ∈ (σ.states w lookahead n₁).inFlight,
-          m₀.destination = h ∧ m₀.arrival = t
-      · obtain ⟨m₀, hm₀, hd₀, ha₀⟩ := hex
-        have huniq1 : remArrivals w h t (σ.states w lookahead n₁)
-            = filterOriginArrivals w m₀.origin h t (σ.states w lookahead n₁).inFlight := by
-          unfold remArrivals filterOriginArrivals
-          refine List.filterMap_congr fun m hm => ?_
-          by_cases hcond : m.destination = h ∧ m.arrival = t
-          · obtain ⟨hmd, hma⟩ := hcond
-            have hi_eq : m.origin = m₀.origin :=
-              harr n₁ m m₀ hm hm₀ (hmd.trans hd₀.symm) (hma.trans ha₀.symm)
-            simp [hi_eq, hmd, hma]
-          · simp [hcond]
-        have huniq2 : remArrivals w' h (t + Δ h) (σ.states w' lookahead n₂)
-            = filterOriginArrivals w' m₀.origin h (t + Δ h) (σ.states w' lookahead n₂).inFlight := by
-          unfold remArrivals filterOriginArrivals
-          refine List.filterMap_congr fun m hm => ?_
-          by_cases hcond : m.destination = h ∧ m.arrival = t + Δ h
-          · obtain ⟨hmd, hma⟩ := hcond
-            obtain ⟨m₁, hm₁, ho₁, hd₁, ha₁⟩ := hExistsInW m hm hmd hma
-            have hi_eq : m.origin = m₀.origin :=
-              ho₁.symm.trans (harr n₁ m₁ m₀ hm₁ hm₀ (hd₁.trans hd₀.symm) (ha₁.trans ha₀.symm))
-            simp [hi_eq, hmd, hma]
-          · simp [hcond]
-        rw [huniq1, huniq2, hOriginEq m₀.origin]
-      · have hnil1 : remArrivals w h t (σ.states w lookahead n₁) = [] := by
-          unfold remArrivals
+      have hidx : ∀ x : InFlight H Msg, w'.hostIndex x.origin = w.hostIndex x.origin :=
+        fun _ => rfl
+      unfold remArrivals
+      refine List.flatMap_congr fun idx _ => ?_
+      by_cases hex : ∃ i : H, w.hostIndex i = idx
+      · obtain ⟨i, rfl⟩ := hex
+        have h1 : (σ.states w' lookahead n₂).inFlight.filterMap (fun m =>
+              if w'.hostIndex m.origin = w.hostIndex i ∧ m.destination = h
+                  ∧ m.arrival = t + Δ h then
+                some (⟨(w'.clock h).read (t + Δ h),
+                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+              else none)
+            = filterOriginArrivals w' i h (t + Δ h) (σ.states w' lookahead n₂).inFlight := by
+          unfold filterOriginArrivals
+          refine List.filterMap_congr fun x _ => ?_
+          by_cases ho : x.origin = i
+          · have hi : w'.hostIndex i = w.hostIndex i := rfl
+            simp [ho, hi]
+          · have hx : w'.hostIndex x.origin ≠ w.hostIndex i := fun hx =>
+              ho (w.hostIndex_injective ((hidx x).symm.trans hx))
+            simp [ho, hx]
+        have h2 : (σ.states w lookahead n₁).inFlight.filterMap (fun m =>
+              if w.hostIndex m.origin = w.hostIndex i ∧ m.destination = h ∧ m.arrival = t then
+                some (⟨(w.clock h).read t,
+                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+              else none)
+            = filterOriginArrivals w i h t (σ.states w lookahead n₁).inFlight := by
+          unfold filterOriginArrivals
+          refine List.filterMap_congr fun x _ => ?_
+          by_cases ho : x.origin = i
+          · simp [ho]
+          · have hx : w.hostIndex x.origin ≠ w.hostIndex i := fun hx =>
+              ho (w.hostIndex_injective hx)
+            simp [ho, hx]
+        rw [h1, h2, hOriginEq i]
+      · have hnone : ∀ x : InFlight H Msg, w.hostIndex x.origin ≠ idx :=
+          fun x hx => hex ⟨x.origin, hx⟩
+        have e1 : (σ.states w' lookahead n₂).inFlight.filterMap (fun m =>
+              if w'.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t + Δ h then
+                some (⟨(w'.clock h).read (t + Δ h),
+                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+              else none) = [] := by
           rw [List.filterMap_eq_nil_iff]
-          intro m hm
-          by_cases hcond : m.destination = h ∧ m.arrival = t
-          · exact absurd ⟨m, hm, hcond.1, hcond.2⟩ hex
-          · simp [hcond]
-        have hnil2 : remArrivals w' h (t + Δ h) (σ.states w' lookahead n₂) = [] := by
-          unfold remArrivals
+          intro x _
+          have hx : w'.hostIndex x.origin ≠ idx := by
+            rw [hidx]
+            exact hnone x
+          simp [hx]
+        have e2 : (σ.states w lookahead n₁).inFlight.filterMap (fun m =>
+              if w.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t then
+                some (⟨(w.clock h).read t,
+                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+              else none) = [] := by
           rw [List.filterMap_eq_nil_iff]
-          intro m hm
-          by_cases hcond : m.destination = h ∧ m.arrival = t + Δ h
-          · obtain ⟨m₁, hm₁, _, hd₁, ha₁⟩ := hExistsInW m hm hcond.1 hcond.2
-            exact absurd ⟨m₁, hm₁, hd₁, ha₁⟩ hex
-          · simp [hcond]
-        rw [hnil1, hnil2]
+          intro x _
+          simp [hnone x]
+        rw [e1, e2]
     have hT_eq : remTimers w' h (t + Δ h) (σ.states w' lookahead n₂)
         = remTimers w h t (σ.states w lookahead n₁) := by
       unfold remTimers
@@ -2742,8 +2798,7 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
 /-- **Synchronization lower bound under opposite host shifts (all topologies).**
 For any solution `σ` (star or peer) that is non-Zeno in `w`, `w⁺ = w.shiftHosts Δ`,
 and `w⁻ = w.shiftHosts (-Δ)` (with `Δ w.sender = 0`), when every link satisfies
-`hnet₁`/`hnet₂`, no two messages from distinct origins arrive simultaneously at
-the same host (`harr`), and every speaker plays all frames from `N` onward in `w`,
+`hnet₁`/`hnet₂` and every speaker plays all frames from `N` onward in `w`,
 at least one of `w⁺` and `w⁻` suffers long-run synchronization cost at least
 `varFin (fun r => Δ (w.host r))`. -/
 theorem Solution.sync_shiftHosts_lower_bound [DecidableEq H] (σ : Solution H R Msg)
@@ -2753,22 +2808,20 @@ theorem Solution.sync_shiftHosts_lower_bound [DecidableEq H] (σ : Solution H R 
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet₁) lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts (-Δ) hnet₂) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead)
     (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime (σ.plays w lookahead) r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
     ENNReal.ofReal (varFin fun r => Δ (w.host r))
       ≤ max ((w.shiftHosts Δ hnet₁).sync (σ.plays (w.shiftHosts Δ hnet₁) lookahead))
             ((w.shiftHosts (-Δ) hnet₂).sync (σ.plays (w.shiftHosts (-Δ) hnet₂) lookahead)) := by
-  have hp₁ := σ.plays_shiftHosts w lookahead Δ hΔs hnet₁ hprog hprog₁ harr
-  have hp₂ := σ.plays_shiftHosts w lookahead (-Δ) (by simp [hΔs]) hnet₂ hprog hprog₂ harr
+  have hp₁ := σ.plays_shiftHosts w lookahead Δ hΔs hnet₁ hprog hprog₁
+  have hp₂ := σ.plays_shiftHosts w lookahead (-Δ) (by simp [hΔs]) hnet₂ hprog hprog₂
   rw [hp₁, hp₂]
   exact w.sync_shiftHosts_max_ge Δ hnet₁ hnet₂ (σ.plays w lookahead) hR N hplay hunb
 
 /-- **Tracking lower bound under opposite uniform host shifts (all topologies).**
-Under opposite uniform non-sender shifts `±A`, non-Zeno progress, and distinct
-cross-origin arrival times, at least one of `w⁺` and `w⁻` suffers long-run
-tracking cost at least `A²`. -/
+Under opposite uniform non-sender shifts `±A` and non-Zeno progress, at least
+one of `w⁺` and `w⁻` suffers long-run tracking cost at least `A²`. -/
 theorem Solution.tracking_shiftHosts_lower_bound [DecidableEq H] (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (Δ : H → ℝ) (A : ℝ) (hΔs : Δ w.sender = 0)
     (hΔ : ∀ r, Δ (w.host r) = A)
@@ -2777,15 +2830,14 @@ theorem Solution.tracking_shiftHosts_lower_bound [DecidableEq H] (σ : Solution 
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet₁) lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts (-Δ) hnet₂) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead)
     (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime (σ.plays w lookahead) r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
     ENNReal.ofReal (A ^ 2)
       ≤ max ((w.shiftHosts Δ hnet₁).tracking (σ.plays (w.shiftHosts Δ hnet₁) lookahead))
             ((w.shiftHosts (-Δ) hnet₂).tracking (σ.plays (w.shiftHosts (-Δ) hnet₂) lookahead)) := by
-  have hp₁ := σ.plays_shiftHosts w lookahead Δ hΔs hnet₁ hprog hprog₁ harr
-  have hp₂ := σ.plays_shiftHosts w lookahead (-Δ) (by simp [hΔs]) hnet₂ hprog hprog₂ harr
+  have hp₁ := σ.plays_shiftHosts w lookahead Δ hΔs hnet₁ hprog hprog₁
+  have hp₂ := σ.plays_shiftHosts w lookahead (-Δ) (by simp [hΔs]) hnet₂ hprog hprog₂
   rw [hp₁, hp₂]
   exact w.tracking_shiftHosts_max_ge Δ A hΔ hnet₁ hnet₂ (σ.plays w lookahead) hR N hplay hunb
 

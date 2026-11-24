@@ -153,7 +153,6 @@ theorem forget_handle {σ' : Solution H R Msg'} {σ : Solution H R Msg}
     forget_addTimers, forget_sendAll, forget_withoutPlays, forget_observe, hsends.1, hsends.2,
     hheld]
 
-omit [DecidableEq H] in
 theorem forget_key (st : State H R Msg') : (st.forget π).key w = st.key w := by
   funext d
   cases d with
@@ -162,7 +161,9 @@ theorem forget_key (st : State H R Msg') : (st.forget π).key w = st.key w := by
   | arrival p =>
     have harr : (InFlight.arrival ∘ InFlight.mapMsg π : InFlight H Msg' → Time)
         = InFlight.arrival := rfl
-    simp [key, forget, harr]
+    have horig : ((fun m : InFlight H Msg => w.hostIndex m.origin) ∘ InFlight.mapMsg π :
+        InFlight H Msg' → ℕ) = fun m => w.hostIndex m.origin := rfl
+    simp [key, forget, harr, horig]
   | timer p => simp [key, forget]
 
 omit [DecidableEq H] in

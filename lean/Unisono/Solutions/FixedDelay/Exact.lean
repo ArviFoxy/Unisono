@@ -28,11 +28,8 @@ are equal, the estimates are exact, and every speaker plays at exactly the
 baseline's latency (`speaker_at_latency`). The baseline is a star solution
 and cannot tell the two worlds apart (`Solution.plays_shiftStarKeepPeers`),
 so in the given world each speaker plays every frame late by its host's
-asymmetry.
-
-The theorem assumes that no two messages from different hosts arrive at one
-host at the same time, because the run breaks such ties by the order of
-sending, which a shift can change.
+asymmetry. Messages that arrive at a host at the same time are handled in
+the order of the hosts that sent them, which the shift does not change.
 -/
 
 @[expose] public noncomputable section
@@ -87,8 +84,7 @@ theorem latencyError_ideal (m : IdealConstantWorld H R) (rate d : ℝ) :
 constant world in which no speaker is on the sender's host. Let the baseline
 send the stream to every speaker's host and play at the target latency, with
 at least one copy of each message and a slew between zero and one. Let the
-target latency exceed, for every speaker, the delivery margin. Suppose that
-no two messages from different hosts arrive at one host at the same time.
+target latency exceed, for every speaker, the delivery margin.
 Then, from some output sample on, every output sample of each speaker plays
 the sound captured exactly the target latency plus the asymmetry of the
 speaker's host before the sample leaves. -/
@@ -99,8 +95,7 @@ theorem playsAtLatencies_of_ideal (m : IdealConstantWorld H R) (w : World H R) (
     (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
     (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
       + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
-        < m.targetLatency)
-    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
+        < m.targetLatency) :
     ∃ K, w.PlaysAtLatencies ((solution p : Solution H R Payload).plays w lookahead)
       (fun r => p.latency + m.asymmetry (m.host r)) K := by
   classical
@@ -195,7 +190,7 @@ theorem playsAtLatencies_of_ideal (m : IdealConstantWorld H R) (w : World H R) (
     progress p w₀ m₀.toBounds hwb₀ lookahead
   have hplays : σ.plays w₀ lookahead = σ.plays w lookahead :=
     σ.plays_shiftStarKeepPeers w lookahead hstar (-Δ) (by rw [hw.sender_eq]; simp [hΔs])
-      (hw.starNet hxneg) hprog hprog₀ hcoll
+      (hw.starNet hxneg) hprog hprog₀
   -- So each speaker plays every output sample late by its host's asymmetry.
   have hKw : w.PlaysAtLatencies (σ.plays w lookahead)
       (fun r => p.latency + m.asymmetry (m.host r)) (Finset.univ.sup K) := by
@@ -218,9 +213,8 @@ send the stream to every speaker's host and play at the target latency, with
 at least one copy of each message and a slew between zero and one. Let the
 target latency exceed, for every speaker, the delivery margin: the spans of
 the resampler's lookahead and of two blocks, half the round trip between the
-sender and the speaker's host, and the request lead. Suppose that no two
-messages from different hosts arrive at one host at the same time. When the
-weights of latency and of roughness are zero, the baseline's cost is at most
+sender and the speaker's host, and the request lead. When the weights of
+latency and of roughness are zero, the baseline's cost is at most
 
 * the weight of synchronization times the sum, over the pairs of speakers,
   of the squares of the differences of their hosts' asymmetries, divided by
@@ -235,8 +229,7 @@ theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
     (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
     (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
       + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
-        < m.targetLatency)
-    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
+        < m.targetLatency) :
     (solution p : Solution H R Payload).cost w lookahead c
       ≤ c.sync * (((R : ℝ≥0∞) ^ 2)⁻¹
           * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
@@ -246,7 +239,7 @@ theorem cost_le_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
   classical
   set σ : Solution H R Payload := solution p with hσ
   obtain ⟨K₀, hKw⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup hpl
-    hcopies hperiod hslew0 hslew1 hlat hcoll
+    hcopies hperiod hslew0 hslew1 hlat
   -- The cost of playing at exact latencies.
   obtain ⟨t₀, hcap⟩ := hw.captured_eq
   have htrack := w.tracking_le_of_exact (σ.plays w lookahead) hKw hcap hw.target_eq
@@ -280,13 +273,12 @@ theorem playTime_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.H
     (hperiod : 0 ≤ p.period) (hslew0 : 0 < p.slew) (hslew1 : p.slew < 1)
     (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
       + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
-        < m.targetLatency)
-    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead) :
+        < m.targetLatency) :
     ∃ N : ℕ, ∀ n, N ≤ n → ∀ r,
       w.playTime ((solution p : Solution H R Payload).plays w lookahead) r n
         = some (w.source.capture n + (p.latency + m.asymmetry (m.host r))) := by
   obtain ⟨K, hK⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup hpl
-    hcopies hperiod hslew0 hslew1 hlat hcoll
+    hcopies hperiod hslew0 hslew1 hlat
   obtain ⟨t₀, hcap⟩ := hw.captured_eq
   exact hK.exists_playTime m.rate_pos hcap hw.out_unbounded
 
@@ -304,16 +296,15 @@ theorem cost_eq_of_ideal (m : IdealConstantWorld H R) (w : World H R) (hw : m.Ho
     (hlat : ∀ r, (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
       + (m.delay m.sender (m.host r) + m.delay (m.host r) m.sender) / 2 + m.lead
         < m.targetLatency)
-    (hcoll : (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead)
     (hR : 0 < R) :
     (solution p : Solution H R Payload).cost w lookahead c
       = ENNReal.ofReal (shiftCost c fun r => m.asymmetry (m.host r)) := by
   refine le_antisymm ?_ ?_
   · rw [ofReal_shiftCost c hR]
     exact cost_le_of_ideal p m w hw hnos lookahead c hcl hcr hps hpr hpsp hnodup hpl hcopies
-      hperiod hslew0 hslew1 hlat hcoll
+      hperiod hslew0 hslew1 hlat
   · obtain ⟨K, hK⟩ := playsAtLatencies_of_ideal p m w hw hnos lookahead hps hpr hpsp hnodup
-      hpl hcopies hperiod hslew0 hslew1 hlat hcoll
+      hpl hcopies hperiod hslew0 hslew1 hlat
     obtain ⟨t₀, hcap⟩ := hw.captured_eq
     have h := w.frameCost_le_cost_of_exact _ c hK m.rate_pos hcap hw.target_eq hw.out_unbounded
       hR hw.capture_unbounded

@@ -60,7 +60,6 @@ public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeStar
-public import Unisono.Spec.Models.GenerativeTies
 public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal

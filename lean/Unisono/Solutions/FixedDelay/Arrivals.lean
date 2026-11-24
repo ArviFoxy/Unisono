@@ -18,11 +18,6 @@ kinds (`inFlight_provenance`):
   answer to a clock query;
 * a clock query to the sender from another host, sent when a playback device
   of that host requested a block.
-
-Two messages from different hosts can therefore arrive at one host at the
-same time only at the sender, and only when two requests of speakers on
-different hosts, each delayed by the network, reach the sender at the same
-time (`noCrossOriginCollision`).
 -/
 
 @[expose] public noncomputable section
@@ -141,26 +136,5 @@ theorem inFlight_provenance (w : World H R) (lookahead : ℕ+) (n : ℕ)
         · rw [ho, hhr]
         · rw [ho, ← hsd, ← htb]
           exact hq
-
-/-- **The baseline's messages from different hosts arrive at different
-times**, unless two requests of speakers on different hosts, each delayed by
-the network on its way to the sender, reach the sender at the same time. -/
-theorem noCrossOriginCollision (w : World H R) (lookahead : ℕ+)
-    (hne : ∀ (r₁ r₂ : Fin R) (b₁ b₂ q₁ q₂ : ℕ) (a : Time), w.host r₁ ≠ w.host r₂ →
-      w.network.deliver (w.host r₁) p.sender ((w.speaker r₁).asked b₁) q₁ = some a →
-      w.network.deliver (w.host r₂) p.sender ((w.speaker r₂).asked b₂) q₂ ≠ some a) :
-    (solution p : Solution H R Payload).NoCrossOriginCollision w lookahead := by
-  intro n x₁ x₂ h₁ h₂ hdest harr
-  obtain ⟨a₁, c₁⟩ := inFlight_provenance p w lookahead n h₁
-  obtain ⟨a₂, c₂⟩ := inFlight_provenance p w lookahead n h₂
-  by_cases hd : x₁.destination = p.sender
-  · obtain ⟨-, r₁, k₁, q₁, hr₁, hq₁⟩ := c₁ hd
-    obtain ⟨-, r₂, k₂, q₂, hr₂, hq₂⟩ := c₂ (hdest.symm.trans hd)
-    by_contra hne'
-    refine hne r₁ r₂ k₁ k₂ q₁ q₂ x₁.arrival (by rw [hr₁, hr₂]; exact hne')
-      (by rw [hr₁]; exact hq₁) ?_
-    rw [hr₂, harr]
-    exact hq₂
-  · rw [a₁ hd, a₂ fun h => hd (hdest.trans h)]
 
 end Unisono.Solutions.FixedDelay

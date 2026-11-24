@@ -28,8 +28,13 @@ processed in chronological order (`Solution.states`). The world determines
 when each device event occurs and when each message arrives; the solution
 determines what each host does. Every solution has exactly one run in every
 world. Simultaneous events are processed in a fixed order: capture events
-first, then speaker requests in speaker index order, then message arrivals
-and timers in the order in which they were sent or set.
+first, then speaker requests in speaker index order, then message arrivals,
+then timers in the order in which they were set. Messages that arrive at the
+same true time are handled in the order of a fixed numbering of the hosts
+that sent them (`World.hostIndex`: the sender's host first, then the hosts
+of the speakers in speaker order), and messages from one host in the order
+in which that host sent them. The order therefore does not depend on which
+of two hosts sent first in true time, which no host can observe.
 
 Two constraints hold for every solution.
 
@@ -209,6 +214,14 @@ def earliest {α : Type} (key : α → Time × ℕ) : List α → Option α
           if (key a).1 < (key b).1 ∨ ((key a).1 = (key b).1 ∧ (key a).2 ≤ (key b).2)
           then some a else some b
 
+/-- The number of a host: zero for the sender's host, and for any other host
+one more than the least speaker that it drives. Different hosts have
+different numbers. The run uses the numbers to order messages that arrive at
+the same true time. -/
+def World.hostIndex [DecidableEq H] (w : World H R) (h : H) : ℕ :=
+  if h = w.sender then 0
+  else ((List.finRange R).find? fun r => decide (w.host r = h)).elim (R + 1) fun r => 1 + r
+
 namespace State
 
 variable [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
@@ -221,12 +234,18 @@ def due : List (Due R) :=
     ++ (List.range st.inFlight.length).map Due.arrival
     ++ (List.range st.timers.length).map Due.timer
 
-/-- When a pending event occurs, and its rank among simultaneous events. -/
+/-- When a pending event occurs, and its rank among simultaneous events. The
+rank of an arrival is the number of the host that sent the message, so that
+simultaneous arrivals from different hosts are handled in the order of those
+numbers. Simultaneous arrivals from one host have the same rank and are
+handled in the order in which the host sent them, which is their order among
+the messages in transit. -/
 def key : Due R → Time × ℕ
   | .handed b => (w.source.handed b, 0)
   | .asked r b => ((w.speaker r).asked b, 1 + r)
-  | .arrival p => ((st.inFlight[p]?.map InFlight.arrival).getD 0, 1 + R + p)
-  | .timer p => ((st.timers[p]?.map Timer.time).getD 0, 1 + R + st.inFlight.length + p)
+  | .arrival p => ((st.inFlight[p]?.map InFlight.arrival).getD 0,
+      1 + R + (st.inFlight[p]?.map fun m => w.hostIndex m.origin).getD 0)
+  | .timer p => ((st.timers[p]?.map Timer.time).getD 0, 1 + R + (R + 2) + p)
 
 /-- Host `h` sends, at true time `t`, a message to host `j` with payload
 `contents` and the data of the frames `frames`. The network delivers it or
