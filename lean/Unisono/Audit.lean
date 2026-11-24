@@ -38,6 +38,7 @@ public import Unisono.Solutions.Controller
 public import Unisono.Solutions.Controller.Cost
 public import Unisono.Solutions.Controller.Exact
 public import Unisono.Solutions.Controller.HeldLevel
+public import Unisono.Solutions.Controller.LateBlocks
 public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Undelayed
@@ -3117,6 +3118,30 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.ae_cost_le_heldLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ae_cost_le_heldLevel
+
+/-- info: 'Unisono.Solutions.Controller.prior_paused_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.prior_paused_monotone
+
+/-- info: 'Unisono.Solutions.Controller.prior_paused_rightContinuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.prior_paused_rightContinuous
+
+/-- info: 'Unisono.Solutions.Controller.blockDelay_eq_arrivalM' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.blockDelay_eq_arrivalM
+
+/-- info: 'Unisono.Solutions.Controller.measurable_blockTimes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.measurable_blockTimes
+
+/-- info: 'Unisono.Solutions.Controller.blockTimes_scalars' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.blockTimes_scalars
+
+/-- info: 'Unisono.Solutions.Controller.ae_tendsto_slowBlocks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ae_tendsto_slowBlocks
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

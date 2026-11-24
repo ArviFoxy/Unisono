@@ -133,9 +133,15 @@ simulation and integration tests (see `PRINCIPLES.md`):
     member whose clocks do not wander and whose audio devices report exact
     timestamps, that holds in almost every outcome
     (`Unisono.Solutions.Controller.ae_twoUndelayed` in
-    `lean/Unisono/Solutions/Controller/Undelayed.lean`). Nothing is proved
-    yet about how large the late rate is under the generative model, about
-    expected cost, or about the cost of other solutions under pauses. The controller does not yet change its pace smoothly or choose
+    `lean/Unisono/Solutions/Controller/Undelayed.lean`). In such a random
+    world the long-run fraction of capture blocks whose message is slower
+    than the least margin of a speaker is, in almost every outcome, a
+    probability of the member
+    (`Unisono.Solutions.Controller.ae_tendsto_slowBlocks` in
+    `lean/Unisono/Solutions/Controller/LateBlocks.lean`). The late rate
+    itself, which counts output samples, is not derived yet, and nothing is
+    proved about expected cost or about the cost of other solutions under
+    pauses. The controller does not yet change its pace smoothly or choose
     the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
