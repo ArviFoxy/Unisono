@@ -58,6 +58,7 @@ public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
+public import Unisono.Spec.Limiter
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate

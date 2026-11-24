@@ -60,6 +60,7 @@ public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
+public import Unisono.Spec.Limiter
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -2963,6 +2964,98 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.plays_eq_of_sameBefore' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.plays_eq_of_sameBefore
+
+/-- info: 'Unisono.Spec.limitStep_none_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitStep_none_left
+
+/-- info: 'Unisono.Spec.limitStep_none_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitStep_none_right
+
+/-- info: 'Unisono.Spec.limitStep_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitStep_eq_some
+
+/-- info: 'Unisono.Spec.limitStep_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitStep_within
+
+/-- info: 'Unisono.Spec.limitStep_of_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitStep_of_within
+
+/-- info: 'Unisono.Spec.limitAt_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitAt_eq_some
+
+/-- info: 'Unisono.Spec.limitAt_range'_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitAt_range'_first
+
+/-- info: 'Unisono.Spec.limitAt_range'_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitAt_range'_succ
+
+/-- info: 'Unisono.Spec.limitLast_range'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limitLast_range'
+
+/-- info: 'Unisono.Spec.foldl_limiterStep_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.foldl_limiterStep_fst
+
+/-- info: 'Unisono.Spec.limiterLast_concat_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limiterLast_concat_asked
+
+/-- info: 'Unisono.Spec.limiterLast_concat_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limiterLast_concat_of_ne
+
+/-- info: 'Unisono.Spec.limiterLast_append_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limiterLast_append_of_ne
+
+/-- info: 'Unisono.Spec.Solution.limited_plays_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_plays_asked
+
+/-- info: 'Unisono.Spec.Solution.asked_step_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.asked_step_unique
+
+/-- info: 'Unisono.Spec.Solution.limiterLast_at_next' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limiterLast_at_next
+
+/-- info: 'Unisono.Spec.Solution.limited_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_views
+
+/-- info: 'Unisono.Spec.Solution.limited_asked_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_asked_iff
+
+/-- info: 'Unisono.Spec.Solution.limited_chosenAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_chosenAt
+
+/-- info: 'Unisono.Spec.Solution.limited_chosenAt_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_chosenAt_succ
+
+/-- info: 'Unisono.Spec.Solution.limited_withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_withinStep
+
+/-- info: 'Unisono.Spec.Solution.limited_plays_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_plays_eq_some
+
+/-- info: 'Unisono.Spec.Solution.limited_plays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.limited_plays_eq
 
 /-- info: 'Unisono.Spec.earliest_spec_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
