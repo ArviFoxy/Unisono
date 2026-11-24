@@ -6,6 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Solutions.FixedDelay.Arrivals
 public import Unisono.Solutions.FixedDelay.Exact
+public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Spec.Models.GenerativeStar
 
 /-!
@@ -19,9 +20,13 @@ stated for every member of the model: for every other member its margin is
 `⊤`, and it says nothing about them.
 
 * **The members.** `NoiselessWithMargin`: the noiseless members in which the
-  target latency exceeds the baseline's delivery margin for every speaker.
+  target latency exceeds the baseline's delivery margin for every speaker;
+  and `MissedWeightPays`: those in which the weight of missed samples is
+  large enough that not playing frames does not pay.
 * **The compared solutions.** `StarSolutions`
-  (`Unisono.Spec.Models.GenerativeStar`).
+  (`Unisono.Spec.Models.GenerativeStar`): the star solutions with measurable
+  cost whose speed stays within a bound `u < 1` of one. The baseline is one
+  of them when its slew is at most `u`.
 * **The margin.** `starMargin`: the sum of the weights of synchronization
   and of tracking, times `ρ ^ 3 / (4 * Θ)`, where `ρ` is the sum, over the
   speakers, of the least round-trip time between the sender and the
@@ -52,6 +57,36 @@ theorem measurable_shiftCost (c : Weights) :
     unfold shiftCost varFin meanFin
     fun_prop
   exact h.measurable
+
+/-- What a shift costs through one speaker is at most the weight of tracking
+plus four times the weight of synchronization, times the square of the
+largest shift. -/
+theorem speakerShiftCost_le (c : Weights) (hR : 0 < R) {x : Fin R → ℝ} {B : ℝ}
+    (hx : ∀ r, |x r| ≤ B) (r : Fin R) :
+    speakerShiftCost c x r ≤ ((c.tracking : ℝ) + 4 * (c.sync : ℝ)) * B ^ 2 := by
+  have hRpos : (0 : ℝ) < R := by exact_mod_cast hR
+  have h1 : x r ^ 2 ≤ B ^ 2 := by
+    rw [← sq_abs]
+    exact pow_le_pow_left₀ (abs_nonneg _) (hx r) 2
+  have h2 : (∑ r', (x r - x r') ^ 2) / R ≤ 4 * B ^ 2 := by
+    rw [div_le_iff₀ hRpos]
+    calc ∑ r', (x r - x r') ^ 2 ≤ ∑ _r' : Fin R, 4 * B ^ 2 :=
+          Finset.sum_le_sum fun r' _ => by
+            have ha := abs_le.mp (hx r)
+            have hb := abs_le.mp (hx r')
+            have h3 : |x r - x r'| ≤ 2 * B := by
+              rw [abs_le]
+              constructor <;> linarith
+            calc (x r - x r') ^ 2 = |x r - x r'| ^ 2 := (sq_abs _).symm
+              _ ≤ (2 * B) ^ 2 := pow_le_pow_left₀ (abs_nonneg _) h3 2
+              _ = 4 * B ^ 2 := by ring
+      _ = 4 * B ^ 2 * R := by
+          rw [Finset.sum_const, Finset.card_univ, Fintype.card_fin, nsmul_eq_mul]
+          ring
+  unfold speakerShiftCost
+  have hs : (0 : ℝ) ≤ c.sync := c.sync.coe_nonneg
+  have ht : (0 : ℝ) ≤ c.tracking := c.tracking.coe_nonneg
+  nlinarith [mul_le_mul_of_nonneg_left h1 ht, mul_le_mul_of_nonneg_left h2 hs]
 
 /-- The uniform law between `-Θ` and `Θ` gives the numbers within `τ` of the
 two ends a probability of at most `τ / Θ`. -/
@@ -128,6 +163,16 @@ def starMargin (m : GenerativeWorld H R) (f : Member H R) (c : Weights) : ℝ≥
   ENNReal.ofReal (((c.sync : ℝ) + (c.tracking : ℝ)) * (f.roundTripSum m / 2) ^ 2
     * (f.roundTripSum m / f.offsetRange))
 
+/-- The members in which the weight of missed samples is large enough that
+no solution through the sender within the speed bound `u` gains by not
+playing frames. Six times the largest cost of a shift through one speaker
+(the weight of tracking plus four times the weight of synchronization, times
+the square of half of `f.roundTripSum m`) is at most the weight of missed
+samples times `1 - u` times the rate. -/
+def MissedWeightPays (m : GenerativeWorld H R) (f : Member H R) (c : Weights) (u : ℝ) : Prop :=
+  6 * (((c.tracking : ℝ) + 4 * (c.sync : ℝ)) * (f.roundTripSum m / 2) ^ 2)
+    ≤ (c.missed : ℝ) * (1 - u) * m.rate
+
 section Margin
 
 variable [DecidableEq H]
@@ -190,6 +235,54 @@ theorem reflectShift_of_mem (m : GenerativeWorld H R) (f : Member H R) (k : m.Re
     rw [ite_eq_left hy]
   rw [reflectShift, e2, hval, reflectScale_mul]
   ring
+
+/-- The reflection shifts the timeline of a receiving host by at most the
+least round-trip time between the sender and the host. -/
+theorem abs_reflectShift_le (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost)
+    (y : Component H R → ℝ) : |reflectShift m f y k.1| ≤ f.roundTrip m.sender k.1 := by
+  by_cases hy : y (.offset k.1) ∈ Set.Icc (-f.offsetRange) f.offsetRange
+      ∧ y (.offset k.1) + reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)
+        ∈ Set.Icc (-f.offsetRange) f.offsetRange
+  · have h := reflectShift_of_mem m f k y hy
+    have ha := abs_asymmetry_le m f y k.1
+    have e : reflectShift m f y k.1 = -(2 * (canonicalDraw y).asymmetry m f k.1) := by
+      linarith
+    rw [e, abs_neg, abs_mul, abs_of_pos (by norm_num : (0 : ℝ) < 2)]
+    linarith
+  · obtain ⟨-, e2⟩ := reflect_apply m f k y
+    have hval : (reflectPair (reflectScale m f k) f.offsetRange
+        (y (m.senderSplit k), y (.offset k.1))).2 = y (.offset k.1) := by
+      show (if y (.offset k.1) ∈ Set.Icc (-f.offsetRange) f.offsetRange
+            ∧ y (.offset k.1) + reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)
+              ∈ Set.Icc (-f.offsetRange) f.offsetRange then
+          ((1 - y (m.senderSplit k),
+            y (.offset k.1) + reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)) :
+              ℝ × ℝ)
+        else (y (m.senderSplit k), y (.offset k.1))).2 = _
+      rw [ite_eq_right hy]
+    rw [reflectShift, e2, hval, sub_self, abs_zero]
+    exact (f.roundTrip_pos _ _).le
+
+/-- **In a member in which the weight of missed samples pays, it pays in
+every outcome**: six times the cost, through any one speaker, of half the
+shifts of the reflection is at most the weight of missed samples times
+`1 - u` times the rate. -/
+theorem MissedWeightPays.threshold {m : GenerativeWorld H R} {f : Member H R} {c : Weights}
+    {u : ℝ} (hpay : m.MissedWeightPays f c u) (hnos : ∀ r, m.host r ≠ m.sender) (hR : 0 < R)
+    (y : Component H R → ℝ) (r : Fin R) :
+    6 * speakerShiftCost c (fun r => reflectShift m f y (m.host r) / 2) r
+      ≤ (c.missed : ℝ) * (1 - u) * m.rate := by
+  have hτle : ∀ r, f.roundTrip m.sender (m.host r) ≤ f.roundTripSum m := fun r =>
+    Finset.single_le_sum (f := fun r => f.roundTrip m.sender (m.host r))
+      (fun r _ => (f.roundTrip_pos _ _).le) (Finset.mem_univ r)
+  have hx : ∀ r, |reflectShift m f y (m.host r) / 2| ≤ f.roundTripSum m / 2 := fun r => by
+    have h := abs_reflectShift_le m f ⟨m.host r, hnos r⟩ y
+    rw [abs_div, abs_of_pos (by norm_num : (0 : ℝ) < 2)]
+    have h' : |reflectShift m f y (m.host r)| ≤ f.roundTripSum m := h.trans (hτle r)
+    linarith
+  have h := speakerShiftCost_le c hR hx r
+  unfold MissedWeightPays at hpay
+  linarith
 
 /-- The reflection of a receiving host moves the offset of its clock out of
 the range with a probability of at most the least round-trip time between the
@@ -378,11 +471,12 @@ theorem ae_cost_eq (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.
   exact asymmetry_idealWorld hmem.noiseless y (m.host r)
 
 /-- **The baseline is one of the compared solutions** at every noiseless
-member within the delivery margin. -/
+member within the delivery margin, for every speed bound that is at least its
+slew. -/
 theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
     (hmem : m.NoiselessWithMargin lookahead f) (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h)
-    (hcl : c.latency = 0) (hcr : c.roughness = 0) (hR : 0 < R) :
-    m.StarSolutions f lookahead c Payload (solution p) where
+    (hcl : c.latency = 0) (hcr : c.roughness = 0) (hR : 0 < R) {u : ℝ} (hslew : p.slew ≤ u) :
+    m.StarSolutions f lookahead c u Payload (solution p) where
   star := by
     have h := fixedDelay_isStar (R := R) p
     rw [hp.sender] at h
@@ -395,40 +489,43 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
         (p := fun d w => (solution p : Solution H R Payload).cost w lookahead c
           = ENNReal.ofReal (shiftCost c fun r => d.asymmetry m f (m.host r)))
         (ae_cost_eq p hp hnos hmem hex hcl hcr hR)⟩
-  progress := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
-    filter_upwards [ae_idealWorld hmem.noiseless hex] with y hy
-    exact progress p _ _ (IdealConstantWorld.withinBounds hy) lookahead)
-  plays := (almostSurely_iff m f hmem.noiseless hex _).mpr (by
-    filter_upwards [ae_idealWorld hmem.noiseless hex] with y hy
-    obtain ⟨N, hN⟩ := playTime_of_ideal p _ _ hy hnos lookahead hp.sender hp.rate
-      hp.speakers hp.nodup hp.latency hp.copies hp.period hp.slew_pos hp.slew_lt
-      (margin_idealWorld hmem y)
-    exact ⟨N, fun n hn r => by rw [hN n hn r]; rfl⟩)
+  withinSpeed := (almostSurely_iff m f hmem.noiseless hex _).mpr
+    (Filter.Eventually.of_forall fun y =>
+      withinSpeed_of_linear p (canonicalWorld m f hex y) lookahead hp.slew_pos.le m.rate_pos
+        (t₀ := f.captureStart - (canonicalDraw y).offset m.sender) (fun n => rfl)
+        (fun r => f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))
+        (fun r k => rfl) hslew)
 
 open Classical in
-/-- **The baseline against solutions through the sender, within a
-known margin.** Consider a generative model in which no speaker is on the
-sender's host, and weights with no weight on latency or roughness. Let the
-baseline be configured for the model. In every random world of every
-noiseless member within the delivery margin, with any number of hosts and
-speakers, the baseline's expected cost exceeds that of no star solution
-compared at that member by more than `starMargin`. The statement is about
-every member of the model: for every other member the margin is `⊤`, and the
-theorem says nothing about it. -/
+/-- **The baseline against solutions through the sender within a speed
+bound, within a known margin.** Consider a generative model in which no
+speaker is on the sender's host, weights with no weight on latency or
+roughness, and a speed bound `u < 1` that is at least the baseline's slew.
+Let the baseline be configured for the model. Take the noiseless members
+within the delivery margin in which the weight of missed samples pays
+(`MissedWeightPays`). In every random world of each of them, with any number
+of hosts and speakers, the baseline's expected cost exceeds that of no star
+solution compared at that member by more than `starMargin`. The compared
+solutions are the star solutions with measurable cost whose speed stays
+within `u` of one; nothing is assumed about which frames they play. The
+statement is about every member of the model: for every other member the
+margin is `⊤`, and the theorem says nothing about it. -/
 theorem within_starMargin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hcl : c.latency = 0)
-    (hcr : c.roughness = 0) (hR : 0 < R) :
-    m.OptimalWithin (fun f => m.StarSolutions f lookahead c) lookahead c
-      (fun f => if m.NoiselessWithMargin lookahead f then starMargin m f c else ⊤)
+    (hcr : c.roughness = 0) (hR : 0 < R) {u : ℝ} (hslew : p.slew ≤ u) (hu : u < 1) :
+    m.OptimalWithin (fun f => m.StarSolutions f lookahead c u) lookahead c
+      (fun f => if m.NoiselessWithMargin lookahead f ∧ m.MissedWeightPays f c u then
+        starMargin m f c else ⊤)
       (solution p : Solution H R Payload) := by
+  have hu0 : 0 ≤ u := hp.slew_pos.le.trans hslew
   refine ⟨fun f hε => ?_, fun f Ω _ P world hW Msg' τ hτ => ?_⟩
-  · by_cases hmem : m.NoiselessWithMargin lookahead f
-    · exact starSolutions p hp hnos hmem hex hcl hcr hR
+  · by_cases hmem : m.NoiselessWithMargin lookahead f ∧ m.MissedWeightPays f c u
+    · exact starSolutions p hp hnos hmem.1 hex hcl hcr hR hslew
     · exact (hε (ite_eq_right hmem)).elim
   · beta_reduce
-    by_cases hmem : m.NoiselessWithMargin lookahead f
-    · have hσ := starSolutions (c := c) p hp hnos hmem hex hcl hcr hR
-      have hf := hmem.noiseless
+    by_cases hmem : m.NoiselessWithMargin lookahead f ∧ m.MissedWeightPays f c u
+    · have hσ := starSolutions (c := c) p hp hnos hmem.1 hex hcl hcr hR hslew
+      have hf := hmem.1.noiseless
       have hW' : m.Holds f P world := hW
       rw [ite_eq_left hmem]
       calc (solution p : Solution H R Payload).expectedCost P world lookahead c
@@ -438,11 +535,12 @@ theorem within_starMargin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r
         _ = ∫⁻ y, ENNReal.ofReal
                 (shiftCost c fun r => (canonicalDraw y).asymmetry m f (m.host r))
               ∂Measure.pi (canonicalLaw m f) :=
-            lintegral_congr_ae (ae_cost_eq p hp hnos hmem hex hcl hcr hR)
+            lintegral_congr_ae (ae_cost_eq p hp hnos hmem.1 hex hcl hcr hR)
         _ ≤ starLowerBound m f c + starMargin m f c := lintegral_asymmetry_le m f c hnos hR
         _ ≤ τ.expectedCost P world lookahead c + starMargin m f c := by
             gcongr
-            exact hτ.le_expectedCost hf hex hR hW'
+            exact hτ.le_expectedCost hf hex hR hu0 hu
+              (fun y r => hmem.2.threshold hnos hR y r) hW'
     · rw [ite_eq_right hmem, add_top]
       exact le_top
 
@@ -520,14 +618,27 @@ private def exampleParams : Params (Fin 3) where
   period := 1
   slew := 1 / 2
 
+/-- The example's weights: one on synchronization and on tracking, sixty on
+missed samples, none on the other objectives. -/
+private def exampleWeights : Weights where
+  sync := 1
+  latency := 0
+  tracking := 1
+  roughness := 0
+  missed := 60
+  discontinuities := 0
+
 /-- **The conditions of `within_starMargin` can be met.** There are a generative
-model, a configuration of the baseline and a noiseless member within the
-delivery margin, with a random world, that satisfy the conditions of the
+model, a configuration of the baseline, weights, a speed bound and a
+noiseless member within the delivery margin in which the weight of missed
+samples pays, with a random world, that satisfy the conditions of the
 theorem. -/
 theorem within_starMargin_conditions :
-    ∃ (m : GenerativeWorld (Fin 3) 2) (p : Params (Fin 3)) (f : Member (Fin 3) 2),
+    ∃ (m : GenerativeWorld (Fin 3) 2) (p : Params (Fin 3)) (f : Member (Fin 3) 2)
+        (c : Weights) (u : ℝ),
       p.Fits m ∧ (∀ r, m.host r ≠ m.sender) ∧ (∀ h, h = m.sender ∨ ∃ r, m.host r = h)
-        ∧ m.NoiselessWithMargin 1 f
+        ∧ c.latency = 0 ∧ c.roughness = 0 ∧ p.slew ≤ u ∧ u < 1
+        ∧ m.NoiselessWithMargin 1 f ∧ m.MissedWeightPays f c u
         ∧ ∃ (Ω : Type) (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
             m.Holds f P world := by
   have hf : exampleMember.Noiseless :=
@@ -569,8 +680,12 @@ theorem within_starMargin_conditions :
     ⟨hf, fun r => by
       simp only [exampleModel, exampleMember]
       norm_num⟩
-  exact ⟨exampleModel, exampleParams, exampleMember, hfits, hnos, hex, hmargin,
-    exists_holds_of_noiseless _ _ hf hex⟩
+  have hpays : exampleModel.MissedWeightPays exampleMember exampleWeights (1 / 2) := by
+    simp only [GenerativeWorld.MissedWeightPays, Member.roundTripSum, exampleModel,
+      exampleMember, exampleWeights, Fin.sum_univ_two]
+    norm_num
+  exact ⟨exampleModel, exampleParams, exampleMember, exampleWeights, 1 / 2, hfits, hnos, hex,
+    rfl, rfl, le_rfl, by norm_num, hmargin, hpays, exists_holds_of_noiseless _ _ hf hex⟩
 
 end Example
 

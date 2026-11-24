@@ -46,6 +46,7 @@ public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Solutions.FixedDelay.NoLoss
+public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
@@ -1730,6 +1731,30 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.margin_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.margin_idealWorld
+
+/-- info: 'Unisono.Solutions.FixedDelay.chosen_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.chosen_of_plays
+
+/-- info: 'Unisono.Solutions.FixedDelay.step_le_slew' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.step_le_slew
+
+/-- info: 'Unisono.Solutions.FixedDelay.withinSpeed_of_linear' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.withinSpeed_of_linear
+
+/-- info: 'Unisono.Spec.speakerShiftCost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.speakerShiftCost_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.abs_reflectShift_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.abs_reflectShift_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.MissedWeightPays.threshold' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.MissedWeightPays.threshold
 
 /-- info: 'Unisono.Solutions.FixedDelay.ae_idealWorld' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

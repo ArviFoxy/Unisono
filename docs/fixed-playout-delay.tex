@@ -414,7 +414,11 @@ the mean of that cost over the outcomes.
 Among the solutions whose hosts exchange messages only with the sender, no
 compared solution has an expected cost that is lower by more than a known
 margin (\lean{within\_starMargin} in
-\path{lean/Unisono/Solutions/FixedDelay/StarMargin.lean}). The specification
+\path{lean/Unisono/Solutions/FixedDelay/StarMargin.lean}). The compared
+solutions are those within a speed bound below one; the baseline is one of
+them when its slew is at most that bound, because its position advances by
+one frame per output sample within the slew (\lean{step\_le\_slew} in
+\path{lean/Unisono/Solutions/FixedDelay/Speed.lean}). The specification
 states the theorem, its conditions and what it does not cover. In
 particular, a solution whose receiving hosts also exchange messages with
 each other can do better than the baseline.

@@ -1192,11 +1192,20 @@ member is a measurable function of what is drawn
 (\lean{GenerativeWorld.\allowbreak measurableCost}): there is a measurable
 function of the draw that equals the cost of the solution in almost every
 outcome, in every random world of the member. This is the least that makes
-the expected cost of a solution in a member one number. A speaker that does not play a frame adds
-nothing to that frame's synchronization and tracking costs, so with
-$w_M = 0$ a solution that plays nothing has cost zero and is optimal. A
-statement about synchronization and tracking alone therefore needs either
-$w_M > 0$ or a class of solutions that play every frame.
+the expected cost of a solution in a member one number.
+
+No comparison in this document limits which frames a solution plays. A
+speaker that does not play a frame adds nothing to that frame's
+synchronization, latency and tracking costs; what such a frame costs is the
+missed samples. An output sample that plays nothing counts one, and a jump
+counts the frames that it skips. Two things follow. With $w_M = 0$ a
+solution that plays nothing has cost zero, so a lower bound on the cost
+needs $w_M > 0$. And a playback that moves forward ever more slowly, and
+never reaches the next frame, plays no frame, counts no missed sample and no
+discontinuity, and has no roughness in the long run: its cost is zero for
+all weights. A lower bound on the cost therefore holds only among the
+solutions within the speed bound $u_{\max}$ of
+Section~\ref{sec:solutions}, with $u_{\max} < 1$.
 \end{remark}
 
 \subsection{The baseline among solutions through the sender}\label{sec:star-optimal}
@@ -1231,28 +1240,37 @@ $x_1, \dots, x_R$, one for each speaker, is
 a frame that every speaker $r$ plays $x_r$ later than the target latency.
 
 \begin{definition}[The compared star solutions]
-At a member, for a lookahead and weights, the compared star solutions are
-the star solutions with the following properties in that member
+At a member, for a lookahead, weights and a speed bound $u_{\max}$, the
+compared star solutions are the star solutions with the following
+properties in that member
 (\lean{GenerativeWorld.\allowbreak StarSolutions}).
 \begin{itemize}
 \item The cost in the member is a measurable function of what is drawn
   (\lean{measurableCost}).
-\item In almost every outcome of every random world of the member, the run
-  has an event after every true time, and from some frame on every speaker
-  plays every frame.
+\item In almost every outcome of every random world of the member, the
+  speed stays within $u_{\max}$ of one at every step of continuous
+  playback (\lean{Solution.WithinSpeed}).
 \end{itemize}
+Nothing is required about which frames a solution plays, or about its run.
 \end{definition}
 
 \begin{theorem}[The baseline among star solutions]\label{thm:star-optimal}
-Consider a generative world in which no speaker is on the sender's host, and
-weights with $w_\Lambda = w_V = 0$. Let the baseline play at the target
-latency $L^*$, send the stream to every speaker's host, send each message at
-least once, and have a slew between zero and one. Call a member
-\emph{covered} when it is noiseless and, for every speaker $r$,
+Consider a generative world in which no speaker is on the sender's host,
+weights with $w_\Lambda = w_V = 0$, and a speed bound $u_{\max} < 1$. Let
+the baseline play at the target latency $L^*$, send the stream to every
+speaker's host, send each message at least once, and have a slew that is
+positive and at most $u_{\max}$. Call a member \emph{covered} when it is
+noiseless, for every speaker $r$
 \[
   L^* > \frac{a + 2(m - 1)}{\rho} + \frac{\tau_{h_* h_r}}{2} + \lambda
 \]
-(\lean{NoiselessWithMargin}). Then the expected cost of the baseline exceeds
+(\lean{NoiselessWithMargin}), and the weight of missed samples is large
+enough against the round-trip times,
+\[
+  6\,(w_\Theta + 4\,w_S)\,\Bigl(\frac{\tau_\Sigma}{2}\Bigr)^2
+    \le w_M\,(1 - u_{\max})\,\rho
+\]
+(\lean{MissedWeightPays}). Then the expected cost of the baseline exceeds
 that of no compared star solution by more than
 \[
   \varepsilon(f) =
@@ -1286,7 +1304,14 @@ The proof has three parts.
   messages only with the sender observes the same in the worlds of the two
   outcomes. A star solution therefore plays the same in both, and its costs
   in the two add up to at least twice the shift cost of the asymmetries
-  (\lean{Solution.\allowbreak cost\_shiftStarKeepPeers\_add\_ge}). The
+  (\lean{Solution.\allowbreak cost\_shiftStar\_add\_ge\_of\_speed}). A
+  speaker that plays a frame pays for its own shift, and two speakers that
+  both play it pay for the difference of their shifts. A frame that a
+  speaker never plays is paid for by missed samples: within the speed bound
+  a playback leaves at most three frames unplayed for each missed sample,
+  and the condition on $w_M$ makes these payments at least what the frame
+  would have cost. A run that has no event after some true time plays
+  nothing from then on, which costs $w_M \rho$. The
   reflection keeps the law of the outcomes
   (\lean{measurePreserving\_reflect}), because the law of the split is
   symmetric and the law of the offset is uniform. The two costs therefore
@@ -1312,10 +1337,11 @@ The theorem compares the baseline with star solutions only. With two or more
 receiving hosts, a solution whose receiving hosts also exchange messages
 with each other can have a lower expected cost, so the baseline is not
 optimal among all solutions. The theorem covers noiseless members only:
-for members with pauses or with clock wander its margin is $\infty$. The
-compared solutions leave out every star solution that, with positive
-probability, does not play every frame from some frame on, or whose run
-does not advance past every true time, whatever its cost. The margin
+for members with pauses or with clock wander its margin is $\infty$. It
+covers only members in which the weight of missed samples is large enough
+against the round-trip times; for the others its margin is $\infty$ as
+well. The compared solutions are limited by the speed bound alone: nothing
+is assumed about which frames they play. The margin
 is small when the offsets of the clocks are spread over a range much larger
 than the round-trip times, as for clocks that nothing has synchronized; it
 is not small otherwise. No solution is proved optimal among all solutions,

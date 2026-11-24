@@ -5,6 +5,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Spec.Optimality
+public import Unisono.Spec.ShiftedPlayback
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Models.GenerativeReflection
 
@@ -13,25 +14,30 @@ public import Unisono.Spec.Models.GenerativeReflection
 
 In a noiseless member of the generative model, with any number of hosts and
 speakers, every star solution of a class pays at least `starLowerBound` in
-expected cost (`StarSolutions.le_expectedCost`). A star
-solution is one whose hosts exchange messages only with the sender.
+expected cost (`StarSolutions.le_expectedCost`), when the weight of missed
+samples is large enough for the member. A star solution is one whose hosts
+exchange messages only with the sender.
 
 * `StarSolutions` is the class of solutions that the bound holds for at a
-  member: the star solutions whose cost in that member is a measurable
-  function of what is drawn, whose run has an event after every true time,
-  and which play every frame from some frame on. The last two are required
-  in almost every outcome of every random world of the member.
-  The class asks nothing of a solution in other members.
+  member, for a speed bound `u`: the star solutions whose cost in that
+  member is a measurable function of what is drawn, and whose speed stays
+  within `u` of one in almost every outcome of every random world of the
+  member. The class asks nothing about which frames a solution plays,
+  nothing about its run, and nothing of a solution in other members.
 * `starLowerBound` is the mean, over the outcomes of the concrete random
   world, of the cost of half the shifts of the reflection
   (`Unisono.Spec.Models.GenerativeReflection`).
 
+Without a bound on the speed no lower bound holds: a playback whose position
+creeps forward without ever reaching the next frame plays no frame, counts
+no missed sample and no discontinuity, and costs nothing.
+
 The proof pairs every outcome with its reflection. A star solution plays the
 same in the worlds of the two outcomes, which differ by a shift of the
 hosts' timelines, so its costs in the two add up to at least twice the cost
-of half the shift (`Solution.cost_shiftStarKeepPeers_add_ge`). The
-reflection keeps the law of the outcomes, so the two costs have the same
-mean.
+of half the shift (`Solution.cost_shiftStar_add_ge_of_speed`); the missed
+samples pay for the frames that a speaker never plays. The reflection keeps
+the law of the outcomes, so the two costs have the same mean.
 -/
 
 @[expose] public noncomputable section
@@ -51,18 +57,16 @@ def AlmostSurely (m : GenerativeWorld H R) (f : Member H R) (p : World H R → P
     m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) → ∀ᵐ ω ∂P, p (world ω)
 
 /-- **The solutions that a solution through the sender is compared with at
-the member `f`**, for a lookahead and weights. -/
+the member `f`**, for a lookahead, weights and a speed bound `u`. -/
 structure StarSolutions (m : GenerativeWorld H R) (f : Member H R) (lookahead : ℕ+)
-    (c : Weights) (Msg : Type) (τ : Solution H R Msg) : Prop where
+    (c : Weights) (u : ℝ) (Msg : Type) (τ : Solution H R Msg) : Prop where
   /-- Hosts exchange messages only with the sender. -/
   star : τ.IsStar m.sender
   /-- The cost in the member is a measurable function of what is drawn. -/
   measurable : m.measurableCost f lookahead c Msg τ
-  /-- Almost surely, the run has an event after every true time. -/
-  progress : m.AlmostSurely f fun w => ∀ T : Time, ∃ n, T < τ.eventTime w lookahead n
-  /-- Almost surely, every speaker plays every frame from some frame on. -/
-  plays : m.AlmostSurely f fun w =>
-    ∃ N, ∀ n, N ≤ n → ∀ r, (w.playTime (τ.plays w lookahead) r n).isSome
+  /-- Almost surely, the speed of continuous playback stays within `u` of
+  one. -/
+  withinSpeed : m.AlmostSurely f fun w => τ.WithinSpeed w lookahead u
 
 section Canonical
 
@@ -120,29 +124,44 @@ def starLowerBound (m : GenerativeWorld H R) (f : Member H R) (c : Weights) : �
   ∫⁻ y, ENNReal.ofReal (shiftCost c fun r => reflectShift m f y (m.host r) / 2)
     ∂Measure.pi (canonicalLaw m f)
 
-/-- The lower bound holds on the concrete random world. -/
-theorem StarSolutions.le_canonical {τ : Solution H R Msg}
-    (hτ : m.StarSolutions f lookahead c Msg τ) (hf : f.Noiseless)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) :
+/-- The lower bound holds on the concrete random world, when the weight of
+missed samples is large enough in every outcome. -/
+theorem StarSolutions.le_canonical {τ : Solution H R Msg} {u : ℝ}
+    (hτ : m.StarSolutions f lookahead c u Msg τ) (hf : f.Noiseless)
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) (hu0 : 0 ≤ u) (hu1 : u < 1)
+    (hthr : ∀ y r, 6 * speakerShiftCost c (fun r => reflectShift m f y (m.host r) / 2) r
+      ≤ (c.missed : ℝ) * (1 - u) * m.rate) :
     starLowerBound m f c
       ≤ ∫⁻ y, τ.cost (canonicalWorld m f hex y) lookahead c ∂Measure.pi (canonicalLaw m f) := by
   have hcostm := aemeasurable_cost hτ.measurable hf hex
-  have hprog := (almostSurely_iff m f hf hex _).mp hτ.progress
-  have hplay := (almostSurely_iff m f hf hex _).mp hτ.plays
+  have hspeed := (almostSurely_iff m f hf hex _).mp hτ.withinSpeed
   have hT := measurePreserving_reflect m f
-  have hprog' := hT.quasiMeasurePreserving.ae hprog
   -- In almost every outcome, the costs in the outcome and in its reflection
   -- add up to at least twice the cost of half the shift.
   have hpoint : ∀ᵐ y ∂Measure.pi (canonicalLaw m f),
       ENNReal.ofReal (2 * shiftCost c fun r => reflectShift m f y (m.host r) / 2)
         ≤ τ.cost (canonicalWorld m f hex y) lookahead c
           + τ.cost (canonicalWorld m f hex (reflect m f y)) lookahead c := by
-    filter_upwards [hprog, hplay, hprog'] with y h1 h3 h4
-    obtain ⟨N, hN⟩ := h3
-    rw [canonicalWorld_reflect m f hex y] at h4 ⊢
-    exact τ.cost_shiftStarKeepPeers_add_ge (canonicalWorld m f hex y) lookahead c hτ.star
-      (reflectShift m f y) (reflectShift_sender m f y) (reflectShift_star m f hex y) h1 h4
-      hR N hN (capture_unbounded_canonical m f hex y)
+    filter_upwards [hspeed] with y h1
+    rw [canonicalWorld_reflect m f hex y]
+    refine τ.cost_shiftStar_add_ge_of_speed (canonicalWorld m f hex y) lookahead c hτ.star
+      (reflectShift m f y) (reflectShift_sender m f y) (reflectShift_star m f hex y) hR
+      m.rate_pos (t₀ := f.captureStart - (canonicalDraw y).offset m.sender) (fun n => rfl)
+      (fun r => f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))
+      (fun r k => rfl) (fun r T => ?_) hu0 hu1 h1 (hthr y)
+    -- Every playback device requests blocks without end.
+    obtain ⟨b, hb⟩ := exists_nat_gt ((T + m.lead
+      - (f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))) * m.rate)
+    refine ⟨b, ?_⟩
+    show T < f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r)
+      + ((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead
+    have hbs : (b : ℝ) ≤ ((b * m.blockSize : ℕ) : ℝ) := by
+      exact_mod_cast Nat.le_mul_of_pos_right b m.blockSize_pos
+    have h2 : (b : ℝ) / m.rate ≤ ((b * m.blockSize : ℕ) : ℝ) / m.rate :=
+      div_le_div_of_nonneg_right hbs m.rate_pos.le
+    have h3 : T + m.lead - (f.speakerStart (m.device r) - (canonicalDraw y).offset (m.host r))
+        < (b : ℝ) / m.rate := by rwa [lt_div_iff₀ m.rate_pos]
+    linarith
   -- The reflection keeps the law, so the two costs have the same mean.
   have hinv : ∫⁻ y, τ.cost (canonicalWorld m f hex (reflect m f y)) lookahead c
         ∂Measure.pi (canonicalLaw m f)
@@ -166,16 +185,23 @@ theorem StarSolutions.le_canonical {τ : Solution H R Msg}
     rw [lintegral_add_left' hcostm, hinv, two_mul]
   exact (ENNReal.mul_le_mul_iff_right two_ne_zero ENNReal.ofNat_ne_top).mp h2
 
-/-- **What no solution through the sender can avoid.** In every random world
-of a noiseless member, with any number of hosts and speakers, the expected
-cost of every compared star solution is at least `starLowerBound`. -/
-theorem StarSolutions.le_expectedCost {τ : Solution H R Msg}
-    (hτ : m.StarSolutions f lookahead c Msg τ) (hf : f.Noiseless)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) {Ω : Type}
-    [MeasurableSpace Ω] {P : Measure Ω} {world : Ω → World H R} (hW : m.Holds f P world) :
+/-- **What no solution through the sender within a speed bound can avoid.**
+Consider a noiseless member, with any number of hosts and speakers, and a
+speed bound `u < 1`. Let the weight of missed samples be large enough in
+every outcome: `6 * speakerShiftCost` of half the shifts of the reflection
+is at most `c.missed * (1 - u) * m.rate`, for every speaker. Then in every
+random world of the member the expected cost of every compared star solution
+is at least `starLowerBound`. -/
+theorem StarSolutions.le_expectedCost {τ : Solution H R Msg} {u : ℝ}
+    (hτ : m.StarSolutions f lookahead c u Msg τ) (hf : f.Noiseless)
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hR : 0 < R) (hu0 : 0 ≤ u) (hu1 : u < 1)
+    (hthr : ∀ y r, 6 * speakerShiftCost c (fun r => reflectShift m f y (m.host r) / 2) r
+      ≤ (c.missed : ℝ) * (1 - u) * m.rate)
+    {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω} {world : Ω → World H R}
+    (hW : m.Holds f P world) :
     starLowerBound m f c ≤ τ.expectedCost P world lookahead c := by
   rw [expectedCost_eq_canonical hτ.measurable hf hex hW]
-  exact hτ.le_canonical hf hex hR
+  exact hτ.le_canonical hf hex hR hu0 hu1 hthr
 
 end Canonical
 

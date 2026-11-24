@@ -75,14 +75,19 @@ simulation and integration tests (see `PRINCIPLES.md`):
     which are the members with every disturbance switched off. A star
     solution is one whose hosts exchange messages only with the sender. The theorem is
     stated for every member of `GenerativeWorld`, with the margin `⊤` for
-    every member that it does not cover. In every noiseless member within
-    the baseline's delivery margin, with any number of hosts and speakers,
-    the expected cost of `Unisono.Solutions.FixedDelay` exceeds that of no
-    compared star solution (`GenerativeWorld.StarSolutions`) by more than the sum of the weights of
+    every member that it does not cover. The compared star solutions
+    (`GenerativeWorld.StarSolutions`) are those with measurable cost whose
+    speed stays within a bound `u < 1` of one; nothing is assumed about
+    which frames they play. In every noiseless member within the baseline's
+    delivery margin in which the weight of missed samples is large enough
+    (`GenerativeWorld.MissedWeightPays`), with any number of hosts and
+    speakers, the expected cost of `Unisono.Solutions.FixedDelay` exceeds
+    that of no compared star solution by more than the sum of the weights of
     synchronization and tracking times `ρ³ / (4 Θ)`, where `ρ` is the sum
     over the speakers of the least round-trip time between the sender and the
     speaker's host and `Θ` bounds the clock offsets. The theorem needs zero
-    weights on latency and roughness and no speaker on the sender's host.
+    weights on latency and roughness, no speaker on the sender's host, and a
+    baseline whose slew is at most `u`.
   - The controller (`Unisono.Solutions.Controller`): the sender announces a
     level with every block, the latency that every speaker is to hold, and
     the hosts estimate the sender's clock and the clocks of their audio
