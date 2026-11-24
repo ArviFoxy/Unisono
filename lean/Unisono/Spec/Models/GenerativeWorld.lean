@@ -33,10 +33,11 @@ it has to estimate from what it observes.
 
 ## What a solution is told (`GenerativeWorld`)
 
-The hosts, which one is the sender, which host drives each speaker, and the
-settings of the devices and of the application: the nominal rate, the number
-of frames in a block, the request lead (how long before a block starts to
-play its device asks for it) and the target latency. A solution is also told
+The hosts, which one is the sender, which host drives each speaker, which
+speakers are outputs of one audio device, and the settings of the devices and
+of the application: the nominal rate, the number of frames in a block, the
+request lead (how long before a block starts to play its device asks for it)
+and the target latency. A solution is also told
 one number of the prior: the shape `k > 0` of the law of the split of a pair
 of hosts (below). The weights of the objectives are known to a solution as
 well, because optimality is stated for given weights
@@ -62,12 +63,18 @@ told them.
 * `wanderSize h` and `wanderTime h`: the standard deviation of the changes of
   the rate of host `h`'s clock, and the time over which those changes lose
   their correlation.
+* `deviceWanderSize x` and `deviceWanderTime x`: the same for the clock of the
+  audio device `x`. The audio devices are the capture device and the
+  playback devices.
+* `reportSize x` and `reportTime x`: the standard deviation of the error of
+  the timestamps that the audio device `x` reports, and the time over which
+  that error loses its correlation.
 * `offsetRange`: clock offsets lie within this distance of zero.
 
 A member also fixes the readings of their hosts' clocks at which the devices
 start (`captureStart`, `speakerStart`). They are not known before the devices
-start, and nothing about them has to be estimated: each host reads the start
-of its own device from the first timestamp that the device reports.
+start; each host learns the start of its own device from the timestamps that
+the device reports.
 
 ## What is drawn at random (`GenerativeWorld.Draw`, `GenerativeWorld.Prior`)
 
@@ -86,6 +93,13 @@ All of the following are independent of one another.
 * The **wander** of each clock: a stationary Gaussian process with mean zero
   whose covariance between true times `s` and `t` is
   `wanderSize ^ 2 * exp (-|s - t| / wanderTime)`, with continuous paths.
+* The logarithm of the **mean rate** of the clock of each audio device, with
+  the same law as that of a host's clock, and the **wander** of that clock:
+  a stationary Gaussian process of the same kind, with the size and the time
+  of the device.
+* The **error of the reports** of each audio device: a stationary Gaussian
+  process with mean zero whose covariance between true times `s` and `t` is
+  `reportSize ^ 2 * exp (-|s - t| / reportTime)`, with continuous paths.
 * The **pauses** of each directed link and of each host: pauses begin at the
   instants of a Poisson process of the member's rate, and their lengths are
   independent of one another and have the member's law. The draw records the
@@ -109,8 +123,20 @@ All of the following are independent of one another.
   delays every receiver at once: links and hosts are drawn independently,
   and the delays of two receivers are not independent. Delays are positive
   for every draw. No message is lost.
-* Every audio device runs on the clock of its host, in blocks of a fixed
-  size, and reports exact timestamps. The target latency is constant.
+* Every audio device has a clock of its own, which advances by the integral
+  of `exp (deviceLogRate x + deviceWander x)` (`Draw.deviceReading`). A
+  device starts when the clock of its host reads the member's start, and its
+  frame or output sample `n` occurs when its own clock has advanced by `n`
+  divided by the nominal rate since then. Speakers that are outputs of one
+  device share its clock. A playback device asks for a block the request
+  lead before the block's first output sample leaves, measured on the
+  device's clock. Blocks have a fixed size.
+* The timestamp that a device reports for a block is the reading of its
+  host's clock at the true time of the block's first frame or output sample,
+  plus the error of the device's reports at that time. A constant part of
+  such an error is not modelled: no host can tell it from a delay inside the
+  device.
+* The target latency is constant.
 
 ## A random world of the model (`GenerativeWorld.Holds`, `GenerativeWorld.laws`)
 
@@ -132,7 +158,7 @@ Loss; pauses that cluster in time; pauses and asymmetry that some links
 share because they share a switch or a radio channel; least delays and rates
 of pauses that change over time; a paused host that answers its own playback
 device late; time stamps that a kernel takes while the program is paused;
-audio devices with their own oscillators and inexact timestamps; clocks
+timestamps of an audio device that are grossly wrong for a while; clocks
 whose rate has more than one time scale. The specification document lists
 these limitations and what each one distorts.
 -/
@@ -154,6 +180,13 @@ structure GenerativeWorld (H : Type) (R : ℕ) where
   sender : H
   /-- The host of each speaker. -/
   host : Fin R → H
+  /-- The speaker that stands for the audio device of speaker `r`. Speakers
+  that are outputs of one device have the same one, and a speaker with a
+  device of its own stands for itself. -/
+  device : Fin R → Fin R
+  device_idem : ∀ r, device (device r) = device r
+  /-- The outputs of one device are driven by one host. -/
+  device_host : ∀ r, host (device r) = host r
   /-- The shape `k` of the law of every split: the split has the Beta law
   with both parameters equal to `shape`. A large shape means nearly symmetric
   pairs; shape one means that a direction's share of the round trip is
@@ -222,21 +255,40 @@ structure Member (H : Type) (R : ℕ) where
   apart is `exp (-1)`. -/
   wanderTime : H → ℝ
   wanderTime_pos : ∀ h, 0 < wanderTime h
+  /-- The standard deviation of the wander of the clock of each audio device.
+  The device `none` is the capture device, and `some r` is the playback
+  device that speaker `r` stands for. -/
+  deviceWanderSize : Option (Fin R) → ℝ
+  deviceWanderSize_nonneg : ∀ x, 0 ≤ deviceWanderSize x
+  /-- The time, in seconds, over which the wander of the clock of each audio
+  device loses its correlation. -/
+  deviceWanderTime : Option (Fin R) → ℝ
+  deviceWanderTime_pos : ∀ x, 0 < deviceWanderTime x
+  /-- The standard deviation of the error of the timestamps that each audio
+  device reports, in seconds. Zero means exact timestamps. -/
+  reportSize : Option (Fin R) → ℝ
+  reportSize_nonneg : ∀ x, 0 ≤ reportSize x
+  /-- The time, in seconds, over which the error of the timestamps of each
+  audio device loses its correlation. -/
+  reportTime : Option (Fin R) → ℝ
+  reportTime_pos : ∀ x, 0 < reportTime x
   /-- Clock offsets are uniform between `-offsetRange` and `offsetRange`, in
   seconds. -/
   offsetRange : ℝ
   offsetRange_pos : 0 < offsetRange
   /-- The reading of the sender's clock at which frame zero is captured. It
-  is not known before the device starts; the sender's host reads it from the
-  first timestamp that the capture device reports. -/
+  is not known before the device starts; the sender's host learns it from
+  the timestamps that the capture device reports. -/
   captureStart : ℝ
   /-- The reading of its host's clock at which output sample zero of each
-  speaker leaves. It is not known before the device starts; the speaker's
-  host reads it from the first timestamp that the playback device reports. -/
+  speaker leaves. The speakers of one device start together, at the start of
+  the speaker that stands for the device. It is not known before the device
+  starts; the speaker's host learns it from the timestamps that the playback
+  device reports. -/
   speakerStart : Fin R → ℝ
 
 /-- What is drawn at random: one outcome. -/
-structure Draw (H : Type) where
+structure Draw (H : Type) (R : ℕ) where
   /-- The share of the least round-trip time of hosts `i` and `j` that the
   direction from `i` to `j` takes. -/
   split : H → H → ℝ
@@ -255,11 +307,26 @@ structure Draw (H : Type) where
   /-- The paused time of host `h` that has begun between true time zero and
   each true time, in seconds. -/
   hostPaused : H → Time → ℝ
+  /-- The logarithm of the mean rate of the clock of each audio device. The
+  device `none` is the capture device, and `some r` is the playback device
+  that speaker `r` stands for. -/
+  deviceLogRate : Option (Fin R) → ℝ
+  /-- The wander of the clock of each audio device at each true time. -/
+  deviceWander : Option (Fin R) → Time → ℝ
+  /-- The error of the timestamps that each audio device reports, as a
+  function of the true time of what is reported, in seconds. -/
+  reportError : Option (Fin R) → Time → ℝ
 
 /-- What the clock of host `h` reads at true time `t`: its offset plus the
 integral of its rate, which is the exponential of `logRate h + wander h`. -/
-def Draw.reading (d : Draw H) (h : H) (t : Time) : ℝ :=
+def Draw.reading (d : Draw H R) (h : H) (t : Time) : ℝ :=
   d.offset h + ∫ x in (0 : ℝ)..t, Real.exp (d.logRate h + d.wander h x)
+
+/-- By how much the clock of the audio device `x` advances between true time
+zero and true time `t`: the integral of its rate, which is the exponential
+of `deviceLogRate x + deviceWander x`. -/
+def Draw.deviceReading (d : Draw H R) (x : Option (Fin R)) (t : Time) : ℝ :=
+  ∫ y in (0 : ℝ)..t, Real.exp (d.deviceLogRate x + d.deviceWander x y)
 
 /-- `v` is the backlog at true time `t` of a link or a host whose paused time
 is recorded by `paused`: the paused time that has begun and is not yet over.
@@ -282,41 +349,53 @@ def pauseLaw (count : ℝ≥0) (F : Measure ℝ) : Measure ℝ :=
   Measure.sum fun n : ℕ => poissonMeasure count {n} • sumLaw F n
 
 /-- The measurable sets of draws: those that the values of the splits, the
-offsets, the mean rates, the wander and the paused times determine. A function of
+offsets, the mean rates, the wander, the paused times, the clocks of the
+audio devices and the errors of their reports determine. A function of
 a draw is measurable when it is a measurable function of these values. -/
-instance : MeasurableSpace (Draw H) :=
+instance : MeasurableSpace (Draw H R) :=
   MeasurableSpace.comap
-    (fun d : Draw H =>
-      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused)) inferInstance
+    (fun d : Draw H R =>
+      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused,
+        d.deviceLogRate, d.deviceWander, d.reportError)) inferInstance
 
 /-- The components of a draw: the parts that are drawn independently of one another: the
 split of each pair of distinct hosts, the offset and the mean rate of each
 clock, the wander of each clock, the paused time of each directed link and
-the paused time of each host. -/
-inductive Component (H : Type) where
+of each host, and for each audio device the mean rate and the wander of its
+clock and the error of its reports. -/
+inductive Component (H : Type) (R : ℕ) where
   | split (z : {z : Sym2 H // ¬ z.IsDiag})
   | offset (h : H)
   | logRate (h : H)
   | wander (h : H)
   | linkPaused (i j : H)
   | hostPaused (h : H)
+  | deviceLogRate (x : Option (Fin R))
+  | deviceWander (x : Option (Fin R))
+  | reportError (x : Option (Fin R))
 
 /-- What kind of value each component is: a number, or a function of true
 time. -/
-def Component.Val : Component H → Type
+def Component.Val : Component H R → Type
   | .split _ => ℝ
   | .offset _ => ℝ
   | .logRate _ => ℝ
   | .wander _ => Time → ℝ
   | .linkPaused _ _ => Time → ℝ
   | .hostPaused _ => Time → ℝ
+  | .deviceLogRate _ => ℝ
+  | .deviceWander _ => Time → ℝ
+  | .reportError _ => Time → ℝ
 
-instance (p : Component H) : MeasurableSpace p.Val := by
+instance (p : Component H R) : MeasurableSpace p.Val := by
   cases p
   · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
+  · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
+  · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
+  · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
   · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
 
@@ -328,18 +407,21 @@ abbrev Orientation (H : Type) : Type :=
 
 /-- The value of each component of a draw, with each pair of hosts taken in
 the order that `o` chooses. -/
-def Draw.component (d : Draw H) (o : Orientation H) : (p : Component H) → p.Val
+def Draw.component (d : Draw H R) (o : Orientation H) : (p : Component H R) → p.Val
   | .split z => d.split (o z).1.1 (o z).1.2
   | .offset h => d.offset h
   | .logRate h => d.logRate h
   | .wander h => d.wander h
   | .linkPaused i j => d.linkPaused i j
   | .hostPaused h => d.hostPaused h
+  | .deviceLogRate x => d.deviceLogRate x
+  | .deviceWander x => d.deviceWander x
+  | .reportError x => d.reportError x
 
 /-- **The prior.** The random draw `D ω`, for `ω` drawn from `P`, has the law
 of the member `f` of the model `m`. -/
 structure Prior (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
-    (D : Ω → Draw H) : Prop where
+    (D : Ω → Draw H R) : Prop where
   prob : IsProbabilityMeasure P
   /-- The two directions of a pair share its least round-trip time. -/
   split_swap : ∀ ω i j, (D ω).split i j + (D ω).split j i = 1
@@ -369,6 +451,34 @@ structure Prior (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
       = f.wanderSize h ^ 2 * Real.exp (-|s - t| / f.wanderTime h)
   /-- The wander is continuous in time, in every outcome. -/
   wander_continuous : ∀ ω h, Continuous ((D ω).wander h)
+  /-- The logarithm of the mean rate of the clock of each audio device is
+  Gaussian with mean zero and standard deviation `f.rateSpread`. -/
+  deviceLogRate_law : ∀ x,
+    HasLaw (fun ω => (D ω).deviceLogRate x)
+      (gaussianReal 0 (Real.toNNReal (f.rateSpread ^ 2))) P
+  /-- The wander of the clock of each audio device is a Gaussian process. -/
+  deviceWander_gaussian : ∀ x, IsGaussianProcess (fun t ω => (D ω).deviceWander x t) P
+  /-- The wander of a device's clock has mean zero. -/
+  deviceWander_mean : ∀ x t, ∫ ω, (D ω).deviceWander x t ∂P = 0
+  /-- The covariance of the wander of a device's clock at two true times
+  falls exponentially with the time between them. -/
+  deviceWander_covariance : ∀ x s t,
+    cov[fun ω => (D ω).deviceWander x s, fun ω => (D ω).deviceWander x t; P]
+      = f.deviceWanderSize x ^ 2 * Real.exp (-|s - t| / f.deviceWanderTime x)
+  /-- The wander of a device's clock is continuous in time, in every
+  outcome. -/
+  deviceWander_continuous : ∀ ω x, Continuous ((D ω).deviceWander x)
+  /-- The error of the reports of each audio device is a Gaussian process. -/
+  reportError_gaussian : ∀ x, IsGaussianProcess (fun t ω => (D ω).reportError x t) P
+  /-- The error of the reports has mean zero. -/
+  reportError_mean : ∀ x t, ∫ ω, (D ω).reportError x t ∂P = 0
+  /-- The covariance of the error of the reports at two true times falls
+  exponentially with the time between them. -/
+  reportError_covariance : ∀ x s t,
+    cov[fun ω => (D ω).reportError x s, fun ω => (D ω).reportError x t; P]
+      = f.reportSize x ^ 2 * Real.exp (-|s - t| / f.reportTime x)
+  /-- The error of the reports is continuous in time, in every outcome. -/
+  reportError_continuous : ∀ ω x, Continuous ((D ω).reportError x)
   /-- The paused time of a link that has begun never decreases. -/
   linkPaused_monotone : ∀ ω i j, Monotone ((D ω).linkPaused i j)
   /-- The paused time of a link is counted from true time zero. -/
@@ -407,7 +517,7 @@ structure Prior (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
 
 /-- The world `w` is the one built from the draw `d`, in the member `f` of
 the model `m`. -/
-structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H)
+structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
     (w : World H R) : Prop where
   rate_eq : w.rate = m.rate
   sender_eq : w.sender = m.sender
@@ -425,33 +535,54 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H)
     IsBacklog (d.hostPaused j) (s + v₁ + d.split i j * f.roundTrip i j + v₂) v₃ ∧
     w.network.deliver i j s q
       = some (s + v₁ + d.split i j * f.roundTrip i j + v₂ + v₃)
-  /-- The capture device runs on the sender's clock: frame `n` is captured
-  when that clock reads `f.captureStart + n / m.rate`. -/
+  /-- What the clock of each audio device advances by is a clock: it never
+  stands still. -/
+  deviceClock : ∀ x, ∃ c : Clock, ∀ t, c.read t = d.deviceReading x t
+  /-- The capture device starts when the sender's clock reads
+  `f.captureStart`. -/
+  capture_start : (w.clock w.sender).read (w.source.capture 0) = f.captureStart
+  /-- The capture device runs on its own clock: frame `n` is captured when
+  that clock has advanced by `n / m.rate` since frame zero. -/
   capture : ∀ n : ℕ,
-    (w.clock w.sender).read (w.source.capture n) = f.captureStart + (n : ℝ) / m.rate
+    d.deviceReading none (w.source.capture n) - d.deviceReading none (w.source.capture 0)
+      = (n : ℝ) / m.rate
   /-- Capture blocks hold `m.blockSize` frames. -/
   capture_first : ∀ b : ℕ, w.source.first b = b * m.blockSize
   /-- A capture block is handed over when its last frame is captured. -/
   capture_handed : ∀ b : ℕ,
     w.source.handed b = w.source.capture (w.source.first (b + 1) - 1)
-  /-- Capture timestamps are exact. -/
+  /-- The timestamp of a capture block is the reading of the sender's clock
+  when the block's first frame is captured, plus the error of the capture
+  device's reports at that time. -/
   capture_reported : ∀ b : ℕ,
-    w.source.reported b = (w.clock w.sender).read (w.source.capture (w.source.first b))
-  /-- Each playback device runs on the clock of its host: output sample `k`
-  of speaker `r` leaves when that clock reads `f.speakerStart r + k / m.rate`. -/
+    w.source.reported b
+      = (w.clock w.sender).read (w.source.capture (w.source.first b))
+        + d.reportError none (w.source.capture (w.source.first b))
+  /-- The playback device of speaker `r` starts when the clock of its host
+  reads the start of the speaker that stands for the device. -/
+  speaker_start : ∀ r : Fin R,
+    (w.clock (w.host r)).read ((w.speaker r).out 0) = f.speakerStart (m.device r)
+  /-- Each playback device runs on its own clock: output sample `k` of
+  speaker `r` leaves when the clock of its device has advanced by
+  `k / m.rate` since output sample zero. -/
   speaker_out : ∀ (r : Fin R) (k : ℕ),
-    (w.clock (w.host r)).read ((w.speaker r).out k) = f.speakerStart r + (k : ℝ) / m.rate
+    d.deviceReading (some (m.device r)) ((w.speaker r).out k)
+        - d.deviceReading (some (m.device r)) ((w.speaker r).out 0)
+      = (k : ℝ) / m.rate
   /-- Playback blocks hold `m.blockSize` output samples. -/
   speaker_first : ∀ (r : Fin R) (b : ℕ), (w.speaker r).first b = b * m.blockSize
-  /-- A playback device requests each block `m.lead` seconds, measured on the
-  clock of its host, before the block's first output sample leaves. -/
+  /-- A playback device requests each block `m.lead` seconds, measured on its
+  own clock, before the block's first output sample leaves. -/
   speaker_asked : ∀ (r : Fin R) (b : ℕ),
-    (w.clock (w.host r)).read ((w.speaker r).out ((w.speaker r).first b))
-      - (w.clock (w.host r)).read ((w.speaker r).asked b) = m.lead
-  /-- Playback timestamps are exact. -/
+    d.deviceReading (some (m.device r)) ((w.speaker r).out ((w.speaker r).first b))
+      - d.deviceReading (some (m.device r)) ((w.speaker r).asked b) = m.lead
+  /-- The timestamp of a playback block is the reading of the host's clock
+  when the block's first output sample leaves, plus the error of the
+  device's reports at that time. -/
   speaker_reported : ∀ (r : Fin R) (b : ℕ),
     (w.speaker r).reported b
       = (w.clock (w.host r)).read ((w.speaker r).out ((w.speaker r).first b))
+        + d.reportError (some (m.device r)) ((w.speaker r).out ((w.speaker r).first b))
   /-- The target latency is constant. -/
   target_eq : ∀ n : ℕ, w.target n = m.targetLatency
 
@@ -460,7 +591,7 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H)
 the draw has the law of the member. -/
 def Holds (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
     (world : Ω → World H R) : Prop :=
-  ∃ D : Ω → Draw H, m.Prior f P D ∧ ∀ ω, m.Builds f (D ω) (world ω)
+  ∃ D : Ω → Draw H R, m.Prior f P D ∧ ∀ ω, m.Builds f (D ω) (world ω)
 
 /-- The family of laws of the model: the random worlds of each member. -/
 def laws (m : GenerativeWorld H R) : Member H R → RandomWorlds H R :=
@@ -474,8 +605,8 @@ The class asks nothing of a solution in other members. The weights `c` and
 the lookahead are those for which the cost is taken. -/
 def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (f : Member H R)
     (lookahead : ℕ+) (c : Weights) : SolutionClass H R :=
-  fun _ τ => ∃ F : Draw H → ℝ≥0∞, Measurable F ∧
-    ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H)
+  fun _ τ => ∃ F : Draw H R → ℝ≥0∞, Measurable F ∧
+    ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H R)
       (world : Ω' → World H R),
       m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →
         ∀ᵐ ω ∂P, τ.cost (world ω) lookahead c = F (D ω)
@@ -495,14 +626,14 @@ def OptimalWithin [DecidableEq H] (m : GenerativeWorld H R)
 
 /-- **Both least delays of a pair are positive**, in every outcome. -/
 theorem Prior.leastDelay_pos {m : GenerativeWorld H R} {f : Member H R} {P : Measure Ω}
-    {D : Ω → Draw H} (h : m.Prior f P D) (ω : Ω) (i j : H) :
+    {D : Ω → Draw H R} (h : m.Prior f P D) (ω : Ω) (i j : H) :
     0 < (D ω).split i j * f.roundTrip i j :=
   mul_pos (h.split_mem ω i j).1 (f.roundTrip_pos i j)
 
 /-- **The two directions of a pair share its least round-trip time**, in
 every outcome. -/
 theorem Prior.leastDelay_add {m : GenerativeWorld H R} {f : Member H R} {P : Measure Ω}
-    {D : Ω → Draw H} (h : m.Prior f P D) (ω : Ω) (i j : H) :
+    {D : Ω → Draw H R} (h : m.Prior f P D) (ω : Ω) (i j : H) :
     (D ω).split i j * f.roundTrip i j + (D ω).split j i * f.roundTrip j i
       = f.roundTrip i j := by
   rw [f.roundTrip_symm j i, ← add_mul, h.split_swap, one_mul]

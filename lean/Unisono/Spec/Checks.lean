@@ -1339,6 +1339,9 @@ private def exampleModel : GenerativeWorld (Fin 3) 2 where
   rate_pos := one_pos
   sender := 0
   host := ![1, 2]
+  device := id
+  device_idem := fun _ => rfl
+  device_host := fun _ => rfl
   shape := 2
   shape_pos := two_pos
   blockSize := 1
@@ -1374,21 +1377,32 @@ private def exampleMember : Member (Fin 3) 2 where
   wanderSize_nonneg := fun _ => le_rfl
   wanderTime := fun _ => 1
   wanderTime_pos := fun _ => one_pos
+  deviceWanderSize := fun _ => 0
+  deviceWanderSize_nonneg := fun _ => le_rfl
+  deviceWanderTime := fun _ => 1
+  deviceWanderTime_pos := fun _ => one_pos
+  reportSize := fun _ => 0
+  reportSize_nonneg := fun _ => le_rfl
+  reportTime := fun _ => 1
+  reportTime_pos := fun _ => one_pos
   offsetRange := 1
   offsetRange_pos := one_pos
   captureStart := 0
   speakerStart := fun _ => 1
 
 /-- The law of each coordinate of the example's probability space. -/
-private def exampleLaw : Component (Fin 3) → Measure ℝ
+private def exampleLaw : Component (Fin 3) 2 → Measure ℝ
   | .split _ => betaMeasure 2 2
   | .offset _ => ProbabilityTheory.cond volume (Set.Icc (-1 : ℝ) 1)
   | .logRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
   | .wander _ => Measure.dirac 0
   | .linkPaused _ _ => Measure.dirac 0
   | .hostPaused _ => Measure.dirac 0
+  | .deviceLogRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
+  | .deviceWander _ => Measure.dirac 0
+  | .reportError _ => Measure.dirac 0
 
-private instance (p : Component (Fin 3)) : IsProbabilityMeasure (exampleLaw p) := by
+private instance (p : Component (Fin 3) 2) : IsProbabilityMeasure (exampleLaw p) := by
   cases p
   · exact isProbabilityMeasureBeta two_pos two_pos
   · exact cond_isProbabilityMeasure_of_finite (by rw [Real.volume_Icc]; norm_num)
@@ -1397,15 +1411,19 @@ private instance (p : Component (Fin 3)) : IsProbabilityMeasure (exampleLaw p) :
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (gaussianReal 0 _))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
 
 /-- The pair of two distinct hosts. -/
 private def examplePair (i j : Fin 3) (h : i ≠ j) : {z : Sym2 (Fin 3) // ¬ z.IsDiag} :=
   ⟨s(i, j), by simpa using h⟩
 
 /-- The example's draw: the split of a pair, in the order of the hosts'
-numbers, the offsets and the mean rates are coordinates of the probability
-space; there is no wander and no pause. -/
-private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
+numbers, the offsets and the mean rates of the clocks of the hosts and of the
+audio devices are coordinates of the probability space; there is no wander,
+no pause and no error of a report. -/
+private def exampleDraw (ω : Component (Fin 3) 2 → ℝ) : Draw (Fin 3) 2 where
   split := fun i j =>
     if h : i = j then 1 / 2
     else if i < j then splitOf (ω (.split (examplePair i j h)))
@@ -1415,12 +1433,15 @@ private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
   wander := fun _ _ => 0
   linkPaused := fun _ _ _ => 0
   hostPaused := fun _ _ => 0
+  deviceLogRate := fun x => ω (.deviceLogRate x)
+  deviceWander := fun _ _ => 0
+  reportError := fun _ _ => 0
 
 private theorem examplePair_swap {i j : Fin 3} (h : i ≠ j) :
     examplePair j i h.symm = examplePair i j h :=
   Subtype.ext Sym2.eq_swap
 
-private theorem exampleDraw_split_mem (ω : Component (Fin 3) → ℝ) (i j : Fin 3) :
+private theorem exampleDraw_split_mem (ω : Component (Fin 3) 2 → ℝ) (i j : Fin 3) :
     (exampleDraw ω).split i j ∈ Set.Ioo (0 : ℝ) 1 := by
   simp only [exampleDraw]
   split_ifs with h h'
@@ -1429,7 +1450,7 @@ private theorem exampleDraw_split_mem (ω : Component (Fin 3) → ℝ) (i j : Fi
   · have := splitOf_mem (ω (.split (examplePair i j h)))
     exact ⟨by linarith [this.2], by linarith [this.1]⟩
 
-private theorem exampleDraw_split_swap (ω : Component (Fin 3) → ℝ) (i j : Fin 3) :
+private theorem exampleDraw_split_swap (ω : Component (Fin 3) 2 → ℝ) (i j : Fin 3) :
     (exampleDraw ω).split i j + (exampleDraw ω).split j i = 1 := by
   rcases lt_trichotomy i j with hlt | heq | hgt
   · have hne : i ≠ j := hlt.ne
@@ -1446,7 +1467,7 @@ private theorem exampleDraw_split_swap (ω : Component (Fin 3) → ℝ) (i j : F
 
 private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
     HasLaw (fun ω => (exampleDraw ω).split i j) (betaMeasure 2 2) (Measure.pi exampleLaw) := by
-  have hcoord : HasLaw (fun ω : Component (Fin 3) → ℝ => ω (.split (examplePair i j hij)))
+  have hcoord : HasLaw (fun ω : Component (Fin 3) 2 → ℝ => ω (.split (examplePair i j hij)))
       (betaMeasure 2 2) (Measure.pi exampleLaw) :=
     (measurePreserving_eval exampleLaw (.split (examplePair i j hij))).hasLaw
   have hto : HasLaw splitOf (betaMeasure 2 2) (betaMeasure 2 2) :=
@@ -1468,15 +1489,18 @@ private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
     exact hsub.fun_comp (hto.fun_comp hcoord)
 
 /-- How each component of the example's draw depends on its coordinate. -/
-private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 3)) → ℝ → p.Val
+private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 3) 2) → ℝ → p.Val
   | .split z => fun u => if (o z).1.1 < (o z).1.2 then splitOf u else 1 - splitOf u
   | .offset _ => fun u => u
   | .logRate _ => fun u => u
   | .wander _ => fun _ _ => 0
   | .linkPaused _ _ => fun _ _ => 0
   | .hostPaused _ => fun _ _ => 0
+  | .deviceLogRate _ => fun u => u
+  | .deviceWander _ => fun _ _ => 0
+  | .reportError _ => fun _ _ => 0
 
-private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Component (Fin 3)) :
+private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Component (Fin 3) 2) :
     Measurable (exampleComponentMap o p) := by
   cases p with
   | split z =>
@@ -1486,9 +1510,12 @@ private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Co
   | wander h => exact measurable_const
   | linkPaused i j => exact measurable_const
   | hostPaused h => exact measurable_const
+  | deviceLogRate x => exact measurable_id
+  | deviceWander x => exact measurable_const
+  | reportError x => exact measurable_const
 
-private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (Fin 3))
-    (ω : Component (Fin 3) → ℝ) :
+private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (Fin 3) 2)
+    (ω : Component (Fin 3) 2 → ℝ) :
     (exampleDraw ω).component o p = exampleComponentMap o p (ω p) := by
   cases p with
   | split z =>
@@ -1506,9 +1533,14 @@ private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (
   | wander h => rfl
   | linkPaused i j => rfl
   | hostPaused h => rfl
+  | deviceLogRate x => rfl
+  | deviceWander x => rfl
+  | reportError x => rfl
 
-/-- The example's world: the one built from the example's draw. -/
-private def exampleWorld (ω : Component (Fin 3) → ℝ) : World (Fin 3) 2 where
+/-- The example's world: the one built from the example's draw. Each device
+starts when the clock of its host reads the member's start and then runs at
+the rate of its own clock. -/
+private def exampleWorld (ω : Component (Fin 3) 2 → ℝ) : World (Fin 3) 2 where
   rate := 1
   rate_pos := one_pos
   sender := 0
@@ -1525,35 +1557,51 @@ private def exampleWorld (ω : Component (Fin 3) → ℝ) : World (Fin 3) 2 wher
         linarith
       continuous := by fun_prop }
   source :=
-    { capture := fun n => ((n : ℝ) - ω (.offset 0)) * Real.exp (-ω (.logRate 0))
+    { capture := fun n =>
+        -ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + (n : ℝ) * Real.exp (-ω (.deviceLogRate none))
       capture_strictMono := fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
-        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate none)))
+        linarith
       first := id
       first_zero := rfl
       first_strictMono := strictMono_id
-      handed := fun b => ((b : ℝ) - ω (.offset 0)) * Real.exp (-ω (.logRate 0))
+      handed := fun b =>
+        -ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + (b : ℝ) * Real.exp (-ω (.deviceLogRate none))
       handed_strictMono := fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
-        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate none)))
+        linarith
       handed_after := fun b => by simp
-      reported := fun b => (b : ℝ) }
+      reported := fun b =>
+        (b : ℝ) * Real.exp (ω (.logRate 0)) * Real.exp (-ω (.deviceLogRate none)) }
   speaker := fun r =>
-    { out := fun k => (1 + (k : ℝ) - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+    { out := fun k =>
+        (1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + (k : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))
       out_strictMono := fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
-        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate (some r))))
+        linarith
       first := id
       first_zero := rfl
       first_strictMono := strictMono_id
       asked := fun b =>
-        (1 / 2 + (b : ℝ) - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+        (1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + ((b : ℝ) - 1 / 2) * Real.exp (-ω (.deviceLogRate (some r)))
       asked_strictMono := fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
-        exact mul_lt_mul_of_pos_right (by linarith) (Real.exp_pos _)
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate (some r))))
+        linarith
       asked_before := fun b => by
-        exact mul_lt_mul_of_pos_right (by simp only [id]; linarith) (Real.exp_pos _)
-      reported := fun b => 1 + (b : ℝ) }
+        have := Real.exp_pos (-ω (.deviceLogRate (some r)))
+        simp only [id]
+        linarith
+      reported := fun b =>
+        1 + (b : ℝ) * Real.exp (ω (.logRate (![1, 2] r)))
+          * Real.exp (-ω (.deviceLogRate (some r))) }
   network :=
     { deliver := fun i j s _ => some (s + (exampleDraw ω).split i j * 1 + 0)
       after := fun i j s _ a h => by
@@ -1565,7 +1613,16 @@ private def exampleWorld (ω : Component (Fin 3) → ℝ) : World (Fin 3) 2 wher
 private theorem exp_mul_exp_neg (c : ℝ) : Real.exp c * Real.exp (-c) = 1 := by
   rw [← Real.exp_add, add_neg_cancel, Real.exp_zero]
 
-private theorem exampleWorld_builds (ω : Component (Fin 3) → ℝ) :
+/-- In the example, the clock of an audio device advances at a constant
+rate. -/
+private theorem exampleDeviceReading (ω : Component (Fin 3) 2 → ℝ) (x : Option (Fin 2))
+    (t : Time) :
+    (exampleDraw ω).deviceReading x t = Real.exp (ω (.deviceLogRate x)) * t := by
+  simp only [Draw.deviceReading, exampleDraw, add_zero, intervalIntegral.integral_const,
+    sub_zero, smul_eq_mul]
+  ring
+
+private theorem exampleWorld_builds (ω : Component (Fin 3) 2 → ℝ) :
     exampleModel.Builds exampleMember (exampleDraw ω) (exampleWorld ω) where
   rate_eq := rfl
   sender_eq := rfl
@@ -1582,29 +1639,77 @@ private theorem exampleWorld_builds (ω : Component (Fin 3) → ℝ) :
       = some (s + 0 + (exampleDraw ω).split i j * 1 + 0 + 0)
     congr 1
     ring
-  capture := fun n => by
+  deviceClock := fun x =>
+    ⟨{ read := fun t => Real.exp (ω (.deviceLogRate x)) * t
+       strictMono := fun a b hab => mul_lt_mul_of_pos_left hab (Real.exp_pos _)
+       continuous := by fun_prop }, fun t => (exampleDeviceReading ω x t).symm⟩
+  capture_start := by
     have h := exp_mul_exp_neg (ω (.logRate 0))
-    simp only [exampleWorld, exampleModel, exampleMember, zero_add, div_one]
-    linear_combination ((n : ℝ) - ω (.offset 0)) * h
+    change ω (.offset 0) + Real.exp (ω (.logRate 0))
+        * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate none))) = 0
+    push_cast
+    linear_combination (-ω (.offset 0)) * h
+  capture := fun n => by
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate none))
+    rw [exampleDeviceReading, exampleDeviceReading]
+    change Real.exp (ω (.deviceLogRate none))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + (n : ℝ) * Real.exp (-ω (.deviceLogRate none)))
+        - Real.exp (ω (.deviceLogRate none))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate none)))
+      = (n : ℝ) / 1
+    push_cast
+    linear_combination (n : ℝ) * hg
   capture_first := fun b => by simp [exampleWorld, exampleModel]
   capture_handed := fun b => by simp [exampleWorld]
   capture_reported := fun b => by
     have h := exp_mul_exp_neg (ω (.logRate 0))
-    simp only [exampleWorld, id]
-    linear_combination (-((b : ℝ) - ω (.offset 0))) * h
-  speaker_out := fun r k => by
+    change (b : ℝ) * Real.exp (ω (.logRate 0)) * Real.exp (-ω (.deviceLogRate none))
+      = ω (.offset 0) + Real.exp (ω (.logRate 0))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate none))) + 0
+    linear_combination (ω (.offset 0)) * h
+  speaker_start := fun r => by
     have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
-    simp only [exampleWorld, exampleModel, exampleMember, div_one]
-    linear_combination (1 + (k : ℝ) - ω (.offset (![1, 2] r))) * h
+    change ω (.offset (![1, 2] r)) + Real.exp (ω (.logRate (![1, 2] r)))
+        * ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))) = 1
+    push_cast
+    linear_combination (1 - ω (.offset (![1, 2] r))) * h
+  speaker_out := fun r k => by
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate (some r)))
+    change (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (k : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+        - (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+      = (k : ℝ) / 1
+    rw [exampleDeviceReading, exampleDeviceReading]
+    push_cast
+    linear_combination (k : ℝ) * hg
   speaker_first := fun r b => by simp [exampleWorld, exampleModel]
   speaker_asked := fun r b => by
-    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
-    simp only [exampleWorld, exampleModel, id]
-    linear_combination (1 / 2 : ℝ) * h
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate (some r)))
+    change (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+        - (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + ((b : ℝ) - 1 / 2) * Real.exp (-ω (.deviceLogRate (some r))))
+      = 1 / 2
+    rw [exampleDeviceReading, exampleDeviceReading]
+    linear_combination (1 / 2 : ℝ) * hg
   speaker_reported := fun r b => by
     have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
-    simp only [exampleWorld, id]
-    linear_combination (-(1 + (b : ℝ) - ω (.offset (![1, 2] r)))) * h
+    change 1 + (b : ℝ) * Real.exp (ω (.logRate (![1, 2] r)))
+          * Real.exp (-ω (.deviceLogRate (some r)))
+      = ω (.offset (![1, 2] r)) + Real.exp (ω (.logRate (![1, 2] r)))
+          * ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))) + 0
+    linear_combination (-(1 - ω (.offset (![1, 2] r)))) * h
   target_eq := fun _ => rfl
 
 private theorem exampleDraw_prior :
@@ -1622,6 +1727,22 @@ private theorem exampleDraw_prior :
     rw [covariance_const_left]
     simp
   wander_continuous := fun _ _ => continuous_const
+  deviceLogRate_law := fun x =>
+    (measurePreserving_eval exampleLaw (.deviceLogRate x)).hasLaw
+  deviceWander_gaussian := fun _ => isGaussianProcess_zero _
+  deviceWander_mean := fun _ _ => by simp [exampleDraw]
+  deviceWander_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  deviceWander_continuous := fun _ _ => continuous_const
+  reportError_gaussian := fun _ => isGaussianProcess_zero _
+  reportError_mean := fun _ _ => by simp [exampleDraw]
+  reportError_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  reportError_continuous := fun _ _ => continuous_const
   linkPaused_monotone := fun _ _ _ => monotone_const
   linkPaused_zero := fun _ _ _ => rfl
   linkPaused_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
@@ -1644,7 +1765,7 @@ private theorem exampleDraw_prior :
     exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
   independent := fun o => by
     have h : (fun p ω => (exampleDraw ω).component o p)
-        = fun p (ω : Component (Fin 3) → ℝ) => exampleComponentMap o p (ω p) := by
+        = fun p (ω : Component (Fin 3) 2 → ℝ) => exampleComponentMap o p (ω p) := by
       funext p ω
       exact exampleDraw_component o p ω
     rw [h]
@@ -1659,7 +1780,7 @@ theorem GenerativeWorld.example_holds :
       (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
       m.Holds f P world ∧ (∀ i j, f.linkPauseRate i j = 0) ∧ (∀ h, f.hostPauseRate h = 0)
         ∧ ∀ h, f.wanderSize h = 0 :=
-  ⟨exampleModel, exampleMember, Component (Fin 3) → ℝ, inferInstance, Measure.pi exampleLaw,
+  ⟨exampleModel, exampleMember, Component (Fin 3) 2 → ℝ, inferInstance, Measure.pi exampleLaw,
     exampleWorld, ⟨exampleDraw, exampleDraw_prior, exampleWorld_builds⟩,
     fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
 

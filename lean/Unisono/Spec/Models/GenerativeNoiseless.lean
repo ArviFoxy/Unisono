@@ -15,8 +15,9 @@ public import Mathlib.Topology.Algebra.Order.Archimedean
 # Generative worlds without noise are ideal constant worlds
 
 A member of the generative model is *noiseless* when its links and its hosts
-never pause, its clocks do not wander, and the mean rates of its clocks
-have no spread (`Member.Noiseless`). What remains random in such a member is
+never pause, the clocks of its hosts and of its audio devices do not wander,
+the mean rates of those clocks have no spread, and its audio devices report
+exact timestamps (`Member.Noiseless`). What remains random in such a member is
 what no host can learn: the offset of each clock and the split of each pair
 of hosts.
 
@@ -49,14 +50,17 @@ theorem World.finite_hosts (w : World H R) : Finite H := by
 namespace GenerativeWorld
 
 variable {Ω : Type} [MeasurableSpace Ω]
-variable {m : GenerativeWorld H R} {f : Member H R} {P : Measure Ω} {D : Ω → Draw H}
+variable {m : GenerativeWorld H R} {f : Member H R} {P : Measure Ω} {D : Ω → Draw H R}
 
-/-- A member is noiseless: its links and its hosts never pause, its clocks do
-not wander, and the mean rates of its clocks have no spread. -/
+/-- A member is noiseless: its links and its hosts never pause, the clocks of
+its hosts and of its audio devices do not wander, the mean rates of those
+clocks have no spread, and its audio devices report exact timestamps. -/
 structure Member.Noiseless (f : Member H R) : Prop where
   no_linkPauses : ∀ i j, f.linkPauseRate i j = 0
   no_hostPauses : ∀ h, f.hostPauseRate h = 0
   no_wander : ∀ h, f.wanderSize h = 0
+  no_deviceWander : ∀ x, f.deviceWanderSize x = 0
+  no_reportError : ∀ x, f.reportSize x = 0
   no_spread : f.rateSpread = 0
 
 /-- With no spread of the mean rates, the mean rate of every clock is one in
@@ -68,30 +72,69 @@ theorem Prior.logRate_ae_eq_zero (hD : m.Prior f P D) (hf : f.rateSpread = 0) (h
   rw [h0, gaussianReal_zero_var] at hlaw
   exact hlaw.ae_eq_of_dirac
 
+/-- With no spread of the mean rates, the mean rate of the clock of every
+audio device is one in almost every outcome. -/
+theorem Prior.deviceLogRate_ae_eq_zero (hD : m.Prior f P D) (hf : f.rateSpread = 0)
+    (x : Option (Fin R)) : ∀ᵐ ω ∂P, (D ω).deviceLogRate x = 0 := by
+  have hlaw := hD.deviceLogRate_law x
+  have h0 : Real.toNNReal (f.rateSpread ^ 2) = 0 := by simp [hf]
+  rw [h0, gaussianReal_zero_var] at hlaw
+  exact hlaw.ae_eq_of_dirac
+
+/-- A Gaussian process with mean zero whose variance is zero at every time,
+and whose paths are continuous, is zero at all times in almost every
+outcome. -/
+private theorem ae_eq_zero_of_gaussian [IsProbabilityMeasure P] {X : Ω → Time → ℝ}
+    (hg : IsGaussianProcess (fun t ω => X ω t) P) (hmean : ∀ t, ∫ ω, X ω t ∂P = 0)
+    (hcov : ∀ t, cov[fun ω => X ω t, fun ω => X ω t; P] = 0)
+    (hcont : ∀ ω, Continuous (X ω)) : ∀ᵐ ω ∂P, ∀ t, X ω t = 0 := by
+  have hpoint : ∀ t : ℝ, ∀ᵐ ω ∂P, X ω t = 0 := by
+    intro t
+    have hgt : HasGaussianLaw (fun ω => X ω t) P := hg.hasGaussianLaw_eval t
+    have hmap := hgt.map_eq_gaussianReal
+    have hm : P[fun ω => X ω t] = 0 := hmean t
+    have hvar : Var[fun ω => X ω t; P] = 0 := by
+      rw [← covariance_self hgt.aemeasurable, hcov t]
+    rw [hm, hvar, Real.toNNReal_zero, gaussianReal_zero_var] at hmap
+    exact (HasLaw.mk hgt.aemeasurable hmap).ae_eq_of_dirac
+  have hrat : ∀ᵐ ω ∂P, ∀ q : ℚ, X ω (q : ℝ) = 0 :=
+    ae_all_iff.mpr fun q => hpoint q
+  filter_upwards [hrat] with ω hω
+  have heq : X ω = fun _ => (0 : ℝ) :=
+    Continuous.ext_on (Rat.denseRange_cast (𝕜 := ℝ)) (hcont ω)
+      continuous_const (by rintro _ ⟨q, rfl⟩; exact hω q)
+  intro t
+  exact congrFun heq t
+
 /-- A clock whose wander has size zero does not wander, in almost every
 outcome. -/
 theorem Prior.wander_ae_eq_zero (hD : m.Prior f P D) {h : H} (hf : f.wanderSize h = 0) :
     ∀ᵐ ω ∂P, ∀ t, (D ω).wander h t = 0 := by
   have := hD.prob
-  have hpoint : ∀ t : ℝ, ∀ᵐ ω ∂P, (D ω).wander h t = 0 := by
-    intro t
-    have hg : HasGaussianLaw (fun ω => (D ω).wander h t) P :=
-      (hD.wander_gaussian h).hasGaussianLaw_eval t
-    have hmap := hg.map_eq_gaussianReal
-    have hmean : P[fun ω => (D ω).wander h t] = 0 := hD.wander_mean h t
-    have hvar : Var[fun ω => (D ω).wander h t; P] = 0 := by
-      rw [← covariance_self hg.aemeasurable, hD.wander_covariance h t t, hf]
-      simp
-    rw [hmean, hvar, Real.toNNReal_zero, gaussianReal_zero_var] at hmap
-    exact (HasLaw.mk hg.aemeasurable hmap).ae_eq_of_dirac
-  have hrat : ∀ᵐ ω ∂P, ∀ q : ℚ, (D ω).wander h (q : ℝ) = 0 :=
-    ae_all_iff.mpr fun q => hpoint q
-  filter_upwards [hrat] with ω hω
-  have heq : (D ω).wander h = fun _ => (0 : ℝ) :=
-    Continuous.ext_on (Rat.denseRange_cast (𝕜 := ℝ)) (hD.wander_continuous ω h)
-      continuous_const (by rintro _ ⟨q, rfl⟩; exact hω q)
-  intro t
-  exact congrFun heq t
+  refine ae_eq_zero_of_gaussian (hD.wander_gaussian h) (hD.wander_mean h) (fun t => ?_)
+    (fun ω => hD.wander_continuous ω h)
+  rw [hD.wander_covariance h t t, hf]
+  simp
+
+/-- The clock of an audio device whose wander has size zero does not wander,
+in almost every outcome. -/
+theorem Prior.deviceWander_ae_eq_zero (hD : m.Prior f P D) {x : Option (Fin R)}
+    (hf : f.deviceWanderSize x = 0) : ∀ᵐ ω ∂P, ∀ t, (D ω).deviceWander x t = 0 := by
+  have := hD.prob
+  refine ae_eq_zero_of_gaussian (hD.deviceWander_gaussian x) (hD.deviceWander_mean x)
+    (fun t => ?_) (fun ω => hD.deviceWander_continuous ω x)
+  rw [hD.deviceWander_covariance x t t, hf]
+  simp
+
+/-- An audio device whose reports have an error of size zero reports exact
+timestamps, in almost every outcome. -/
+theorem Prior.reportError_ae_eq_zero (hD : m.Prior f P D) {x : Option (Fin R)}
+    (hf : f.reportSize x = 0) : ∀ᵐ ω ∂P, ∀ t, (D ω).reportError x t = 0 := by
+  have := hD.prob
+  refine ae_eq_zero_of_gaussian (hD.reportError_gaussian x) (hD.reportError_mean x)
+    (fun t => ?_) (fun ω => hD.reportError_continuous ω x)
+  rw [hD.reportError_covariance x t t, hf]
+  simp
 
 /-- A quantity that never decreases in time, and that is the same at any two
 given times in almost every outcome, is the same at all times in almost
@@ -154,9 +197,16 @@ theorem isBacklog_zero_of_const {paused : Time → ℝ} (hc : ∀ s t, paused s 
 
 /-- A clock with mean rate one that does not wander reads true time plus its
 offset. -/
-theorem Draw.reading_of_noiseless {d : Draw H} {h : H} (h0 : d.logRate h = 0)
+theorem Draw.reading_of_noiseless {d : Draw H R} {h : H} (h0 : d.logRate h = 0)
     (hw : ∀ t, d.wander h t = 0) (t : Time) : d.reading h t = d.offset h + t := by
   simp [Draw.reading, h0, hw]
+
+/-- The clock of an audio device with mean rate one that does not wander
+advances with true time. -/
+theorem Draw.deviceReading_noiseless {d : Draw H R} {x : Option (Fin R)}
+    (h0 : d.deviceLogRate x = 0) (hw : ∀ t, d.deviceWander x t = 0) (t : Time) :
+    d.deviceReading x t = t := by
+  simp [Draw.deviceReading, h0, hw]
 
 /-- The ideal constant world model of an outcome of a draw: the settings of
 the generative model, with the least delays of the outcome as its constant
@@ -196,7 +246,15 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
       hD.linkPaused_ae_const (hf.no_linkPauses i j)
   have h4 : ∀ᵐ ω ∂P, ∀ h s t, (D ω).hostPaused h s = (D ω).hostPaused h t :=
     ae_all_iff.mpr fun h => hD.hostPaused_ae_const (hf.no_hostPauses h)
-  filter_upwards [h1, h2, h3, h4] with ω hr hw ht hh
+  have h5 : ∀ᵐ ω ∂P, ∀ x, (D ω).deviceLogRate x = 0 :=
+    ae_all_iff.mpr fun x => hD.deviceLogRate_ae_eq_zero hf.no_spread x
+  have h6 : ∀ᵐ ω ∂P, ∀ x t, (D ω).deviceWander x t = 0 :=
+    ae_all_iff.mpr fun x => hD.deviceWander_ae_eq_zero (hf.no_deviceWander x)
+  have h7 : ∀ᵐ ω ∂P, ∀ x t, (D ω).reportError x t = 0 :=
+    ae_all_iff.mpr fun x => hD.reportError_ae_eq_zero (hf.no_reportError x)
+  filter_upwards [h1, h2, h3, h4, h5, h6, h7] with ω hr hw ht hh hdr hdw herr
+  have hdev : ∀ x t, (D ω).deviceReading x t = t := fun x t =>
+    Draw.deviceReading_noiseless (hdr x) (hdw x) t
   have hclock : ∀ h t, ((world ω).clock h).read t = t + (D ω).offset h := by
     intro h t
     rw [(hB ω).clock h t, Draw.reading_of_noiseless (hr h) (hw h) t, add_comm]
@@ -208,27 +266,32 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
       clocks := fun h => ⟨(D ω).offset h, hclock h⟩
       capture := ⟨f.captureStart - (D ω).offset (world ω).sender, fun n => by
         have h := (hB ω).capture n
-        rw [hclock] at h
+        have h0 := (hB ω).capture_start
+        rw [hclock] at h0
+        rw [hdev, hdev] at h
         simp only [Prior.idealWorld]
         linarith⟩
       capture_first := (hB ω).capture_first
       capture_handed := (hB ω).capture_handed
       capture_reported := fun b => by
-        rw [(hB ω).capture_reported b]
+        rw [(hB ω).capture_reported b, herr, add_zero]
         simp
-      speaker_out := fun r => ⟨f.speakerStart r - (D ω).offset ((world ω).host r), fun k => by
-        have h := (hB ω).speaker_out r k
-        rw [hclock] at h
-        simp only [Prior.idealWorld]
-        linarith⟩
+      speaker_out := fun r =>
+        ⟨f.speakerStart (m.device r) - (D ω).offset ((world ω).host r), fun k => by
+          have h := (hB ω).speaker_out r k
+          have h0 := (hB ω).speaker_start r
+          rw [hclock] at h0
+          rw [hdev, hdev] at h
+          simp only [Prior.idealWorld]
+          linarith⟩
       speaker_first := (hB ω).speaker_first
       speaker_asked := fun r b => by
         have h := (hB ω).speaker_asked r b
-        rw [hclock, hclock] at h
+        rw [hdev, hdev] at h
         simp only [Prior.idealWorld]
         linarith
       speaker_reported := fun r b => by
-        rw [(hB ω).speaker_reported r b]
+        rw [(hB ω).speaker_reported r b, herr, add_zero]
         simp
       network := fun i j s q => by
         obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hdel⟩ := (hB ω).network i j s q

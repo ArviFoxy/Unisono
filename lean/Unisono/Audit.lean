@@ -1002,6 +1002,22 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.hostPaused_ae_const
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.deviceLogRate_ae_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.deviceLogRate_ae_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.deviceWander_ae_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.deviceWander_ae_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.reportError_ae_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.reportError_ae_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.deviceReading_noiseless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.deviceReading_noiseless
+
 /-- info: 'Unisono.Spec.GenerativeWorld.isBacklog_zero_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.isBacklog_zero_of_const

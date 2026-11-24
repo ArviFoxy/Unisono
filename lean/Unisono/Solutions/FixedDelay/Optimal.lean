@@ -89,20 +89,21 @@ theorem cond_volume_Icc_compl_le {Θ τ : ℝ} (hΘ : 0 < Θ) (hτ : 0 ≤ τ) :
 namespace GenerativeWorld
 
 /-- Each split of a draw is a measurable function of the draw. -/
-theorem Draw.measurable_split (i j : H) : Measurable fun d : Draw H => d.split i j := by
-  have hT : Measurable fun d : Draw H =>
-      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused) :=
+theorem Draw.measurable_split (i j : H) : Measurable fun d : Draw H R => d.split i j := by
+  have hT : Measurable fun d : Draw H R =>
+      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused,
+        d.deviceLogRate, d.deviceWander, d.reportError) :=
     comap_measurable _
   exact (measurable_pi_apply j).comp ((measurable_pi_apply i).comp (measurable_fst.comp hT))
 
 /-- The asymmetry of host `h` in a draw: how far the least delay from the
 sender to `h` exceeds half the least round-trip time between the two. A
 round-trip estimate of the sender's clock at `h` is off by this amount. -/
-def Draw.asymmetry (d : Draw H) (m : GenerativeWorld H R) (f : Member H R) (h : H) : ℝ :=
+def Draw.asymmetry (d : Draw H R) (m : GenerativeWorld H R) (f : Member H R) (h : H) : ℝ :=
   (d.split m.sender h - 1 / 2) * f.roundTrip m.sender h
 
 theorem Draw.measurable_asymmetry (m : GenerativeWorld H R) (f : Member H R) (h : H) :
-    Measurable fun d : Draw H => d.asymmetry m f h :=
+    Measurable fun d : Draw H R => d.asymmetry m f h :=
   ((Draw.measurable_split m.sender h).sub_const _).mul_const _
 
 /-- The noiseless members in which the target latency exceeds the baseline's
@@ -134,7 +135,7 @@ variable [DecidableEq H]
 
 /-- The asymmetry of a host is at most half the least round-trip time between
 the sender and the host. -/
-theorem abs_asymmetry_le (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
+theorem abs_asymmetry_le (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
     (h : H) : |(canonicalDraw y).asymmetry m f h| ≤ f.roundTrip m.sender h / 2 := by
   have hmem := canonicalDraw_split_mem y m.sender h
   have hτ := f.roundTrip_pos m.sender h
@@ -148,7 +149,7 @@ theorem abs_asymmetry_le (m : GenerativeWorld H R) (f : Member H R) (y : Compone
 /-- The reflection of a receiving host moves its offset by twice its
 asymmetry. -/
 theorem reflectScale_mul (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost)
-    (y : Component H → ℝ) :
+    (y : Component H R → ℝ) :
     reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)
       = 2 * (canonicalDraw y).asymmetry m f k.1 := by
   have hsh : m.sender ≠ k.1 := k.2.symm
@@ -171,7 +172,7 @@ variable [Fintype H]
 within the range, half the shift of the host's timeline is the opposite of
 its asymmetry. -/
 theorem reflectShift_of_mem (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost)
-    (y : Component H → ℝ)
+    (y : Component H R → ℝ)
     (hy : y (.offset k.1) ∈ Set.Icc (-f.offsetRange) f.offsetRange
       ∧ y (.offset k.1) + reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)
         ∈ Set.Icc (-f.offsetRange) f.offsetRange) :
@@ -201,11 +202,11 @@ theorem measure_reflect_out_le (m : GenerativeWorld H R) (f : Member H R)
           ∈ Set.Icc (-f.offsetRange) f.offsetRange)}
       ≤ ENNReal.ofReal (f.roundTrip m.sender k.1 / f.offsetRange) := by
   have hτ := f.roundTrip_pos m.sender k.1
-  have hsub : {y : Component H → ℝ |
+  have hsub : {y : Component H R → ℝ |
         ¬(y (.offset k.1) ∈ Set.Icc (-f.offsetRange) f.offsetRange
         ∧ y (.offset k.1) + reflectScale m f k * (splitOf (y (m.senderSplit k)) - 1 / 2)
           ∈ Set.Icc (-f.offsetRange) f.offsetRange)}
-      ⊆ (fun y : Component H → ℝ => y (.offset k.1)) ⁻¹'
+      ⊆ (fun y : Component H R → ℝ => y (.offset k.1)) ⁻¹'
           (Set.Icc (-(f.offsetRange - f.roundTrip m.sender k.1))
             (f.offsetRange - f.roundTrip m.sender k.1))ᶜ := by
     intro y hy hin
@@ -230,7 +231,7 @@ theorem lintegral_asymmetry_le (m : GenerativeWorld H R) (f : Member H R) (c : W
   classical
   -- The outcomes in which the reflection of the host of speaker `r` keeps the
   -- offset of its clock within the range.
-  let good : Fin R → Set (Component H → ℝ) := fun r =>
+  let good : Fin R → Set (Component H R → ℝ) := fun r =>
     {y | y (.offset (m.host r)) ∈ Set.Icc (-f.offsetRange) f.offsetRange
       ∧ y (.offset (m.host r)) + reflectScale m f ⟨m.host r, hnos r⟩
           * (splitOf (y (m.senderSplit ⟨m.host r, hnos r⟩)) - 1 / 2)
@@ -323,7 +324,7 @@ variable [Fintype H]
 
 /-- The asymmetry of a host in the ideal constant world model of an outcome
 is the asymmetry of the host in the outcome's draw. -/
-theorem asymmetry_idealWorld (hf : f.Noiseless) (y : Component H → ℝ) (h : H) :
+theorem asymmetry_idealWorld (hf : f.Noiseless) (y : Component H R → ℝ) (h : H) :
     ((canonicalDraw_prior m f hf).idealWorld y).asymmetry h
       = (canonicalDraw y).asymmetry m f h := by
   have h1 := canonicalDraw_split_swap y m.sender h
@@ -336,7 +337,7 @@ theorem asymmetry_idealWorld (hf : f.Noiseless) (y : Component H → ℝ) (h : H
 omit [Fintype H] in
 /-- The delivery margin of a member, for the two least delays between the
 sender and a speaker's host in an outcome. -/
-theorem margin_idealWorld (hmem : m.NoiselessWithMargin lookahead f) (y : Component H → ℝ)
+theorem margin_idealWorld (hmem : m.NoiselessWithMargin lookahead f) (y : Component H R → ℝ)
     (r : Fin R) :
     (((lookahead : ℕ) : ℝ) + 2 * ((m.blockSize : ℝ) - 1)) / m.rate
       + ((canonicalDraw y).split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
@@ -356,7 +357,7 @@ omit [Fintype H] in
 reach the sender at the same time, no two of the baseline's messages from
 different hosts arrive at one host at the same time. -/
 theorem noCollision_canonicalWorld (p : Params H) (hps : p.sender = m.sender)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ)
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ)
     (hy : ∀ (r₁ r₂ : Fin R) (b₁ b₂ : ℕ), m.host r₁ ≠ m.host r₂ →
       requestArrival m f y r₁ b₁ ≠ requestArrival m f y r₂ b₂) :
     (solution p : Solution H R Payload).NoCrossOriginCollision (canonicalWorld m f hex y)
@@ -487,6 +488,9 @@ private def exampleModel : GenerativeWorld (Fin 3) 2 where
   rate_pos := one_pos
   sender := 0
   host := ![1, 2]
+  device := id
+  device_idem := fun _ => rfl
+  device_host := fun _ => rfl
   shape := 2
   shape_pos := two_pos
   blockSize := 1
@@ -522,6 +526,14 @@ private def exampleMember : Member (Fin 3) 2 where
   wanderSize_nonneg := fun _ => le_rfl
   wanderTime := fun _ => 1
   wanderTime_pos := fun _ => one_pos
+  deviceWanderSize := fun _ => 0
+  deviceWanderSize_nonneg := fun _ => le_rfl
+  deviceWanderTime := fun _ => 1
+  deviceWanderTime_pos := fun _ => one_pos
+  reportSize := fun _ => 0
+  reportSize_nonneg := fun _ => le_rfl
+  reportTime := fun _ => 1
+  reportTime_pos := fun _ => one_pos
   offsetRange := 1
   offsetRange_pos := one_pos
   captureStart := 0
@@ -548,7 +560,8 @@ theorem optimalWithin_conditions :
         ∧ m.NoiselessWithMargin 1 f
         ∧ ∃ (Ω : Type) (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
             m.Holds f P world := by
-  have hf : exampleMember.Noiseless := ⟨fun _ _ => rfl, fun _ => rfl, fun _ => rfl, rfl⟩
+  have hf : exampleMember.Noiseless :=
+    ⟨fun _ _ => rfl, fun _ => rfl, fun _ => rfl, fun _ => rfl, fun _ => rfl, rfl⟩
   have hex : ∀ h : Fin 3, h = exampleModel.sender ∨ ∃ r, exampleModel.host r = h := by
     intro h
     fin_cases h

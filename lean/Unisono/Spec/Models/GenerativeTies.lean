@@ -117,7 +117,7 @@ namespace GenerativeWorld
 variable {H : Type} {R : ℕ} [DecidableEq H]
 
 /-- The splits of the draw of an outcome do not depend on the offsets. -/
-theorem canonicalDraw_split_update (y : Component H → ℝ) (h : H) (v : ℝ) :
+theorem canonicalDraw_split_update (y : Component H R → ℝ) (h : H) (v : ℝ) :
     (canonicalDraw (Function.update y (.offset h) v)).split = (canonicalDraw y).split := by
   have hu : ∀ z, Function.update y (Component.offset h) v (.split z) = y (.split z) := fun z =>
     Function.update_of_ne (by simp) _ _
@@ -127,13 +127,14 @@ theorem canonicalDraw_split_update (y : Component H → ℝ) (h : H) (v : ℝ) :
 /-- When the request of block `b` of speaker `r`'s device would reach the
 sender in the world of an outcome: the true time of the request plus the
 least delay from the speaker's host to the sender. -/
-def requestArrival (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
+def requestArrival (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
     (r : Fin R) (b : ℕ) : ℝ :=
-  f.speakerStart r - y (.offset (m.host r)) + ((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead
+  f.speakerStart (m.device r) - y (.offset (m.host r)) + ((b * m.blockSize : ℕ) : ℝ) / m.rate
+      - m.lead
     + (canonicalDraw y).split (m.host r) m.sender * f.roundTrip (m.host r) m.sender
 
 theorem measurable_requestArrival (m : GenerativeWorld H R) (f : Member H R) (r : Fin R)
-    (b : ℕ) : Measurable fun y : Component H → ℝ => requestArrival m f y r b :=
+    (b : ℕ) : Measurable fun y : Component H R → ℝ => requestArrival m f y r b :=
   (((measurable_const.sub (measurable_pi_apply _)).add measurable_const).sub
     measurable_const).add ((measurable_canonicalDraw_split _ _).mul_const _)
 
@@ -146,14 +147,14 @@ theorem ae_requestArrival_ne_of_ne (m : GenerativeWorld H R) (f : Member H R) {r
     ∀ᵐ y ∂Measure.pi (canonicalLaw m f),
       requestArrival m f y r₁ b₁ ≠ requestArrival m f y r₂ b₂ := by
   -- The offset of the first host's clock that would make the two times equal.
-  let G : (Component H → ℝ) → ℝ := fun y =>
-    (f.speakerStart r₁ + ((b₁ * m.blockSize : ℕ) : ℝ) / m.rate - m.lead)
+  let G : (Component H R → ℝ) → ℝ := fun y =>
+    (f.speakerStart (m.device r₁) + ((b₁ * m.blockSize : ℕ) : ℝ) / m.rate - m.lead)
       + (canonicalDraw y).split (m.host r₁) m.sender * f.roundTrip (m.host r₁) m.sender
       - requestArrival m f y r₂ b₂
   have hG : Measurable G :=
     (measurable_const.add ((measurable_canonicalDraw_split _ _).mul_const _)).sub
       (measurable_requestArrival m f r₂ b₂)
-  have hoff : (Component.offset (m.host r₂) : Component H) ≠ .offset (m.host r₁) := fun e =>
+  have hoff : (Component.offset (m.host r₂) : Component H R) ≠ .offset (m.host r₁) := fun e =>
     hne (Component.offset.inj e).symm
   have hGa : ∀ y, G (Function.update y (.offset (m.host r₁)) 0) = G y := by
     intro y
@@ -187,7 +188,7 @@ omit [Fintype H] in
 /-- In the world of an outcome, the request of block `b` of speaker `r`'s
 device, sent on to the sender, arrives at `requestArrival`. -/
 theorem canonicalWorld_deliver_request (m : GenerativeWorld H R) (f : Member H R)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ) (r : Fin R)
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ) (r : Fin R)
     (b q : ℕ) :
     (canonicalWorld m f hex y).network.deliver (m.host r) m.sender
         (((canonicalWorld m f hex y).speaker r).asked b) q

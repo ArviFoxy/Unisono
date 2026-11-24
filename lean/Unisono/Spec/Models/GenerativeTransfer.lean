@@ -91,52 +91,71 @@ theorem World.ext_fields {w w' : World H R} (hrate : w.rate = w'.rate)
 namespace GenerativeWorld
 
 variable {Ω : Type} [MeasurableSpace Ω] {m : GenerativeWorld H R} {f : Member H R}
-  {P : Measure Ω} {D : Ω → Draw H}
+  {P : Measure Ω} {D : Ω → Draw H R}
 
-theorem Draw.ext_fields {d d' : Draw H} (hsplit : d.split = d'.split)
+theorem Draw.ext_fields {d d' : Draw H R} (hsplit : d.split = d'.split)
     (hoffset : d.offset = d'.offset) (hlogRate : d.logRate = d'.logRate)
     (hwander : d.wander = d'.wander) (hlink : d.linkPaused = d'.linkPaused)
-    (hhost : d.hostPaused = d'.hostPaused) : d = d' := by
-  obtain ⟨_, _, _, _, _, _⟩ := d
-  obtain ⟨_, _, _, _, _, _⟩ := d'
-  dsimp only at hsplit hoffset hlogRate hwander hlink hhost
-  subst hsplit hoffset hlogRate hwander hlink hhost
+    (hhost : d.hostPaused = d'.hostPaused) (hdevlog : d.deviceLogRate = d'.deviceLogRate)
+    (hdevwander : d.deviceWander = d'.deviceWander) (herr : d.reportError = d'.reportError) :
+    d = d' := by
+  obtain ⟨_, _, _, _, _, _, _, _, _⟩ := d
+  obtain ⟨_, _, _, _, _, _, _, _, _⟩ := d'
+  dsimp only at hsplit hoffset hlogRate hwander hlink hhost hdevlog hdevwander herr
+  subst hsplit hoffset hlogRate hwander hlink hhost hdevlog hdevwander herr
   rfl
 
 /-- **A draw determines the world built from it.** -/
-theorem Builds.unique {d : Draw H} {w w' : World H R} (h : m.Builds f d w)
+theorem Builds.unique {d : Draw H R} {w w' : World H R} (h : m.Builds f d w)
     (h' : m.Builds f d w') : w = w' := by
   have hsender : w.sender = w'.sender := h.sender_eq.trans h'.sender_eq.symm
   have hhost : w.host = w'.host := h.host_eq.trans h'.host_eq.symm
   have hclock : w.clock = w'.clock :=
     funext fun x => Clock.ext_read fun t => (h.clock x t).trans (h'.clock x t).symm
   have hinj : ∀ x, Function.Injective (w.clock x).read := fun x => (w.clock x).strictMono.injective
+  have hdinj : ∀ x, Function.Injective (d.deviceReading x) := fun x => by
+    obtain ⟨c, hc⟩ := h.deviceClock x
+    have heq : d.deviceReading x = c.read := funext fun t => (hc t).symm
+    rw [heq]
+    exact c.strictMono.injective
   refine World.ext_fields (h.rate_eq.trans h'.rate_eq.symm) hsender hhost hclock ?_ ?_ ?_ ?_
-  · have hcap : ∀ n, w.source.capture n = w'.source.capture n := fun n => by
+  · have hcap0 : w.source.capture 0 = w'.source.capture 0 := by
       apply hinj w.sender
-      rw [h.capture n]
-      have h2 := h'.capture n
+      rw [h.capture_start]
+      have h2 := h'.capture_start
       rw [← hsender, ← hclock] at h2
       exact h2.symm
+    have hcap : ∀ n, w.source.capture n = w'.source.capture n := fun n => by
+      apply hdinj none
+      have h1 := h.capture n
+      have h2 := h'.capture n
+      rw [← hcap0] at h2
+      linarith
     have hfirst : ∀ b, w.source.first b = w'.source.first b := fun b =>
       (h.capture_first b).trans (h'.capture_first b).symm
     refine CaptureDevice.ext_fields hcap hfirst (fun b => ?_) (fun b => ?_)
     · rw [h.capture_handed, h'.capture_handed, hfirst, hcap]
     · rw [h.capture_reported, h'.capture_reported, hfirst, hcap, hsender, hclock]
   · funext r
-    have hout : ∀ k, (w.speaker r).out k = (w'.speaker r).out k := fun k => by
+    have hout0 : (w.speaker r).out 0 = (w'.speaker r).out 0 := by
       apply hinj (w.host r)
-      rw [h.speaker_out r k]
-      have h2 := h'.speaker_out r k
+      rw [h.speaker_start r]
+      have h2 := h'.speaker_start r
       rw [← hhost, ← hclock] at h2
       exact h2.symm
+    have hout : ∀ k, (w.speaker r).out k = (w'.speaker r).out k := fun k => by
+      apply hdinj (some (m.device r))
+      have h1 := h.speaker_out r k
+      have h2 := h'.speaker_out r k
+      rw [← hout0] at h2
+      linarith
     have hfirst : ∀ b, (w.speaker r).first b = (w'.speaker r).first b := fun b =>
       (h.speaker_first r b).trans (h'.speaker_first r b).symm
     refine PlaybackDevice.ext_fields hout hfirst (fun b => ?_) (fun b => ?_)
-    · apply hinj (w.host r)
+    · apply hdinj (some (m.device r))
       have h1 := h.speaker_asked r b
       have h2 := h'.speaker_asked r b
-      rw [← hhost, ← hclock, ← hfirst, ← hout] at h2
+      rw [← hfirst, ← hout] at h2
       linarith
     · rw [h.speaker_reported, h'.speaker_reported, hfirst, hout, hhost, hclock]
   · refine Network.ext_deliver fun i j s q => ?_
@@ -156,26 +175,33 @@ theorem Builds.unique {d : Draw H} {w w' : World H R} (h : m.Builds f d w)
 
 /-- The coordinates of a draw: the split of every pair of distinct hosts,
 taken in its fixed order, and the offset of every clock. The coordinates of
-the mean rates, the wander and the paused times are zero. -/
-def Draw.coordinates (d : Draw H) : Component H → ℝ
+the mean rates, the wander, the paused times and the errors of the reports
+are zero. -/
+def Draw.coordinates (d : Draw H R) : Component H R → ℝ
   | .split z => d.split (refOrientation H z).1.1 (refOrientation H z).1.2
   | .offset h => d.offset h
   | .logRate _ => 0
   | .wander _ => 0
   | .linkPaused _ _ => 0
   | .hostPaused _ => 0
+  | .deviceLogRate _ => 0
+  | .deviceWander _ => 0
+  | .reportError _ => 0
 
 /-- The number that each component of a draw contributes to its
 coordinates. -/
-def Component.scalar : (p : Component H) → p.Val → ℝ
+def Component.scalar : (p : Component H R) → p.Val → ℝ
   | .split _ => fun u => u
   | .offset _ => fun u => u
   | .logRate _ => fun _ => 0
   | .wander _ => fun _ => 0
   | .linkPaused _ _ => fun _ => 0
   | .hostPaused _ => fun _ => 0
+  | .deviceLogRate _ => fun _ => 0
+  | .deviceWander _ => fun _ => 0
+  | .reportError _ => fun _ => 0
 
-theorem Component.measurable_scalar (p : Component H) : Measurable p.scalar := by
+theorem Component.measurable_scalar (p : Component H R) : Measurable p.scalar := by
   cases p with
   | split z => exact measurable_id
   | offset h => exact measurable_id
@@ -183,8 +209,11 @@ theorem Component.measurable_scalar (p : Component H) : Measurable p.scalar := b
   | wander h => exact measurable_const
   | linkPaused i j => exact measurable_const
   | hostPaused h => exact measurable_const
+  | deviceLogRate x => exact measurable_const
+  | deviceWander x => exact measurable_const
+  | reportError x => exact measurable_const
 
-theorem Draw.coordinates_eq_scalar (d : Draw H) (p : Component H) :
+theorem Draw.coordinates_eq_scalar (d : Draw H R) (p : Component H R) :
     d.coordinates p = p.scalar (d.component (refOrientation H) p) := by
   cases p <;> rfl
 
@@ -192,16 +221,17 @@ section Coordinates
 
 variable [DecidableEq H]
 
-/-- A draw with no mean-rate spread, no wander and no pause is the draw of
-its own coordinates. -/
-theorem canonicalDraw_coordinates (d : Draw H) (hswap : ∀ i j, d.split i j + d.split j i = 1)
+/-- A draw with no mean-rate spread, no wander, no pause and no error of a
+report is the draw of its own coordinates. -/
+theorem canonicalDraw_coordinates (d : Draw H R) (hswap : ∀ i j, d.split i j + d.split j i = 1)
     (hmem : ∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) (hlog : ∀ h, d.logRate h = 0)
     (hwander : ∀ h t, d.wander h t = 0) (hlink : ∀ i j t, d.linkPaused i j t = 0)
-    (hhost : ∀ h t, d.hostPaused h t = 0) :
+    (hhost : ∀ h t, d.hostPaused h t = 0) (hdevlog : ∀ x, d.deviceLogRate x = 0)
+    (hdevwander : ∀ x t, d.deviceWander x t = 0) (herr : ∀ x t, d.reportError x t = 0) :
     canonicalDraw d.coordinates = d := by
   have hof : ∀ u : ℝ, u ∈ Set.Ioo (0 : ℝ) 1 → splitOf u = u := fun u hu => by
     simp [splitOf, hu.1, hu.2]
-  refine Draw.ext_fields ?_ ?_ ?_ ?_ ?_ ?_
+  refine Draw.ext_fields ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_ ?_
   · funext i j
     by_cases h : i = j
     · subst h
@@ -233,19 +263,25 @@ theorem canonicalDraw_coordinates (d : Draw H) (hswap : ∀ i j, d.split i j + d
     exact (hlink i j t).symm
   · funext h t
     exact (hhost h t).symm
+  · funext x
+    exact (hdevlog x).symm
+  · funext x t
+    exact (hdevwander x t).symm
+  · funext x t
+    exact (herr x t).symm
 
 /-- Each split of the draw of an outcome is a measurable function of the
 outcome. -/
 theorem measurable_canonicalDraw_split (i j : H) :
-    Measurable fun y : Component H → ℝ => (canonicalDraw y).split i j := by
+    Measurable fun y : Component H R → ℝ => (canonicalDraw y).split i j := by
   by_cases h : i = j
   · subst h
-    have hc : (fun y : Component H → ℝ => (canonicalDraw y).split i i) = fun _ => 1 / 2 := by
+    have hc : (fun y : Component H R → ℝ => (canonicalDraw y).split i i) = fun _ => 1 / 2 := by
       funext y
       simp [canonicalDraw]
     rw [hc]
     exact measurable_const
-  · have hc : (fun y : Component H → ℝ => (canonicalDraw y).split i j)
+  · have hc : (fun y : Component H R → ℝ => (canonicalDraw y).split i j)
         = fun y => if (refOrientation H (pairOf i j h)).1 = (i, j) then
             splitOf (y (.split (pairOf i j h)))
           else 1 - splitOf (y (.split (pairOf i j h))) := by
@@ -257,20 +293,25 @@ theorem measurable_canonicalDraw_split (i j : H) :
       ((measurable_splitOf.comp (measurable_pi_apply _)).const_sub 1)
 
 /-- The draw of an outcome is a measurable function of the outcome. -/
-theorem measurable_canonicalDraw : Measurable (canonicalDraw (H := H)) := by
+theorem measurable_canonicalDraw : Measurable (canonicalDraw (H := H) (R := R)) := by
   refine measurable_comap_iff.mpr ?_
-  have h1 : Measurable fun y : Component H → ℝ => (canonicalDraw y).split :=
+  have h1 : Measurable fun y : Component H R → ℝ => (canonicalDraw y).split :=
     Measurable.of_eval fun i => Measurable.of_eval fun j => measurable_canonicalDraw_split i j
-  have h2 : Measurable fun y : Component H → ℝ => (canonicalDraw y).offset :=
+  have h2 : Measurable fun y : Component H R → ℝ => (canonicalDraw y).offset :=
     Measurable.of_eval fun h => measurable_pi_apply _
-  have h3 : Measurable fun _ : Component H → ℝ => fun _ : H => (0 : ℝ) := measurable_const
-  have h4 : Measurable fun _ : Component H → ℝ => fun (_ : H) (_ : Time) => (0 : ℝ) :=
+  have h3 : Measurable fun _ : Component H R → ℝ => fun _ : H => (0 : ℝ) := measurable_const
+  have h4 : Measurable fun _ : Component H R → ℝ => fun (_ : H) (_ : Time) => (0 : ℝ) :=
     measurable_const
-  have h5 : Measurable fun _ : Component H → ℝ => fun (_ _ : H) (_ : Time) => (0 : ℝ) :=
+  have h5 : Measurable fun _ : Component H R → ℝ => fun (_ _ : H) (_ : Time) => (0 : ℝ) :=
     measurable_const
-  have h6 : Measurable fun _ : Component H → ℝ => fun (_ : H) (_ : Time) => (0 : ℝ) :=
+  have h6 : Measurable fun _ : Component H R → ℝ => fun (_ : H) (_ : Time) => (0 : ℝ) :=
     measurable_const
-  exact h1.prodMk (h2.prodMk (h3.prodMk (h4.prodMk (h5.prodMk h6))))
+  have h7 : Measurable fun _ : Component H R → ℝ => fun _ : Option (Fin R) => (0 : ℝ) :=
+    measurable_const
+  have h8 : Measurable fun _ : Component H R → ℝ =>
+      fun (_ : Option (Fin R)) (_ : Time) => (0 : ℝ) := measurable_const
+  exact h1.prodMk (h2.prodMk (h3.prodMk (h4.prodMk (h5.prodMk (h6.prodMk
+    (h7.prodMk (h8.prodMk h8)))))))
 
 variable [Fintype H]
 
@@ -307,6 +348,9 @@ theorem Prior.coordinates_law (hD : m.Prior f P D) :
     | wander h => exact hzero
     | linkPaused i j => exact hzero
     | hostPaused h => exact hzero
+    | deviceLogRate x => exact hzero
+    | deviceWander x => exact hzero
+    | reportError x => exact hzero
   have hae : ∀ p, AEMeasurable (fun ω => (D ω).coordinates p) P := fun p => (hlaw p).aemeasurable
   refine ⟨AEMeasurable.of_eval hae, ?_⟩
   refine ((iIndepFun_iff_map_fun_eq_pi_map hae).mp hind).trans ?_
@@ -328,10 +372,17 @@ theorem Prior.ae_eq_canonicalDraw (hD : m.Prior f P D) (hf : f.Noiseless) :
       hD.linkPaused_ae_const (hf.no_linkPauses i j)
   have hhost : ∀ᵐ ω ∂P, ∀ h, ∀ s t, (D ω).hostPaused h s = (D ω).hostPaused h t :=
     ae_all_iff.mpr fun h => hD.hostPaused_ae_const (hf.no_hostPauses h)
-  filter_upwards [hlog, hwander, hlink, hhost] with ω h1 h2 h3 h4
+  have hdevlog : ∀ᵐ ω ∂P, ∀ x, (D ω).deviceLogRate x = 0 :=
+    ae_all_iff.mpr fun x => hD.deviceLogRate_ae_eq_zero hf.no_spread x
+  have hdevwander : ∀ᵐ ω ∂P, ∀ x, ∀ t, (D ω).deviceWander x t = 0 :=
+    ae_all_iff.mpr fun x => hD.deviceWander_ae_eq_zero (hf.no_deviceWander x)
+  have herr : ∀ᵐ ω ∂P, ∀ x, ∀ t, (D ω).reportError x t = 0 :=
+    ae_all_iff.mpr fun x => hD.reportError_ae_eq_zero (hf.no_reportError x)
+  filter_upwards [hlog, hwander, hlink, hhost, hdevlog, hdevwander, herr]
+    with ω h1 h2 h3 h4 h5 h6 h7
   exact canonicalDraw_coordinates (D ω) (hD.split_swap ω) (hD.split_mem ω) h1 h2
     (fun i j t => by rw [h3 i j t 0, hD.linkPaused_zero ω i j])
-    (fun h t => by rw [h4 h t 0, hD.hostPaused_zero ω h])
+    (fun h t => by rw [h4 h t 0, hD.hostPaused_zero ω h]) h5 h6 h7
 
 variable {world : Ω → World H R}
 
@@ -351,7 +402,7 @@ of the concrete random world of a noiseless member holds in almost every
 outcome of every random world of the member. -/
 theorem Prior.ae_of_ae_canonicalDraw (hD : m.Prior f P D) (hf : f.Noiseless)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h)
-    {p : Draw H → World H R → Prop}
+    {p : Draw H R → World H R → Prop}
     (h : ∀ᵐ y ∂Measure.pi (canonicalLaw m f), p (canonicalDraw y) (canonicalWorld m f hex y)) :
     ∀ᵐ ω ∂P, p (D ω) (world ω) := by
   have hlaw := hD.coordinates_law

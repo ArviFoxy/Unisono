@@ -816,15 +816,16 @@ of the family; everything else it has to estimate from what it observes.
 \begin{definition}[What a solution is told]
 A solution is told the following (\lean{GenerativeWorld}).
 \begin{itemize}
-\item The hosts, which one is the sender, and which host drives each
-  speaker.
+\item The hosts, which one is the sender, which host drives each speaker,
+  and which speakers are outputs of one audio device (\lean{device}). The
+  \emph{audio devices} are the capture device and the playback devices; a
+  playback device can have several speakers as its outputs.
 \item The settings of the devices and of the application: the nominal rate
   $\rho$, the number $m \ge 1$ of frames or output samples in a block
   (\lean{blockSize}), the request lead $\lambda > 0$ (\lean{lead}) and the
   target latency $L^* \ge 0$ (\lean{targetLatency}). The \emph{request
   lead} is how long before a block's first output sample leaves, measured on
-  the clock of the speaker's host, the playback device asks its host for the
-  block.
+  the playback device's own clock, the device asks its host for the block.
 \item One number of the prior: the \emph{shape} $\alpha > 0$
   (\lean{shape}).
 \end{itemize}
@@ -858,14 +859,20 @@ A member of the family is a choice of the following numbers
 \item For each host $i$, the size $\nu_i \ge 0$ and the time scale
   $\vartheta_i > 0$ of the wander of its clock (\lean{wanderSize},
   \lean{wanderTime}).
+\item For each audio device $x$, the size $\nu_x \ge 0$ and the time scale
+  $\vartheta_x > 0$ of the wander of its clock (\lean{deviceWanderSize},
+  \lean{deviceWanderTime}).
+\item For each audio device $x$, the standard deviation $\varsigma_x \ge 0$
+  of the error of the timestamps that it reports, in seconds, and the time
+  scale $\chi_x > 0$ of that error (\lean{reportSize}, \lean{reportTime}).
 \item The range $\theta_{\max} > 0$ of the clock offsets
   (\lean{offsetRange}).
 \end{itemize}
 A member also fixes the readings $\xi$ and $\xi_r$ of their hosts' clocks
-at which the capture device and speaker $r$ start (\lean{captureStart},
-\lean{speakerStart}). They are not known before the devices start, and
-nothing about them has to be estimated: each host reads the start of its own
-device from the first timestamp that the device reports.
+at which the capture device and the playback device of speaker $r$ start
+(\lean{captureStart}, \lean{speakerStart}). They are not known before the
+devices start; each host learns the start of its own device from the
+timestamps that the device reports.
 \end{definition}
 
 \begin{definition}[The prior]
@@ -886,6 +893,14 @@ The following are drawn at random, all independently of one another
   Gaussian process with mean $0$, continuous in $t$, whose covariance
   between true times $s$ and $t$ is $\nu_i^2\,e^{-|s - t|/\vartheta_i}$
   (\lean{wander}).
+\item For each audio device $x$, the logarithm $\gamma_x$ of the mean rate
+  of its clock, with the law of a host's, and the wander $Z_x(t)$ of its
+  clock, a process of the same kind with the size $\nu_x$ and the time
+  scale $\vartheta_x$ (\lean{deviceLogRate}, \lean{deviceWander}).
+\item For each audio device $x$, the error $E_x(t)$ of its reports: a
+  stationary Gaussian process with mean $0$, continuous in $t$, whose
+  covariance between true times $s$ and $t$ is
+  $\varsigma_x^2\,e^{-|s - t|/\chi_x}$ (\lean{reportError}).
 \item For each direction from $i$ to $j$, the pauses of the link. Pauses
   begin at the instants of a Poisson process of rate $\mu_{ij}$. Their
   lengths are independent of one another and of those instants, and each
@@ -929,13 +944,27 @@ The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
   together when it ends. A pause of the sender's host delays every receiver
   at once: links and hosts are drawn independently, and the delays of two
   receivers are not independent.
-\item Every audio device runs on the clock of its host. Frame $n$ is
-  captured when the sender's clock reads $\xi + n/\rho$, and output sample
-  $k$ of speaker $r$ leaves when the clock of its host reads
-  $\xi_r + k/\rho$. Blocks hold $m$ frames or output samples. A capture
-  block is handed over when its last frame is captured. A playback block is requested $\lambda$ seconds, measured on
-  the host's clock, before its first output sample leaves. Timestamps are
-  exact, and the target latency of every frame is $L^*$.
+\item Every audio device $x$ has a clock of its own, which advances by
+  \[
+    D_x(t) = \int_0^t e^{\gamma_x + Z_x(y)}\,dy
+  \]
+  between true time zero and true time $t$ (\lean{Draw.deviceReading}).
+  The capture device captures frame zero when the sender's clock reads
+  $\xi$, and frame $n$ when its own clock has advanced by $n/\rho$ since
+  then. The playback device of speaker $r$ lets output sample zero leave
+  when the clock of its host reads $\xi_{r'}$, where $r'$ is the speaker
+  that stands for the device, and output sample $k$ when its own clock has
+  advanced by $k/\rho$ since then. Speakers that are outputs of one device
+  therefore share its clock.
+\item Blocks hold $m$ frames or output samples. A capture block is handed
+  over when its last frame is captured. A playback block is requested
+  $\lambda$ seconds, measured on the device's clock, before its first
+  output sample leaves.
+\item The timestamp that the device $x$ reports for a block is the reading
+  of its host's clock at the true time $t$ of the block's first frame or
+  output sample, plus the error $E_x(t)$. A constant part of such an error
+  is not modelled: no host can tell it from a delay inside the device.
+\item The target latency of every frame is $L^*$.
 \end{itemize}
 A random world belongs to a member of the family when, in every outcome, it
 is the world built from a draw, and the draw has the law above
@@ -971,7 +1000,8 @@ The law of the paused time that begins in a period is a probability law
 (\lean{pauseLaw\_zero}). The model is not empty
 (\lean{GenerativeWorld.\allowbreak example\_\allowbreak holds}): there is a
 random world of the model with three hosts in which the splits, the offsets
-and the mean rates are random. Its member has no pauses and no
+and the mean rates of the clocks of the hosts and of the audio devices are
+random. Its member has no pauses and no
 wander, $\mu_{ij} = 0$, $\mu_i = 0$ and $\nu_i = 0$. A random world with pauses
 needs a Poisson process, and one with wander needs a stationary Gaussian
 process with continuous paths. Both exist by standard constructions, which
@@ -979,9 +1009,11 @@ are not carried out in Lean, so the model is not yet shown to have such
 members. The generative model is not proved to belong to the classes above;
 its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
 
-A member is \emph{noiseless} when its links and its hosts never pause, its
-clocks do not wander and the mean rates of its clocks have no spread,
-$\mu_{ij} = 0$, $\mu_i = 0$, $\nu_i = 0$ and $\sigma = 0$
+A member is \emph{noiseless} when its links and its hosts never pause, the
+clocks of its hosts and of its audio devices do not wander, the mean rates
+of those clocks have no spread, and its audio devices report exact
+timestamps: $\mu_{ij} = 0$, $\mu_i = 0$, $\nu_i = 0$, $\nu_x = 0$,
+$\varsigma_x = 0$ and $\sigma = 0$
 (\lean{Member.Noiseless}). What stays random in such a member is what no
 host can learn: the offsets and the splits. Almost every outcome of a
 noiseless member is an ideal constant world whose constant delays are the
@@ -1047,12 +1079,18 @@ simplification distorts.
 \item \emph{The wander of a clock has one time scale and is stationary.}
   Real oscillators also age, have noise with long memory, and shift as a
   device warms up.
-\item \emph{Every audio device runs on the clock of its host and reports
-  exact timestamps.} Most real devices have their own oscillator and inexact
-  timestamps. Estimating the clock of a device against that of its host is
-  a second estimation problem, which the model omits. A constant error in
-  the time that a device reports for its output can be observed by no host,
-  like asymmetry.
+\item \emph{The error of a device's timestamps is a stationary Gaussian
+  process with one time scale.} Real timestamps are of several kinds: some
+  are computed by a filter and err smoothly over seconds, some are rounded
+  to a fixed step such as a millisecond, and some are grossly wrong for a
+  while when the host is busy. The model has the first kind, stands for the
+  second by a short time scale, and does not have the third. A constant
+  error in the time that a device reports for its output can be observed by
+  no host, like asymmetry, and is not modelled.
+\item \emph{The clocks of the audio devices are independent of the clocks of
+  their hosts and of one another.} A device without an oscillator of its own
+  runs on a clock of its host, and devices in one room share changes of
+  temperature.
 \item \emph{No host can check the shape $\alpha$.} Every result under the
   model depends on it and has to say how it changes when $\alpha$ is wrong.
 \end{itemize}

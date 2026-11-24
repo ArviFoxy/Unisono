@@ -48,7 +48,7 @@ variable {H : Type} {R : ℕ} [DecidableEq H] {Msg : Type} {m : GenerativeWorld 
 /-- A property of the world holds almost surely for the member `f`: in almost
 every outcome of every random world of the member. -/
 def AlmostSurely (m : GenerativeWorld H R) (f : Member H R) (p : World H R → Prop) : Prop :=
-  ∀ (Ω : Type) [MeasurableSpace Ω] (P : Measure Ω) (D : Ω → Draw H) (world : Ω → World H R),
+  ∀ (Ω : Type) [MeasurableSpace Ω] (P : Measure Ω) (D : Ω → Draw H R) (world : Ω → World H R),
     m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) → ∀ᵐ ω ∂P, p (world ω)
 
 /-- **The solutions that a solution through the sender is compared with at
@@ -109,7 +109,7 @@ omit [Fintype H] in
 /-- The capture device of the world of an outcome captures frames after
 every true time. -/
 theorem capture_unbounded_canonical (m : GenerativeWorld H R) (f : Member H R)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ) (T : Time) :
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ) (T : Time) :
     ∃ n, T ≤ (canonicalWorld m f hex y).source.capture n := by
   obtain ⟨n, hn⟩ := exists_nat_ge ((T - (f.captureStart - y (.offset m.sender))) * m.rate)
   refine ⟨n, ?_⟩

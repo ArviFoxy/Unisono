@@ -402,14 +402,15 @@ section Hosts
 
 variable {H : Type} {R : ℕ} [DecidableEq H]
 
-instance : DecidableEq (Component H) := (componentEquiv H).decidableEq
+set_option synthInstance.maxSize 512 in
+instance : DecidableEq (Component H R) := (componentEquiv H R).decidableEq
 
 /-- A receiving host: a host other than the sender's. -/
 abbrev ReceivingHost (m : GenerativeWorld H R) : Type := {h : H // h ≠ m.sender}
 
 /-- The coordinate of the split of the pair of the sender and a receiving
 host. -/
-def senderSplit (m : GenerativeWorld H R) (k : m.ReceivingHost) : Component H :=
+def senderSplit (m : GenerativeWorld H R) (k : m.ReceivingHost) : Component H R :=
   .split (pairOf m.sender k.1 k.2.symm)
 
 omit [DecidableEq H] in
@@ -439,19 +440,19 @@ def reflectScale (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost
 /-- The reflection of one receiving host: of the split of its pair with the
 sender and of the offset of its clock. -/
 def reflectHost (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost) :
-    (Component H → ℝ) → Component H → ℝ :=
+    (Component H R → ℝ) → Component H R → ℝ :=
   updatePair (m.senderSplit k) (.offset k.1) (reflectPair (reflectScale m f k) f.offsetRange)
 
 /-- The reflections of the receiving hosts of a list, one after another. -/
 def reflectList (m : GenerativeWorld H R) (f : Member H R) :
-    List m.ReceivingHost → (Component H → ℝ) → Component H → ℝ
+    List m.ReceivingHost → (Component H R → ℝ) → Component H R → ℝ
   | [] => id
   | k :: l => reflectHost m f k ∘ reflectList m f l
 
 /-- The reflections of a list of hosts change no coordinate of other
 hosts. -/
 theorem reflectList_of_ne (m : GenerativeWorld H R) (f : Member H R) (l : List m.ReceivingHost)
-    (y : Component H → ℝ) (p : Component H)
+    (y : Component H R → ℝ) (p : Component H R)
     (hp : ∀ k ∈ l, p ≠ m.senderSplit k ∧ p ≠ .offset k.1) : reflectList m f l y p = y p := by
   induction l with
   | nil => rfl
@@ -464,7 +465,7 @@ theorem reflectList_of_ne (m : GenerativeWorld H R) (f : Member H R) (l : List m
 /-- The reflections of a list of distinct hosts reflect the two coordinates
 of each of its hosts once. -/
 theorem reflectList_apply (m : GenerativeWorld H R) (f : Member H R) (l : List m.ReceivingHost)
-    (hl : l.Nodup) (k : m.ReceivingHost) (hk : k ∈ l) (y : Component H → ℝ) :
+    (hl : l.Nodup) (k : m.ReceivingHost) (hk : k ∈ l) (y : Component H R → ℝ) :
     reflectList m f l y (m.senderSplit k)
         = (reflectPair (reflectScale m f k) f.offsetRange
             (y (m.senderSplit k), y (.offset k.1))).1
@@ -477,7 +478,7 @@ theorem reflectList_apply (m : GenerativeWorld H R) (f : Member H R) (l : List m
     obtain ⟨hk₀, hl'⟩ := List.nodup_cons.mp hl
     by_cases hkk : k = k₀
     · subst hkk
-      have hfix : ∀ p : Component H, (p = m.senderSplit k ∨ p = .offset k.1) →
+      have hfix : ∀ p : Component H R, (p = m.senderSplit k ∨ p = .offset k.1) →
           reflectList m f l y p = y p := by
         intro p hp
         refine reflectList_of_ne m f l y p fun k' hk' => ?_
@@ -495,9 +496,9 @@ theorem reflectList_apply (m : GenerativeWorld H R) (f : Member H R) (l : List m
     · have hkl : k ∈ l := (List.mem_cons.mp hk).resolve_left hkk
       have h1 : m.senderSplit k ≠ m.senderSplit k₀ := fun e => hkk (m.senderSplit_injective e)
       have h2 : m.senderSplit k ≠ .offset k₀.1 := m.senderSplit_ne_offset k _
-      have h3 : (Component.offset k.1 : Component H) ≠ m.senderSplit k₀ :=
+      have h3 : (Component.offset k.1 : Component H R) ≠ m.senderSplit k₀ :=
         (m.senderSplit_ne_offset k₀ _).symm
-      have h4 : (Component.offset k.1 : Component H) ≠ .offset k₀.1 := fun e =>
+      have h4 : (Component.offset k.1 : Component H R) ≠ .offset k₀.1 := fun e =>
         hkk (Subtype.ext (Component.offset.inj e))
       change updatePair (m.senderSplit k₀) (.offset k₀.1) _ (reflectList m f l y)
             (m.senderSplit k) = _
@@ -525,7 +526,7 @@ theorem measurePreserving_reflectList (m : GenerativeWorld H R) (f : Member H R)
 /-- **The reflection**: of the split of the pair of the sender and every
 receiving host, and of the offset of that host's clock. -/
 def reflect (m : GenerativeWorld H R) (f : Member H R) :
-    (Component H → ℝ) → Component H → ℝ :=
+    (Component H R → ℝ) → Component H R → ℝ :=
   reflectList m f (Finset.univ : Finset m.ReceivingHost).toList
 
 /-- **The reflection keeps the law of the outcomes.** -/
@@ -535,7 +536,7 @@ theorem measurePreserving_reflect (m : GenerativeWorld H R) (f : Member H R) :
   measurePreserving_reflectList m f _
 
 theorem reflect_apply (m : GenerativeWorld H R) (f : Member H R) (k : m.ReceivingHost)
-    (y : Component H → ℝ) :
+    (y : Component H R → ℝ) :
     reflect m f y (m.senderSplit k)
         = (reflectPair (reflectScale m f k) f.offsetRange
             (y (m.senderSplit k), y (.offset k.1))).1
@@ -544,18 +545,18 @@ theorem reflect_apply (m : GenerativeWorld H R) (f : Member H R) (k : m.Receivin
             (y (m.senderSplit k), y (.offset k.1))).2 :=
   reflectList_apply m f _ (Finset.nodup_toList _) k (Finset.mem_toList.mpr (Finset.mem_univ k)) y
 
-theorem reflect_of_ne (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
-    (p : Component H) (hp : ∀ k : m.ReceivingHost, p ≠ m.senderSplit k ∧ p ≠ .offset k.1) :
+theorem reflect_of_ne (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
+    (p : Component H R) (hp : ∀ k : m.ReceivingHost, p ≠ m.senderSplit k ∧ p ≠ .offset k.1) :
     reflect m f y p = y p :=
   reflectList_of_ne m f _ y p fun k _ => hp k
 
 /-- How far the reflection shifts the timeline of each host: the offset of
 its clock before the reflection minus the offset after it. -/
-def reflectShift (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ) (h : H) : ℝ :=
+def reflectShift (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ) (h : H) : ℝ :=
   y (.offset h) - reflect m f y (.offset h)
 
 /-- The reflection leaves the sender's timeline in place. -/
-theorem reflectShift_sender (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ) :
+theorem reflectShift_sender (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ) :
     reflectShift m f y m.sender = 0 := by
   have h : reflect m f y (.offset m.sender) = y (.offset m.sender) :=
     reflect_of_ne m f y _ fun k =>
@@ -564,7 +565,7 @@ theorem reflectShift_sender (m : GenerativeWorld H R) (f : Member H R) (y : Comp
 
 /-- The reflection changes the least delay from the sender to a receiving
 host by the shift of that host's timeline. -/
-theorem reflect_split_sender (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
+theorem reflect_split_sender (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
     {h : H} (hne : h ≠ m.sender) :
     ((canonicalDraw (reflect m f y)).split m.sender h - (canonicalDraw y).split m.sender h)
         * f.roundTrip m.sender h
@@ -580,7 +581,7 @@ theorem reflect_split_sender (m : GenerativeWorld H R) (f : Member H R) (y : Com
   have hR := reflectPair_shift (reflectScale m f ⟨h, hne⟩) f.offsetRange
     (y (.split (pairOf m.sender h hsh))) (y (.offset h))
   rw [← e1', ← e2'] at hR
-  have hs : ∀ z : Component H → ℝ, (canonicalDraw z).split m.sender h
+  have hs : ∀ z : Component H R → ℝ, (canonicalDraw z).split m.sender h
       = if (refOrientation H (pairOf m.sender h hsh)).1 = (m.sender, h) then
           splitOf (z (.split (pairOf m.sender h hsh)))
         else 1 - splitOf (z (.split (pairOf m.sender h hsh))) := fun z => by
@@ -601,7 +602,7 @@ theorem reflect_split_sender (m : GenerativeWorld H R) (f : Member H R) (y : Com
     linear_combination (1 / 2 : ℝ) * hR
 
 /-- The reflection changes no split of two hosts other than the sender. -/
-theorem reflect_split_peer (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
+theorem reflect_split_peer (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
     {i j : H} (hi : i ≠ m.sender) (hj : j ≠ m.sender) :
     (canonicalDraw (reflect m f y)).split i j = (canonicalDraw y).split i j := by
   by_cases hij : i = j
@@ -618,7 +619,7 @@ theorem reflect_split_peer (m : GenerativeWorld H R) (f : Member H R) (y : Compo
 /-- The reflection changes the least delay of each link to or from the
 sender by the shift of the receiving end minus the shift of the sending
 end. -/
-theorem reflect_delay_star (m : GenerativeWorld H R) (f : Member H R) (y : Component H → ℝ)
+theorem reflect_delay_star (m : GenerativeWorld H R) (f : Member H R) (y : Component H R → ℝ)
     {i j : H} (hs : i = m.sender ∨ j = m.sender) :
     (canonicalDraw (reflect m f y)).split i j * f.roundTrip i j
       = (canonicalDraw y).split i j * f.roundTrip i j + reflectShift m f y j
@@ -627,7 +628,7 @@ theorem reflect_delay_star (m : GenerativeWorld H R) (f : Member H R) (y : Compo
   · rw [hi]
     by_cases hj : j = m.sender
     · rw [hj]
-      have h1 : ∀ z : Component H → ℝ, (canonicalDraw z).split m.sender m.sender = 1 / 2 :=
+      have h1 : ∀ z : Component H R → ℝ, (canonicalDraw z).split m.sender m.sender = 1 / 2 :=
         fun z => by simp [canonicalDraw]
       rw [h1, h1]
       ring
@@ -645,7 +646,7 @@ theorem reflect_delay_star (m : GenerativeWorld H R) (f : Member H R) (y : Compo
 /-- Every message on a link to or from the sender still arrives after it is
 sent when the timelines are shifted by the reflection. -/
 theorem reflectShift_star (m : GenerativeWorld H R) (f : Member H R)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ) :
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ) :
     ∀ i j s q a, (i = (canonicalWorld m f hex y).sender ∨ j = (canonicalWorld m f hex y).sender) →
       (canonicalWorld m f hex y).network.deliver i j s q = some a →
         s + reflectShift m f y i < a + reflectShift m f y j := by
@@ -662,7 +663,7 @@ theorem reflectShift_star (m : GenerativeWorld H R) (f : Member H R)
 /-- **The world of the reflected outcome is the world of the outcome with
 the timelines shifted along the links to and from the sender.** -/
 theorem canonicalWorld_reflect (m : GenerativeWorld H R) (f : Member H R)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ) :
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ) :
     canonicalWorld m f hex (reflect m f y)
       = shiftStarKeepPeers (canonicalWorld m f hex y) (reflectShift m f y)
           (reflectShift_star m f hex y) :=
