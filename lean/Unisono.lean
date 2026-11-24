@@ -38,6 +38,7 @@ public import Unisono.Solutions.Controller.HeldLevel
 public import Unisono.Solutions.Controller.ExpectedCost
 public import Unisono.Solutions.Controller.LateBlocks
 public import Unisono.Solutions.Controller.LateRate
+public import Unisono.Solutions.Controller.Limited
 public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Undelayed

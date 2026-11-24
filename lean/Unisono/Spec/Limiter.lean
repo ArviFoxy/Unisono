@@ -34,7 +34,8 @@ device; a host recomputes it from its view (`limiterLast`).
   limited solution plays what the solution plays.
 
 The run of the limited solution is the run of the solution apart from what
-the speakers play (`Unisono.Spec.SameMessages`).
+the speakers play (`Unisono.Spec.SameMessages`). The limiter is applied to
+the controller in `Unisono.Solutions.Controller.Limited`.
 -/
 
 @[expose] public noncomputable section

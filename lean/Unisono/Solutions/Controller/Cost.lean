@@ -45,9 +45,16 @@ The theorem needs the capture device's clock to run less than twice as fast
 as the clock of every playback device. Without that condition, the last
 term becomes the weight of missed samples times `1 + 2 δ`, plus the weight
 of discontinuities, times the number of output samples per second in true
-time, averaged over the speakers (`cost_le_outputs_of_heldLevel`). Both
-theorems come from one statement about any playback that plays the position
-that is due, or nothing (`cost_le_of_duePositions`).
+time, averaged over the speakers (`cost_le_outputs_of_heldLevel`).
+
+Neither bound uses how the controller comes to play what it plays. The first
+holds for any playback that, from some output sample on, plays the position
+that is due exactly when the block that the sample needs is on time
+(`cost_le_of_plays_margin`). The second holds for any playback that, from
+some output sample on, plays only positions that are due
+(`cost_le_outputs_of_plays_due`). Both come from one statement about such
+a playback (`cost_le_of_duePositions`). The controller with a limiter
+(`Unisono.Solutions.Controller.Limited`) is bounded through them.
 
 The theorems are upper bounds in one outcome. How large the late rate is
 under the generative model is in `Unisono.Solutions.Controller.LateRate`,
@@ -202,6 +209,197 @@ theorem cost_le_of_duePositions (hS : ConstantRates m f d w) (L : ℝ)
         + (c.discontinuities : ℝ≥0∞) * w.discontinuities plays := by
         ring
 
+omit [DecidableEq H] in
+/-- **The cost of playing the position that is due exactly when its block
+is on time.** In a world whose clocks run at constant rates, consider a
+playback in which, from some output sample on, each output sample of each
+speaker plays the position that is due at the level `L` if the message of
+the capture block that it needs takes less than the sample's margin, and
+nothing of the source otherwise. Suppose that the capture device's clock
+runs less than twice as fast as the clock of every playback device, and
+faster by a fraction of at most `δ`. Then the cost is at most the costs of
+the speakers' latencies in synchronization, latency and tracking, plus the
+weight of missed samples times `1 + 2 δ`, plus the weight of
+discontinuities, times the late rate. -/
+theorem cost_le_of_plays_margin (hS : ConstantRates m f d w) (lookahead : ℕ+) (L : ℝ)
+    {plays : Fin R → ℕ → Option ℝ} {K₀ : ℕ}
+    (hpl : ∀ r k, K₀ ≤ k →
+      plays r k
+        = if blockDelay m f d w r (neededBlock m lookahead (duePosition m f d w L r k))
+            < margin m f d w lookahead L r k
+          then some (duePosition m f d w L r k) else none)
+    (hratio : ∀ r, Real.exp (d.deviceLogRate none)
+      / Real.exp (d.deviceLogRate (some (m.device r))) < 2)
+    {δ : ℝ≥0} (hδ : ∀ r, Real.exp (d.deviceLogRate none)
+      / Real.exp (d.deviceLogRate (some (m.device r))) - 1 ≤ δ) (c : Weights) :
+    w.cost plays c
+      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
+          * lateRate m f d w lookahead L := by
+  -- Whatever a late output sample plays is the position that is due.
+  have hdue : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x → x = duePosition m f d w L r k := by
+    intro r k hk x hx
+    rw [hpl r k hk] at hx
+    split_ifs at hx with h
+    exact (Option.some.inj hx).symm
+  -- The positions that are due lie on a line in the output sample.
+  have hlinepos : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x →
+      x = duePosition m f d w L r 0
+        + Real.exp (d.deviceLogRate none) / Real.exp (d.deviceLogRate (some (m.device r)))
+          * k := by
+    intro r k hk x hx
+    rw [hdue r k hk x hx]
+    exact duePosition_eq hS L r k
+  have hc : ∀ r, 0 < Real.exp (d.deviceLogRate none)
+        / Real.exp (d.deviceLogRate (some (m.device r)))
+      ∧ Real.exp (d.deviceLogRate none)
+        / Real.exp (d.deviceLogRate (some (m.device r))) < 2 :=
+    fun r => ⟨div_pos (Real.exp_pos _) (Real.exp_pos _), hratio r⟩
+  have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
+    intro r T
+    obtain ⟨b, hb⟩ := hS.asked_unbounded r T
+    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
+  have hmissed := w.missed_le_of_line plays hlinepos hc hδ hout
+  have hdisc := w.discontinuities_le_of_line plays hlinepos hc hout
+  -- An output sample plays nothing exactly when it is late.
+  have hlate : longRun (w.accruedOutputs fun r k => (missingAt (plays r) k : ℝ≥0∞))
+      ≤ lateRate m f d w lookahead L := by
+    unfold lateRate
+    refine w.longRun_outputs_le K₀ (fun r k hk => ?_) (fun r k => ENNReal.natCast_ne_top _)
+    have hp := hpl r k hk
+    by_cases hd : blockDelay m f d w r (neededBlock m lookahead (duePosition m f d w L r k))
+        < margin m f d w lookahead L r k
+    · have e : missingAt (plays r) k = 0 := by simp [missingAt, hp, hd]
+      rw [e]
+      simp
+    · have e1 : missingAt (plays r) k = 1 := by simp [missingAt, hp, hd]
+      have e2 : lateAt m f d w lookahead L r k = 1 := by simp [lateAt, not_lt.mp hd]
+      rw [e1, e2]
+  have hmissed' : w.missed plays
+      ≤ ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * lateRate m f d w lookahead L :=
+    hmissed.trans (by gcongr)
+  have hdisc' : w.discontinuities plays ≤ lateRate m f d w lookahead L := hdisc.trans hlate
+  calc w.cost plays c
+      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + (c.missed : ℝ≥0∞) * w.missed plays
+        + (c.discontinuities : ℝ≥0∞) * w.discontinuities plays :=
+        cost_le_of_duePositions hS L hdue c
+    _ ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + (c.missed : ℝ≥0∞) * (((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * lateRate m f d w lookahead L)
+        + (c.discontinuities : ℝ≥0∞) * lateRate m f d w lookahead L := by
+        gcongr
+    _ = (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
+          * lateRate m f d w lookahead L := by
+        ring
+
+omit [DecidableEq H] in
+/-- **The cost of playing positions that are due, at any rates of the
+devices' clocks.** In a world whose clocks run at constant rates, consider a
+playback in which, from some output sample on, every position played is the
+position that is due at the level `L`. Suppose that the capture device's
+clock runs faster than the clock of each playback device by a fraction of at
+most `δ`. Then the cost is at most the costs of the speakers' latencies in
+synchronization, latency and tracking, plus the weight of missed samples
+times `1 + 2 δ`, plus the weight of discontinuities, times the number of
+output samples per second in true time, averaged over the speakers. -/
+theorem cost_le_outputs_of_plays_due (hS : ConstantRates m f d w) (L : ℝ)
+    {plays : Fin R → ℕ → Option ℝ} {K₀ : ℕ}
+    (hdue : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x → x = duePosition m f d w L r k)
+    {δ : ℝ≥0} (hδ : ∀ r, Real.exp (d.deviceLogRate none)
+      / Real.exp (d.deviceLogRate (some (m.device r))) - 1 ≤ δ) (c : Weights) :
+    w.cost plays c
+      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
+          * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
+  have hlinepos : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x →
+      x = duePosition m f d w L r 0
+        + Real.exp (d.deviceLogRate none) / Real.exp (d.deviceLogRate (some (m.device r)))
+          * k := by
+    intro r k hk x hx
+    rw [hdue r k hk x hx]
+    exact duePosition_eq hS L r k
+  have hc : ∀ r, 0 < Real.exp (d.deviceLogRate none)
+      / Real.exp (d.deviceLogRate (some (m.device r))) :=
+    fun r => div_pos (Real.exp_pos _) (Real.exp_pos _)
+  have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
+    intro r T
+    obtain ⟨b, hb⟩ := hS.asked_unbounded r T
+    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
+  have hrate : longRun (w.accruedOutputs fun _ _ => 1)
+      ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+        (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) :=
+    w.longRun_outputs_le_rate
+      (a := fun r => (f.speakerStart (m.device r) - d.offset (m.host r))
+        / Real.exp (d.logRate (m.host r)))
+      (s := fun r => m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
+      (fun r => mul_pos m.rate_pos (Real.exp_pos _)) (fun r k => hS.out r k)
+  have hmissed : w.missed plays
+      ≤ ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+        (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) :=
+    (w.missed_le_of_slope plays hlinepos hc hδ hout).trans (by gcongr)
+  have hdisc : w.discontinuities plays
+      ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+        (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) :=
+    (w.discontinuities_le_outputs plays).trans hrate
+  calc w.cost plays c
+      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + (c.missed : ℝ≥0∞) * w.missed plays
+        + (c.discontinuities : ℝ≥0∞) * w.discontinuities plays :=
+        cost_le_of_duePositions hS L hdue c
+    _ ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + (c.missed : ℝ≥0∞) * (((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))))
+        + (c.discontinuities : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
+        gcongr
+    _ = (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
+          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
+            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
+        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
+        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
+          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
+        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
+          * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
+            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
+        ring
+
 /-- **What the controller plays at a held level.** Consider a world whose
 clocks run at constant rates, with exact timestamps and with pauses of links
 and of hosts, in which no speaker is on the sender's host. The controller
@@ -261,93 +459,7 @@ theorem cost_le_of_heldLevel (hS : ConstantRates m f d w) (lookahead : ℕ+)
           * lateRate m f d w lookahead L := by
   obtain ⟨K₀, hK₀⟩ := exists_plays_heldLevel p hS lookahead hdev L hps hnodup hcopies hnos hpsp
     hline
-  obtain ⟨plays, hplays⟩ : ∃ plays : Fin R → ℕ → Option ℝ,
-      plays = (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).plays w
-        lookahead := ⟨_, rfl⟩
-  have hcost : (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).cost w
-      lookahead c = w.cost plays c := by
-    rw [hplays]
-    rfl
-  have hpl : ∀ r k, K₀ ≤ k →
-      plays r k
-        = if blockDelay m f d w r (neededBlock m lookahead (duePosition m f d w L r k))
-            < margin m f d w lookahead L r k
-          then some (duePosition m f d w L r k) else none := by
-    intro r k hk
-    rw [hplays]
-    exact hK₀ r k hk
-  -- Whatever a late output sample plays is the position that is due.
-  have hdue : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x → x = duePosition m f d w L r k := by
-    intro r k hk x hx
-    rw [hpl r k hk] at hx
-    split_ifs at hx with h
-    exact (Option.some.inj hx).symm
-  -- The positions that are due lie on a line in the output sample.
-  have hlinepos : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x →
-      x = duePosition m f d w L r 0
-        + Real.exp (d.deviceLogRate none) / Real.exp (d.deviceLogRate (some (m.device r)))
-          * k := by
-    intro r k hk x hx
-    rw [hdue r k hk x hx]
-    exact duePosition_eq hS L r k
-  have hc : ∀ r, 0 < Real.exp (d.deviceLogRate none)
-        / Real.exp (d.deviceLogRate (some (m.device r)))
-      ∧ Real.exp (d.deviceLogRate none)
-        / Real.exp (d.deviceLogRate (some (m.device r))) < 2 :=
-    fun r => ⟨div_pos (Real.exp_pos _) (Real.exp_pos _), hratio r⟩
-  have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
-    intro r T
-    obtain ⟨b, hb⟩ := hS.asked_unbounded r T
-    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
-  have hmissed := w.missed_le_of_line plays hlinepos hc hδ hout
-  have hdisc := w.discontinuities_le_of_line plays hlinepos hc hout
-  -- An output sample plays nothing exactly when it is late.
-  have hlate : longRun (w.accruedOutputs fun r k => (missingAt (plays r) k : ℝ≥0∞))
-      ≤ lateRate m f d w lookahead L := by
-    unfold lateRate
-    refine w.longRun_outputs_le K₀ (fun r k hk => ?_) (fun r k => ENNReal.natCast_ne_top _)
-    have hp := hpl r k hk
-    by_cases hd : blockDelay m f d w r (neededBlock m lookahead (duePosition m f d w L r k))
-        < margin m f d w lookahead L r k
-    · have e : missingAt (plays r) k = 0 := by simp [missingAt, hp, hd]
-      rw [e]
-      simp
-    · have e1 : missingAt (plays r) k = 1 := by simp [missingAt, hp, hd]
-      have e2 : lateAt m f d w lookahead L r k = 1 := by simp [lateAt, not_lt.mp hd]
-      rw [e1, e2]
-  have hmissed' : w.missed plays
-      ≤ ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * lateRate m f d w lookahead L :=
-    hmissed.trans (by gcongr)
-  have hdisc' : w.discontinuities plays ≤ lateRate m f d w lookahead L := hdisc.trans hlate
-  rw [hcost]
-  calc w.cost plays c
-      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + (c.missed : ℝ≥0∞) * w.missed plays
-        + (c.discontinuities : ℝ≥0∞) * w.discontinuities plays :=
-        cost_le_of_duePositions hS L hdue c
-    _ ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + (c.missed : ℝ≥0∞) * (((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * lateRate m f d w lookahead L)
-        + (c.discontinuities : ℝ≥0∞) * lateRate m f d w lookahead L := by
-        gcongr
-    _ = (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
-          * lateRate m f d w lookahead L := by
-        ring
+  exact cost_le_of_plays_margin hS lookahead L hK₀ hratio hδ c
 
 /-- **The cost of a held level at any rates of the devices' clocks.**
 Consider the world and the controller of `cost_le_of_heldLevel`, without the
@@ -378,80 +490,10 @@ theorem cost_le_outputs_of_heldLevel (hS : ConstantRates m f d w) (lookahead : �
             (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
   obtain ⟨K₀, hK₀⟩ := exists_plays_heldLevel p hS lookahead hdev L hps hnodup hcopies hnos hpsp
     hline
-  obtain ⟨plays, hplays⟩ : ∃ plays : Fin R → ℕ → Option ℝ,
-      plays = (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).plays w
-        lookahead := ⟨_, rfl⟩
-  have hcost : (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).cost w
-      lookahead c = w.cost plays c := by
-    rw [hplays]
-    rfl
-  have hdue : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x → x = duePosition m f d w L r k := by
-    intro r k hk x hx
-    rw [hplays, hK₀ r k hk] at hx
-    split_ifs at hx with h
-    exact (Option.some.inj hx).symm
-  have hlinepos : ∀ r k, K₀ ≤ k → ∀ x, plays r k = some x →
-      x = duePosition m f d w L r 0
-        + Real.exp (d.deviceLogRate none) / Real.exp (d.deviceLogRate (some (m.device r)))
-          * k := by
-    intro r k hk x hx
-    rw [hdue r k hk x hx]
-    exact duePosition_eq hS L r k
-  have hc : ∀ r, 0 < Real.exp (d.deviceLogRate none)
-      / Real.exp (d.deviceLogRate (some (m.device r))) :=
-    fun r => div_pos (Real.exp_pos _) (Real.exp_pos _)
-  have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
-    intro r T
-    obtain ⟨b, hb⟩ := hS.asked_unbounded r T
-    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
-  have hrate : longRun (w.accruedOutputs fun _ _ => 1)
-      ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-        (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) :=
-    w.longRun_outputs_le_rate
-      (a := fun r => (f.speakerStart (m.device r) - d.offset (m.host r))
-        / Real.exp (d.logRate (m.host r)))
-      (s := fun r => m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
-      (fun r => mul_pos m.rate_pos (Real.exp_pos _)) (fun r k => hS.out r k)
-  have hmissed : w.missed plays
-      ≤ ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-        (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) :=
-    (w.missed_le_of_slope plays hlinepos hc hδ hout).trans (by gcongr)
-  have hdisc : w.discontinuities plays
-      ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-        (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) :=
-    (w.discontinuities_le_outputs plays).trans hrate
-  rw [hcost]
-  calc w.cost plays c
-      ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + (c.missed : ℝ≥0∞) * w.missed plays
-        + (c.discontinuities : ℝ≥0∞) * w.discontinuities plays :=
-        cost_le_of_duePositions hS L hdue c
-    _ ≤ (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + (c.missed : ℝ≥0∞) * (((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))))
-        + (c.discontinuities : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
-        gcongr
-    _ = (c.sync : ℝ≥0∞) * (((R : ℝ≥0∞) ^ 2)⁻¹
-          * ∑ q ∈ Finset.univ.filter (fun q : Fin R × Fin R => q.1 < q.2),
-            ENNReal.ofReal ((latencyOf m f d L q.1 - latencyOf m f d L q.2) ^ 2))
-        + (c.latency : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (latencyOf m f d L r))
-        + (c.tracking : ℝ≥0∞) * ((R : ℝ≥0∞)⁻¹
-          * ∑ r, ENNReal.ofReal ((latencyOf m f d L r - m.targetLatency) ^ 2))
-        + ((c.missed : ℝ≥0∞) * ((1 + 2 * δ : ℝ≥0) : ℝ≥0∞) + (c.discontinuities : ℝ≥0∞))
-          * ((R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
-            (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))) := by
-        ring
+  refine cost_le_outputs_of_plays_due hS L (K₀ := K₀) (fun r k hk x hx => ?_) hδ c
+  rw [hK₀ r k hk] at hx
+  split_ifs at hx with h
+  exact (Option.some.inj hx).symm
 
 /-- **The cost of a held level under pauses, with the least-round-trip
 estimator.** The bound of `cost_le_of_heldLevel` for the controller that

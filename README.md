@@ -150,7 +150,14 @@ simulation and integration tests (see `PRINCIPLES.md`):
     function of what is drawn, and that mean is finite
     (`Unisono.Solutions.Controller.expectedCost_le_heldLevelCost` and
     `lintegral_heldLevelCost_lt_top` in
-    `lean/Unisono/Solutions/Controller/ExpectedCost.lean`). For every
+    `lean/Unisono/Solutions/Controller/ExpectedCost.lean`). The controller
+    does not keep the speed bound of the compared solutions. With a limiter,
+    which makes an output sample play nothing of the source when its step
+    would break the bound, it keeps the bound in every world, and its
+    expected cost at a held level has a finite bound of the same form
+    (`Unisono.Solutions.Controller.limited_withinStep` and
+    `expectedCost_le_limitedCost` in
+    `lean/Unisono/Solutions/Controller/Limited.lean`). For every
     solution whose hosts exchange messages only with the sender, in every
     outcome of every member, an output sample plays a position only if a
     message sent at the handover of the last capture block it needs arrived

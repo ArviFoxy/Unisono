@@ -7,6 +7,7 @@ module
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.FixedDelay.NoLoss
 public import Unisono.Solutions.FixedDelay.Progress
+public import Unisono.Spec.Limiter
 public import Unisono.Spec.Models.GenerativeRates
 
 /-!
@@ -294,24 +295,38 @@ theorem playbackLine_exact (hS : ConstantRates m f d w) {deviceEst : DeviceEstim
 
 /-! ## What plays -/
 
-/-- **What a speaker of the controller plays at a held level.** Consider a
-world whose clocks run at constant rates, with exact timestamps and with
-pauses of links and of hosts, a speaker `r` whose host is not the sender's,
-a device estimator that is exact on undisturbed reports, and the level held
-at `L`. Suppose that from some true time on the host's estimate of the
-sender's clock is the line of its undelayed exchanges. Then, from some
-output sample on, output sample `k` plays the position that is due if the
-message of the capture block that the sample needs arrived strictly before
-the playback device requested the sample's block, and plays nothing of the
-source otherwise. -/
-theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
+/-- **What a speaker of the controller chooses and plays at a held level.**
+Consider a world whose clocks run at constant rates, with exact timestamps
+and with pauses of links and of hosts, a speaker `r` whose host is not the
+sender's, a device estimator that is exact on undisturbed reports, and the
+level held at `L`. Suppose that from some true time on the host's estimate
+of the sender's clock is the line of its undelayed exchanges. Then, from
+some output sample on, two things hold for output sample `k`. At the request
+of the playback block that holds `k`, the position that the host chooses for
+`k`, before the resampler checks the frames, is the position that is due, or
+nothing. And `k` plays the position that is due if the message of the
+capture block that the sample needs arrived strictly before the playback
+device requested the sample's block, and plays nothing of the source
+otherwise. -/
+theorem speaker_chooses_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
     {clockEst : ClockEstimator} {deviceEst : DeviceEstimator} (hdev : deviceEst.Exact) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (r : Fin R) (hnos : m.host r ≠ m.sender) (hpsp : m.host r ∈ p.speakers) {T₀ : Time}
     (hline : ClockLineFrom (solution p clockEst deviceEst (constantLevel L)) w lookahead
       clockEst (m.host r) (exchangeLine m f d (m.host r)) T₀) :
     ∃ K, ∀ k, K ≤ k →
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).plays w
+      (∀ n b, k ∈ (w.speaker r).block b →
+        ((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead n).askedNext r = b →
+        earliest (((solution p clockEst deviceEst (constantLevel L) :
+              Solution H R Payload).states w lookahead n).key w)
+            ((solution p clockEst deviceEst (constantLevel L) :
+              Solution H R Payload).states w lookahead n).due = some (.asked r b) →
+        ((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).chosenAt w
+            lookahead n r b k = none
+          ∨ (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).chosenAt w
+            lookahead n r b k = some (duePosition m f d w L r k)))
+      ∧ (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).plays w
           lookahead r k
         = if d.arrival f m.sender (m.host r)
               (w.source.handed (neededBlock m lookahead (duePosition m f d w L r k)))
@@ -742,6 +757,23 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
     · dsimp only at hfr
       have hbb : b₂ = bX := (w.source.first_strictMono.injective hfr).symm
       omega
+  refine ⟨fun n b hkb hnb hne => ?_, ?_⟩
+  · -- What the host chooses at the request of the block of `k`.
+    have hbk : b = k / m.blockSize := by
+      have h1 := hkb
+      have e : (b + 1) * m.blockSize = b * m.blockSize + m.blockSize := by ring
+      unfold PlaybackDevice.block at h1
+      rw [List.mem_range'_1, hfirst, hfirst, e] at h1
+      have h2 : k < b * m.blockSize + m.blockSize := by
+        have h3 := h1.2
+        generalize b * m.blockSize = q at h3 ⊢
+        omega
+      exact (Nat.div_eq_of_lt_le h1.1 (by rw [e]; exact h2)).symm
+    subst hbk
+    obtain rfl := Solution.asked_step_unique _ w lookahead hnb hne haskedNext he'
+    unfold Solution.chosenAt World.askedEvent
+    rw [plays_asked, hposition]
+    exact hdue
   -- The frames that the resampler needs are held exactly when the last of them is.
   rw [Solution.plays_of_asked_step w _ lookahead haskedNext he' (hmemblk k), plays_asked,
     hposition, Solution.held_forget w Payload.plain lookahead hmore (step (k / m.blockSize)),
@@ -802,6 +834,59 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
     · rw [hsome]
       simp only [playable]
       rw [ite_eq_right (fun h => harr (hiff.mp h))]
+
+/-- **What a speaker of the controller plays at a held level.** Consider a
+world whose clocks run at constant rates, with exact timestamps and with
+pauses of links and of hosts, a speaker `r` whose host is not the sender's,
+a device estimator that is exact on undisturbed reports, and the level held
+at `L`. Suppose that from some true time on the host's estimate of the
+sender's clock is the line of its undelayed exchanges. Then, from some
+output sample on, output sample `k` plays the position that is due if the
+message of the capture block that the sample needs arrived strictly before
+the playback device requested the sample's block, and plays nothing of the
+source otherwise. -/
+theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
+    {clockEst : ClockEstimator} {deviceEst : DeviceEstimator} (hdev : deviceEst.Exact) (L : ℝ)
+    (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
+    (r : Fin R) (hnos : m.host r ≠ m.sender) (hpsp : m.host r ∈ p.speakers) {T₀ : Time}
+    (hline : ClockLineFrom (solution p clockEst deviceEst (constantLevel L)) w lookahead
+      clockEst (m.host r) (exchangeLine m f d (m.host r)) T₀) :
+    ∃ K, ∀ k, K ≤ k →
+      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).plays w
+          lookahead r k
+        = if d.arrival f m.sender (m.host r)
+              (w.source.handed (neededBlock m lookahead (duePosition m f d w L r k)))
+            < (w.speaker r).asked (k / m.blockSize)
+          then some (duePosition m f d w L r k) else none := by
+  obtain ⟨K, hK⟩ := speaker_chooses_plays p hS lookahead hdev L hps hnodup hcopies r hnos hpsp
+    hline
+  exact ⟨K, fun k hk => (hK k hk).2⟩
+
+/-- **What a speaker of the controller chooses at a held level.** In the
+setting of `speaker_plays`, from some output sample on: at the request of
+the playback block that holds output sample `k`, the position that the host
+chooses for `k`, before the resampler checks the frames, is the position
+that is due, or nothing. -/
+theorem speaker_chooses (hS : ConstantRates m f d w) (lookahead : ℕ+)
+    {clockEst : ClockEstimator} {deviceEst : DeviceEstimator} (hdev : deviceEst.Exact) (L : ℝ)
+    (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
+    (r : Fin R) (hnos : m.host r ≠ m.sender) (hpsp : m.host r ∈ p.speakers) {T₀ : Time}
+    (hline : ClockLineFrom (solution p clockEst deviceEst (constantLevel L)) w lookahead
+      clockEst (m.host r) (exchangeLine m f d (m.host r)) T₀) :
+    ∃ K, ∀ n b k, K ≤ k → k ∈ (w.speaker r).block b →
+        ((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead n).askedNext r = b →
+        earliest (((solution p clockEst deviceEst (constantLevel L) :
+              Solution H R Payload).states w lookahead n).key w)
+            ((solution p clockEst deviceEst (constantLevel L) :
+              Solution H R Payload).states w lookahead n).due = some (.asked r b) →
+        ((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).chosenAt w
+            lookahead n r b k = none
+          ∨ (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).chosenAt w
+            lookahead n r b k = some (duePosition m f d w L r k)) := by
+  obtain ⟨K, hK⟩ := speaker_chooses_plays p hS lookahead hdev L hps hnodup hcopies r hnos hpsp
+    hline
+  exact ⟨K, fun n b k hk hkb hnb hne => (hK k hk).1 n b hkb hnb hne⟩
 
 /-! ## The margin -/
 

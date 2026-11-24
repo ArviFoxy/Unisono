@@ -41,6 +41,7 @@ public import Unisono.Solutions.Controller.HeldLevel
 public import Unisono.Solutions.Controller.ExpectedCost
 public import Unisono.Solutions.Controller.LateBlocks
 public import Unisono.Solutions.Controller.LateRate
+public import Unisono.Solutions.Controller.Limited
 public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Undelayed
@@ -3185,6 +3186,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.speaker_plays
 
+/-- info: 'Unisono.Solutions.Controller.speaker_chooses_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.speaker_chooses_plays
+
+/-- info: 'Unisono.Solutions.Controller.speaker_chooses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.speaker_chooses
+
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.margin_mem
@@ -3381,6 +3390,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.cost_le_of_duePositions
 
+/-- info: 'Unisono.Solutions.Controller.cost_le_of_plays_margin' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.cost_le_of_plays_margin
+
+/-- info: 'Unisono.Solutions.Controller.cost_le_outputs_of_plays_due' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.cost_le_outputs_of_plays_due
+
 /-- info: 'Unisono.Solutions.Controller.exists_plays_heldLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.exists_plays_heldLevel
@@ -3513,9 +3530,17 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.lateProbability_mem
 
+/-- info: 'Unisono.Solutions.Controller.exists_latencyCosts_add_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_latencyCosts_add_le
+
 /-- info: 'Unisono.Solutions.Controller.exists_heldLevelCost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.exists_heldLevelCost_le
+
+/-- info: 'Unisono.Solutions.Controller.lintegral_lt_top_of_le_exp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.lintegral_lt_top_of_le_exp
 
 /-- info: 'Unisono.Solutions.Controller.lintegral_heldLevelCost_lt_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -3524,6 +3549,38 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.expectedCost_heldLevel_lt_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.expectedCost_heldLevel_lt_top
+
+/-- info: 'Unisono.Solutions.Controller.limited_withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.limited_withinStep
+
+/-- info: 'Unisono.Solutions.Controller.limited_plays_eq_heldLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.limited_plays_eq_heldLevel
+
+/-- info: 'Unisono.Solutions.Controller.cost_limited_le_of_heldLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.cost_limited_le_of_heldLevel
+
+/-- info: 'Unisono.Solutions.Controller.cost_limited_le_outputs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.cost_limited_le_outputs
+
+/-- info: 'Unisono.Solutions.Controller.ae_cost_le_limitedCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ae_cost_le_limitedCost
+
+/-- info: 'Unisono.Solutions.Controller.expectedCost_le_limitedCost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.expectedCost_le_limitedCost
+
+/-- info: 'Unisono.Solutions.Controller.lintegral_limitedCost_lt_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.lintegral_limitedCost_lt_top
+
+/-- info: 'Unisono.Solutions.Controller.expectedCost_limited_lt_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.expectedCost_limited_lt_top
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

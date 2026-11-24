@@ -51,7 +51,11 @@ a constant times one plus a sum of exponentials of three times, or minus
 three times, the logarithms of the rates of the clocks
 (`exists_heldLevelCost_le`), and those logarithms are Gaussian. So the
 expected cost of the controller at a held level is finite
-(`expectedCost_heldLevel_lt_top`).
+(`expectedCost_heldLevel_lt_top`). The bound by exponentials holds with the
+larger of the two rates in every outcome (`exists_latencyCosts_add_le`), and
+every function of the draw under it has a finite mean
+(`lintegral_lt_top_of_le_exp`). The controller with a limiter
+(`Unisono.Solutions.Controller.Limited`) is bounded through these two.
 
 The theorems are upper bounds for one solution. They do not say that another
 solution cannot have a lower cost, and the level `L` is given, not chosen by
@@ -225,22 +229,28 @@ theorem lateProbability_mem [Fintype H] (f : Member H R) (i j : H) (δ μ : ℝ)
   exact ⟨measureReal_nonneg, measureReal_le_one⟩
 
 omit [DecidableEq H] in
-/-- **The bound on the cost of a held level, by exponentials of the drawn
-rates.** There is a constant `K`, which depends on the member, the level and
-the weights, such that for every draw whose splits lie between zero and one,
-`heldLevelCost` is at most `K` times one plus a sum of exponentials: of
-three times the logarithm of the rate of the capture device's clock and of
-each playback device's clock, of minus three times the logarithm of the rate
-of the sender's clock and of each playback device's clock. -/
-theorem exists_heldLevelCost_le [Fintype H] (m : GenerativeWorld H R) (f : Member H R)
+/-- **The costs of the latencies and of either rate, by exponentials of the
+drawn rates.** There is a constant `K`, which depends on the member, the
+level and the weights, such that for every draw whose splits lie between
+zero and one, the following is at most `K` times one plus a sum of
+exponentials: the costs of the speakers' latencies, plus the weight of
+missed samples times `1 + 2 δ`, plus the weight of discontinuities, times
+the larger of the bound on the late rate and the number of output samples
+per second. Here `δ` is `rateExcess`. The exponentials are of three times
+the logarithm of the rate of the capture device's clock and of each playback
+device's clock, and of minus three times the logarithm of the rate of the
+sender's clock and of each playback device's clock. -/
+theorem exists_latencyCosts_add_le [Fintype H] (m : GenerativeWorld H R) (f : Member H R)
     (lookahead : ℕ+) (L : ℝ) (c : Weights) :
     ∃ K : ℝ, ∀ d : Draw H R, (∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) →
-      heldLevelCost m f lookahead L c d
+      latencyCosts m f L c d
+          + ((c.missed : ℝ≥0∞) * ((1 + 2 * rateExcess m d : ℝ≥0) : ℝ≥0∞)
+              + (c.discontinuities : ℝ≥0∞))
+            * max (lateRateBound m f lookahead L d) (outputRate m d)
         ≤ ENNReal.ofReal (K * (1 + Real.exp (-3 * d.logRate m.sender)
             + Real.exp (3 * d.deviceLogRate none)
             + ∑ r : Fin R, (Real.exp (3 * d.deviceLogRate (some (m.device r)))
               + Real.exp (-3 * d.deviceLogRate (some (m.device r)))))) := by
-  classical
   obtain ⟨A, hA⟩ : ∃ A : ℝ, A = ∑ r : Fin R,
       (f.roundTrip m.sender (m.host r) + f.roundTrip (m.host r) m.sender) / 2 := ⟨_, rfl⟩
   have hterm0 : ∀ r : Fin R,
@@ -495,9 +505,9 @@ theorem exists_heldLevelCost_le [Fintype H] (m : GenerativeWorld H R) (f : Membe
   have n4 : 0 ≤ (3 * (c.missed : ℝ) + c.discontinuities)
       * (m.rate * (1 + 1 / (m.blockSize : ℝ))) * G :=
     mul_nonneg (mul_nonneg (by positivity) hκ0) hG0
-  unfold heldLevelCost latencyCosts
+  unfold latencyCosts
   refine (add_le_add (add_le_add (add_le_add hp1 hp2) hp3) (hrateB _ ?_)).trans ?_
-  · split_ifs
+  · refine max_le ?_ ?_
     · unfold lateRateBound
       refine average_le fun r => ENNReal.ofReal_le_ofReal ?_
       have h1 : m.rate * Real.exp (d.deviceLogRate (some (m.device r)))
@@ -530,13 +540,45 @@ theorem exists_heldLevelCost_le [Fintype H] (m : GenerativeWorld H R) (f : Membe
     ring
 
 omit [DecidableEq H] in
-/-- **The mean of the bound on the cost of a held level is finite**, in
-every random world of every member. -/
-theorem lintegral_heldLevelCost_lt_top [Fintype H] {Ω : Type} [MeasurableSpace Ω]
-    {P : Measure Ω} {D : Ω → Draw H R} (hD : m.Prior f P D) (lookahead : ℕ+) (L : ℝ)
-    (c : Weights) : ∫⁻ ω, heldLevelCost m f lookahead L c (D ω) ∂P < ⊤ := by
+/-- **The bound on the cost of a held level, by exponentials of the drawn
+rates.** There is a constant `K`, which depends on the member, the level and
+the weights, such that for every draw whose splits lie between zero and one,
+`heldLevelCost` is at most `K` times one plus a sum of exponentials: of
+three times the logarithm of the rate of the capture device's clock and of
+each playback device's clock, of minus three times the logarithm of the rate
+of the sender's clock and of each playback device's clock. -/
+theorem exists_heldLevelCost_le [Fintype H] (m : GenerativeWorld H R) (f : Member H R)
+    (lookahead : ℕ+) (L : ℝ) (c : Weights) :
+    ∃ K : ℝ, ∀ d : Draw H R, (∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) →
+      heldLevelCost m f lookahead L c d
+        ≤ ENNReal.ofReal (K * (1 + Real.exp (-3 * d.logRate m.sender)
+            + Real.exp (3 * d.deviceLogRate none)
+            + ∑ r : Fin R, (Real.exp (3 * d.deviceLogRate (some (m.device r)))
+              + Real.exp (-3 * d.deviceLogRate (some (m.device r)))))) := by
+  obtain ⟨K, hK⟩ := exists_latencyCosts_add_le m f lookahead L c
+  refine ⟨K, fun d hsplit => le_trans ?_ (hK d hsplit)⟩
+  unfold heldLevelCost
+  refine add_le_add le_rfl (mul_le_mul' le_rfl ?_)
+  split_ifs
+  · exact le_max_left _ _
+  · exact le_max_right _ _
+
+omit [DecidableEq H] in
+/-- **A function of the draw under the bound by exponentials has a finite
+mean.** Suppose that for every draw whose splits lie between zero and one, a
+function of the draw is at most a constant `K` times one plus the sum of
+exponentials of `exists_latencyCosts_add_le`. Then its mean is finite in
+every random world of every member, because the logarithms of the rates of
+the clocks are Gaussian. -/
+theorem lintegral_lt_top_of_le_exp [Fintype H] {Ω : Type} [MeasurableSpace Ω]
+    {P : Measure Ω} {D : Ω → Draw H R} (hD : m.Prior f P D) {F : Draw H R → ℝ≥0∞} {K : ℝ}
+    (hK : ∀ d : Draw H R, (∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) →
+      F d ≤ ENNReal.ofReal (K * (1 + Real.exp (-3 * d.logRate m.sender)
+          + Real.exp (3 * d.deviceLogRate none)
+          + ∑ r : Fin R, (Real.exp (3 * d.deviceLogRate (some (m.device r)))
+            + Real.exp (-3 * d.deviceLogRate (some (m.device r))))))) :
+    ∫⁻ ω, F (D ω) ∂P < ⊤ := by
   have hprob := hD.prob
-  obtain ⟨K, hK⟩ := exists_heldLevelCost_le m f lookahead L c
   have hx : ∀ (t : ℝ) (h : H), Integrable (fun ω => Real.exp (t * (D ω).logRate h)) P :=
     fun t h => (hD.logRate_law h).integrable_comp
       (ProbabilityTheory.integrable_exp_mul_gaussianReal t)
@@ -552,13 +594,22 @@ theorem lintegral_heldLevelCost_lt_top [Fintype H] {Ω : Type} [MeasurableSpace 
     refine (((integrable_const (1 : ℝ)).add (hx (-3) m.sender)).add (hy 3 none)).add ?_
     exact integrable_finsetSum _ fun r _ =>
       (hy 3 (some (m.device r))).add (hy (-3) (some (m.device r)))
-  calc ∫⁻ ω, heldLevelCost m f lookahead L c (D ω) ∂P
+  calc ∫⁻ ω, F (D ω) ∂P
       ≤ ∫⁻ ω, ENNReal.ofReal (K * (1 + Real.exp (-3 * (D ω).logRate m.sender)
           + Real.exp (3 * (D ω).deviceLogRate none)
           + ∑ r : Fin R, (Real.exp (3 * (D ω).deviceLogRate (some (m.device r)))
             + Real.exp (-3 * (D ω).deviceLogRate (some (m.device r)))))) ∂P :=
         lintegral_mono fun ω => hK (D ω) (fun i j => hD.split_mem ω i j)
     _ < ⊤ := hint.lintegral_lt_top
+
+omit [DecidableEq H] in
+/-- **The mean of the bound on the cost of a held level is finite**, in
+every random world of every member. -/
+theorem lintegral_heldLevelCost_lt_top [Fintype H] {Ω : Type} [MeasurableSpace Ω]
+    {P : Measure Ω} {D : Ω → Draw H R} (hD : m.Prior f P D) (lookahead : ℕ+) (L : ℝ)
+    (c : Weights) : ∫⁻ ω, heldLevelCost m f lookahead L c (D ω) ∂P < ⊤ := by
+  obtain ⟨K, hK⟩ := exists_heldLevelCost_le m f lookahead L c
+  exact lintegral_lt_top_of_le_exp hD (F := heldLevelCost m f lookahead L c) hK
 
 /-- **The expected cost of a held level is finite.** In every random world
 of a member with steady clocks in which no speaker is on the sender's host,
