@@ -958,9 +958,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.leastDelay_add
 
-/-- info: 'Unisono.Spec.GenerativeWorld.trafficLaw_univ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.GenerativeWorld.pauseLaw_univ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.trafficLaw_univ
+#print axioms Unisono.Spec.GenerativeWorld.pauseLaw_univ
 
 /-- info: 'Unisono.Spec.GenerativeWorld.betaPDF_one_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -974,9 +974,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.betaMeasure_compl_Ioo
 
-/-- info: 'Unisono.Spec.GenerativeWorld.trafficLaw_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.GenerativeWorld.pauseLaw_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.trafficLaw_zero
+#print axioms Unisono.Spec.GenerativeWorld.pauseLaw_zero
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -994,13 +994,17 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.wander_ae_eq_zero
 
-/-- info: 'Unisono.Spec.GenerativeWorld.Prior.traffic_ae_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.linkPaused_ae_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.Prior.traffic_ae_const
+#print axioms Unisono.Spec.GenerativeWorld.Prior.linkPaused_ae_const
 
-/-- info: 'Unisono.Spec.GenerativeWorld.Draw.isBacklog_zero_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.hostPaused_ae_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.GenerativeWorld.Draw.isBacklog_zero_of_const
+#print axioms Unisono.Spec.GenerativeWorld.Prior.hostPaused_ae_const
+
+/-- info: 'Unisono.Spec.GenerativeWorld.isBacklog_zero_of_const' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.isBacklog_zero_of_const
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Draw.reading_of_noiseless' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

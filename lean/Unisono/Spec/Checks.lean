@@ -59,7 +59,7 @@ build.
   `StationaryNetworkDisturbances.example_holds`,
   `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`,
   `GenerativeWorld.example_holds`). The example of the generative model has
-  no other traffic and no wander.
+  no pauses and no wander.
 -/
 
 @[expose] public noncomputable section
@@ -1348,17 +1348,26 @@ private def exampleModel : GenerativeWorld (Fin 3) 2 where
   targetLatency := 1
   targetLatency_nonneg := zero_le_one
 
-/-- The example's member: round trips of one second, no other traffic and no
+/-- The example's member: round trips of one second, no pauses and no
 wander. -/
 private def exampleMember : Member (Fin 3) 2 where
   roundTrip := fun _ _ => 1
   roundTrip_pos := fun _ _ => one_pos
   roundTrip_symm := fun _ _ => rfl
-  trafficRate := fun _ _ => 0
-  trafficRate_nonneg := fun _ _ => le_rfl
-  trafficWork := fun _ _ => 1
-  trafficWork_pos := fun _ _ => one_pos
-  load_lt_one := fun _ _ => by norm_num
+  linkPauseRate := fun _ _ => 0
+  linkPauseRate_nonneg := fun _ _ => le_rfl
+  linkPauseLength := fun _ _ => Measure.dirac 1
+  linkPauseLength_prob := fun _ _ => inferInstance
+  linkPauseLength_pos := fun _ _ => by simp
+  linkPauseLength_mean := fun _ _ => integrable_dirac eNorm_lt_top
+  linkLoad_lt_one := fun _ _ => by simp
+  hostPauseRate := fun _ => 0
+  hostPauseRate_nonneg := fun _ => le_rfl
+  hostPauseLength := fun _ => Measure.dirac 1
+  hostPauseLength_prob := fun _ => inferInstance
+  hostPauseLength_pos := fun _ => by simp
+  hostPauseLength_mean := fun _ => integrable_dirac eNorm_lt_top
+  hostLoad_lt_one := fun _ => by simp
   rateSpread := 1
   rateSpread_nonneg := zero_le_one
   wanderSize := fun _ => 0
@@ -1376,7 +1385,8 @@ private def exampleLaw : Component (Fin 3) → Measure ℝ
   | .offset _ => ProbabilityTheory.cond volume (Set.Icc (-1 : ℝ) 1)
   | .logRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
   | .wander _ => Measure.dirac 0
-  | .traffic _ _ => Measure.dirac 0
+  | .linkPaused _ _ => Measure.dirac 0
+  | .hostPaused _ => Measure.dirac 0
 
 private instance (p : Component (Fin 3)) : IsProbabilityMeasure (exampleLaw p) := by
   cases p
@@ -1386,6 +1396,7 @@ private instance (p : Component (Fin 3)) : IsProbabilityMeasure (exampleLaw p) :
   · exact inferInstanceAs (IsProbabilityMeasure (gaussianReal 0 _))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
 
 /-- The pair of two distinct hosts. -/
 private def examplePair (i j : Fin 3) (h : i ≠ j) : {z : Sym2 (Fin 3) // ¬ z.IsDiag} :=
@@ -1393,7 +1404,7 @@ private def examplePair (i j : Fin 3) (h : i ≠ j) : {z : Sym2 (Fin 3) // ¬ z.
 
 /-- The example's draw: the split of a pair, in the order of the hosts'
 numbers, the offsets and the mean rates are coordinates of the probability
-space; the wander and the other traffic are zero. -/
+space; there is no wander and no pause. -/
 private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
   split := fun i j =>
     if h : i = j then 1 / 2
@@ -1402,7 +1413,8 @@ private def exampleDraw (ω : Component (Fin 3) → ℝ) : Draw (Fin 3) where
   offset := fun h => ω (.offset h)
   logRate := fun h => ω (.logRate h)
   wander := fun _ _ => 0
-  traffic := fun _ _ _ => 0
+  linkPaused := fun _ _ _ => 0
+  hostPaused := fun _ _ => 0
 
 private theorem examplePair_swap {i j : Fin 3} (h : i ≠ j) :
     examplePair j i h.symm = examplePair i j h :=
@@ -1461,7 +1473,8 @@ private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 
   | .offset _ => fun u => u
   | .logRate _ => fun u => u
   | .wander _ => fun _ _ => 0
-  | .traffic _ _ => fun _ _ => 0
+  | .linkPaused _ _ => fun _ _ => 0
+  | .hostPaused _ => fun _ _ => 0
 
 private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Component (Fin 3)) :
     Measurable (exampleComponentMap o p) := by
@@ -1471,7 +1484,8 @@ private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Co
   | offset h => exact measurable_id
   | logRate h => exact measurable_id
   | wander h => exact measurable_const
-  | traffic i j => exact measurable_const
+  | linkPaused i j => exact measurable_const
+  | hostPaused h => exact measurable_const
 
 private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (Fin 3))
     (ω : Component (Fin 3) → ℝ) :
@@ -1490,7 +1504,8 @@ private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (
   | offset h => rfl
   | logRate h => rfl
   | wander h => rfl
-  | traffic i j => rfl
+  | linkPaused i j => rfl
+  | hostPaused h => rfl
 
 /-- The example's world: the one built from the example's draw. -/
 private def exampleWorld (ω : Component (Fin 3) → ℝ) : World (Fin 3) 2 where
@@ -1560,12 +1575,13 @@ private theorem exampleWorld_builds (ω : Component (Fin 3) → ℝ) :
       sub_zero, smul_eq_mul]
     ring
   network := fun i j s q => by
-    refine ⟨0, ⟨?_, ?_⟩, rfl⟩
-    · rintro x ⟨u, hu, rfl⟩
-      simp only [exampleDraw, sub_self, zero_sub, neg_nonpos, sub_nonneg]
-      exact hu
-    · intro u hu
-      exact hu ⟨s, le_rfl, by simp [exampleDraw]⟩
+    have hzero : ∀ t : Time, IsBacklog (fun _ : Time => (0 : ℝ)) t 0 := fun t =>
+      isBacklog_zero_of_const (fun _ _ => rfl) t
+    refine ⟨0, 0, 0, hzero _, hzero _, hzero _, ?_⟩
+    change some (s + (exampleDraw ω).split i j * 1 + 0)
+      = some (s + 0 + (exampleDraw ω).split i j * 1 + 0 + 0)
+    congr 1
+    ring
   capture := fun n => by
     have h := exp_mul_exp_neg (ω (.logRate 0))
     simp only [exampleWorld, exampleModel, exampleMember, zero_add, div_one]
@@ -1606,14 +1622,24 @@ private theorem exampleDraw_prior :
     rw [covariance_const_left]
     simp
   wander_continuous := fun _ _ => continuous_const
-  traffic_monotone := fun _ _ _ => monotone_const
-  traffic_zero := fun _ _ _ => rfl
-  traffic_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
-  traffic_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
-  traffic_law := fun i j s t _ => by
-    have h0 : Real.toNNReal (exampleMember.trafficRate i j * (t - s)) = 0 := by
+  linkPaused_monotone := fun _ _ _ => monotone_const
+  linkPaused_zero := fun _ _ _ => rfl
+  linkPaused_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
+  linkPaused_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  linkPaused_law := fun i j s t _ => by
+    have h0 : Real.toNNReal (exampleMember.linkPauseRate i j * (t - s)) = 0 := by
       simp [exampleMember]
-    rw [h0, trafficLaw_zero]
+    rw [h0, pauseLaw_zero]
+    change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
+    exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
+  hostPaused_monotone := fun _ _ => monotone_const
+  hostPaused_zero := fun _ _ => rfl
+  hostPaused_rightContinuous := fun _ _ _ => continuousWithinAt_const
+  hostPaused_increments := fun _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  hostPaused_law := fun h s t _ => by
+    have h0 : Real.toNNReal (exampleMember.hostPauseRate h * (t - s)) = 0 := by
+      simp [exampleMember]
+    rw [h0, pauseLaw_zero]
     change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
     exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
   independent := fun o => by
@@ -1626,15 +1652,16 @@ private theorem exampleDraw_prior :
 
 /-- **The generative model is not empty.** There is a random world of the
 model with three hosts and two speakers. In it the splits, the clock offsets
-and the clocks' mean rates are random; its member has no other traffic and no
+and the clocks' mean rates are random; its member has no pauses and no
 wander, so this does not show that members with either exist. -/
 theorem GenerativeWorld.example_holds :
     ∃ (m : GenerativeWorld (Fin 3) 2) (f : GenerativeWorld.Member (Fin 3) 2) (Ω : Type)
       (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
-      m.Holds f P world ∧ (∀ i j, f.trafficRate i j = 0) ∧ ∀ h, f.wanderSize h = 0 :=
+      m.Holds f P world ∧ (∀ i j, f.linkPauseRate i j = 0) ∧ (∀ h, f.hostPauseRate h = 0)
+        ∧ ∀ h, f.wanderSize h = 0 :=
   ⟨exampleModel, exampleMember, Component (Fin 3) → ℝ, inferInstance, Measure.pi exampleLaw,
     exampleWorld, ⟨exampleDraw, exampleDraw_prior, exampleWorld_builds⟩,
-    fun _ _ => rfl, fun _ => rfl⟩
+    fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
 
 end Example
 

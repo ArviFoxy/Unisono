@@ -90,7 +90,8 @@ namespace GenerativeWorld
 
 /-- Each split of a draw is a measurable function of the draw. -/
 theorem Draw.measurable_split (i j : H) : Measurable fun d : Draw H => d.split i j := by
-  have hT : Measurable fun d : Draw H => (d.split, d.offset, d.logRate, d.wander, d.traffic) :=
+  have hT : Measurable fun d : Draw H =>
+      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused) :=
     comap_measurable _
   exact (measurable_pi_apply j).comp ((measurable_pi_apply i).comp (measurable_fst.comp hT))
 
@@ -495,17 +496,26 @@ private def exampleModel : GenerativeWorld (Fin 3) 2 where
   targetLatency := 3
   targetLatency_nonneg := by norm_num
 
-/-- The example's member: round trips of one second, no other traffic, no
-wander and no spread of the clocks' mean rates. -/
+/-- The example's member: round trips of one second, no pauses, no wander
+and no spread of the clocks' mean rates. -/
 private def exampleMember : Member (Fin 3) 2 where
   roundTrip := fun _ _ => 1
   roundTrip_pos := fun _ _ => one_pos
   roundTrip_symm := fun _ _ => rfl
-  trafficRate := fun _ _ => 0
-  trafficRate_nonneg := fun _ _ => le_rfl
-  trafficWork := fun _ _ => 1
-  trafficWork_pos := fun _ _ => one_pos
-  load_lt_one := fun _ _ => by norm_num
+  linkPauseRate := fun _ _ => 0
+  linkPauseRate_nonneg := fun _ _ => le_rfl
+  linkPauseLength := fun _ _ => Measure.dirac 1
+  linkPauseLength_prob := fun _ _ => inferInstance
+  linkPauseLength_pos := fun _ _ => by simp
+  linkPauseLength_mean := fun _ _ => integrable_dirac eNorm_lt_top
+  linkLoad_lt_one := fun _ _ => by simp
+  hostPauseRate := fun _ => 0
+  hostPauseRate_nonneg := fun _ => le_rfl
+  hostPauseLength := fun _ => Measure.dirac 1
+  hostPauseLength_prob := fun _ => inferInstance
+  hostPauseLength_pos := fun _ => by simp
+  hostPauseLength_mean := fun _ => integrable_dirac eNorm_lt_top
+  hostLoad_lt_one := fun _ => by simp
   rateSpread := 0
   rateSpread_nonneg := le_rfl
   wanderSize := fun _ => 0
@@ -538,7 +548,7 @@ theorem optimalWithin_conditions :
         ∧ m.NoiselessWithMargin 1 f
         ∧ ∃ (Ω : Type) (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
             m.Holds f P world := by
-  have hf : exampleMember.Noiseless := ⟨fun _ _ => rfl, fun _ => rfl, rfl⟩
+  have hf : exampleMember.Noiseless := ⟨fun _ _ => rfl, fun _ => rfl, fun _ => rfl, rfl⟩
   have hex : ∀ h : Fin 3, h = exampleModel.sender ∨ ∃ r, exampleModel.host r = h := by
     intro h
     fin_cases h

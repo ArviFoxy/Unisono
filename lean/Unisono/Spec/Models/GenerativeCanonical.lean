@@ -83,21 +83,23 @@ variable {H : Type} {R : ℕ}
 
 /-- The components of a draw, listed by kind. -/
 def componentEquiv (H : Type) :
-    Component H ≃ ({z : Sym2 H // ¬ z.IsDiag} ⊕ H) ⊕ (H ⊕ H) ⊕ (H × H) where
+    Component H ≃ ({z : Sym2 H // ¬ z.IsDiag} ⊕ H) ⊕ (H ⊕ H) ⊕ ((H × H) ⊕ H) where
   toFun
     | .split z => .inl (.inl z)
     | .offset h => .inl (.inr h)
     | .logRate h => .inr (.inl (.inl h))
     | .wander h => .inr (.inl (.inr h))
-    | .traffic i j => .inr (.inr (i, j))
+    | .linkPaused i j => .inr (.inr (.inl (i, j)))
+    | .hostPaused h => .inr (.inr (.inr h))
   invFun
     | .inl (.inl z) => .split z
     | .inl (.inr h) => .offset h
     | .inr (.inl (.inl h)) => .logRate h
     | .inr (.inl (.inr h)) => .wander h
-    | .inr (.inr (i, j)) => .traffic i j
-  left_inv := by rintro (_ | _ | _ | _ | _) <;> rfl
-  right_inv := by rintro ((_ | _) | (_ | _) | ⟨_, _⟩) <;> rfl
+    | .inr (.inr (.inl (i, j))) => .linkPaused i j
+    | .inr (.inr (.inr h)) => .hostPaused h
+  left_inv := by rintro (_ | _ | _ | _ | _ | _) <;> rfl
+  right_inv := by rintro ((_ | _) | (_ | _) | (⟨_, _⟩ | _)) <;> rfl
 
 /-- The components of a draw are finitely many when the hosts are. -/
 instance [Fintype H] [DecidableEq H] : Fintype (Component H) :=
@@ -156,13 +158,14 @@ theorem refOrientation_pairOf (i j : H) (h : i ≠ j) :
 
 /-- The law of each coordinate: the Beta law for the split of a pair, the
 uniform law for the offset of a clock, and zero for the mean rate, the wander
-and the traffic, which a noiseless member does not have. -/
+and the paused times, which a noiseless member does not have. -/
 def canonicalLaw (m : GenerativeWorld H R) (f : Member H R) : Component H → Measure ℝ
   | .split _ => betaMeasure m.shape m.shape
   | .offset _ => ProbabilityTheory.cond volume (Set.Icc (-f.offsetRange) f.offsetRange)
   | .logRate _ => Measure.dirac 0
   | .wander _ => Measure.dirac 0
-  | .traffic _ _ => Measure.dirac 0
+  | .linkPaused _ _ => Measure.dirac 0
+  | .hostPaused _ => Measure.dirac 0
 
 instance (m : GenerativeWorld H R) (f : Member H R) (p : Component H) :
     IsProbabilityMeasure (canonicalLaw m f p) := by
@@ -175,6 +178,7 @@ instance (m : GenerativeWorld H R) (f : Member H R) (p : Component H) :
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
   · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
 
 section Draw
 
@@ -182,7 +186,7 @@ variable [DecidableEq H]
 
 /-- The draw of an outcome: the split of a pair, in its fixed order, and the
 offsets are coordinates of the outcome; the mean rates are one, and there is
-no wander and no other traffic. -/
+no wander and no pause. -/
 def canonicalDraw (y : Component H → ℝ) : Draw H where
   split := fun i j =>
     if h : i = j then 1 / 2
@@ -192,7 +196,8 @@ def canonicalDraw (y : Component H → ℝ) : Draw H where
   offset := fun h => y (.offset h)
   logRate := fun _ => 0
   wander := fun _ _ => 0
-  traffic := fun _ _ _ => 0
+  linkPaused := fun _ _ _ => 0
+  hostPaused := fun _ _ => 0
 
 theorem canonicalDraw_split_mem (y : Component H → ℝ) (i j : H) :
     (canonicalDraw y).split i j ∈ Set.Ioo (0 : ℝ) 1 := by
@@ -234,7 +239,8 @@ def canonicalMap (o : Orientation H) : (p : Component H) → ℝ → p.Val
   | .offset _ => fun u => u
   | .logRate _ => fun _ => (0 : ℝ)
   | .wander _ => fun _ _ => 0
-  | .traffic _ _ => fun _ _ => 0
+  | .linkPaused _ _ => fun _ _ => 0
+  | .hostPaused _ => fun _ _ => 0
 
 theorem measurable_canonicalMap (o : Orientation H) (p : Component H) :
     Measurable (canonicalMap o p) := by
@@ -245,7 +251,8 @@ theorem measurable_canonicalMap (o : Orientation H) (p : Component H) :
   | offset h => exact measurable_id
   | logRate h => exact measurable_const
   | wander h => exact measurable_const
-  | traffic i j => exact measurable_const
+  | linkPaused i j => exact measurable_const
+  | hostPaused h => exact measurable_const
 
 theorem canonicalDraw_component (o : Orientation H) (p : Component H)
     (y : Component H → ℝ) :
@@ -271,7 +278,8 @@ theorem canonicalDraw_component (o : Orientation H) (p : Component H)
   | offset h => rfl
   | logRate h => rfl
   | wander h => rfl
-  | traffic i j => rfl
+  | linkPaused i j => rfl
+  | hostPaused h => rfl
 
 variable [Fintype H]
 
@@ -323,14 +331,24 @@ theorem canonicalDraw_prior (m : GenerativeWorld H R) (f : Member H R) (hf : f.N
     rw [covariance_const_left, hf.no_wander h]
     simp
   wander_continuous := fun _ _ => continuous_const
-  traffic_monotone := fun _ _ _ => monotone_const
-  traffic_zero := fun _ _ _ => rfl
-  traffic_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
-  traffic_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
-  traffic_law := fun i j s t _ => by
-    have h0 : Real.toNNReal (f.trafficRate i j * (t - s)) = 0 := by
-      simp [hf.no_traffic i j]
-    rw [h0, trafficLaw_zero]
+  linkPaused_monotone := fun _ _ _ => monotone_const
+  linkPaused_zero := fun _ _ _ => rfl
+  linkPaused_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
+  linkPaused_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  linkPaused_law := fun i j s t _ => by
+    have h0 : Real.toNNReal (f.linkPauseRate i j * (t - s)) = 0 := by
+      simp [hf.no_linkPauses i j]
+    rw [h0, pauseLaw_zero]
+    change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
+    exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
+  hostPaused_monotone := fun _ _ => monotone_const
+  hostPaused_zero := fun _ _ => rfl
+  hostPaused_rightContinuous := fun _ _ _ => continuousWithinAt_const
+  hostPaused_increments := fun _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  hostPaused_law := fun h s t _ => by
+    have h0 : Real.toNNReal (f.hostPauseRate h * (t - s)) = 0 := by
+      simp [hf.no_hostPauses h]
+    rw [h0, pauseLaw_zero]
     change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
     exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
   independent := fun o => by
@@ -414,7 +432,8 @@ it.** -/
 theorem idealWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (d : Draw H)
     (hsplit : ∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) (hlog : ∀ h, d.logRate h = 0)
-    (hwander : ∀ h t, d.wander h t = 0) (htraffic : ∀ i j t, d.traffic i j t = 0) :
+    (hwander : ∀ h t, d.wander h t = 0) (hlink : ∀ i j t, d.linkPaused i j t = 0)
+    (hhost : ∀ h t, d.hostPaused h t = 0) :
     m.Builds f d (idealWorld m f hex d.offset (fun i j => d.split i j * f.roundTrip i j)
       (fun i j => mul_pos (hsplit i j).1 (f.roundTrip_pos i j))) where
   rate_eq := rfl
@@ -425,7 +444,9 @@ theorem idealWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     simp only [idealWorld]
     ring
   network := fun i j s q =>
-    ⟨0, Draw.isBacklog_zero_of_const (fun s t => by rw [htraffic, htraffic]) s, by
+    ⟨0, 0, 0, isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) s,
+      isBacklog_zero_of_const (fun s t => by rw [hlink, hlink]) _,
+      isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) _, by
       simp [idealWorld]⟩
   capture := fun n => by
     simp only [idealWorld]
@@ -462,7 +483,7 @@ theorem canonicalWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H → ℝ) :
     m.Builds f (canonicalDraw y) (canonicalWorld m f hex y) :=
   idealWorld_builds m f hex (canonicalDraw y) (canonicalDraw_split_mem y) (fun _ => rfl)
-    (fun _ _ => rfl) (fun _ _ _ => rfl)
+    (fun _ _ => rfl) (fun _ _ _ => rfl) (fun _ _ => rfl)
 
 /-- **Every noiseless member has a random world.** For any hosts and
 speakers, a noiseless member of the generative model has a random world: the

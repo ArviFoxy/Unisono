@@ -14,8 +14,8 @@ public import Mathlib.Topology.Algebra.Order.Archimedean
 /-!
 # Generative worlds without noise are ideal constant worlds
 
-A member of the generative model is *noiseless* when its links carry no
-other traffic, its clocks do not wander, and the mean rates of its clocks
+A member of the generative model is *noiseless* when its links and its hosts
+never pause, its clocks do not wander, and the mean rates of its clocks
 have no spread (`Member.Noiseless`). What remains random in such a member is
 what no host can learn: the offset of each clock and the split of each pair
 of hosts.
@@ -51,10 +51,11 @@ namespace GenerativeWorld
 variable {Ω : Type} [MeasurableSpace Ω]
 variable {m : GenerativeWorld H R} {f : Member H R} {P : Measure Ω} {D : Ω → Draw H}
 
-/-- A member is noiseless: its links carry no other traffic, its clocks do
+/-- A member is noiseless: its links and its hosts never pause, its clocks do
 not wander, and the mean rates of its clocks have no spread. -/
 structure Member.Noiseless (f : Member H R) : Prop where
-  no_traffic : ∀ i j, f.trafficRate i j = 0
+  no_linkPauses : ∀ i j, f.linkPauseRate i j = 0
+  no_hostPauses : ∀ h, f.hostPauseRate h = 0
   no_wander : ∀ h, f.wanderSize h = 0
   no_spread : f.rateSpread = 0
 
@@ -92,18 +93,13 @@ theorem Prior.wander_ae_eq_zero (hD : m.Prior f P D) {h : H} (hf : f.wanderSize 
   intro t
   exact congrFun heq t
 
-/-- A link with no other traffic receives no work, in almost every outcome:
-the work that has arrived is the same at all times. -/
-theorem Prior.traffic_ae_const (hD : m.Prior f P D) {i j : H} (hf : f.trafficRate i j = 0) :
-    ∀ᵐ ω ∂P, ∀ s t, (D ω).traffic i j s = (D ω).traffic i j t := by
-  have hpoint : ∀ s t : ℝ, s ≤ t →
-      ∀ᵐ ω ∂P, (D ω).traffic i j t - (D ω).traffic i j s = 0 := by
-    intro s t hst
-    have hlaw := hD.traffic_law i j s t hst
-    rw [hf, zero_mul, Real.toNNReal_zero, trafficLaw_zero] at hlaw
-    exact hlaw.ae_eq_of_dirac
-  have hrat : ∀ᵐ ω ∂P, ∀ p q : ℚ, (p : ℝ) ≤ q →
-      (D ω).traffic i j q - (D ω).traffic i j p = 0 := by
+/-- A quantity that never decreases in time, and that is the same at any two
+given times in almost every outcome, is the same at all times in almost
+every outcome. -/
+private theorem ae_const_of_monotone {X : Ω → Time → ℝ} (hmono : ∀ ω, Monotone (X ω))
+    (hpoint : ∀ s t : ℝ, s ≤ t → ∀ᵐ ω ∂P, X ω t - X ω s = 0) :
+    ∀ᵐ ω ∂P, ∀ s t, X ω s = X ω t := by
+  have hrat : ∀ᵐ ω ∂P, ∀ p q : ℚ, (p : ℝ) ≤ q → X ω q - X ω p = 0 := by
     rw [ae_all_iff]
     intro p
     rw [ae_all_iff]
@@ -112,8 +108,7 @@ theorem Prior.traffic_ae_const (hD : m.Prior f P D) {i j : H} (hf : f.trafficRat
     · filter_upwards [hpoint p q hpq] with ω hω _ using hω
     · exact Filter.Eventually.of_forall fun ω h => absurd h hpq
   filter_upwards [hrat] with ω hω
-  have hmono := hD.traffic_monotone ω i j
-  have hle : ∀ s t : ℝ, (D ω).traffic i j t ≤ (D ω).traffic i j s := by
+  have hle : ∀ s t : ℝ, X ω t ≤ X ω s := by
     intro s t
     obtain ⟨p, hp⟩ := exists_rat_lt (min s t)
     obtain ⟨q, hq⟩ := exists_rat_gt (max s t)
@@ -121,15 +116,35 @@ theorem Prior.traffic_ae_const (hD : m.Prior f P D) {i j : H} (hf : f.trafficRat
     have htq : t ≤ (q : ℝ) := (le_max_right s t).trans hq.le
     have hsq : s ≤ (q : ℝ) := (le_max_left s t).trans hq.le
     have h0 := hω p q (hps.trans hsq)
-    have h1 := hmono hps
-    have h2 := hmono htq
+    have h1 := hmono ω hps
+    have h2 := hmono ω htq
     linarith
   intro s t
   exact le_antisymm (hle t s) (hle s t)
 
-/-- When no work arrives on a link, its backlog is zero. -/
-theorem Draw.isBacklog_zero_of_const {d : Draw H} {i j : H}
-    (hc : ∀ s t, d.traffic i j s = d.traffic i j t) (t : Time) : d.IsBacklog i j t 0 := by
+/-- A link that never pauses has no paused time, in almost every outcome:
+the paused time that has begun is the same at all times. -/
+theorem Prior.linkPaused_ae_const (hD : m.Prior f P D) {i j : H}
+    (hf : f.linkPauseRate i j = 0) :
+    ∀ᵐ ω ∂P, ∀ s t, (D ω).linkPaused i j s = (D ω).linkPaused i j t := by
+  refine ae_const_of_monotone (fun ω => hD.linkPaused_monotone ω i j) fun s t hst => ?_
+  have hlaw := hD.linkPaused_law i j s t hst
+  rw [hf, zero_mul, Real.toNNReal_zero, pauseLaw_zero] at hlaw
+  exact hlaw.ae_eq_of_dirac
+
+/-- A host that never pauses has no paused time, in almost every outcome:
+the paused time that has begun is the same at all times. -/
+theorem Prior.hostPaused_ae_const (hD : m.Prior f P D) {h : H}
+    (hf : f.hostPauseRate h = 0) :
+    ∀ᵐ ω ∂P, ∀ s t, (D ω).hostPaused h s = (D ω).hostPaused h t := by
+  refine ae_const_of_monotone (fun ω => hD.hostPaused_monotone ω h) fun s t hst => ?_
+  have hlaw := hD.hostPaused_law h s t hst
+  rw [hf, zero_mul, Real.toNNReal_zero, pauseLaw_zero] at hlaw
+  exact hlaw.ae_eq_of_dirac
+
+/-- When no paused time begins, the backlog is zero. -/
+theorem isBacklog_zero_of_const {paused : Time → ℝ} (hc : ∀ s t, paused s = paused t)
+    (t : Time) : IsBacklog paused t 0 := by
   constructor
   · rintro x ⟨s, hs, rfl⟩
     rw [hc t s]
@@ -176,9 +191,12 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
     ae_all_iff.mpr fun h => hD.logRate_ae_eq_zero hf.no_spread h
   have h2 : ∀ᵐ ω ∂P, ∀ h t, (D ω).wander h t = 0 :=
     ae_all_iff.mpr fun h => hD.wander_ae_eq_zero (hf.no_wander h)
-  have h3 : ∀ᵐ ω ∂P, ∀ i j s t, (D ω).traffic i j s = (D ω).traffic i j t :=
-    ae_all_iff.mpr fun i => ae_all_iff.mpr fun j => hD.traffic_ae_const (hf.no_traffic i j)
-  filter_upwards [h1, h2, h3] with ω hr hw ht
+  have h3 : ∀ᵐ ω ∂P, ∀ i j s t, (D ω).linkPaused i j s = (D ω).linkPaused i j t :=
+    ae_all_iff.mpr fun i => ae_all_iff.mpr fun j =>
+      hD.linkPaused_ae_const (hf.no_linkPauses i j)
+  have h4 : ∀ᵐ ω ∂P, ∀ h s t, (D ω).hostPaused h s = (D ω).hostPaused h t :=
+    ae_all_iff.mpr fun h => hD.hostPaused_ae_const (hf.no_hostPauses h)
+  filter_upwards [h1, h2, h3, h4] with ω hr hw ht hh
   have hclock : ∀ h t, ((world ω).clock h).read t = t + (D ω).offset h := by
     intro h t
     rw [(hB ω).clock h t, Draw.reading_of_noiseless (hr h) (hw h) t, add_comm]
@@ -213,9 +231,12 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
         rw [(hB ω).speaker_reported r b]
         simp
       network := fun i j s q => by
-        obtain ⟨v, hv, hdel⟩ := (hB ω).network i j s q
-        have hv0 : v = 0 := hv.unique (Draw.isBacklog_zero_of_const (ht i j) s)
-        rw [hdel, hv0, add_zero]
+        obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hdel⟩ := (hB ω).network i j s q
+        have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hh i) s)
+        have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (ht i j) _)
+        have h₃ : v₃ = 0 := hv₃.unique (isBacklog_zero_of_const (hh j) _)
+        rw [hdel, h₁, h₂, h₃]
+        simp only [add_zero]
         rfl
       target_eq := (hB ω).target_eq }
 

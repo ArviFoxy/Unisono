@@ -6,6 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Spec.Optimality
 public import Mathlib.Data.Sym.Sym2
+public import Mathlib.MeasureTheory.Group.Convolution
 public import Mathlib.MeasureTheory.Group.Measure
 public import Mathlib.MeasureTheory.Integral.IntervalIntegral.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Map
@@ -47,9 +48,15 @@ Each choice of these numbers is one member of the family. A solution is not
 told them.
 
 * `roundTrip i j`: the least round-trip time between hosts `i` and `j`.
-* `trafficRate i j` and `trafficWork i j`: on the link from `i` to `j`, how
-  many packets of other traffic arrive per second, and how long the link
-  needs on average to carry one of them. Their product is less than one.
+* `linkPauseRate i j` and `linkPauseLength i j`: how many pauses of the link
+  from `i` to `j` begin per second, and the law of the length of a pause. A
+  pause is a stretch of time in which the link passes nothing: it carries a
+  packet of other traffic, repeats a transmission, or is out. The law may be
+  any law of positive lengths that has a mean, so one member can have pauses
+  of a fraction of a millisecond and pauses of a second. The rate times the
+  mean length is less than one.
+* `hostPauseRate h` and `hostPauseLength h`: the same for the pauses of host
+  `h`, during which the host sends nothing and handles nothing that arrives.
 * `rateSpread`: the standard deviation of the logarithm of a clock's mean
   rate.
 * `wanderSize h` and `wanderTime h`: the standard deviation of the changes of
@@ -79,21 +86,29 @@ All of the following are independent of one another.
 * The **wander** of each clock: a stationary Gaussian process with mean zero
   whose covariance between true times `s` and `t` is
   `wanderSize ^ 2 * exp (-|s - t| / wanderTime)`, with continuous paths.
-* The **other traffic** of each directed link: packets arrive at the instants
-  of a Poisson process of rate `trafficRate`, and each brings an
-  exponentially distributed amount of work with mean `trafficWork`. The draw
-  records the work that has arrived since true time zero (`trafficLaw`).
+* The **pauses** of each directed link and of each host: pauses begin at the
+  instants of a Poisson process of the member's rate, and their lengths are
+  independent of one another and have the member's law. The draw records the
+  paused time that has begun since true time zero (`pauseLaw`).
 
 ## The world built from a draw (`GenerativeWorld.Builds`)
 
 * The clock of host `h` reads, at true time `t`, its offset plus the
   integral from `0` to `t` of `exp (logRate h + wander h x)`
   (`Draw.reading`). Its rate is positive for every draw.
-* A message sent at true time `s` from `i` to `j` arrives after the least
-  delay of that direction, `split i j * roundTrip i j`, plus the backlog of
-  the link at `s`: the work of other traffic that the link has not yet
-  carried, which falls by one second per second while it is positive
-  (`Draw.IsBacklog`). Delays are positive for every draw. No message is lost.
+* The backlog of a link or of a host is its paused time that has begun and
+  is not yet over. It rises by the length of a pause when the pause begins
+  and falls by one second per second while it is positive (`IsBacklog`).
+* A message that host `i` sends to host `j` at true time `s` leaves `i`
+  after the backlog of host `i` at `s`. It reaches `j` after the least delay
+  of that direction, `split i j * roundTrip i j`, plus the backlog of the
+  link when it leaves. Host `j` observes it after the backlog of host `j`
+  when it reaches it. So a pause of length `x` delays what is sent at its
+  start by `x` and what is sent later by less, and everything that it
+  withheld arrives together when it ends. A pause of the sender's host
+  delays every receiver at once: links and hosts are drawn independently,
+  and the delays of two receivers are not independent. Delays are positive
+  for every draw. No message is lost.
 * Every audio device runs on the clock of its host, in blocks of a fixed
   size, and reports exact timestamps. The target latency is constant.
 
@@ -113,11 +128,13 @@ member (`GenerativeWorld.OptimalWithin`).
 
 ## What the model leaves out
 
-Loss, pauses and outages of links; jitter and asymmetry that several links
-share because they share a host, a switch or a radio channel; least delays
-and traffic that change over time; audio devices with their own oscillators
-and inexact timestamps; clocks whose rate has more than one time scale. The
-specification document lists these limitations and what each one distorts.
+Loss; pauses that cluster in time; pauses and asymmetry that some links
+share because they share a switch or a radio channel; least delays and rates
+of pauses that change over time; a paused host that answers its own playback
+device late; time stamps that a kernel takes while the program is paused;
+audio devices with their own oscillators and inexact timestamps; clocks
+whose rate has more than one time scale. The specification document lists
+these limitations and what each one distorts.
 -/
 
 @[expose] public noncomputable section
@@ -169,17 +186,30 @@ structure Member (H : Type) (R : ℕ) where
   roundTrip : H → H → ℝ
   roundTrip_pos : ∀ i j, 0 < roundTrip i j
   roundTrip_symm : ∀ i j, roundTrip i j = roundTrip j i
-  /-- How many packets of other traffic arrive on the link from `i` to `j`
-  per second, on average. Zero means that the link carries no other
-  traffic. -/
-  trafficRate : H → H → ℝ
-  trafficRate_nonneg : ∀ i j, 0 ≤ trafficRate i j
-  /-- How long the link from `i` to `j` needs to carry one packet of other
-  traffic, on average, in seconds. -/
-  trafficWork : H → H → ℝ
-  trafficWork_pos : ∀ i j, 0 < trafficWork i j
-  /-- Other traffic keeps a link busy less than all of the time. -/
-  load_lt_one : ∀ i j, trafficRate i j * trafficWork i j < 1
+  /-- How many pauses of the link from `i` to `j` begin per second, on
+  average. Zero means that the link never pauses. -/
+  linkPauseRate : H → H → ℝ
+  linkPauseRate_nonneg : ∀ i j, 0 ≤ linkPauseRate i j
+  /-- The law of the length of a pause of the link from `i` to `j`, in
+  seconds. It may be any law of positive lengths that has a mean. -/
+  linkPauseLength : H → H → Measure ℝ
+  linkPauseLength_prob : ∀ i j, IsProbabilityMeasure (linkPauseLength i j)
+  linkPauseLength_pos : ∀ i j, linkPauseLength i j (Set.Iic 0) = 0
+  linkPauseLength_mean : ∀ i j, Integrable (fun x : ℝ => x) (linkPauseLength i j)
+  /-- A link is paused less than all of the time. -/
+  linkLoad_lt_one : ∀ i j, linkPauseRate i j * ∫ x, x ∂(linkPauseLength i j) < 1
+  /-- How many pauses of host `h` begin per second, on average. Zero means
+  that the host never pauses. -/
+  hostPauseRate : H → ℝ
+  hostPauseRate_nonneg : ∀ h, 0 ≤ hostPauseRate h
+  /-- The law of the length of a pause of host `h`, in seconds. It may be
+  any law of positive lengths that has a mean. -/
+  hostPauseLength : H → Measure ℝ
+  hostPauseLength_prob : ∀ h, IsProbabilityMeasure (hostPauseLength h)
+  hostPauseLength_pos : ∀ h, hostPauseLength h (Set.Iic 0) = 0
+  hostPauseLength_mean : ∀ h, Integrable (fun x : ℝ => x) (hostPauseLength h)
+  /-- A host is paused less than all of the time. -/
+  hostLoad_lt_one : ∀ h, hostPauseRate h * ∫ x, x ∂(hostPauseLength h) < 1
   /-- The standard deviation of the logarithm of a clock's mean rate. -/
   rateSpread : ℝ
   rateSpread_nonneg : 0 ≤ rateSpread
@@ -217,53 +247,59 @@ structure Draw (H : Type) where
   /-- The wander of each host's clock at each true time: the logarithm of its
   rate minus `logRate`. -/
   wander : H → Time → ℝ
-  /-- The work that other traffic has brought to the link from `i` to `j`
-  between true time zero and each true time, in seconds; the work that
-  arrives between true times `s` and `t` is the difference of the values at
-  `t` and at `s`. -/
-  traffic : H → H → Time → ℝ
+  /-- The paused time of the link from `i` to `j` that has begun between
+  true time zero and each true time, in seconds: the sum of the lengths of
+  the pauses that began in between. The paused time that begins between
+  true times `s` and `t` is the difference of the values at `t` and at `s`. -/
+  linkPaused : H → H → Time → ℝ
+  /-- The paused time of host `h` that has begun between true time zero and
+  each true time, in seconds. -/
+  hostPaused : H → Time → ℝ
 
 /-- What the clock of host `h` reads at true time `t`: its offset plus the
 integral of its rate, which is the exponential of `logRate h + wander h`. -/
 def Draw.reading (d : Draw H) (h : H) (t : Time) : ℝ :=
   d.offset h + ∫ x in (0 : ℝ)..t, Real.exp (d.logRate h + d.wander h x)
 
-/-- `v` is the backlog of the link from `i` to `j` at true time `t`: the work
-of other traffic that the link has not yet carried. The link carries one
-second of work per second while any is left, so the backlog is the largest,
-over the earlier true times `s`, of the work that arrived between `s` and `t`
-minus the time between them. -/
-def Draw.IsBacklog (d : Draw H) (i j : H) (t : Time) (v : ℝ) : Prop :=
-  IsLUB {x | ∃ s ≤ t, x = d.traffic i j t - d.traffic i j s - (t - s)} v
+/-- `v` is the backlog at true time `t` of a link or a host whose paused time
+is recorded by `paused`: the paused time that has begun and is not yet over.
+A link or a host works one second of it off per second while any is left,
+so the backlog is the largest, over the earlier true times `s`, of the paused
+time that began between `s` and `t` minus the time between them. -/
+def IsBacklog (paused : Time → ℝ) (t : Time) (v : ℝ) : Prop :=
+  IsLUB {x | ∃ s ≤ t, x = paused t - paused s - (t - s)} v
 
-/-- The law of the work that other traffic brings to a link over a period in
-which `count` packets arrive on average, each needing `work` seconds on
-average. The number of packets has the Poisson law with mean `count`. Each
-packet brings an independent, exponentially distributed amount of work; the
-total work of `n ≥ 1` packets therefore has the gamma law with shape `n` and
-rate `1 / work`, and no packets bring no work. -/
-def trafficLaw (count : ℝ≥0) (work : ℝ) : Measure ℝ :=
-  Measure.sum fun n : ℕ =>
-    poissonMeasure count {n} •
-      (if n = 0 then Measure.dirac 0 else gammaMeasure (n : ℝ) (1 / work))
+/-- The law of the sum of `n` independent lengths, each with the law `F`. -/
+def sumLaw (F : Measure ℝ) : ℕ → Measure ℝ
+  | 0 => Measure.dirac 0
+  | n + 1 => sumLaw F n ∗ F
+
+/-- The law of the paused time that begins in a period in which `count`
+pauses begin on average, when the length of a pause has the law `F`. The
+number of pauses has the Poisson law with mean `count`, and their lengths are
+independent. -/
+def pauseLaw (count : ℝ≥0) (F : Measure ℝ) : Measure ℝ :=
+  Measure.sum fun n : ℕ => poissonMeasure count {n} • sumLaw F n
 
 /-- The measurable sets of draws: those that the values of the splits, the
-offsets, the mean rates, the wander and the traffic determine. A function of
+offsets, the mean rates, the wander and the paused times determine. A function of
 a draw is measurable when it is a measurable function of these values. -/
 instance : MeasurableSpace (Draw H) :=
   MeasurableSpace.comap
-    (fun d : Draw H => (d.split, d.offset, d.logRate, d.wander, d.traffic)) inferInstance
+    (fun d : Draw H =>
+      (d.split, d.offset, d.logRate, d.wander, d.linkPaused, d.hostPaused)) inferInstance
 
 /-- The components of a draw: the parts that are drawn independently of one another: the
 split of each pair of distinct hosts, the offset and the mean rate of each
-clock, the wander of each clock, and the other traffic of each directed
-link. -/
+clock, the wander of each clock, the paused time of each directed link and
+the paused time of each host. -/
 inductive Component (H : Type) where
   | split (z : {z : Sym2 H // ¬ z.IsDiag})
   | offset (h : H)
   | logRate (h : H)
   | wander (h : H)
-  | traffic (i j : H)
+  | linkPaused (i j : H)
+  | hostPaused (h : H)
 
 /-- What kind of value each component is: a number, or a function of true
 time. -/
@@ -272,13 +308,15 @@ def Component.Val : Component H → Type
   | .offset _ => ℝ
   | .logRate _ => ℝ
   | .wander _ => Time → ℝ
-  | .traffic _ _ => Time → ℝ
+  | .linkPaused _ _ => Time → ℝ
+  | .hostPaused _ => Time → ℝ
 
 instance (p : Component H) : MeasurableSpace p.Val := by
   cases p
   · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace ℝ)
   · exact inferInstanceAs (MeasurableSpace ℝ)
+  · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
   · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
   · exact inferInstanceAs (MeasurableSpace (Time → ℝ))
 
@@ -295,7 +333,8 @@ def Draw.component (d : Draw H) (o : Orientation H) : (p : Component H) → p.Va
   | .offset h => d.offset h
   | .logRate h => d.logRate h
   | .wander h => d.wander h
-  | .traffic i j => d.traffic i j
+  | .linkPaused i j => d.linkPaused i j
+  | .hostPaused h => d.hostPaused h
 
 /-- **The prior.** The random draw `D ω`, for `ω` drawn from `P`, has the law
 of the member `f` of the model `m`. -/
@@ -330,21 +369,38 @@ structure Prior (m : GenerativeWorld H R) (f : Member H R) (P : Measure Ω)
       = f.wanderSize h ^ 2 * Real.exp (-|s - t| / f.wanderTime h)
   /-- The wander is continuous in time, in every outcome. -/
   wander_continuous : ∀ ω h, Continuous ((D ω).wander h)
-  /-- The work that has arrived never decreases. -/
-  traffic_monotone : ∀ ω i j, Monotone ((D ω).traffic i j)
-  /-- The work is counted from true time zero. -/
-  traffic_zero : ∀ ω i j, (D ω).traffic i j 0 = 0
-  /-- Work that arrives at an instant counts from that instant on. -/
-  traffic_rightContinuous : ∀ ω i j t,
-    ContinuousWithinAt ((D ω).traffic i j) (Set.Ici t) t
-  /-- The work that arrives in periods that do not overlap is independent. -/
-  traffic_increments : ∀ i j, HasIndepIncrements (fun t ω => (D ω).traffic i j t) P
-  /-- The work that arrives between true times `s` and `t` has the law
-  `trafficLaw`, for the number of packets that arrive in that time on
-  average. -/
-  traffic_law : ∀ i j s t, s ≤ t →
-    HasLaw (fun ω => (D ω).traffic i j t - (D ω).traffic i j s)
-      (trafficLaw (Real.toNNReal (f.trafficRate i j * (t - s))) (f.trafficWork i j)) P
+  /-- The paused time of a link that has begun never decreases. -/
+  linkPaused_monotone : ∀ ω i j, Monotone ((D ω).linkPaused i j)
+  /-- The paused time of a link is counted from true time zero. -/
+  linkPaused_zero : ∀ ω i j, (D ω).linkPaused i j 0 = 0
+  /-- A pause counts from the instant at which it begins. -/
+  linkPaused_rightContinuous : ∀ ω i j t,
+    ContinuousWithinAt ((D ω).linkPaused i j) (Set.Ici t) t
+  /-- The paused time of a link that begins in periods that do not overlap
+  is independent. -/
+  linkPaused_increments : ∀ i j, HasIndepIncrements (fun t ω => (D ω).linkPaused i j t) P
+  /-- The paused time of a link that begins between true times `s` and `t`
+  has the law `pauseLaw`, for the number of pauses that begin in that time
+  on average and the member's law of their lengths. -/
+  linkPaused_law : ∀ i j s t, s ≤ t →
+    HasLaw (fun ω => (D ω).linkPaused i j t - (D ω).linkPaused i j s)
+      (pauseLaw (Real.toNNReal (f.linkPauseRate i j * (t - s))) (f.linkPauseLength i j)) P
+  /-- The paused time of a host that has begun never decreases. -/
+  hostPaused_monotone : ∀ ω h, Monotone ((D ω).hostPaused h)
+  /-- The paused time of a host is counted from true time zero. -/
+  hostPaused_zero : ∀ ω h, (D ω).hostPaused h 0 = 0
+  /-- A pause counts from the instant at which it begins. -/
+  hostPaused_rightContinuous : ∀ ω h t,
+    ContinuousWithinAt ((D ω).hostPaused h) (Set.Ici t) t
+  /-- The paused time of a host that begins in periods that do not overlap
+  is independent. -/
+  hostPaused_increments : ∀ h, HasIndepIncrements (fun t ω => (D ω).hostPaused h t) P
+  /-- The paused time of a host that begins between true times `s` and `t`
+  has the law `pauseLaw`, for the number of pauses that begin in that time
+  on average and the member's law of their lengths. -/
+  hostPaused_law : ∀ h s t, s ≤ t →
+    HasLaw (fun ω => (D ω).hostPaused h t - (D ω).hostPaused h s)
+      (pauseLaw (Real.toNNReal (f.hostPauseRate h * (t - s))) (f.hostPauseLength h)) P
   /-- The components of the draw are independent, whichever order each pair of
   hosts is taken in. -/
   independent : ∀ o : Orientation H, iIndepFun (fun p ω => (D ω).component o p) P
@@ -358,10 +414,17 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H)
   host_eq : w.host = m.host
   /-- Each host's clock reads what the draw says. -/
   clock : ∀ h t, (w.clock h).read t = d.reading h t
-  /-- A message arrives after the least delay of its direction plus the
-  backlog of the link when it is sent. No message is lost. -/
-  network : ∀ i j s q, ∃ v, d.IsBacklog i j s v ∧
-    w.network.deliver i j s q = some (s + d.split i j * f.roundTrip i j + v)
+  /-- A message that host `i` sends to host `j` at true time `s` leaves `i`
+  after the backlog `v₁` of host `i` at `s`, reaches `j` after the least
+  delay of the direction plus the backlog `v₂` of the link when it leaves,
+  and is observed by `j` after the backlog `v₃` of host `j` when it reaches
+  it. No message is lost. -/
+  network : ∀ i j s q, ∃ v₁ v₂ v₃,
+    IsBacklog (d.hostPaused i) s v₁ ∧
+    IsBacklog (d.linkPaused i j) (s + v₁) v₂ ∧
+    IsBacklog (d.hostPaused j) (s + v₁ + d.split i j * f.roundTrip i j + v₂) v₃ ∧
+    w.network.deliver i j s q
+      = some (s + v₁ + d.split i j * f.roundTrip i j + v₂ + v₃)
   /-- The capture device runs on the sender's clock: frame `n` is captured
   when that clock reads `f.captureStart + n / m.rate`. -/
   capture : ∀ n : ℕ,
@@ -444,25 +507,23 @@ theorem Prior.leastDelay_add {m : GenerativeWorld H R} {f : Member H R} {P : Mea
       = f.roundTrip i j := by
   rw [f.roundTrip_symm j i, ← add_mul, h.split_swap, one_mul]
 
-/-- **The law of the work that arrives is a probability law**: its total mass
-is one. -/
-theorem trafficLaw_univ (count : ℝ≥0) {work : ℝ} (hwork : 0 < work) :
-    trafficLaw count work Set.univ = 1 := by
-  have hterm : ∀ n : ℕ,
-      (if n = 0 then Measure.dirac (0 : ℝ) else gammaMeasure (n : ℝ) (1 / work)) Set.univ
-        = 1 := by
-    intro n
-    split_ifs with h
-    · simp
-    · have hn : (0 : ℝ) < n := Nat.cast_pos.mpr (Nat.pos_of_ne_zero h)
-      have := isProbabilityMeasure_gammaMeasure hn (one_div_pos.mpr hwork)
-      exact measure_univ
+/-- The sum of independent lengths has a probability law. -/
+instance sumLaw_prob (F : Measure ℝ) [IsProbabilityMeasure F] (n : ℕ) :
+    IsProbabilityMeasure (sumLaw F n) := by
+  induction n with
+  | zero => exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  | succ n ih => exact inferInstanceAs (IsProbabilityMeasure (sumLaw F n ∗ F))
+
+/-- **The law of the paused time of a period is a probability law**: its
+total mass is one. -/
+theorem pauseLaw_univ (count : ℝ≥0) (F : Measure ℝ) [IsProbabilityMeasure F] :
+    pauseLaw count F Set.univ = 1 := by
   have hsum : poissonMeasure count Set.univ = ∑' n : ℕ, poissonMeasure count {n} := by
     simp only [poissonMeasure_singleton]
     rw [poissonMeasure, Measure.sum_apply _ MeasurableSet.univ]
     simp
-  rw [trafficLaw, Measure.sum_apply _ MeasurableSet.univ]
-  simp only [smul_apply, smul_eq_mul, hterm, mul_one]
+  rw [pauseLaw, Measure.sum_apply _ MeasurableSet.univ]
+  simp only [smul_apply, smul_eq_mul, measure_univ, mul_one]
   rw [← hsum, measure_univ]
 
 /-! ## Facts about the laws of the model -/
@@ -502,12 +563,12 @@ theorem betaMeasure_compl_Ioo (a b : ℝ) : betaMeasure a b (Set.Ioo (0 : ℝ) 1
   · exact betaPDF_eq_zero_of_one_le (hx h0)
   · exact betaPDF_eq_zero_of_nonpos (not_lt.mp h0)
 
-/-- **No traffic brings no work.** When no packets arrive on average, the
-work that arrives is zero. -/
-theorem trafficLaw_zero (work : ℝ) : trafficLaw 0 work = Measure.dirac 0 := by
+/-- **No pauses, no paused time.** When no pauses begin on average, the
+paused time that begins is zero. -/
+theorem pauseLaw_zero (F : Measure ℝ) : pauseLaw 0 F = Measure.dirac 0 := by
   ext s hs
-  rw [trafficLaw, Measure.sum_apply _ hs, tsum_eq_single 0]
-  · simp [poissonMeasure_singleton]
+  rw [pauseLaw, Measure.sum_apply _ hs, tsum_eq_single 0]
+  · simp [poissonMeasure_singleton, sumLaw]
   · intro n hn
     simp [poissonMeasure_singleton, hn]
 

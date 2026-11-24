@@ -840,10 +840,19 @@ A member of the family is a choice of the following numbers
 \item For each pair of hosts $i$ and $j$, their least round-trip time
   $\tau_{ij} = \tau_{ji} > 0$, in seconds (\lean{roundTrip}).
 \item For each direction from $i$ to $j$, the rate $\mu_{ij} \ge 0$ at
-  which packets of other traffic arrive on the link, in packets per second
-  (\lean{trafficRate}), and the mean time $\beta_{ij} > 0$ that the link
-  needs to carry one of them (\lean{trafficWork}), with
-  $\mu_{ij}\beta_{ij} < 1$.
+  which pauses of the link begin, in pauses per second
+  (\lean{linkPauseRate}), and the law $F_{ij}$ of the length of a pause,
+  in seconds (\lean{linkPauseLength}). A \emph{pause} is a stretch of time
+  in which the link passes nothing: it carries a packet of other traffic,
+  repeats a transmission, or is out. $F_{ij}$ may be any probability law on
+  the positive numbers that has a mean $\beta_{ij}$, so one member can have
+  pauses of a fraction of a millisecond and pauses of a second. The link is
+  paused less than all of the time: $\mu_{ij}\beta_{ij} < 1$.
+\item For each host $i$, the rate $\mu_i \ge 0$ at which pauses of the
+  host begin (\lean{hostPauseRate}) and the law $F_i$ of their lengths
+  (\lean{hostPauseLength}), of the same kind, with mean $\beta_i$ and
+  $\mu_i\beta_i < 1$. While a host pauses, it sends nothing and handles
+  nothing that arrives.
 \item The spread $\sigma \ge 0$ of the mean rates of the clocks
   (\lean{rateSpread}).
 \item For each host $i$, the size $\nu_i \ge 0$ and the time scale
@@ -877,12 +886,15 @@ The following are drawn at random, all independently of one another
   Gaussian process with mean $0$, continuous in $t$, whose covariance
   between true times $s$ and $t$ is $\nu_i^2\,e^{-|s - t|/\vartheta_i}$
   (\lean{wander}).
-\item For each direction from $i$ to $j$, the other traffic of the link.
-  Packets arrive at the instants of a Poisson process of rate $\mu_{ij}$,
-  and each brings an independent, exponentially distributed amount of work
-  with mean $\beta_{ij}$. Write $W_{ij}(t)$ for the work that has arrived
-  between true time zero and true time $t$ (\lean{traffic},
-  \lean{trafficLaw}).
+\item For each direction from $i$ to $j$, the pauses of the link. Pauses
+  begin at the instants of a Poisson process of rate $\mu_{ij}$. Their
+  lengths are independent of one another and of those instants, and each
+  has the law $F_{ij}$. Write $W_{ij}(t)$ for the paused time that has
+  begun between true time zero and true time $t$: the sum of the lengths of
+  the pauses that began in between (\lean{linkPaused}, \lean{pauseLaw}).
+\item For each host $i$, the pauses of the host, in the same way with the
+  rate $\mu_i$ and the law $F_i$. Write $W_i(t)$ for the paused time of
+  the host that has begun by true time $t$ (\lean{hostPaused}).
 \end{itemize}
 \end{definition}
 
@@ -899,14 +911,24 @@ The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
   $i$ it is $(1 - u_{ij})\tau_{ij}$. Both are positive for every draw
   (\lean{Prior.leastDelay\_pos}) and they add up to $\tau_{ij}$
   (\lean{Prior.leastDelay\_add}).
-\item The backlog of the link from $i$ to $j$ at true time $t$ is the work
-  of other traffic that the link has not yet carried. The link carries one
-  second of work per second while any is left, so the backlog is
+\item The backlog of the link from $i$ to $j$ at true time $t$ is its
+  paused time that has begun and is not yet over. It rises by the length of
+  a pause when the pause begins and falls by one second per second while
+  any is left, so it is
   \[
     Q_{ij}(t) = \sup_{s \le t}\,\bigl(W_{ij}(t) - W_{ij}(s) - (t - s)\bigr)
   \]
-  (\lean{Draw.IsBacklog}). A message sent at true time $s$ from $i$ to $j$
-  arrives at $s + u_{ij}\tau_{ij} + Q_{ij}(s)$. No message is lost.
+  (\lean{IsBacklog}). The backlog $Q_i(t)$ of host $i$ is defined in the
+  same way from $W_i$.
+\item A message that host $i$ sends to host $j$ at true time $s$ leaves
+  $i$ at $s_1 = s + Q_i(s)$, reaches $j$ at
+  $s_2 = s_1 + u_{ij}\tau_{ij} + Q_{ij}(s_1)$, and is observed by $j$ at
+  $s_2 + Q_j(s_2)$. No message is lost. A pause of length $x$ therefore
+  delays what is sent at its start by $x$ and what is sent later by less,
+  down to nothing at its end, and everything that it withheld arrives
+  together when it ends. A pause of the sender's host delays every receiver
+  at once: links and hosts are drawn independently, and the delays of two
+  receivers are not independent.
 \item Every audio device runs on the clock of its host. Frame $n$ is
   captured when the sender's clock reads $\xi + n/\rho$, and output sample
   $k$ of speaker $r$ leaves when the clock of its host reads
@@ -944,22 +966,22 @@ that cannot be learned: the range $\theta_{\max}$ of the offsets and the
 spread $\sigma$ of the mean rates. The margin of an optimality statement
 has to carry its dependence on them.
 
-The law of the work that arrives is a probability law
-(\lean{trafficLaw\_univ}), and no traffic brings no work
-(\lean{trafficLaw\_zero}). The model is not empty
+The law of the paused time that begins in a period is a probability law
+(\lean{pauseLaw\_univ}), and when no pauses begin it is zero
+(\lean{pauseLaw\_zero}). The model is not empty
 (\lean{GenerativeWorld.\allowbreak example\_\allowbreak holds}): there is a
 random world of the model with three hosts in which the splits, the offsets
-and the mean rates are random. Its member has no other traffic and no
-wander, $\mu_{ij} = 0$ and $\nu_i = 0$. A random world with other traffic
+and the mean rates are random. Its member has no pauses and no
+wander, $\mu_{ij} = 0$, $\mu_i = 0$ and $\nu_i = 0$. A random world with pauses
 needs a Poisson process, and one with wander needs a stationary Gaussian
 process with continuous paths. Both exist by standard constructions, which
 are not carried out in Lean, so the model is not yet shown to have such
 members. The generative model is not proved to belong to the classes above;
 its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
 
-A member is \emph{noiseless} when its links carry no other traffic, its
+A member is \emph{noiseless} when its links and its hosts never pause, its
 clocks do not wander and the mean rates of its clocks have no spread,
-$\mu_{ij} = 0$, $\nu_i = 0$ and $\sigma = 0$
+$\mu_{ij} = 0$, $\mu_i = 0$, $\nu_i = 0$ and $\sigma = 0$
 (\lean{Member.Noiseless}). What stays random in such a member is what no
 host can learn: the offsets and the splits. Almost every outcome of a
 noiseless member is an ideal constant world whose constant delays are the
@@ -976,12 +998,13 @@ Every noiseless member has a random world, for any hosts and speakers
 The model leaves out, or simplifies, the following. Each item says what the
 simplification distorts.
 \begin{itemize}
-\item \emph{Jitter of different links is independent}, including the two
-  directions of one pair. Real links that share a host share its network
-  stack and its scheduler, and links on one switch or access point share
-  its queue and its radio channel. The model overstates what combining
-  several paths gains, and it misses that a delay common to all receivers
-  harms synchronization little.
+\item \emph{The pauses of different links are independent}, including the
+  two directions of one pair, and so are the pauses of different hosts.
+  Links that share a host do share its pauses, because a pause of a host
+  delays every message that leaves it or reaches it. Links on one switch or
+  access point also share its queue and its radio channel, which the model
+  does not have. It overstates what combining paths through one switch
+  gains.
 \item \emph{The splits of different pairs are independent.} Part of a real
   pair's asymmetry belongs to a host, whose sending path differs from its
   receiving path, or to a shared switch, and is common to several pairs.
@@ -1006,10 +1029,19 @@ simplification distorts.
   exact least delay is observed, and often. On a real wireless link even an
   idle channel adds a random delay. The model overstates how fast least
   delays are learned.
-\item \emph{Other traffic is a Poisson process, and the backlog has a tail
-  that falls exponentially.} Real traffic comes in bursts on many time
-  scales, and occasional delays are far longer.
-\item \emph{No message is lost, held back, reordered or duplicated.}
+\item \emph{Pauses begin at the instants of a Poisson process.} Real pauses
+  come in clusters: one is often followed by another before the first is
+  worked off. The model understates how often a pause meets a queue that an
+  earlier pause has emptied.
+\item \emph{A paused host still answers its own playback device at once.}
+  On a real host a pause can make the device run out of samples, whatever a
+  solution holds in reserve. That costs every solution the same missed
+  samples, so it does not change which solution is better.
+\item \emph{A paused host stamps a message when it handles it.} A real
+  kernel can stamp a message when it arrives, while the program is paused.
+  The model overstates what a pause of a host does to an estimate of a
+  clock.
+\item \emph{No message is lost, reordered or duplicated.}
 \item \emph{The messages of a solution are free}: they add no work to a
   link, and nothing limits their number.
 \item \emph{The wander of a clock has one time scale and is stationary.}
@@ -1233,7 +1265,7 @@ The theorem compares the baseline with star solutions only. With two or more
 receiving hosts, a solution whose receiving hosts also exchange messages
 with each other can have a lower expected cost, so the baseline is not
 optimal among all solutions. The theorem covers noiseless members only:
-for members with other traffic or with clock wander its margin is $\infty$. The
+for members with pauses or with clock wander its margin is $\infty$. The
 compared solutions leave out every solution in whose run two messages from
 different hosts arrive at one host at the same time with positive
 probability. The run handles such messages in the order in which they were

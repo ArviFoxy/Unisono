@@ -95,11 +95,12 @@ variable {Ω : Type} [MeasurableSpace Ω] {m : GenerativeWorld H R} {f : Member 
 
 theorem Draw.ext_fields {d d' : Draw H} (hsplit : d.split = d'.split)
     (hoffset : d.offset = d'.offset) (hlogRate : d.logRate = d'.logRate)
-    (hwander : d.wander = d'.wander) (htraffic : d.traffic = d'.traffic) : d = d' := by
-  obtain ⟨_, _, _, _, _⟩ := d
-  obtain ⟨_, _, _, _, _⟩ := d'
-  dsimp only at hsplit hoffset hlogRate hwander htraffic
-  subst hsplit hoffset hlogRate hwander htraffic
+    (hwander : d.wander = d'.wander) (hlink : d.linkPaused = d'.linkPaused)
+    (hhost : d.hostPaused = d'.hostPaused) : d = d' := by
+  obtain ⟨_, _, _, _, _, _⟩ := d
+  obtain ⟨_, _, _, _, _, _⟩ := d'
+  dsimp only at hsplit hoffset hlogRate hwander hlink hhost
+  subst hsplit hoffset hlogRate hwander hlink hhost
   rfl
 
 /-- **A draw determines the world built from it.** -/
@@ -139,9 +140,15 @@ theorem Builds.unique {d : Draw H} {w w' : World H R} (h : m.Builds f d w)
       linarith
     · rw [h.speaker_reported, h'.speaker_reported, hfirst, hout, hhost, hclock]
   · refine Network.ext_deliver fun i j s q => ?_
-    obtain ⟨v, hv, hd⟩ := h.network i j s q
-    obtain ⟨v', hv', hd'⟩ := h'.network i j s q
-    rw [hd, hd', IsLUB.unique hv hv']
+    obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := h.network i j s q
+    obtain ⟨u₁, u₂, u₃, hu₁, hu₂, hu₃, hd'⟩ := h'.network i j s q
+    have e₁ : v₁ = u₁ := IsLUB.unique hv₁ hu₁
+    subst e₁
+    have e₂ : v₂ = u₂ := IsLUB.unique hv₂ hu₂
+    subst e₂
+    have e₃ : v₃ = u₃ := IsLUB.unique hv₃ hu₃
+    subst e₃
+    rw [hd, hd']
   · funext n
     rw [h.target_eq, h'.target_eq]
 
@@ -149,13 +156,14 @@ theorem Builds.unique {d : Draw H} {w w' : World H R} (h : m.Builds f d w)
 
 /-- The coordinates of a draw: the split of every pair of distinct hosts,
 taken in its fixed order, and the offset of every clock. The coordinates of
-the mean rates, the wander and the traffic are zero. -/
+the mean rates, the wander and the paused times are zero. -/
 def Draw.coordinates (d : Draw H) : Component H → ℝ
   | .split z => d.split (refOrientation H z).1.1 (refOrientation H z).1.2
   | .offset h => d.offset h
   | .logRate _ => 0
   | .wander _ => 0
-  | .traffic _ _ => 0
+  | .linkPaused _ _ => 0
+  | .hostPaused _ => 0
 
 /-- The number that each component of a draw contributes to its
 coordinates. -/
@@ -164,7 +172,8 @@ def Component.scalar : (p : Component H) → p.Val → ℝ
   | .offset _ => fun u => u
   | .logRate _ => fun _ => 0
   | .wander _ => fun _ => 0
-  | .traffic _ _ => fun _ => 0
+  | .linkPaused _ _ => fun _ => 0
+  | .hostPaused _ => fun _ => 0
 
 theorem Component.measurable_scalar (p : Component H) : Measurable p.scalar := by
   cases p with
@@ -172,7 +181,8 @@ theorem Component.measurable_scalar (p : Component H) : Measurable p.scalar := b
   | offset h => exact measurable_id
   | logRate h => exact measurable_const
   | wander h => exact measurable_const
-  | traffic i j => exact measurable_const
+  | linkPaused i j => exact measurable_const
+  | hostPaused h => exact measurable_const
 
 theorem Draw.coordinates_eq_scalar (d : Draw H) (p : Component H) :
     d.coordinates p = p.scalar (d.component (refOrientation H) p) := by
@@ -182,15 +192,16 @@ section Coordinates
 
 variable [DecidableEq H]
 
-/-- A draw with no mean-rate spread, no wander and no other traffic is the
-draw of its own coordinates. -/
+/-- A draw with no mean-rate spread, no wander and no pause is the draw of
+its own coordinates. -/
 theorem canonicalDraw_coordinates (d : Draw H) (hswap : ∀ i j, d.split i j + d.split j i = 1)
     (hmem : ∀ i j, d.split i j ∈ Set.Ioo (0 : ℝ) 1) (hlog : ∀ h, d.logRate h = 0)
-    (hwander : ∀ h t, d.wander h t = 0) (htraffic : ∀ i j t, d.traffic i j t = 0) :
+    (hwander : ∀ h t, d.wander h t = 0) (hlink : ∀ i j t, d.linkPaused i j t = 0)
+    (hhost : ∀ h t, d.hostPaused h t = 0) :
     canonicalDraw d.coordinates = d := by
   have hof : ∀ u : ℝ, u ∈ Set.Ioo (0 : ℝ) 1 → splitOf u = u := fun u hu => by
     simp [splitOf, hu.1, hu.2]
-  refine Draw.ext_fields ?_ ?_ ?_ ?_ ?_
+  refine Draw.ext_fields ?_ ?_ ?_ ?_ ?_ ?_
   · funext i j
     by_cases h : i = j
     · subst h
@@ -219,7 +230,9 @@ theorem canonicalDraw_coordinates (d : Draw H) (hswap : ∀ i j, d.split i j + d
   · funext h t
     exact (hwander h t).symm
   · funext i j t
-    exact (htraffic i j t).symm
+    exact (hlink i j t).symm
+  · funext h t
+    exact (hhost h t).symm
 
 /-- Each split of the draw of an outcome is a measurable function of the
 outcome. -/
@@ -255,7 +268,9 @@ theorem measurable_canonicalDraw : Measurable (canonicalDraw (H := H)) := by
     measurable_const
   have h5 : Measurable fun _ : Component H → ℝ => fun (_ _ : H) (_ : Time) => (0 : ℝ) :=
     measurable_const
-  exact h1.prodMk (h2.prodMk (h3.prodMk (h4.prodMk h5)))
+  have h6 : Measurable fun _ : Component H → ℝ => fun (_ : H) (_ : Time) => (0 : ℝ) :=
+    measurable_const
+  exact h1.prodMk (h2.prodMk (h3.prodMk (h4.prodMk (h5.prodMk h6))))
 
 variable [Fintype H]
 
@@ -290,7 +305,8 @@ theorem Prior.coordinates_law (hD : m.Prior f P D) :
     | offset h => exact hD.offset_law h
     | logRate h => exact hzero
     | wander h => exact hzero
-    | traffic i j => exact hzero
+    | linkPaused i j => exact hzero
+    | hostPaused h => exact hzero
   have hae : ∀ p, AEMeasurable (fun ω => (D ω).coordinates p) P := fun p => (hlaw p).aemeasurable
   refine ⟨AEMeasurable.of_eval hae, ?_⟩
   refine ((iIndepFun_iff_map_fun_eq_pi_map hae).mp hind).trans ?_
@@ -307,11 +323,15 @@ theorem Prior.ae_eq_canonicalDraw (hD : m.Prior f P D) (hf : f.Noiseless) :
     ae_all_iff.mpr fun h => hD.logRate_ae_eq_zero hf.no_spread h
   have hwander : ∀ᵐ ω ∂P, ∀ h, ∀ t, (D ω).wander h t = 0 :=
     ae_all_iff.mpr fun h => hD.wander_ae_eq_zero (hf.no_wander h)
-  have htraffic : ∀ᵐ ω ∂P, ∀ i j, ∀ s t, (D ω).traffic i j s = (D ω).traffic i j t :=
-    ae_all_iff.mpr fun i => ae_all_iff.mpr fun j => hD.traffic_ae_const (hf.no_traffic i j)
-  filter_upwards [hlog, hwander, htraffic] with ω h1 h2 h3
+  have hlink : ∀ᵐ ω ∂P, ∀ i j, ∀ s t, (D ω).linkPaused i j s = (D ω).linkPaused i j t :=
+    ae_all_iff.mpr fun i => ae_all_iff.mpr fun j =>
+      hD.linkPaused_ae_const (hf.no_linkPauses i j)
+  have hhost : ∀ᵐ ω ∂P, ∀ h, ∀ s t, (D ω).hostPaused h s = (D ω).hostPaused h t :=
+    ae_all_iff.mpr fun h => hD.hostPaused_ae_const (hf.no_hostPauses h)
+  filter_upwards [hlog, hwander, hlink, hhost] with ω h1 h2 h3 h4
   exact canonicalDraw_coordinates (D ω) (hD.split_swap ω) (hD.split_mem ω) h1 h2
-    fun i j t => by rw [h3 i j t 0, hD.traffic_zero ω i j]
+    (fun i j t => by rw [h3 i j t 0, hD.linkPaused_zero ω i j])
+    (fun h t => by rw [h4 h t 0, hD.hostPaused_zero ω h])
 
 variable {world : Ω → World H R}
 
