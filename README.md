@@ -60,6 +60,14 @@ simulation and integration tests (see `PRINCIPLES.md`):
     about those models apply to it.
   - Every noiseless member of `GenerativeWorld` has a random world, for any
     hosts and speakers (`lean/Unisono/Spec/Models/GenerativeCanonical.lean`).
+  - Every member of `GenerativeWorld` whose clocks do not wander and whose
+    audio devices report exact timestamps has a random world, for any hosts
+    and speakers (`lean/Unisono/Spec/Models/GenerativePauses.lean`). Its
+    links and its hosts may pause, at any rates and with any laws of the
+    lengths, and the mean rates of its clocks may be spread. The pauses come
+    from a random process constructed in
+    `lean/Unisono/Spec/Models/PauseProcess.lean`. In every random world of
+    such a member, almost every outcome has clocks at constant rates.
   - A star solution's costs in a world and in the same world with the links
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
@@ -131,12 +139,10 @@ simulation and integration tests (see `PRINCIPLES.md`):
     receiving hosts, a solution that also uses links between them can do
     better. No lower bound on expected cost is proved for such solutions, or
     for members with pauses or clock wander.
-    Random worlds are constructed for every noiseless member and for one
-    member with random mean clock rates. The random process of pauses that
-    the model asks for is constructed
-    (`lean/Unisono/Spec/Models/PauseProcess.lean`), but no random world is
-    assembled from it yet, and a random world with clock wander is not
-    constructed in Lean. The expectation that a solution loses nothing in the long run by
+    Random worlds are constructed for every member whose clocks do not
+    wander and whose audio devices report exact timestamps; a random world
+    with clock wander or with errors of the timestamps is not constructed in
+    Lean. The expectation that a solution loses nothing in the long run by
     not being told the numbers of its member is not proved.
   - Unconditional `Solution.WithinSpeed` across all block boundaries (including
     silence restarts and arbitrary `jump` values) for `Core.solution` remains
@@ -269,6 +275,7 @@ optimal.
 | Sub-case | What it assumes | File |
 |---|---|---|
 | `GenerativeWorld.Member.Noiseless` | A member in which links and hosts never pause, no clock of a host or of an audio device wanders or has a spread of its mean rate, and the audio devices report exact timestamps: every disturbance is switched off. | `lean/Unisono/Spec/Models/GenerativeNoiseless.lean` |
+| `GenerativeWorld.Member.SteadyClocks` | A member in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. Its links and its hosts may pause, with any laws of the lengths, and the mean rates of its clocks may be spread. Almost every outcome of such a member is in `ConstantRates`. | `lean/Unisono/Spec/Models/GenerativePauses.lean` |
 | `GenerativeWorld.ConstantRates` | An outcome in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. The clocks may run at different constant rates, and links and hosts may pause. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 | `GenerativeWorld.ConstantDelays` | `ConstantRates` with no pauses, so that every message takes the least delay of its direction. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 

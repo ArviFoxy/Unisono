@@ -59,7 +59,8 @@ build.
   `StationaryNetworkDisturbances.example_holds`,
   `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`,
   `GenerativeWorld.example_holds`). The example of the generative model has
-  no pauses and no wander.
+  no pauses and no wander; members with pauses have random worlds by
+  `GenerativeWorld.exists_holds_of_steadyClocks`.
 -/
 
 @[expose] public noncomputable section
@@ -1916,7 +1917,9 @@ private theorem exampleDraw_prior :
 /-- **The generative model is not empty.** There is a random world of the
 model with three hosts and two speakers. In it the splits, the clock offsets
 and the clocks' mean rates are random; its member has no pauses and no
-wander, so this does not show that members with either exist. -/
+wander. Members with pauses have random worlds by
+`GenerativeWorld.exists_holds_of_steadyClocks`; no member with wander is
+shown to have one. -/
 theorem GenerativeWorld.example_holds :
     ∃ (m : GenerativeWorld (Fin 3) 2) (f : GenerativeWorld.Member (Fin 3) 2) (Ω : Type)
       (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),

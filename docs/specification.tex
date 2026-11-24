@@ -1016,11 +1016,29 @@ counts each pause from the instant at which it begins, and the paused time
 that begins in periods that do not overlap is independent, with the law
 \lean{pauseLaw}
 (\lean{hasIndepIncrements\_\allowbreak pausedPath},
-\lean{hasLaw\_\allowbreak pausedPath\_\allowbreak sub}). No random world
-is assembled from it yet. A random world with wander needs a stationary
-Gaussian process with continuous paths, which exists by a standard
-construction that is not carried out in Lean. The model is therefore not yet
-shown to have members with pauses or with wander. The generative model is not proved to belong to the classes above;
+\lean{hasLaw\_\allowbreak pausedPath\_\allowbreak sub}).
+
+A member has \emph{steady clocks} when the clocks of its hosts and of its
+audio devices do not wander and its audio devices report exact timestamps:
+$\nu_i = 0$, $\nu_x = 0$ and $\varsigma_x = 0$ (\lean{Member.SteadyClocks}).
+Its links and its hosts may pause, at any rates and with any laws of the
+lengths, and the mean rates of its clocks may be spread. Every member with
+steady clocks has a random world, for any hosts and speakers
+(\lean{exists\_\allowbreak holds\_\allowbreak of\_\allowbreak steadyClocks}
+in \path{lean/Unisono/Spec/Models/GenerativePauses.lean}). In it the paused
+time of each link and of each host comes from the process above, and the
+backlogs are finite in almost every outcome, because the pauses take less
+than all of the time on average
+(\lean{ae\_\allowbreak tame\_\allowbreak pausedPath}). In every random
+world of a member with steady clocks, almost every outcome is a world whose
+clocks run at constant rates
+(\lean{Prior.ae\_\allowbreak constantRates}).
+
+A random world with wander, or with errors of the timestamps, needs a
+stationary Gaussian process with continuous paths, which exists by a
+standard construction that is not carried out in Lean. The model is therefore
+not yet shown to have members with wander or with errors of the timestamps.
+The generative model is not proved to belong to the classes above;
 its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
 
 A member is \emph{noiseless} when its links and its hosts never pause, the

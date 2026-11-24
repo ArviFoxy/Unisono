@@ -308,6 +308,31 @@ theorem canonicalDraw_component (o : Orientation H) (p : Component H R)
   | deviceWander x => rfl
   | reportError x => rfl
 
+/-- The split of two distinct hosts has the Beta law, on any probability
+space on which the number drawn for their pair has the Beta law. -/
+theorem hasLaw_canonicalDraw_split {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω} (shape : ℝ)
+    {i j : H} (hij : i ≠ j) {Y : Ω → Component H R → ℝ}
+    (hY : HasLaw (fun ω => Y ω (.split (pairOf i j hij))) (betaMeasure shape shape) P) :
+    HasLaw (fun ω => (canonicalDraw (Y ω)).split i j) (betaMeasure shape shape) P := by
+  have hto : HasLaw splitOf (betaMeasure shape shape) (betaMeasure shape shape) :=
+    HasLaw.id.congr (splitOf_ae_eq shape shape)
+  by_cases hp : (refOrientation H (pairOf i j hij)).1 = (i, j)
+  · have heq : (fun ω => (canonicalDraw (Y ω)).split i j)
+        = fun ω => splitOf (Y ω (.split (pairOf i j hij))) := by
+      funext ω
+      simp only [canonicalDraw, dite_eq_right hij, ite_eq_left hp]
+    rw [heq]
+    exact hto.fun_comp hY
+  · have heq : (fun ω => (canonicalDraw (Y ω)).split i j)
+        = fun ω => 1 - splitOf (Y ω (.split (pairOf i j hij))) := by
+      funext ω
+      simp only [canonicalDraw, dite_eq_right hij, ite_eq_right hp]
+    rw [heq]
+    have hsub : HasLaw (fun x : ℝ => 1 - x) (betaMeasure shape shape)
+        (betaMeasure shape shape) :=
+      ⟨by fun_prop, betaMeasure_map_one_sub shape⟩
+    exact hsub.fun_comp (hto.fun_comp hY)
+
 variable [Fintype H]
 
 /-- The split of two distinct hosts has the Beta law on the concrete
@@ -315,28 +340,9 @@ probability space. -/
 theorem canonicalDraw_split_law (m : GenerativeWorld H R) (f : Member H R) {i j : H}
     (hij : i ≠ j) :
     HasLaw (fun y : Component H R → ℝ => (canonicalDraw y).split i j)
-      (betaMeasure m.shape m.shape) (Measure.pi (canonicalLaw m f)) := by
-  have hcoord : HasLaw (fun y : Component H R → ℝ => y (.split (pairOf i j hij)))
       (betaMeasure m.shape m.shape) (Measure.pi (canonicalLaw m f)) :=
+  hasLaw_canonicalDraw_split m.shape hij (Y := fun y => y)
     (measurePreserving_eval (canonicalLaw m f) (.split (pairOf i j hij))).hasLaw
-  have hto : HasLaw splitOf (betaMeasure m.shape m.shape) (betaMeasure m.shape m.shape) :=
-    HasLaw.id.congr (splitOf_ae_eq m.shape m.shape)
-  by_cases hp : (refOrientation H (pairOf i j hij)).1 = (i, j)
-  · have heq : (fun y : Component H R → ℝ => (canonicalDraw y).split i j)
-        = fun y => splitOf (y (.split (pairOf i j hij))) := by
-      funext y
-      simp only [canonicalDraw, dite_eq_right hij, ite_eq_left hp]
-    rw [heq]
-    exact hto.fun_comp hcoord
-  · have heq : (fun y : Component H R → ℝ => (canonicalDraw y).split i j)
-        = fun y => 1 - splitOf (y (.split (pairOf i j hij))) := by
-      funext y
-      simp only [canonicalDraw, dite_eq_right hij, ite_eq_right hp]
-    rw [heq]
-    have hsub : HasLaw (fun x : ℝ => 1 - x) (betaMeasure m.shape m.shape)
-        (betaMeasure m.shape m.shape) :=
-      ⟨by fun_prop, betaMeasure_map_one_sub m.shape⟩
-    exact hsub.fun_comp (hto.fun_comp hcoord)
 
 /-- **The draw of an outcome has the law of a noiseless member.** -/
 theorem canonicalDraw_prior (m : GenerativeWorld H R) (f : Member H R) (hf : f.Noiseless) :
