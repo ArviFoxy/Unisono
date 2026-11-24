@@ -70,6 +70,7 @@ public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
+public import Unisono.Spec.Models.GenerativeLawOfDraw
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
@@ -1762,6 +1763,30 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.stall_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.stall_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.ofParts_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.ofParts_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_ofParts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_ofParts
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_scalars_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_scalars_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_parts_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_parts_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_draw_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_draw_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.expectedCost_eq_of_steady' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.expectedCost_eq_of_steady
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

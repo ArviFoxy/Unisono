@@ -69,6 +69,7 @@ public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
+public import Unisono.Spec.Models.GenerativeLawOfDraw
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
