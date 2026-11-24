@@ -39,6 +39,13 @@ baseline's messages with further fields, and plays differently.
   leaves (device line), the reading of the sender's clock at that moment
   (clock line), and the position that is due then (schedule). The speaker
   plays that position.
+* **Each frame has the level of its own block.** A host keeps the header of
+  every block that arrived. For an output sample it uses the header of a
+  block whose own frames contain the position that the header says is due
+  (`Header.Covers`, `dueOf`). So when the level changes, every host changes
+  it at the same frame, whenever the newer blocks reach it. While no block
+  that arrived contains its own due position, the output sample plays
+  nothing of the source.
 
 The estimators are parameters. The theorems about this solution hold for
 every estimator that is exact on undisturbed data (`ClockEstimator.Exact`,
@@ -336,18 +343,28 @@ capture time of `x` is `capture + (x - first) * period` and its level is
 def Header.due (hd : Header) (s : ℝ) : ℝ :=
   hd.first + (s - hd.capture - hd.level) / (hd.period + hd.slope)
 
-/-- The header of the newest block that has arrived in a view: the one with
-the highest first frame. -/
-def headerOf (l : List (Event H R Payload)) : Option Header :=
-  l.foldl
-    (fun acc e =>
-      match e.observation with
-      | .received _ (.block f _ capture period level slope) _ =>
-          match acc with
-          | some hd => if hd.first < f then some ⟨f, capture, period, level, slope⟩ else acc
-          | none => some ⟨f, capture, period, level, slope⟩
-      | _ => acc)
-    none
+/-- The headers of the blocks that have arrived in a view, oldest arrival
+first, each with the number of frames that its message carried. -/
+def headersOf (l : List (Event H R Payload)) : List (Header × ℕ) :=
+  l.filterMap fun e =>
+    match e.observation with
+    | .received _ (.block f _ capture period level slope) F =>
+        some (⟨f, capture, period, level, slope⟩, F.card)
+    | _ => none
+
+/-- The header of a block of `count` frames covers the position that it says
+is due when the sender's clock reads `s`: its schedule advances with the
+position, and that position lies among the frames of its block. -/
+def Header.Covers (hd : Header) (count : ℕ) (s : ℝ) : Prop :=
+  0 < hd.period + hd.slope ∧ (hd.first : ℝ) ≤ hd.due s ∧ hd.due s < hd.first + count
+
+/-- The position that is due when the sender's clock reads `s`, by the
+headers `hs` of the blocks that have arrived: the position that a header
+gives, for the first block that arrived whose header covers that position.
+There is none while no block that arrived covers its own due position. -/
+def dueOf (hs : List (Header × ℕ)) (s : ℝ) : Option ℝ := by
+  classical
+  exact (hs.find? fun e => decide (e.1.Covers e.2 s)).map fun e => e.1.due s
 
 /-- A rule by which the sender chooses the level: from its view when the
 capture device hands over a block, and the block's first frame, the level of
@@ -371,19 +388,22 @@ def blockHeader (view : List (Event H R Payload)) (f : ℕ) (stamp : ℝ) : Head
     ((deviceEst (captureReports view)).map Line.slope).getD (1 / p.rate),
     (levelRule view f).1, (levelRule view f).2⟩
 
-/-- The header of the newest block that the sender's own capture device has
-handed over in a view: the header that the sender put in that block. -/
-def ownHeaderOf (l : List (Event H R Payload)) : Option Header :=
+/-- The headers of the blocks that the sender's own capture device has
+handed over in a view, oldest first: the headers that the sender put in
+those blocks, each with the number of frames of its block. -/
+def ownHeadersOf (l : List (Event H R Payload)) : List (Header × ℕ) :=
   (l.foldl
-    (fun (acc : List (Event H R Payload) × Option Header) e =>
+    (fun (acc : List (Event H R Payload) × List (Header × ℕ)) e =>
       (acc.1 ++ [e],
         match e.observation with
         | .handed frames stamp =>
             match frames.head? with
-            | some f => some (blockHeader p deviceEst levelRule (acc.1 ++ [e]) f.1 stamp)
+            | some f =>
+                acc.2 ++ [(blockHeader p deviceEst levelRule (acc.1 ++ [e]) f.1 stamp,
+                  frames.length)]
             | none => acc.2
         | _ => acc.2))
-    ([], none)).2
+    ([], [])).2
 
 /-- A message of the baseline with the controller's further fields, as host
 `h` fills them in at the view `view`. -/
@@ -408,26 +428,27 @@ clock at the sender's host, and the estimator's line elsewhere. -/
 def clockOf (h : H) (l : List (Event H R Payload)) : Option Line :=
   if h = p.sender then some ⟨0, 1⟩ else clockEst (exchangesOf l)
 
-/-- The schedule that a host follows after the events `l`: the header of the
-newest block that has arrived, or at the sender's host the header of the
-newest block handed over. -/
-def scheduleOf (h : H) (l : List (Event H R Payload)) : Option Header :=
-  if h = p.sender then ownHeaderOf p deviceEst levelRule l else headerOf l
+/-- The schedule that a host follows after the events `l`: the headers of
+the blocks that have arrived, or at the sender's host the headers of the
+blocks handed over. -/
+def scheduleOf (h : H) (l : List (Event H R Payload)) : List (Header × ℕ) :=
+  if h = p.sender then ownHeadersOf p deviceEst levelRule l else headersOf l
 
 /-- The position that output sample `k` plays: the position that is due, by
-the schedule `hd`, when the sample leaves. The device line `dl` gives the
+the headers `hs` of the host's schedule, when the sample leaves. The device line `dl` gives the
 reading of the host's clock at which the sample leaves; while there is no
 device line, the reading is taken from the timestamp `stamp` of the block,
 whose first output sample is `first`, at the nominal rate. The clock line
 `cl` gives the reading of the sender's clock at that moment. There is no
-position while the host has no schedule or no clock line. -/
-def position (hd : Option Header) (cl dl : Option Line) (first : ℕ) (stamp : ℝ) (k : ℕ) :
+position while the host has no clock line, or while no block of its schedule
+covers its own due position. -/
+def position (hs : List (Header × ℕ)) (cl dl : Option Line) (first : ℕ) (stamp : ℝ) (k : ℕ) :
     Option ℝ :=
-  match hd, cl with
-  | some hd, some cl =>
-      some (hd.due (cl.eval ((dl.map fun dl => dl.eval k).getD
-        (stamp + ((k : ℝ) - first) / p.rate))))
-  | _, _ => none
+  match cl with
+  | some cl =>
+      dueOf hs (cl.eval ((dl.map fun dl => dl.eval k).getD
+        (stamp + ((k : ℝ) - first) / p.rate)))
+  | none => none
 
 /-- The controller: each host sends what the baseline sends, with the
 further fields, and plays each output sample at the position that is due

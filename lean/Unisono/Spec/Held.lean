@@ -22,6 +22,9 @@ Two facts about the run of every solution.
 
 Together they say what a host holds when a device requests a block: the
 frames that arrived strictly before the request.
+
+Also: the handover of a block is handled at one step of the run only
+(`Solution.handed_step_unique`).
 -/
 
 @[expose] public noncomputable section
@@ -139,5 +142,74 @@ theorem Solution.received_lt_asked (σ : Solution H R Msg) (w : World H R) (look
   · obtain ⟨u, -, heq⟩ := Option.map_eq_some_iff.mp hi
     simp at heq
   · simp at hi
+
+/-- The next block to be handed over never decreases. -/
+theorem Solution.handedNext_mono (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+) :
+    Monotone fun n => (σ.states w lookahead n).handedNext := by
+  refine monotone_nat_of_le_succ fun n => ?_
+  show (σ.states w lookahead n).handedNext
+    ≤ ((σ.states w lookahead n).step σ w lookahead).handedNext
+  rcases State.step_handedNext w σ lookahead (σ.states w lookahead n) with h | ⟨h, -⟩
+  · exact le_of_eq h.symm
+  · rw [h]
+    exact Nat.le_succ _
+
+/-- A step whose event is the handover of block `b` had the handover of `b`
+as its earliest pending event. -/
+theorem Solution.earliest_of_handled_handed (σ : Solution H R Msg) (w : World H R)
+    (lookahead : ℕ+) {i b : ℕ} {h : H} {frames : List (ℕ × ℝ)} {stamp : ℝ}
+    (hi : σ.handled w lookahead i = some (h, w.source.handed b, .handed frames stamp)) :
+    earliest ((σ.states w lookahead i).key w) (σ.states w lookahead i).due
+      = some (.handed b) := by
+  unfold Solution.handled at hi
+  split at hi
+  · rename_i b' hb'
+    simp only [Option.some.injEq, Prod.mk.injEq] at hi
+    have hbb : b' = b := w.source.handed_strictMono.injective hi.2.1
+    rw [hb', hbb]
+  · simp at hi
+  · obtain ⟨msg, -, heq⟩ := Option.map_eq_some_iff.mp hi
+    simp at heq
+  · obtain ⟨u, -, heq⟩ := Option.map_eq_some_iff.mp hi
+    simp at heq
+  · simp at hi
+
+/-- **The handover of a block is handled once.** Two steps of the run whose
+earliest pending event is the handover of the same block are the same
+step. -/
+theorem Solution.handed_step_unique (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
+    {i i' b : ℕ}
+    (hi : earliest ((σ.states w lookahead i).key w) (σ.states w lookahead i).due
+      = some (.handed b))
+    (hi' : earliest ((σ.states w lookahead i').key w) (σ.states w lookahead i').due
+      = some (.handed b)) : i = i' := by
+  have hnext : ∀ j, earliest ((σ.states w lookahead j).key w) (σ.states w lookahead j).due
+      = some (.handed b) →
+      (σ.states w lookahead j).handedNext = b
+        ∧ (σ.states w lookahead (j + 1)).handedNext = b + 1 := by
+    intro j hj
+    have hmem := (earliest_spec _ _ _ hj).1
+    have hb : (σ.states w lookahead j).handedNext = b := by
+      rcases (σ.states w lookahead j).mem_due hmem with h | ⟨r, h⟩ | ⟨q, _, h⟩ | ⟨q, _, h⟩
+      · simp only [Due.handed.injEq] at h
+        exact h.symm
+      · simp at h
+      · simp at h
+      · simp at h
+    refine ⟨hb, ?_⟩
+    show ((σ.states w lookahead j).step σ w lookahead).handedNext = b + 1
+    unfold State.step
+    rw [hj]
+  obtain ⟨h1, h2⟩ := hnext i hi
+  obtain ⟨h1', h2'⟩ := hnext i' hi'
+  have hmono := σ.handedNext_mono w lookahead
+  rcases lt_trichotomy i i' with hlt | heq | hgt
+  · have hm : (σ.states w lookahead (i + 1)).handedNext
+        ≤ (σ.states w lookahead i').handedNext := hmono (Nat.succ_le_of_lt hlt)
+    omega
+  · exact heq
+  · have hm : (σ.states w lookahead (i' + 1)).handedNext
+        ≤ (σ.states w lookahead i).handedNext := hmono (Nat.succ_le_of_lt hgt)
+    omega
 
 end Unisono.Spec

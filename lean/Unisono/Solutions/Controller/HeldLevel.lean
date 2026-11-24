@@ -339,9 +339,10 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
   have hgr := Real.exp_pos (d.deviceLogRate (some (m.device r)))
   have hB := m.blockSize_pos
   -- Late requests.
-  obtain ⟨bmin, hbmin⟩ := hS.asked_unbounded r
-    (max T₀ (d.arrival f w.sender (w.host r) (w.source.handed 1)))
-  obtain ⟨bK, hbK⟩ := hS.asked_unbounded r (latencyOf m f d L r + w.source.capture 0)
+  obtain ⟨bmin, hbmin⟩ := hS.asked_unbounded r T₀
+  obtain ⟨bK, hbK⟩ := hS.asked_unbounded r
+    (latencyOf m f d L r + w.source.capture 0
+      + (m.blockSize : ℝ) / (m.rate * Real.exp (d.deviceLogRate none)))
   choose step hstepb hstepe using FixedDelay.request_step_of_unbounded p w lookahead
     hS.handed_unbounded hS.asked_unbounded r
   have hfirst : ∀ b, (w.speaker r).first b = b * m.blockSize := hS.builds.speaker_first r
@@ -363,164 +364,131 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
     have h3 : (n / m.blockSize + 1) * m.blockSize
         = n / m.blockSize * m.blockSize + m.blockSize := by ring
     omega
+  have hcard : ∀ b, (w.source.block b).toFinset.card = m.blockSize := by
+    intro b
+    unfold CaptureDevice.block
+    rw [List.toFinset_card_of_nodup List.nodup_range', List.length_range',
+      hS.builds.capture_first, hS.builds.capture_first]
+    have h3 : (b + 1) * m.blockSize = b * m.blockSize + m.blockSize := by ring
+    omega
   have htime : ∀ b, (FixedDelay.solution p : Solution H R FixedDelay.Payload).eventTime w
       lookahead (step b) = (w.speaker r).asked b := fun b =>
     Solution.handled_time w (FixedDelay.solution p) lookahead
       (Solution.handled_of_asked w (FixedDelay.solution p) lookahead (hstepe b))
-  have hlate : ∀ b, bmin ≤ b →
-      max T₀ (d.arrival f w.sender (w.host r) (w.source.handed 1))
-        < (FixedDelay.solution p : Solution H R FixedDelay.Payload).eventTime w lookahead
-          (step b) := by
-    intro b hb
-    rw [htime]
-    exact lt_of_lt_of_le hbmin ((w.speaker r).asked_strictMono.monotone hb)
-  -- What the host has estimated at a late request, and the position that follows.
-  have hpos : ∀ k, max bmin 1 * m.blockSize ≤ k →
-      position p
-        (scheduleOf p deviceEst (constantLevel L) (w.host r)
-          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-              lookahead (step (k / m.blockSize))).views (w.host r)
-            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-              .asked r ((w.speaker r).block (k / m.blockSize))
-                ((w.speaker r).reported (k / m.blockSize))⟩]))
-        (clockOf p clockEst (w.host r)
-          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-              lookahead (step (k / m.blockSize))).views (w.host r)
-            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-              .asked r ((w.speaker r).block (k / m.blockSize))
-                ((w.speaker r).reported (k / m.blockSize))⟩]))
-        (deviceEst (playbackReports r
-          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-              lookahead (step (k / m.blockSize))).views (w.host r)
-            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-              .asked r ((w.speaker r).block (k / m.blockSize))
-                ((w.speaker r).reported (k / m.blockSize))⟩])))
-        (((w.speaker r).block (k / m.blockSize)).headD 0)
-        ((w.speaker r).reported (k / m.blockSize)) k
-      = some (duePosition m f d w L r k) := by
-    intro k hk
-    have hb₀ : max bmin 1 ≤ k / m.blockSize := (Nat.le_div_iff_mul_le hB).mpr hk
-    have hbmin' : bmin ≤ k / m.blockSize := le_trans (le_max_left _ _) hb₀
-    have hb1 : 1 ≤ k / m.blockSize := le_trans (le_max_right _ _) hb₀
-    have hT := hlate (k / m.blockSize) hbmin'
-    have haskedNext : ((solution p clockEst deviceEst (constantLevel L) :
-        Solution H R Payload).states w lookahead (step (k / m.blockSize))).askedNext r
-          = k / m.blockSize := by
-      rw [Solution.askedNext_forget w Payload.plain lookahead hmore (step (k / m.blockSize))]
-      exact hstepb (k / m.blockSize)
-    -- The device line.
-    have hdl := playbackLine_exact hS hdev
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hb1
-      haskedNext
-    -- The clock line.
-    have hcl : clockOf p clockEst (w.host r)
-        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-            lookahead (step (k / m.blockSize))).views (w.host r)
-          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-            .asked r ((w.speaker r).block (k / m.blockSize))
-              ((w.speaker r).reported (k / m.blockSize))⟩])
-        = some (exchangeLine m f d (m.host r)) := by
-      unfold clockOf
-      rw [ite_eq_right hns]
-      have hex : exchangesOf
-          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-              lookahead (step (k / m.blockSize))).views (w.host r)
-            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-              .asked r ((w.speaker r).block (k / m.blockSize))
-                ((w.speaker r).reported (k / m.blockSize))⟩])
-          = exchangesOf
-            (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-              lookahead (step (k / m.blockSize))).views (w.host r)) := by
-        simp [exchangesOf, List.filterMap_append]
-      rw [hex, hhost]
-      refine hline (step (k / m.blockSize)) ?_
-      rw [Solution.eventTime_forget w Payload.plain lookahead hmore]
-      exact lt_of_le_of_lt (le_max_left _ _) hT
-    -- The schedule: the header of a block from the second on.
-    obtain ⟨i₁, hi₁, hh₁⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hA hsender hnodup
-      hcopies hh hhs (b := 1) (k := step (k / m.blockSize))
-      (lt_of_le_of_lt (le_max_right _ _) hT)
-    have hf₁ := Solution.handled_forget w Payload.plain lookahead hmore i₁
-    rw [hh₁] at hf₁
-    obtain ⟨⟨h', t', obs'⟩, hσh, heq⟩ := Option.map_eq_some_iff.mp hf₁
-    simp only [Prod.mk.injEq] at heq
-    obtain ⟨rfl, rfl, hobs⟩ := heq
-    obtain ⟨c₁, F₁, hobs₁, hpl₁⟩ : ∃ (c₁ : Payload) (F₁ : Finset ℕ),
-        obs' = .received w.sender c₁ F₁
-        ∧ c₁.plain = .block (w.source.first 1) (w.source.reported 1) := by
-      cases obs' with
-      | handed frames stamp => simp [Observation.mapMsg] at hobs
-      | asked r' outputs stamp => simp [Observation.mapMsg] at hobs
-      | timer => simp [Observation.mapMsg] at hobs
-      | received j c' F' =>
-        simp only [Observation.mapMsg, Observation.received.injEq] at hobs
-        obtain ⟨rfl, hpl, -⟩ := hobs
-        exact ⟨c', F', rfl, hpl⟩
-    obtain ⟨cp₁, pd₁, lv₁, sl₁, hc₁⟩ : ∃ cp₁ pd₁ lv₁ sl₁ : ℝ,
-        c₁ = .block (w.source.first 1) (w.source.reported 1) cp₁ pd₁ lv₁ sl₁ := by
-      cases c₁ with
-      | block f' st' cp pd lv sl =>
-        simp only [Payload.plain, FixedDelay.Payload.block.injEq] at hpl₁
-        obtain ⟨rfl, rfl⟩ := hpl₁
-        exact ⟨cp, pd, lv, sl, rfl⟩
-      | ask sent need => simp [Payload.plain] at hpl₁
-      | answer sent received => simp [Payload.plain] at hpl₁
-    subst hobs₁ hc₁
-    have hmem₁ := Solution.mem_views_of_handled w
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hσh hi₁
-    obtain ⟨hd, hhd, hle⟩ := headerOf_latest _ hmem₁ rfl
-    obtain ⟨e₂, he₂, j₂, st₂, F₂, hobs₂⟩ := headerOf_mem _ hhd
-    obtain ⟨i₂, -, t₂, obs₂, hh₂, rfl⟩ := Solution.handled_of_mem_views w
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead he₂
-    dsimp only at hobs₂
-    subst hobs₂
-    obtain ⟨msg, hmsg, -, -, -, hcont, -⟩ := Solution.handled_received w
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hh₂
-    obtain ⟨i₃, -, b₂, hh₃, hfr, -, hheader⟩ :=
-      block_header w p clockEst deviceEst (constantLevel L) lookahead i₂ hmsg hcont
-    have hb₂ : 1 ≤ b₂ := by
-      rw [hfr] at hle
-      exact w.source.first_strictMono.le_iff_le.mp hle
-    have hlineC := captureLine_exact hS hdev
-      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hb₂ hh₃
-    unfold blockHeader at hheader
-    rw [hlineC] at hheader
-    simp only [Option.map_some, Option.getD_some, Line.eval, constantLevel,
-      Header.mk.injEq] at hheader
-    obtain ⟨-, hcap, hper, hlev, hslo⟩ := hheader
-    have hsched : scheduleOf p deviceEst (constantLevel L) (w.host r)
-        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
-            lookahead (step (k / m.blockSize))).views (w.host r)
-          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
-            .asked r ((w.speaker r).block (k / m.blockSize))
-              ((w.speaker r).reported (k / m.blockSize))⟩])
-        = some hd := by
-      unfold scheduleOf
-      rw [ite_eq_right hns, headerOf_append]
-      exact hhd
-    -- The position.
-    rw [hsched, hcl, hdl]
-    unfold position
-    simp only [Option.map_some, Option.getD_some, Header.due, Line.eval, exchangeLine]
-    rw [hfr, hcap, hper, hlev, hslo]
-    simp only [duePosition, latencyOf]
-    rw [hS.out, hS.capture 0]
-    simp only [Nat.cast_zero, zero_div, add_zero]
-    congr 1
+  -- The reading of the sender's clock, by the host's lines, when output sample `k` leaves.
+  obtain ⟨S, hSdef⟩ : ∃ S : ℕ → ℝ, ∀ k, S k
+      = (exchangeLine m f d (m.host r)).eval
+        ((⟨f.speakerStart (m.device r), Real.exp (d.logRate (m.host r))
+          / (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))⟩ : Line).eval k) :=
+    ⟨_, fun _ => rfl⟩
+  obtain ⟨slope, hslope⟩ : ∃ slope : ℝ, slope = Real.exp (d.logRate m.sender)
+      / (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) := ⟨_, rfl⟩
+  have hslope0 : 0 < slope := by
+    rw [hslope]
+    exact div_pos hrs (mul_pos hρ hgr)
+  have hSk : ∀ k : ℕ, S k = S 0 + slope * k := by
+    intro k
+    rw [hSdef, hSdef, hslope]
+    simp only [Line.eval, exchangeLine]
+    push_cast
     field_simp
     ring
-  -- Late positions are past the start of the stream.
-  have hX0 : ∀ k, bK * m.blockSize ≤ k → 0 ≤ duePosition m f d w L r k := by
+  -- An exact header gives the position that is due.
+  have hdueX : ∀ (hd : Header) (fb : ℕ) (k : ℕ), hd.first = fb →
+      hd.capture = f.captureStart + Real.exp (d.logRate m.sender)
+        / (m.rate * Real.exp (d.deviceLogRate none)) * (fb : ℝ) →
+      hd.period = Real.exp (d.logRate m.sender) / (m.rate * Real.exp (d.deviceLogRate none)) →
+      hd.level = L → hd.slope = 0 → hd.due (S k) = duePosition m f d w L r k := by
+    intro hd fb k h1 h2 h3 h4 h5
+    unfold Header.due
+    rw [h1, h2, h3, h4, h5, hSdef]
+    simp only [Line.eval, exchangeLine, duePosition, latencyOf]
+    rw [hS.out, hS.capture 0]
+    simp only [Nat.cast_zero, zero_div, add_zero]
+    field_simp
+    ring
+  -- The header of block zero does not come from the capture line. From some reading
+  -- of the sender's clock on, it covers no position.
+  obtain ⟨s₀, hs₀⟩ : ∃ s₀ : ℝ, ∀ i₃,
+      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).handled w
+          lookahead i₃
+        = some (w.sender, w.source.handed 0,
+          .handed ((w.source.block 0).map fun k => (k, w.target k)) (w.source.reported 0)) →
+      ∀ s, s₀ ≤ s →
+        ¬ (blockHeader p deviceEst (constantLevel L)
+            (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+                lookahead i₃).views w.sender
+              ++ [⟨(w.clock w.sender).read (w.source.handed 0),
+                .handed ((w.source.block 0).map fun k => (k, w.target k))
+                  (w.source.reported 0)⟩])
+            (w.source.first 0) (w.source.reported 0)).Covers m.blockSize s := by
+    by_cases hex : ∃ i₃,
+        (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).handled w
+            lookahead i₃
+          = some (w.sender, w.source.handed 0,
+            .handed ((w.source.block 0).map fun k => (k, w.target k)) (w.source.reported 0))
+    · obtain ⟨i₀, hi₀⟩ := hex
+      obtain ⟨hd₀, hhd₀⟩ : ∃ hd₀ : Header, hd₀ = blockHeader p deviceEst (constantLevel L)
+          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+              lookahead i₀).views w.sender
+            ++ [⟨(w.clock w.sender).read (w.source.handed 0),
+              .handed ((w.source.block 0).map fun k => (k, w.target k))
+                (w.source.reported 0)⟩])
+          (w.source.first 0) (w.source.reported 0) := ⟨_, rfl⟩
+      refine ⟨hd₀.capture + hd₀.level + (m.blockSize : ℝ) * (hd₀.period + hd₀.slope),
+        fun i₃ hi₃ s hs hcov => ?_⟩
+      have heq : i₃ = i₀ := Solution.handed_step_unique _ w lookahead
+        (Solution.earliest_of_handled_handed _ w lookahead hi₃)
+        (Solution.earliest_of_handled_handed _ w lookahead hi₀)
+      subst heq
+      rw [← hhd₀] at hcov
+      obtain ⟨hp, -, hlt⟩ := hcov
+      unfold Header.due at hlt
+      have hlt' := (add_lt_add_iff_left _).mp hlt
+      rw [div_lt_iff₀ hp] at hlt'
+      linarith
+    · exact ⟨0, fun i₃ hi₃ => absurd ⟨i₃, hi₃⟩ hex⟩
+  obtain ⟨K₃, hK₃⟩ := exists_nat_ge ((s₀ - S 0) / slope)
+  have hlateS : ∀ k, K₃ ≤ k → s₀ ≤ S k := by
+    intro k hk
+    have hk' : ((K₃ : ℕ) : ℝ) ≤ k := by exact_mod_cast hk
+    have h1 : (s₀ - S 0) / slope ≤ k := hK₃.trans hk'
+    rw [div_le_iff₀ hslope0] at h1
+    rw [hSk]
+    linarith
+  -- Late positions are past the first block of the stream.
+  have hXB : ∀ k, bK * m.blockSize ≤ k → (m.blockSize : ℝ) ≤ duePosition m f d w L r k := by
     intro k hk
     have hout : (w.speaker r).out ((w.speaker r).first bK) ≤ (w.speaker r).out k :=
       (w.speaker r).out_strictMono.monotone (by rw [hfirst]; exact hk)
     have hask := (w.speaker r).asked_before bK
+    have hpos' : 0 < m.rate * Real.exp (d.deviceLogRate none) := mul_pos hρ hgc
+    have h1 : (m.blockSize : ℝ) / (m.rate * Real.exp (d.deviceLogRate none))
+        ≤ (w.speaker r).out k - latencyOf m f d L r - w.source.capture 0 := by linarith
     unfold duePosition
-    exact mul_nonneg (mul_pos hρ hgc).le (by linarith)
-  refine ⟨max (max bmin 1 * m.blockSize) (bK * m.blockSize), fun k hk => ?_⟩
-  have hk₀ := le_trans (le_max_left _ _) hk
-  have hkK := le_trans (le_max_right _ _) hk
-  have hb' : ((solution p clockEst deviceEst (constantLevel L) :
+    calc (m.blockSize : ℝ)
+        = m.rate * Real.exp (d.deviceLogRate none)
+          * ((m.blockSize : ℝ) / (m.rate * Real.exp (d.deviceLogRate none))) := by
+          field_simp
+      _ ≤ m.rate * Real.exp (d.deviceLogRate none)
+          * ((w.speaker r).out k - latencyOf m f d L r - w.source.capture 0) :=
+          mul_le_mul_of_nonneg_left h1 hpos'.le
+  refine ⟨max (max bmin 1 * m.blockSize) (max (bK * m.blockSize) K₃), fun k hk => ?_⟩
+  have hk₀ : max bmin 1 * m.blockSize ≤ k := le_trans (le_max_left _ _) hk
+  have hkK : bK * m.blockSize ≤ k := le_trans (le_trans (le_max_left _ _) (le_max_right _ _)) hk
+  have hk₃ : K₃ ≤ k := le_trans (le_trans (le_max_right _ _) (le_max_right _ _)) hk
+  have hb₀ : max bmin 1 ≤ k / m.blockSize := (Nat.le_div_iff_mul_le hB).mpr hk₀
+  have hbmin' : bmin ≤ k / m.blockSize := le_trans (le_max_left _ _) hb₀
+  have hb1 : 1 ≤ k / m.blockSize := le_trans (le_max_right _ _) hb₀
+  have hT : T₀ < (FixedDelay.solution p : Solution H R FixedDelay.Payload).eventTime w
+      lookahead (step (k / m.blockSize)) := by
+    rw [htime]
+    exact lt_of_lt_of_le hbmin ((w.speaker r).asked_strictMono.monotone hbmin')
+  have hxB := hXB k hkK
+  obtain ⟨x, hx⟩ : ∃ x, x = duePosition m f d w L r k := ⟨_, rfl⟩
+  rw [← hx] at hxB ⊢
+  have hx0 : 0 ≤ x := le_trans (Nat.cast_nonneg _) hxB
+  have haskedNext : ((solution p clockEst deviceEst (constantLevel L) :
       Solution H R Payload).states w lookahead (step (k / m.blockSize))).askedNext r
         = k / m.blockSize := by
     rw [Solution.askedNext_forget w Payload.plain lookahead hmore (step (k / m.blockSize))]
@@ -532,13 +500,252 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
       = some (.asked r (k / m.blockSize)) := by
     rw [(Solution.earliest_forget w Payload.plain lookahead hmore (step (k / m.blockSize))).2]
     exact hstepe (k / m.blockSize)
-  rw [Solution.plays_of_asked_step w _ lookahead hb' he' (hmemblk k), plays_asked,
-    hpos k hk₀, Solution.held_forget w Payload.plain lookahead hmore (step (k / m.blockSize)),
-    ← hsend, ← hhost]
+  -- The device line and the clock line.
+  have hdl := playbackLine_exact hS hdev
+    (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hb1
+    haskedNext
+  have hcl : clockOf p clockEst (w.host r)
+      (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+          .asked r ((w.speaker r).block (k / m.blockSize))
+            ((w.speaker r).reported (k / m.blockSize))⟩])
+      = some (exchangeLine m f d (m.host r)) := by
+    unfold clockOf
+    rw [ite_eq_right hns]
+    have hex : exchangesOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r)
+          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+            .asked r ((w.speaker r).block (k / m.blockSize))
+              ((w.speaker r).reported (k / m.blockSize))⟩])
+        = exchangesOf
+          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r)) := by
+      simp [exchangesOf, List.filterMap_append]
+    rw [hex, hhost]
+    refine hline (step (k / m.blockSize)) ?_
+    rw [Solution.eventTime_forget w Payload.plain lookahead hmore]
+    exact hT
+  have hsched : scheduleOf p deviceEst (constantLevel L) (w.host r)
+      (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+          .asked r ((w.speaker r).block (k / m.blockSize))
+            ((w.speaker r).reported (k / m.blockSize))⟩])
+      = headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r)) := by
+    unfold scheduleOf
+    rw [ite_eq_right hns, headersOf_append_asked]
+  -- What the host plays is the position that the schedule gives when the sample leaves.
+  have hposition : position p
+      (scheduleOf p deviceEst (constantLevel L) (w.host r)
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r)
+          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+            .asked r ((w.speaker r).block (k / m.blockSize))
+              ((w.speaker r).reported (k / m.blockSize))⟩]))
+      (clockOf p clockEst (w.host r)
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r)
+          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+            .asked r ((w.speaker r).block (k / m.blockSize))
+              ((w.speaker r).reported (k / m.blockSize))⟩]))
+      (deviceEst (playbackReports r
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r)
+          ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked (k / m.blockSize)),
+            .asked r ((w.speaker r).block (k / m.blockSize))
+              ((w.speaker r).reported (k / m.blockSize))⟩])))
+      (((w.speaker r).block (k / m.blockSize)).headD 0)
+      ((w.speaker r).reported (k / m.blockSize)) k
+    = dueOf (headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r))) (S k) := by
+    rw [hsched, hcl, hdl, hSdef]
+    unfold position
+    simp only [Option.map_some, Option.getD_some]
+  -- Every header of the schedule is that of a block that arrived before the request.
+  have hclass : ∀ y ∈ headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r)),
+      ∃ b₂, d.arrival f w.sender (w.host r) (w.source.handed b₂)
+          < (w.speaker r).asked (k / m.blockSize)
+        ∧ y.2 = m.blockSize ∧ y.1.first = w.source.first b₂
+        ∧ ((1 ≤ b₂
+            ∧ y.1.capture = f.captureStart + Real.exp (d.logRate m.sender)
+              / (m.rate * Real.exp (d.deviceLogRate none)) * (w.source.first b₂ : ℝ)
+            ∧ y.1.period = Real.exp (d.logRate m.sender)
+              / (m.rate * Real.exp (d.deviceLogRate none))
+            ∧ y.1.level = L ∧ y.1.slope = 0)
+          ∨ (b₂ = 0 ∧ ¬ y.1.Covers m.blockSize (S k))) := by
+    intro y hy
+    obtain ⟨e, he, i, stamp, F, hobs, hcount⟩ := mem_headersOf hy
+    obtain ⟨i₂, hi₂, t₂, obs₂, hh₂, rfl⟩ := Solution.handled_of_mem_views w
+      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead he
+    dsimp only at hobs
+    subst hobs
+    -- Where the message came from, in the controller's run.
+    obtain ⟨msg, hmsg, -, -, -, hcont, -⟩ := Solution.handled_received w
+      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hh₂
+    obtain ⟨i₃, -, b₂, hh₃, hfr, hstamp, hheader⟩ :=
+      block_header w p clockEst deviceEst (constantLevel L) lookahead i₂ hmsg hcont
+    -- When it arrived and what it carried, in the baseline's run.
+    have hf₂ := Solution.handled_forget w Payload.plain lookahead hmore i₂
+    rw [hh₂] at hf₂
+    simp only [Option.map_some, Observation.mapMsg, Payload.plain] at hf₂
+    obtain ⟨msg', hmsg', hdest', harr', -, hcont', hframes'⟩ := Solution.handled_received w
+      (FixedDelay.solution p : Solution H R FixedDelay.Payload) lookahead hf₂.symm
+    have hO := FixedDelay.origin_inFlight p w lookahead hsender i₂ msg' hmsg'
+    unfold FixedDelay.Origin at hO
+    simp only [hcont'] at hO
+    obtain ⟨b', -, hf', -, hfb', q, hq⟩ := hO
+    have hbb : b' = b₂ := w.source.first_strictMono.injective (hf'.symm.trans hfr)
+    subst hbb
+    rw [hdest', hA] at hq
+    have ht₂ : d.arrival f w.sender (w.host r) (w.source.handed b') = t₂ :=
+      (Option.some.inj hq).trans harr'
+    have hlt := Solution.received_lt_asked
+      (FixedDelay.solution p : Solution H R FixedDelay.Payload) w lookahead hi₂.le hf₂.symm r
+    rw [hstepb (k / m.blockSize)] at hlt
+    refine ⟨b', by rw [ht₂]; exact hlt, ?_, hfr, ?_⟩
+    · rw [hcount, ← hframes', hfb', hcard]
+    · rcases Nat.eq_zero_or_pos b' with hb0 | hbpos
+      · right
+        refine ⟨hb0, ?_⟩
+        subst hb0
+        have hnot := hs₀ i₃ hh₃ (S k) (hlateS k hk₃)
+        rw [← hheader] at hnot
+        exact hnot
+      · left
+        have hlineC := captureLine_exact hS hdev
+          (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead
+          hbpos hh₃
+        unfold blockHeader at hheader
+        rw [hlineC] at hheader
+        simp only [Option.map_some, Option.getD_some, Line.eval, constantLevel,
+          Header.mk.injEq] at hheader
+        obtain ⟨-, hcap, hper, hlev, hslo⟩ := hheader
+        exact ⟨hbpos, hcap, hper, hlev, hslo⟩
+  -- A covering header gives the position that is due.
+  have hcover : ∀ y ∈ headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r)),
+      y.1.Covers y.2 (S k) → y.1.due (S k) = x := by
+    intro y hy hcov
+    obtain ⟨b₂, -, hcnt, hfr, hexact | ⟨-, hnot⟩⟩ := hclass y hy
+    · obtain ⟨-, hcap, hper, hlev, hslo⟩ := hexact
+      rw [hx]
+      exact hdueX y.1 (w.source.first b₂) k hfr hcap hper hlev hslo
+    · rw [hcnt] at hcov
+      exact absurd hcov hnot
+  have hdue : dueOf (headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r))) (S k) = none
+      ∨ dueOf (headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r))) (S k) = some x := by
+    classical
+    unfold dueOf
+    cases hfind : List.find? (fun e : Header × ℕ => decide (e.1.Covers e.2 (S k)))
+        (headersOf
+          (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+            lookahead (step (k / m.blockSize))).views (w.host r))) with
+    | none => exact Or.inl rfl
+    | some y =>
+      right
+      have hmem := List.mem_of_find?_eq_some hfind
+      have hcov : y.1.Covers y.2 (S k) := by simpa using List.find?_some hfind
+      rw [Option.map_some, hcover y hmem hcov]
+  -- The block of the position that is due.
+  obtain ⟨bX, hbX⟩ : ∃ bX, bX = ⌊x⌋₊ / m.blockSize := ⟨_, rfl⟩
+  have hBx : (m.blockSize : ℝ) ≤ x := hxB
+  have hfloorB : m.blockSize ≤ ⌊x⌋₊ := Nat.le_floor hBx
+  have hbX1 : 1 ≤ bX := by
+    rw [hbX]
+    exact (Nat.le_div_iff_mul_le hB).mpr (by simpa using hfloorB)
+  have hdueSome : d.arrival f w.sender (w.host r) (w.source.handed bX)
+        < (w.speaker r).asked (k / m.blockSize) →
+      dueOf (headersOf
+        (((solution p clockEst deviceEst (constantLevel L) : Solution H R Payload).states w
+          lookahead (step (k / m.blockSize))).views (w.host r))) (S k) = some x := by
+    intro harrX
+    classical
+    -- The message of that block was handled before the request.
+    obtain ⟨i₁, hi₁, hh₁⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hA hsender hnodup
+      hcopies hh hhs (b := bX) (k := step (k / m.blockSize)) (by rw [htime]; exact harrX)
+    have hf₁ := Solution.handled_forget w Payload.plain lookahead hmore i₁
+    rw [hh₁] at hf₁
+    obtain ⟨⟨h', t', obs'⟩, hσh, heq⟩ := Option.map_eq_some_iff.mp hf₁
+    simp only [Prod.mk.injEq] at heq
+    obtain ⟨rfl, rfl, hobs⟩ := heq
+    obtain ⟨c₁, F₁, hobs₁, hpl₁⟩ : ∃ (c₁ : Payload) (F₁ : Finset ℕ),
+        obs' = .received w.sender c₁ F₁
+        ∧ c₁.plain = .block (w.source.first bX) (w.source.reported bX) := by
+      cases obs' with
+      | handed frames stamp => simp [Observation.mapMsg] at hobs
+      | asked r' outputs stamp => simp [Observation.mapMsg] at hobs
+      | timer => simp [Observation.mapMsg] at hobs
+      | received j c' F' =>
+        simp only [Observation.mapMsg, Observation.received.injEq] at hobs
+        obtain ⟨rfl, hpl, -⟩ := hobs
+        exact ⟨c', F', rfl, hpl⟩
+    obtain ⟨cp₁, pd₁, lv₁, sl₁, hc₁⟩ : ∃ cp₁ pd₁ lv₁ sl₁ : ℝ,
+        c₁ = .block (w.source.first bX) (w.source.reported bX) cp₁ pd₁ lv₁ sl₁ := by
+      cases c₁ with
+      | block f' st' cp pd lv sl =>
+        simp only [Payload.plain, FixedDelay.Payload.block.injEq] at hpl₁
+        obtain ⟨rfl, rfl⟩ := hpl₁
+        exact ⟨cp, pd, lv, sl, rfl⟩
+      | ask sent need => simp [Payload.plain] at hpl₁
+      | answer sent received => simp [Payload.plain] at hpl₁
+    subst hobs₁ hc₁
+    have hmem₁ := Solution.mem_views_of_handled w
+      (solution p clockEst deviceEst (constantLevel L) : Solution H R Payload) lookahead hσh hi₁
+    have hentry := headersOf_mem hmem₁ rfl
+    -- Its header is exact and covers the position that is due.
+    obtain ⟨b₂, -, hcnt, hfr, hexact | ⟨hb0, -⟩⟩ := hclass _ hentry
+    · obtain ⟨-, hcap, hper, hlev, hslo⟩ := hexact
+      dsimp only at hcnt hfr hcap hper hlev hslo
+      have hbb : b₂ = bX := (w.source.first_strictMono.injective hfr).symm
+      subst hbb
+      have hdueY : (⟨w.source.first b₂, cp₁, pd₁, lv₁, sl₁⟩ : Header).due (S k) = x := by
+        rw [hx]
+        exact hdueX _ (w.source.first b₂) k rfl hcap hper hlev hslo
+      have hcov : (⟨w.source.first b₂, cp₁, pd₁, lv₁, sl₁⟩ : Header).Covers F₁.card (S k) := by
+        refine ⟨?_, ?_, ?_⟩
+        · show 0 < pd₁ + sl₁
+          rw [hper, hslo, add_zero]
+          exact div_pos hrs (mul_pos hρ hgc)
+        · rw [hdueY, hS.builds.capture_first, hbX]
+          have h1 := Nat.div_mul_le_self ⌊x⌋₊ m.blockSize
+          have h2 : ((⌊x⌋₊ / m.blockSize * m.blockSize : ℕ) : ℝ) ≤ (⌊x⌋₊ : ℝ) := by
+            exact_mod_cast h1
+          exact h2.trans (Nat.floor_le hx0)
+        · rw [hdueY, hcnt, hS.builds.capture_first, hbX]
+          have h1 := Nat.lt_div_mul_add hB (a := ⌊x⌋₊)
+          have h2 : ((⌊x⌋₊ + 1 : ℕ) : ℝ)
+              ≤ ((⌊x⌋₊ / m.blockSize * m.blockSize + m.blockSize : ℕ) : ℝ) := by
+            exact_mod_cast h1
+          have h3 := Nat.lt_floor_add_one x
+          push_cast at h2 ⊢
+          linarith
+      rcases hdue with hnone | hsome
+      · exfalso
+        unfold dueOf at hnone
+        rw [Option.map_eq_none_iff] at hnone
+        have hall := List.find?_eq_none.mp hnone _ hentry
+        simp only [decide_eq_true_eq] at hall
+        exact hall hcov
+      · exact hsome
+    · dsimp only at hfr
+      have hbb : b₂ = bX := (w.source.first_strictMono.injective hfr).symm
+      omega
   -- The frames that the resampler needs are held exactly when the last of them is.
-  have hx0 := hX0 k hkK
-  obtain ⟨x, hx⟩ : ∃ x, x = duePosition m f d w L r k := ⟨_, rfl⟩
-  rw [← hx] at hx0 ⊢
+  rw [Solution.plays_of_asked_step w _ lookahead haskedNext he' (hmemblk k), plays_asked,
+    hposition, Solution.held_forget w Payload.plain lookahead hmore (step (k / m.blockSize)),
+    ← hsend, ← hhost]
   have ha1 : (1 : ℝ) ≤ ((lookahead : ℕ) : ℝ) := by exact_mod_cast lookahead.pos
   have hy : 0 < x + ((lookahead : ℕ) : ℝ) := by linarith
   have hceil : 0 < ⌈x + ((lookahead : ℕ) : ℝ)⌉₊ := Nat.ceil_pos.mpr hy
@@ -576,12 +783,25 @@ theorem speaker_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
       exact (FixedDelay.mem_held_iff_arrived p w lookahead hA hsender hnodup hcopies hh hhs
         (hstepb (k / m.blockSize)) (hstepe (k / m.blockSize)) (hcapblk n)).mpr
         (lt_of_le_of_lt harr' harr)
-  simp only [playable]
-  split_ifs with h1 h2 h2
-  · rfl
-  · exact absurd (hiff.mp h1) h2
-  · exact absurd (hiff.mpr h2) h1
-  · rfl
+  by_cases harr : d.arrival f w.sender (w.host r) (w.source.handed (N / m.blockSize))
+      < (w.speaker r).asked (k / m.blockSize)
+  · -- The block of the position arrived no later than the block of the last frame needed.
+    have hfloorN : ⌊x⌋₊ ≤ N := Nat.floor_le_of_le (by linarith)
+    have hblk : bX ≤ N / m.blockSize := by
+      rw [hbX]
+      exact Nat.div_le_div_right hfloorN
+    have harrX := lt_of_le_of_lt
+      (hS.arrival_mono w.sender (w.host r) (w.source.handed_strictMono.monotone hblk)) harr
+    rw [hdueSome harrX, ite_eq_left harr]
+    simp only [playable]
+    rw [ite_eq_left (hiff.mpr harr)]
+  · rw [ite_eq_right harr]
+    rcases hdue with hnone | hsome
+    · rw [hnone]
+      rfl
+    · rw [hsome]
+      simp only [playable]
+      rw [ite_eq_right (fun h => harr (hiff.mp h))]
 
 /-! ## The margin -/
 

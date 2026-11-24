@@ -18,9 +18,9 @@ Facts about the run of the controller in any world.
   device and the blocks it has handed over (`mem_captureReports`).
 * The clock exchanges in a view are those of the view with the further
   fields forgotten (`exchangesOf_eq`).
-* The schedule that a receiving host follows is the header of a block that
-  arrived, and no block that arrived is newer (`headerOf_mem`,
-  `headerOf_latest`).
+* The schedule of a receiving host holds exactly the headers of the blocks
+  that arrived, each with the number of frames that its message carried
+  (`mem_headersOf`, `headersOf_mem`).
 * Every block in transit carries the header that the sender computed when
   the capture device handed the block over, from its view at that moment
   (`block_header`).
@@ -161,115 +161,41 @@ theorem plainExchangesOf_mem {l : List (Event H R FixedDelay.Payload)}
 
 /-! ## The schedule of a receiving host -/
 
-/-- The schedule after one more event. -/
-theorem headerOf_append (l : List (Event H R Payload)) (e : Event H R Payload) :
-    headerOf (l ++ [e])
-      = match e.observation with
-        | .received _ (.block f _ capture period level slope) _ =>
-            match headerOf l with
-            | some hd => if hd.first < f then some ⟨f, capture, period, level, slope⟩
-                else headerOf l
-            | none => some ⟨f, capture, period, level, slope⟩
-        | _ => headerOf l := by
-  unfold headerOf
-  rw [List.foldl_append]
-  rfl
-
-/-- The schedule of a receiving host is the header of a block that
-arrived. -/
-theorem headerOf_mem (l : List (Event H R Payload)) {hd : Header}
-    (h : headerOf l = some hd) :
+/-- Every header in the schedule of a receiving host is the header of a block
+that arrived, with the number of frames that its message carried. -/
+theorem mem_headersOf {l : List (Event H R Payload)} {x : Header × ℕ}
+    (hx : x ∈ headersOf l) :
     ∃ e ∈ l, ∃ i stamp F, e.observation
-      = .received i (.block hd.first stamp hd.capture hd.period hd.level hd.slope) F := by
-  induction l using List.reverseRecOn generalizing hd with
-  | nil => simp [headerOf] at h
-  | append_singleton l e ih =>
-    rw [headerOf_append] at h
-    have keep : headerOf l = some hd →
-        ∃ e' ∈ l ++ [e], ∃ i stamp F, e'.observation
-          = .received i (.block hd.first stamp hd.capture hd.period hd.level hd.slope) F := by
-      intro h'
-      obtain ⟨e', he', hrest⟩ := ih h'
-      exact ⟨e', List.mem_append_left _ he', hrest⟩
-    cases hobs : e.observation with
-    | handed frames stamp =>
-      rw [hobs] at h
-      exact keep h
-    | asked r outputs stamp =>
-      rw [hobs] at h
-      exact keep h
-    | timer =>
-      rw [hobs] at h
-      exact keep h
-    | received i c F =>
-      rw [hobs] at h
-      cases c with
-      | ask sent need => exact keep h
-      | answer sent received => exact keep h
-      | block f stamp capture period level slope =>
-        have new : (⟨f, capture, period, level, slope⟩ : Header) = hd →
-            ∃ e' ∈ l ++ [e], ∃ i stamp F, e'.observation
-              = .received i (.block hd.first stamp hd.capture hd.period hd.level hd.slope) F := by
-          rintro rfl
-          exact ⟨e, List.mem_append_right _ (List.mem_singleton.mpr rfl), i, stamp, F, hobs⟩
-        dsimp only at h
-        cases hprev : headerOf l with
-        | none =>
-          rw [hprev] at h
-          exact new (Option.some.inj h)
-        | some hd' =>
-          rw [hprev] at h
-          dsimp only at h
-          split_ifs at h with hlt
-          · exact new (Option.some.inj h)
-          · exact keep (hprev.trans h)
+        = .received i (.block x.1.first stamp x.1.capture x.1.period x.1.level x.1.slope) F
+      ∧ x.2 = F.card := by
+  obtain ⟨e, he, hsome⟩ := List.mem_filterMap.mp hx
+  refine ⟨e, he, ?_⟩
+  cases hobs : e.observation with
+  | handed frames stamp => simp [hobs] at hsome
+  | asked r outputs stamp => simp [hobs] at hsome
+  | timer => simp [hobs] at hsome
+  | received i c F =>
+    cases c with
+    | ask sent need => simp [hobs] at hsome
+    | answer sent received => simp [hobs] at hsome
+    | block f stamp capture period level slope =>
+      simp only [hobs, Option.some.injEq] at hsome
+      subst hsome
+      exact ⟨i, stamp, F, rfl, rfl⟩
 
-/-- No block that arrived is newer than the schedule of a receiving host. -/
-theorem headerOf_latest (l : List (Event H R Payload)) {e : Event H R Payload} (he : e ∈ l)
+/-- The header of every block that arrived is in the schedule of the host,
+with the number of frames that its message carried. -/
+theorem headersOf_mem {l : List (Event H R Payload)} {e : Event H R Payload} (he : e ∈ l)
     {i : H} {f : ℕ} {stamp capture period level slope : ℝ} {F : Finset ℕ}
     (ho : e.observation = .received i (.block f stamp capture period level slope) F) :
-    ∃ hd, headerOf l = some hd ∧ f ≤ hd.first := by
-  induction l using List.reverseRecOn with
-  | nil => simp at he
-  | append_singleton l e' ih =>
-    rw [headerOf_append]
-    -- What the schedule becomes after `e'`, given what it was.
-    have keep : (∃ hd, headerOf l = some hd ∧ f ≤ hd.first) →
-        ∃ hd, (match e'.observation with
-          | .received _ (.block f' _ capture' period' level' slope') _ =>
-              match headerOf l with
-              | some hd => if hd.first < f' then some ⟨f', capture', period', level', slope'⟩
-                  else headerOf l
-              | none => some ⟨f', capture', period', level', slope'⟩
-          | _ => headerOf l) = some hd ∧ f ≤ hd.first := by
-      rintro ⟨hd, hhd, hle⟩
-      cases hobs' : e'.observation with
-      | handed frames st => exact ⟨hd, hhd, hle⟩
-      | asked r outputs st => exact ⟨hd, hhd, hle⟩
-      | timer => exact ⟨hd, hhd, hle⟩
-      | received j c F' =>
-        cases c with
-        | ask sent need => exact ⟨hd, hhd, hle⟩
-        | answer sent received => exact ⟨hd, hhd, hle⟩
-        | block f' st capture' period' level' slope' =>
-          dsimp only
-          rw [hhd]
-          dsimp only
-          split_ifs with hlt
-          · exact ⟨_, rfl, by simpa using (le_trans hle hlt.le)⟩
-          · exact ⟨hd, rfl, hle⟩
-    rcases List.mem_append.mp he with hmem | hlast
-    · exact keep (ih hmem)
-    · obtain rfl := List.mem_singleton.mp hlast
-      rw [ho]
-      dsimp only
-      cases hprev : headerOf l with
-      | none => exact ⟨_, rfl, le_rfl⟩
-      | some hd' =>
-        dsimp only
-        split_ifs with hlt
-        · exact ⟨_, rfl, le_rfl⟩
-        · exact ⟨hd', rfl, not_lt.mp hlt⟩
+    ((⟨f, capture, period, level, slope⟩ : Header), F.card) ∈ headersOf l :=
+  List.mem_filterMap.mpr ⟨e, he, by simp [ho]⟩
+
+/-- A device request adds nothing to the schedule of a host. -/
+theorem headersOf_append_asked (l : List (Event H R Payload)) (reading : ℝ) (r : Fin R)
+    (outputs : List ℕ) (stamp : ℝ) :
+    headersOf (l ++ [⟨reading, .asked r outputs stamp⟩]) = headersOf l := by
+  simp [headersOf, List.filterMap_append]
 
 /-! ## The timestamps of the devices -/
 

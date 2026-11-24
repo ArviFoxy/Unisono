@@ -1790,17 +1790,17 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.plainExchangesOf_mem
 
-/-- info: 'Unisono.Solutions.Controller.headerOf_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Controller.mem_headersOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Controller.headerOf_append
+#print axioms Unisono.Solutions.Controller.mem_headersOf
 
-/-- info: 'Unisono.Solutions.Controller.headerOf_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Controller.headersOf_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Controller.headerOf_mem
+#print axioms Unisono.Solutions.Controller.headersOf_mem
 
-/-- info: 'Unisono.Solutions.Controller.headerOf_latest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.Controller.headersOf_append_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.Controller.headerOf_latest
+#print axioms Unisono.Solutions.Controller.headersOf_append_asked
 
 /-- info: 'Unisono.Solutions.Controller.mem_playbackReports' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -1861,6 +1861,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.received_lt_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.received_lt_asked
+
+/-- info: 'Unisono.Spec.Solution.handedNext_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handedNext_mono
+
+/-- info: 'Unisono.Spec.Solution.earliest_of_handled_handed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.earliest_of_handled_handed
+
+/-- info: 'Unisono.Spec.Solution.handed_step_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handed_step_unique
 
 /-- info: 'Unisono.Spec.GenerativeWorld.IsBacklog.backlog_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
