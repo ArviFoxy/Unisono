@@ -1,6 +1,6 @@
 # The theorems
 
-All 716 theorems indexed below live in `lean/Unisono` and are checked in
+All 748 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -34,7 +34,7 @@ argument, whether or not reachable in a run.
 
 ## 1. Formal specification, models, topologies, and fundamental limits
 
-### 1.1 Specification checks, run mechanics, and fixed-latency bounds (`Spec.Checks`, `Spec.Run`, `Spec.Held`, `Spec.AtLatency`)
+### 1.1 Specification checks, run mechanics, and fixed-latency bounds (`Spec.Checks`, `Spec.Run`, `Spec.Held`, `Spec.AtLatency`, `Spec.ExactLatency`, `Spec.MissingSamples`)
 
 | Theorem | What it says |
 |---|---|
@@ -48,6 +48,8 @@ argument, whether or not reachable in a run.
 | `Spec.Solution.held_succ`, `mem_held_iff`, `received_lt_asked` | A host holds exactly the frames that the events in its view brought: the blocks that the capture device handed over to it and the messages that arrived. A device request is handled before a message that arrives at the same true time, so a message that some step handles arrived strictly before every request that is pending at that step or at a later step. |
 | `Spec.Solution.views_succ`, `views_append`, `handled_before`, `handled_of_mem_views`, `handled_time`, `handled_of_views_eq`, `exists_handed_step`, `askedNext_mono`, `askedNext_succ`, `exists_asked_step`, `plays_of_asked_step`, `handled_of_asked`, `handled_asked`, `no_request_between`, `Solution.progress` | Structural run invariants connecting host views, handled events, playback-block requests, playback decisions, and sufficient conditions for non-Zeno progress. |
 | `Spec.longRun_le`, `missed_eq_zero`, `discontinuities_eq_zero`, `meanLatency_le`, `sync_le`, `tracking_le` | Linear accrual bounds long-run averages; any playback within `E` of fixed latency `L` from some sample onward has zero long-run missed samples and discontinuities, mean latency at most `L + E + δ`, synchronization cost at most `(E + δ)²`, and tracking cost at most `(D + E + δ)²`, where `δ` bounds output sample spacing and `D` bounds `|L* - L|` for target latency `L*`. |
+| `Spec.World.PlaysAtLatencies.playsOnly`, `World.latency_eq_of_playsOnly`, `World.meanLatency_le_of_playsOnly`, `World.tracking_le_of_playsOnly`, `World.sync_le_of_playsOnly`, `nextContinuous_gt`, `World.speed_eq_one_of_playsOnly`, `World.roughnessCost_eq_zero_of_playsOnly`, `World.roughness_eq_zero_of_playsOnly` | Consider a playback in which, from some output sample on, every output sample that plays the source plays the sound captured exactly `L r` before it leaves, and an output sample may also play nothing of the source (`World.PlaysOnlyAtLatencies`), in a world whose capture times are linear in the position. Every frame that a speaker plays has latency `L r`. The long-run latency is at most the mean of the `L r`, the long-run tracking is at most the mean of `(L r - target)²`, and the long-run synchronization is at most the sum over the pairs of speakers of `(L r - L r')²`, divided by the square of the number of speakers. Every step of continuous playback has speed one, so the long-run roughness is zero. |
+| `Spec.longRun_le_mul_add`, `PlaybackDevice.tsum_out_lt`, `World.accruedOutputs_eq_sum`, `World.longRun_outputs_le`, `missingAt_le_one`, `trailing_le`, `trailing_succ_none`, `trailing_succ_some`, `isSome_before_trailing`, `gapBefore_le_trailing`, `sum_gapBefore_le`, `toNat_cast_le`, `missedAt_le_of_line`, `exists_missedAt_le`, `sum_missedAt_le`, `discontinuityAt_le_of_line`, `sum_discontinuityAt_le`, `World.missed_le_of_line`, `World.discontinuities_le_of_line` | Consider a playback in which, from some output sample on, every played position of speaker `r` lies on the line `a r + c r * k` in the output sample `k`, with `0 < c r < 2`, in a world whose output samples leave without end. Playback breaks only where the next output sample plays nothing, so the long-run number of discontinuities is at most the long-run number of output samples that play nothing (`missingAt`). An output sample that plays after a gap counts at most `2 (c r - 1)` missed samples for each output sample of the gap when `c r > 1`, and none otherwise. So when `c r - 1 ≤ d` for every speaker, the long-run number of missed samples is at most `1 + 2 d` times the long-run number of output samples that play nothing. |
 
 ### 1.2 Approved world models (`Spec.Models.{Ideal,Bounded,Delays,SecondOrder,StochasticWorld,GenerativeWorld,GenerativeNoiseless,GenerativeDelivery,GenerativeRates,GenerativeCanonical,GenerativeTransfer,GenerativeReflection,GenerativeStar,GenerativeTies}`)
 
@@ -140,12 +142,20 @@ depend on the sample, and both rise by one second for each second of latency
 (`margin_mem`). Without pauses every block is in time, and the speaker plays
 every frame at that latency (`playsAtLatencies`).
 
-These theorems describe each output sample of one outcome. Not proved: how
-often a block is late under the generative model, the cost of a held level,
-and that two clock exchanges of a host escape every pause with probability
-one, which `plays_under_pauses` assumes of the outcome. The solution does not
-yet change its pace smoothly, measure what frames need, or choose the level
-from such measurements.
+An output sample is late when the message of the capture block it needs
+takes at least the sample's margin, and the late rate of a level is the
+long-run number of late output samples per second, averaged over the
+speakers. The cost of a held level is at most the cost of the speakers'
+latencies in synchronization, latency and tracking, plus a multiple of the
+late rate (`cost_le_of_heldLevel`). The first part rises with the level and
+the late rate falls with it.
+
+These theorems hold in one outcome. Not proved: how large the late rate is
+under the generative model, and so anything about expected cost; that no
+other solution has a lower cost; and that two clock exchanges of a host
+escape every pause with probability one, which `plays_under_pauses` assumes
+of the outcome. The solution does not yet change its pace smoothly, measure
+what frames need, or choose the level from such measurements.
 
 | Theorem | What it says |
 |---|---|
@@ -155,6 +165,7 @@ from such measurements.
 | `Solutions.Controller.leastRoundTrip_exactFromLeast` | The estimator of the sender's clock that keeps the clock exchanges of least round trip and applies the two-exchange estimator to them is exact from the exchanges of least round trip (`ClockEstimator.ExactFromLeast`): when no exchange has a round trip shorter than `τ`, and the exchanges with round trip `τ` lie on one line, it returns that line. |
 | `Solutions.Controller.captured_duePosition`, `duePosition_succ`, `exchange_lines`, `exchange_of_built`, `handedNext_of_handled`, `captureLine_exact`, `playbackLine_exact`, `speaker_plays`, `margin_mem`, `plays_eq_of_margin`, `plays_of_delay` | Consider a world whose clocks run at constant rates, with exact timestamps and with pauses of links and of hosts (`ConstantRates`), a device estimator that is exact on undisturbed reports, the level held at `L`, a speaker whose host is not the sender's, and an estimate of the sender's clock at that host that is the line of its undelayed clock exchanges from some true time on (`ClockLineFrom`). From some output sample on, output sample `k` plays the position that is due (`duePosition`), captured `latencyOf` before the sample leaves, if the message of the capture block that holds the last frame the resampler needs arrived strictly before the playback device requested the sample's block; otherwise it plays nothing of the source. Equivalently, it plays if and only if that message took less than the sample's margin. The margin is more than `marginLeast` and at most `marginMost`: the latency minus the request lead, and minus between the span of `lookahead - 1` frames and the spans of one playback block, one capture block and `lookahead` frames. So a block that takes at most `marginLeast` is in time, and one that takes at least `marginMost` is late. The lines through the timestamps of the capture device and of each playback device are exact from the second block on. |
 | `Solutions.Controller.exchange_roundTrip`, `clockLineFrom_of_undelayed`, `plays_under_pauses` | In such a world, the round trip of every clock exchange on the querying host's clock is at least the rate of that clock times the least round-trip time of the pair, and an exchange with exactly that round trip was delayed in neither direction. Once a host's view holds two such exchanges whose queries were sent at different readings (`TwoUndelayed`), every clock estimator that is exact from the exchanges of least round trip returns the line of the undelayed exchanges from then on, whatever pauses come later. With the least-round-trip estimator and the two-report estimator the controller therefore plays as the previous row says. That two exchanges escape every pause is assumed of the outcome. |
+| `Solutions.Controller.exists_duePosition_nonneg`, `lateRate_le`, `cost_le_of_heldLevel`, `cost_le_under_pauses` | **The cost of a held level under pauses.** Consider a world whose clocks run at constant rates, with exact timestamps and with pauses, with no speaker on the sender's host, the level held at `L`, an estimate of the sender's clock at every speaker's host that is the line of its undelayed exchanges from some true time on, and a capture device whose clock runs less than twice as fast as the clock of every playback device and faster by a fraction of at most `δ`. For any weights, the cost is at most: the weight of synchronization times the sum over the pairs of speakers of the squares of the differences of their latencies, divided by the square of the number of speakers; plus the weight of latency times the mean latency; plus the weight of tracking times the mean square of the latency minus the target latency; plus the weight of missed samples times `1 + 2 δ`, plus the weight of discontinuities, times the late rate (`lateRate`). The late rate is the long-run number of output samples per second, averaged over the speakers, whose capture block takes at least the sample's margin; it is at most the long-run number of output samples whose block takes more than the least margin. Roughness costs nothing. With the least-round-trip estimator the condition on the estimate holds once two clock exchanges of every speaker's host were not delayed. The bound holds in one outcome: it is not a statement of expected cost, and no lower bound for other solutions is proved. |
 | `Solutions.Controller.exchange_of_view`, `exists_two_exchanges`, `clockLineFrom_of_exact`, `speaker_exact`, `playsAtLatencies`, `playsAtLatencies_example` | In a world with constant rates within `ε < 1/2` of one and constant delays (`ConstantDelays`), with estimators that are exact on undisturbed data, the level held at `L`, no speaker on the sender's host, the capture device's clock less than twice as fast as the clock of every playback device, and `L` above the delivery margin: from some output sample on, every speaker plays continuously, and every output sample plays the sound captured exactly `L` divided by the rate of the sender's clock, plus half the difference between the delay from the sender to the speaker's host and the delay back, before the sample leaves. This is the case without pauses of the two previous rows: every block takes the least delay of its direction, which is within the least margin. The conditions can be met (`playsAtLatencies_example`, in a world whose clocks all run at the rate of true time). |
 
 ### 1.7 Optimality in expected cost (`Spec.Optimality`)
@@ -464,11 +475,13 @@ rather than a proof about the runtime threads.
    model is not shown to belong to the model classes above.
 8. **The controller under the generative model:** `Solutions.Controller` is
    described output sample by output sample, and only in worlds whose clocks
-   run at constant rates with exact timestamps. Not proved: any statement of
-   probability or of expected cost about it (how often a block is late, the
-   cost of a held level, a choice of the level); that two clock exchanges of
-   a host escape every pause with probability one; anything when clocks
-   wander or timestamps have errors. Its pace does not yet change smoothly,
+   run at constant rates with exact timestamps. The cost of a held level is
+   bounded in each outcome by the late rate of that outcome. Not proved: any
+   statement of probability or of expected cost about it (how large the late
+   rate is, a choice of the level); a lower bound on the cost of other
+   solutions under pauses; that two clock exchanges of a host escape every
+   pause with probability one; anything when clocks wander or timestamps
+   have errors. Its pace does not yet change smoothly,
    and it does not yet measure what frames need or choose the level; the
    regulator and the choice of the level exist only as side models
    (`Model.Regulation`, `Model.Level`) and in the production code. No world

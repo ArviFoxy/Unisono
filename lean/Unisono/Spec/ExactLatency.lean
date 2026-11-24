@@ -32,6 +32,14 @@ number of speakers and of hosts is arbitrary.
   square of the number of speakers (`World.sync_le_of_exact`), and no samples
   are missed and playback has no discontinuities in the long run
   (`World.missed_eq_zero_of_exact`, `World.discontinuities_eq_zero_of_exact`).
+* The bounds on latency, tracking and synchronization also hold when output
+  samples may play nothing of the source, as long as every output sample
+  that plays the source does so at the exact latency of its speaker
+  (`World.PlaysOnlyAtLatencies`, `World.latency_eq_of_playsOnly`,
+  `World.meanLatency_le_of_playsOnly`, `World.tracking_le_of_playsOnly`,
+  `World.sync_le_of_playsOnly`). Frames that a speaker does not play add
+  nothing to these three objectives; they count as missed samples
+  (`Unisono.Spec.MissingSamples`).
 * In an ideal constant world, the sound at position `x` counts as captured
   at a time that is linear in `x` (`IdealConstantWorld.Holds.captured_eq`).
 * A star solution plays the same when the timelines of the hosts are shifted
@@ -112,6 +120,24 @@ theorem World.PlaysAtLatencies.playsAtLatency {w : World H R}
   rw [h1, abs_neg]
   exact Finset.single_le_sum (f := fun r => |L r|) (fun _ _ => abs_nonneg _) (Finset.mem_univ r)
 
+/-- Playback only at exact latencies: from output sample `K` on, every output
+sample of speaker `r` that plays the source plays the sound captured exactly
+`L r` seconds before the sample leaves. An output sample may also play
+nothing of the source. -/
+def World.PlaysOnlyAtLatencies (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    (L : Fin R → ℝ) (K : ℕ) : Prop :=
+  ∀ r k, K ≤ k → ∀ x, plays r k = some x → w.captured x = (w.speaker r).out k - L r
+
+/-- Playback at exact latencies is playback only at exact latencies. -/
+theorem World.PlaysAtLatencies.playsOnly {w : World H R} {plays : Fin R → ℕ → Option ℝ}
+    {L : Fin R → ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K) :
+    w.PlaysOnlyAtLatencies plays L K := by
+  intro r k hk x hx
+  obtain ⟨-, x', hx', hE⟩ := h r k hk
+  rw [hx, Option.some.injEq] at hx'
+  rw [hx']
+  exact hE
+
 /-- **Playback at exact latencies misses no samples in the long run.** -/
 theorem World.missed_eq_zero_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
     {L : Fin R → ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K) : w.missed plays = 0 :=
@@ -123,12 +149,12 @@ theorem World.discontinuities_eq_zero_of_exact (w : World H R)
     (h : w.PlaysAtLatencies plays L K) : w.discontinuities plays = 0 :=
   discontinuities_eq_zero w plays h.playsAtLatency
 
-/-- **The latency of each frame under playback at exact latencies.** Suppose
-that the sound at position `x` counts as captured at `t₀ + x / ρ`. If no
-output sample before `K` plays frame `n`, a speaker `r` that plays frame `n`
-does so with latency exactly `L r`. -/
-theorem World.latency_eq_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
-    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+/-- **The latency of each frame under playback only at exact latencies.**
+Suppose that the sound at position `x` counts as captured at `t₀ + x / ρ`. If
+no output sample before `K` plays frame `n`, a speaker `r` that plays frame
+`n` does so with latency exactly `L r`. -/
+theorem World.latency_eq_of_playsOnly (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysOnlyAtLatencies plays L K)
     (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ)
     {r : Fin R} {n : ℕ} (hn : ∀ k, k < K → ¬ Covers (plays r) k n) {ℓ : ℝ}
     (hℓ : w.latency plays r n = some ℓ) : ℓ = L r := by
@@ -142,11 +168,8 @@ theorem World.latency_eq_of_exact (w : World H R) (plays : Fin R → ℕ → Opt
       exact hn _ (not_le.mp hlt) hcov
     obtain ⟨x, y, hx, hy, hxy, hyx, hxn, hny⟩ := hcov
     simp only [hx, hy, Option.map_some, Option.some.injEq] at hℓ
-    obtain ⟨-, x', hx', hE⟩ := h r _ hkK
-    obtain ⟨-, y', hy', hE'⟩ := h r _ (Nat.le_succ_of_le hkK)
-    rw [hx, Option.some.injEq] at hx'
-    rw [hy, Option.some.injEq] at hy'
-    subst hx' hy'
+    have hE := h r _ hkK x hx
+    have hE' := h r _ (Nat.le_succ_of_le hkK) y hy
     set o := (w.speaker r).out
     set k := Nat.find hex
     rw [hcap] at hE hE'
@@ -165,6 +188,17 @@ theorem World.latency_eq_of_exact (w : World H R) (plays : Fin R → ℕ → Opt
     ring
   · simp at hℓ
 
+/-- **The latency of each frame under playback at exact latencies.** Suppose
+that the sound at position `x` counts as captured at `t₀ + x / ρ`. If no
+output sample before `K` plays frame `n`, a speaker `r` that plays frame `n`
+does so with latency exactly `L r`. -/
+theorem World.latency_eq_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+    (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ)
+    {r : Fin R} {n : ℕ} (hn : ∀ k, k < K → ¬ Covers (plays r) k n) {ℓ : ℝ}
+    (hℓ : w.latency plays r n = some ℓ) : ℓ = L r :=
+  w.latency_eq_of_playsOnly plays h.playsOnly hcap hn hℓ
+
 /-- Frames are captured `1 / ρ` apart when the sound at position `x` counts
 as captured at `t₀ + x / ρ`. -/
 theorem World.capture_step_of_linear (w : World H R) {ρ t₀ : ℝ}
@@ -175,11 +209,34 @@ theorem World.capture_step_of_linear (w : World H R) {ρ t₀ : ℝ}
   apply le_of_eq
   ring
 
-/-- **The long-run tracking under playback at exact latencies** is at most
-the mean, over the speakers, of the square of the speaker's latency minus the
-target latency. -/
-theorem World.tracking_le_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
-    {L : Fin R → ℝ} {ρ t₀ target : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+/-- **The long-run latency under playback only at exact latencies** is at
+most the mean of the speakers' latencies. Frames that a speaker does not
+play add nothing to it; they count as missed samples. -/
+theorem World.meanLatency_le_of_playsOnly (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysOnlyAtLatencies plays L K)
+    (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ) :
+    w.meanLatency plays ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (L r) := by
+  obtain ⟨N, hN⟩ := exists_frame_beyond plays K
+  have hBfin : (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (L r) ≠ ⊤ :=
+    average_ne_top fun _ => ENNReal.ofReal_ne_top
+  refine w.longRun_frames_le _ N (fun n hn => ?_) hBfin
+    (fun n => average_ne_top fun r => ?_) (w.capture_step_of_linear hcap)
+  · unfold World.latencyCost
+    gcongr with r
+    unfold World.latencyAt
+    split
+    · rename_i ℓ hl
+      have he := w.latency_eq_of_playsOnly plays h hcap (fun k hk => hN r k n hk hn) hl
+      rw [he]
+    · exact zero_le
+  · unfold World.latencyAt
+    split <;> simp
+
+/-- **The long-run tracking under playback only at exact latencies** is at
+most the mean, over the speakers, of the square of the speaker's latency
+minus the target latency. -/
+theorem World.tracking_le_of_playsOnly (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ target : ℝ} {K : ℕ} (h : w.PlaysOnlyAtLatencies plays L K)
     (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ) (htarget : ∀ n, w.target n = target) :
     w.tracking plays ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal ((L r - target) ^ 2) := by
   obtain ⟨N, hN⟩ := exists_frame_beyond plays K
@@ -192,17 +249,27 @@ theorem World.tracking_le_of_exact (w : World H R) (plays : Fin R → ℕ → Op
     unfold World.trackingAt
     split
     · rename_i ℓ hl
-      have he := w.latency_eq_of_exact plays h hcap (fun k hk => hN r k n hk hn) hl
+      have he := w.latency_eq_of_playsOnly plays h hcap (fun k hk => hN r k n hk hn) hl
       rw [he, htarget]
     · exact zero_le
   · unfold World.trackingAt
     split <;> simp
 
-/-- **The long-run synchronization under playback at exact latencies** is at
-most the sum, over the pairs of speakers, of the squares of the differences
-of their latencies, divided by the square of the number of speakers. -/
-theorem World.sync_le_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
-    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+/-- **The long-run tracking under playback at exact latencies** is at most
+the mean, over the speakers, of the square of the speaker's latency minus the
+target latency. -/
+theorem World.tracking_le_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ target : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+    (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ) (htarget : ∀ n, w.target n = target) :
+    w.tracking plays ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal ((L r - target) ^ 2) :=
+  w.tracking_le_of_playsOnly plays h.playsOnly hcap htarget
+
+/-- **The long-run synchronization under playback only at exact latencies**
+is at most the sum, over the pairs of speakers, of the squares of the
+differences of their latencies, divided by the square of the number of
+speakers. -/
+theorem World.sync_le_of_playsOnly (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysOnlyAtLatencies plays L K)
     (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ) :
     w.sync plays ≤ ((R : ℝ≥0∞) ^ 2)⁻¹
       * ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2),
@@ -235,11 +302,22 @@ theorem World.sync_le_of_exact (w : World H R) (plays : Fin R → ℕ → Option
       simp [World.latency, ht]
     have hl' : w.latency plays p.2 n = some (t' - w.source.capture n) := by
       simp [World.latency, ht']
-    have e1 := w.latency_eq_of_exact plays h hcap (fun k hk => hN p.1 k n hk hn) hl
-    have e2 := w.latency_eq_of_exact plays h hcap (fun k hk => hN p.2 k n hk hn) hl'
+    have e1 := w.latency_eq_of_playsOnly plays h hcap (fun k hk => hN p.1 k n hk hn) hl
+    have e2 := w.latency_eq_of_playsOnly plays h hcap (fun k hk => hN p.2 k n hk hn) hl'
     have e0 : t - t' = L p.1 - L p.2 := by linarith
     rw [e0]
   · exact zero_le
+
+/-- **The long-run synchronization under playback at exact latencies** is at
+most the sum, over the pairs of speakers, of the squares of the differences
+of their latencies, divided by the square of the number of speakers. -/
+theorem World.sync_le_of_exact (w : World H R) (plays : Fin R → ℕ → Option ℝ)
+    {L : Fin R → ℝ} {ρ t₀ : ℝ} {K : ℕ} (h : w.PlaysAtLatencies plays L K)
+    (hcap : ∀ x : ℝ, w.captured x = t₀ + x / ρ) :
+    w.sync plays ≤ ((R : ℝ≥0∞) ^ 2)⁻¹
+      * ∑ p ∈ Finset.univ.filter (fun p : Fin R × Fin R => p.1 < p.2),
+          ENNReal.ofReal ((L p.1 - L p.2) ^ 2) :=
+  w.sync_le_of_playsOnly plays h.playsOnly hcap
 
 /-- In an ideal constant world, the sound at position `x` counts as captured
 at a time that is linear in `x`. -/

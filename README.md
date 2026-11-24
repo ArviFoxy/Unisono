@@ -92,10 +92,15 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Solutions/Controller/HeldLevel.lean`). Without pauses it
     plays every frame at that latency
     (`Unisono.Solutions.Controller.playsAtLatencies` in
-    `lean/Unisono/Solutions/Controller/Exact.lean`). These theorems describe
-    each output sample of one outcome; nothing is proved yet about how often
-    a block is late or about the cost of a level. The controller does not
-    yet change its pace smoothly or choose the level.
+    `lean/Unisono/Solutions/Controller/Exact.lean`). The cost of a held
+    level is at most the cost of the speakers' latencies plus a multiple of
+    the late rate, the long-run number of output samples per second whose
+    block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in
+    `lean/Unisono/Solutions/Controller/Cost.lean`). These theorems hold in
+    one outcome; nothing is proved yet about how large the late rate is
+    under the generative model, or about the cost of other solutions under
+    pauses. The controller does not yet change its pace smoothly or choose
+    the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
