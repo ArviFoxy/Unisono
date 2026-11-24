@@ -62,6 +62,7 @@ public import Unisono.Spec.Models.ErgodicCells
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeIdle
+public import Unisono.Spec.Models.GenerativeLate
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
@@ -1640,6 +1641,34 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.ae_tendsto_lateFrequency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ae_tendsto_lateFrequency
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurableSet_late' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurableSet_late
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_lateFraction' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_lateFraction
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_paused_eq_pathLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_paused_eq_pathLaw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.map_cellPaused_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.map_cellPaused_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measureReal_late_cells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measureReal_late_cells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_tendsto_lateFraction_cells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_tendsto_lateFraction_cells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_tendsto_lateFraction' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_tendsto_lateFraction
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

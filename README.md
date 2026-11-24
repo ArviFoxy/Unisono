@@ -75,7 +75,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     periods of any length, again and again
     (`lean/Unisono/Spec/Models/GenerativeIdle.lean`). The long-run average
     of a bounded quantity over the independent cells of the process of
-    pauses is its mean (`lean/Unisono/Spec/Models/ErgodicCells.lean`).
+    pauses is its mean (`lean/Unisono/Spec/Models/ErgodicCells.lean`). Among
+    messages sent from one host to another at equally spaced true times, the
+    fraction that take longer than a given time converges, in almost every
+    outcome of every random world, to a probability that depends only on the
+    member (`lean/Unisono/Spec/Models/GenerativeLate.lean`).
   - A star solution's costs in a world and in the same world with the links
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.

@@ -1044,7 +1044,12 @@ together during periods of any length, again and again: for every number of
 seconds $M$ and every true time $N$ there is a later true time $a$ such
 that no link and no host has a backlog from $a$ to $a + M$
 (\lean{Prior.ae\_\allowbreak idle} in
-\path{lean/Unisono/Spec/Models/GenerativeIdle.lean}).
+\path{lean/Unisono/Spec/Models/GenerativeIdle.lean}). Among messages sent
+from one host to another at equally spaced true times, the fraction that take
+longer than a given time converges, in almost every outcome of every random
+world, to a probability that depends only on the member
+(\lean{Prior.ae\_\allowbreak tendsto\_\allowbreak lateFraction} in
+\path{lean/Unisono/Spec/Models/GenerativeLate.lean}).
 
 A random world with wander, or with errors of the timestamps, needs a
 stationary Gaussian process with continuous paths, which exists by a
