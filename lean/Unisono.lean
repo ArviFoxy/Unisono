@@ -35,7 +35,9 @@ public import Unisono.Solutions.Controller
 public import Unisono.Solutions.Controller.Cost
 public import Unisono.Solutions.Controller.Exact
 public import Unisono.Solutions.Controller.HeldLevel
+public import Unisono.Solutions.Controller.ExpectedCost
 public import Unisono.Solutions.Controller.LateBlocks
+public import Unisono.Solutions.Controller.LateRate
 public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Undelayed
@@ -56,6 +58,7 @@ public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
+public import Unisono.Spec.OutputRate
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells

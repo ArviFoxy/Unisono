@@ -138,11 +138,18 @@ simulation and integration tests (see `PRINCIPLES.md`):
     than the least margin of a speaker is, in almost every outcome, a
     probability of the member
     (`Unisono.Solutions.Controller.ae_tendsto_slowBlocks` in
-    `lean/Unisono/Solutions/Controller/LateBlocks.lean`). The late rate
-    itself, which counts output samples, is not derived yet, and nothing is
-    proved about expected cost or about the cost of other solutions under
-    pauses. The controller does not yet change its pace smoothly or choose
-    the level.
+    `lean/Unisono/Solutions/Controller/LateBlocks.lean`). The late rate is
+    at most the mean over the speakers of that probability times the sum of
+    the speaker's output samples per second and the capture blocks per
+    second (`Unisono.Solutions.Controller.ae_lateRate_le` in
+    `lean/Unisono/Solutions/Controller/LateRate.lean`). The expected cost of
+    the controller at a held level is at most the mean of an explicit
+    function of what is drawn, and that mean is finite
+    (`Unisono.Solutions.Controller.expectedCost_le_heldLevelCost` and
+    `lintegral_heldLevelCost_lt_top` in
+    `lean/Unisono/Solutions/Controller/ExpectedCost.lean`). Nothing is
+    proved about the cost of other solutions under pauses. The controller
+    does not yet change its pace smoothly or choose the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
