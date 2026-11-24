@@ -124,9 +124,14 @@ simulation and integration tests (see `PRINCIPLES.md`):
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in
     `lean/Unisono/Solutions/Controller/Cost.lean`). These theorems hold in
-    one outcome; nothing is proved yet about how large the late rate is
-    under the generative model, or about the cost of other solutions under
-    pauses. The controller does not yet change its pace smoothly or choose
+    one outcome, and they assume of the outcome that two clock exchanges of
+    each receiving host escape every pause. In every random world of a
+    member whose clocks do not wander and whose audio devices report exact
+    timestamps, that holds in almost every outcome
+    (`Unisono.Solutions.Controller.ae_twoUndelayed` in
+    `lean/Unisono/Solutions/Controller/Undelayed.lean`). Nothing is proved
+    yet about how large the late rate is under the generative model, about
+    expected cost, or about the cost of other solutions under pauses. The controller does not yet change its pace smoothly or choose
     the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and

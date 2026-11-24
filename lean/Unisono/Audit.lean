@@ -39,6 +39,8 @@ public import Unisono.Solutions.Controller.Cost
 public import Unisono.Solutions.Controller.Exact
 public import Unisono.Solutions.Controller.HeldLevel
 public import Unisono.Solutions.Controller.Pauses
+public import Unisono.Solutions.Controller.Queries
+public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay.Arrivals
@@ -2917,6 +2919,42 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.cost_le_under_pauses' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.cost_le_under_pauses
+
+/-- info: 'Unisono.Solutions.FixedDelay.exists_query' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exists_query
+
+/-- info: 'Unisono.Solutions.FixedDelay.exchange_of_query' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exchange_of_query
+
+/-- info: 'Unisono.Solutions.Controller.arrival_of_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrival_of_idle
+
+/-- info: 'Unisono.Solutions.Controller.asked_succ_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.asked_succ_sub
+
+/-- info: 'Unisono.Solutions.Controller.exists_asked_between' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_asked_between
+
+/-- info: 'Unisono.Solutions.Controller.exists_undelayed_exchange' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_undelayed_exchange
+
+/-- info: 'Unisono.Solutions.Controller.exists_twoUndelayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_twoUndelayed
+
+/-- info: 'Unisono.Solutions.Controller.ae_twoUndelayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ae_twoUndelayed
+
+/-- info: 'Unisono.Solutions.Controller.ae_cost_le_heldLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ae_cost_le_heldLevel
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

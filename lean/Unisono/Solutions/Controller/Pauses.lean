@@ -34,8 +34,9 @@ block it needs took less than the sample's margin, and plays nothing of the
 source otherwise.
 
 Whether two clock exchanges of a host escape every pause is a property of
-the outcome. That it holds with probability one under the generative model
-is not proved here.
+the outcome. It holds in almost every outcome of every random world of a
+member with steady clocks (`ae_twoUndelayed` in
+`Unisono.Solutions.Controller.Undelayed`).
 -/
 
 @[expose] public noncomputable section
