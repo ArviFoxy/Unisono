@@ -5,34 +5,42 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Spec.Models.Bounded
+public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeNoiseless
 
 /-!
 # Worlds whose clocks run at constant rates
 
 A world built from a draw of the generative model in which no clock wanders,
-of a host or of an audio device, nothing pauses, and the audio devices report
-exact timestamps (`ConstantRates`). The clocks of the hosts and of the audio
-devices may all run at different rates. In such a world
+of a host or of an audio device, and the audio devices report exact
+timestamps (`ConstantRates`). The clocks of the hosts and of the audio
+devices may all run at different rates, and links and hosts may pause. In
+such a world
 
 * the clock of host `h` reads its offset plus its rate times true time
-  (`ConstantRates.clock`), where the rate is the exponential of the draw's
-  `logRate h`, and the clock of the audio device `x` advances by its rate
-  times true time (`ConstantRates.deviceReading`);
-* every message from `i` to `j` takes the least delay of the direction
-  (`ConstantRates.deliver`);
+  (`ConstantRates.clock`), where the rate is the exponential of the
+  draw's `logRate h`, and the clock of the audio device `x` advances by its
+  rate times true time (`ConstantRates.deviceReading`);
 * the capture device and the playback devices run at the rates of their own
-  clocks (`ConstantRates.capture`, `ConstantRates.out`,
-  `ConstantRates.asked`), and the capture time of a position is linear in the
-  position (`ConstantRates.captured`);
+  clocks (`ConstantRates.capture`, `ConstantRates.handed`,
+  `ConstantRates.out`, `ConstantRates.asked`), without end
+  (`ConstantRates.handed_unbounded`,
+  `ConstantRates.asked_unbounded`), and the capture time of a position
+  is linear in the position (`ConstantRates.captured`);
 * the timestamp of a block is a line in the number of the block's first
   frame or output sample, whose slope is the rate of the host's clock divided
   by the nominal rate and by the rate of the device's clock
-  (`ConstantRates.capture_reported`, `ConstantRates.speaker_reported`).
+  (`ConstantRates.capture_reported`,
+  `ConstantRates.speaker_reported`);
+* a message sent later on a link arrives no earlier
+  (`ConstantRates.arrival_mono`).
 
-When every rate is within `ε < 1 / 2` of one, the world satisfies the bounds
-`rateBounds` (`ConstantRates.withinBounds`), so the theorems about bounded
-worlds apply to it.
+When moreover nothing pauses (`ConstantDelays`), every message from `i` to `j`
+takes the least delay of the direction (`ConstantDelays.deliver`). When every
+rate is then within `ε < 1 / 2` of one, the world satisfies the bounds
+`rateBounds` (`ConstantDelays.withinBounds`), so the theorems about bounded
+worlds apply to it. A world with pauses satisfies no such bounds: its delays
+have no upper bound.
 -/
 
 @[expose] public noncomputable section
@@ -43,10 +51,24 @@ variable {H : Type} {R : ℕ} {m : GenerativeWorld H R} {f : Member H R} {d : Dr
   {w : World H R}
 
 /-- The world `w` is built from the draw `d`, and in the draw no clock
+wanders and the audio devices report exact timestamps: the clocks of the
+hosts and of the audio devices run at constant rates, each its own. Links
+and hosts may pause, and the paused time that has begun never decreases. -/
+structure ConstantRates (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
+    (w : World H R) : Prop where
+  builds : m.Builds f d w
+  no_wander : ∀ h t, d.wander h t = 0
+  no_deviceWander : ∀ x t, d.deviceWander x t = 0
+  no_reportError : ∀ x t, d.reportError x t = 0
+  delay_pos : ∀ i j, 0 < d.split i j * f.roundTrip i j
+  linkPaused_monotone : ∀ i j, Monotone (d.linkPaused i j)
+  hostPaused_monotone : ∀ h, Monotone (d.hostPaused h)
+
+/-- The world `w` is built from the draw `d`, and in the draw no clock
 wanders, nothing pauses and the audio devices report exact timestamps: the
 clocks of the hosts and of the audio devices run at constant rates, and the
 links have constant delays. -/
-structure ConstantRates (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
+structure ConstantDelays (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
     (w : World H R) : Prop where
   builds : m.Builds f d w
   no_wander : ∀ h t, d.wander h t = 0
@@ -73,16 +95,6 @@ theorem deviceReading (hS : ConstantRates m f d w) (x : Option (Fin R)) (t : Tim
   simp only [hS.no_deviceWander, add_zero, intervalIntegral.integral_const, sub_zero,
     smul_eq_mul]
   ring
-
-/-- Every message takes the least delay of its direction. -/
-theorem deliver (hS : ConstantRates m f d w) (i j : H) (s : Time) (q : ℕ) :
-    w.network.deliver i j s q = some (s + d.split i j * f.roundTrip i j) := by
-  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := hS.builds.network i j s q
-  have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hS.no_hostPauses i) s)
-  have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (hS.no_linkPauses i j) _)
-  have h₃ : v₃ = 0 := hv₃.unique (isBacklog_zero_of_const (hS.no_hostPauses j) _)
-  rw [hd, h₁, h₂, h₃]
-  simp only [add_zero]
 
 /-- When each frame is captured: the capture device starts when the sender's
 clock reads the member's start, and then counts its frames on its own
@@ -187,7 +199,105 @@ theorem captured (hS : ConstantRates m f d w) (x : ℝ) :
   field_simp
   ring
 
+/-- When each capture block is handed over: when its last frame is
+captured. -/
+theorem handed (hS : ConstantRates m f d w) (b : ℕ) :
+    w.source.handed b
+      = (f.captureStart - d.offset m.sender) / Real.exp (d.logRate m.sender)
+        + (((b : ℝ) + 1) * m.blockSize - 1) / (m.rate * Real.exp (d.deviceLogRate none)) := by
+  have hB : 1 ≤ (b + 1) * m.blockSize :=
+    Nat.succ_le_of_lt (Nat.mul_pos (Nat.succ_pos b) m.blockSize_pos)
+  have e : (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) = ((b : ℝ) + 1) * m.blockSize - 1 := by
+    rw [Nat.cast_sub hB]
+    simp
+  rw [hS.builds.capture_handed, hS.builds.capture_first, hS.capture, e]
+
+/-- **The capture device hands over blocks without end.** -/
+theorem handed_unbounded (hS : ConstantRates m f d w) (T : Time) :
+    ∃ b, T < w.source.handed b := by
+  have hc : 0 < m.rate * Real.exp (d.deviceLogRate none) :=
+    mul_pos m.rate_pos (Real.exp_pos _)
+  obtain ⟨b, hb⟩ := exists_nat_gt
+    ((T - (f.captureStart - d.offset m.sender) / Real.exp (d.logRate m.sender))
+      * (m.rate * Real.exp (d.deviceLogRate none)))
+  refine ⟨b, ?_⟩
+  rw [hS.handed]
+  have hB : (1 : ℝ) ≤ m.blockSize := by exact_mod_cast m.blockSize_pos
+  have hb0 : (0 : ℝ) ≤ (b : ℝ) + 1 := by positivity
+  have h1 := mul_le_mul_of_nonneg_left hB hb0
+  have h2 : T - (f.captureStart - d.offset m.sender) / Real.exp (d.logRate m.sender)
+      < (((b : ℝ) + 1) * m.blockSize - 1) / (m.rate * Real.exp (d.deviceLogRate none)) := by
+    rw [lt_div_iff₀ hc]
+    linarith
+  linarith
+
+/-- **Every playback device requests blocks without end.** -/
+theorem asked_unbounded (hS : ConstantRates m f d w) (r : Fin R) (T : Time) :
+    ∃ b, T < (w.speaker r).asked b := by
+  have hc : 0 < m.rate * Real.exp (d.deviceLogRate (some (m.device r))) :=
+    mul_pos m.rate_pos (Real.exp_pos _)
+  obtain ⟨b, hb⟩ := exists_nat_gt
+    ((T + m.lead / Real.exp (d.deviceLogRate (some (m.device r)))
+        - (f.speakerStart (m.device r) - d.offset (m.host r))
+          / Real.exp (d.logRate (m.host r)))
+      * (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))))
+  refine ⟨b, ?_⟩
+  have ha := hS.asked r b
+  rw [hS.builds.speaker_first, hS.out] at ha
+  have hB : (1 : ℝ) ≤ m.blockSize := by exact_mod_cast m.blockSize_pos
+  have hb0 : (0 : ℝ) ≤ (b : ℝ) := Nat.cast_nonneg b
+  have h1 := mul_le_mul_of_nonneg_left hB hb0
+  have e : ((b * m.blockSize : ℕ) : ℝ) = (b : ℝ) * m.blockSize := by push_cast; ring
+  rw [e] at ha
+  have h2 : T + m.lead / Real.exp (d.deviceLogRate (some (m.device r)))
+        - (f.speakerStart (m.device r) - d.offset (m.host r))
+          / Real.exp (d.logRate (m.host r))
+      < (b : ℝ) * m.blockSize / (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) := by
+    rw [lt_div_iff₀ hc]
+    linarith
+  linarith
+
+/-- **Messages do not overtake one another**: a message sent later from `i`
+to `j` arrives no earlier. -/
+theorem arrival_mono (hS : ConstantRates m f d w) (i j : H) :
+    Monotone (d.arrival f i j) :=
+  hS.builds.arrival_mono (hS.linkPaused_monotone i j) (hS.hostPaused_monotone i)
+    (hS.hostPaused_monotone j)
+
 end ConstantRates
+
+namespace ConstantDelays
+
+/-- A world with constant rates and constant delays is a world whose clocks
+run at constant rates. -/
+theorem toConstantRates (hS : ConstantDelays m f d w) : ConstantRates m f d w where
+  builds := hS.builds
+  no_wander := hS.no_wander
+  no_deviceWander := hS.no_deviceWander
+  no_reportError := hS.no_reportError
+  delay_pos := hS.delay_pos
+  linkPaused_monotone := fun i j s t _ => (hS.no_linkPauses i j s t).le
+  hostPaused_monotone := fun h s t _ => (hS.no_hostPauses h s t).le
+
+/-- Every message takes the least delay of its direction. -/
+theorem deliver (hS : ConstantDelays m f d w) (i j : H) (s : Time) (q : ℕ) :
+    w.network.deliver i j s q = some (s + d.split i j * f.roundTrip i j) := by
+  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := hS.builds.network i j s q
+  have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hS.no_hostPauses i) s)
+  have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (hS.no_linkPauses i j) _)
+  have h₃ : v₃ = 0 := hv₃.unique (isBacklog_zero_of_const (hS.no_hostPauses j) _)
+  rw [hd, h₁, h₂, h₃]
+  simp only [add_zero]
+
+/-- Every message arrives the least delay of its direction after it is
+sent. -/
+theorem arrival (hS : ConstantDelays m f d w) (i j : H) (s : Time) :
+    d.arrival f i j s = s + d.split i j * f.roundTrip i j := by
+  have h := hS.builds.deliver i j s 0
+  rw [hS.deliver] at h
+  exact (Option.some.inj h).symm
+
+end ConstantDelays
 
 /-- A rate within `ε < 1` of one has an inverse within `ε / (1 - ε)` of
 one. -/
@@ -244,11 +354,12 @@ def rateBounds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R) (ε : �
 
 /-- **A world with constant rates within `ε` of one satisfies the bounds
 `rateBounds`.** -/
-theorem ConstantRates.withinBounds (hS : ConstantRates m f d w) {ε : ℝ} (hε0 : 0 ≤ ε)
+theorem ConstantDelays.withinBounds (hS : ConstantDelays m f d w) {ε : ℝ} (hε0 : 0 ≤ ε)
     (hε : ε < 1 / 2) (hrates : ∀ h, |Real.exp (d.logRate h) - 1| ≤ ε)
     (hdevices : ∀ x, |Real.exp (d.deviceLogRate x) - 1| ≤ ε) :
     w.WithinBounds (rateBounds m f d ε hε0 hε hS.delay_pos) := by
   have hρ := m.rate_pos
+  have hC := hS.toConstantRates
   have hrate : w.rate = m.rate := hS.builds.rate_eq
   have h1ε : 0 < 1 - ε := by linarith
   have hinv : ∀ x, |1 / Real.exp (d.deviceLogRate x) - 1| ≤ ε / (1 - ε) := fun x =>
@@ -257,7 +368,7 @@ theorem ConstantRates.withinBounds (hS : ConstantRates m f d w) {ε : ℝ} (hε0
   · intro h s t hst
     have e : (w.clock h).read t - (w.clock h).read s - (t - s)
         = (Real.exp (d.logRate h) - 1) * (t - s) := by
-      rw [hS.clock, hS.clock]
+      rw [hC.clock, hC.clock]
       ring
     rw [e, abs_mul, abs_of_nonneg (sub_nonneg.mpr hst)]
     exact mul_le_mul_of_nonneg_right (hrates h) (sub_nonneg.mpr hst)
@@ -265,7 +376,7 @@ theorem ConstantRates.withinBounds (hS : ConstantRates m f d w) {ε : ℝ} (hε0
     have hg := (Real.exp_pos (d.deviceLogRate none)).ne'
     have e : w.source.capture (n + 1) - w.source.capture n - 1 / w.rate
         = (1 / Real.exp (d.deviceLogRate none) - 1) / m.rate := by
-      rw [hS.capture, hS.capture, hrate]
+      rw [hC.capture, hC.capture, hrate]
       push_cast
       field_simp
       ring
@@ -277,7 +388,7 @@ theorem ConstantRates.withinBounds (hS : ConstantRates m f d w) {ε : ℝ} (hε0
     have hg := (Real.exp_pos (d.deviceLogRate (some (m.device r)))).ne'
     have e : (w.speaker r).out (k + 1) - (w.speaker r).out k - 1 / w.rate
         = (1 / Real.exp (d.deviceLogRate (some (m.device r))) - 1) / m.rate := by
-      rw [hS.out, hS.out, hrate]
+      rw [hC.out, hC.out, hrate]
       push_cast
       field_simp
       ring
@@ -298,7 +409,7 @@ theorem ConstantRates.withinBounds (hS : ConstantRates m f d w) {ε : ℝ} (hε0
   · intro r b
     have hg0 := Real.exp_pos (d.deviceLogRate (some (m.device r)))
     have hb := abs_le.mp (hdevices (some (m.device r)))
-    rw [hS.asked]
+    rw [hC.asked]
     have hl := m.lead_pos
     constructor
     · show m.lead / (1 + ε) ≤ m.lead / Real.exp (d.deviceLogRate (some (m.device r)))

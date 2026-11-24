@@ -81,12 +81,21 @@ simulation and integration tests (see `PRINCIPLES.md`):
     level with every block, the latency that every speaker is to hold, and
     the hosts estimate the sender's clock and the clocks of their audio
     devices as lines. In a world whose clocks of hosts and of audio devices
-    run at constant rates, each its own, it plays every frame at the level
-    divided by the rate of the sender's clock, plus the asymmetry of the
-    speaker's host (`Unisono.Solutions.Controller.playsAtLatencies` in
-    `lean/Unisono/Solutions/Controller/Exact.lean`). It does not yet change
-    its pace smoothly or choose the level, and nothing is proved about it in
-    worlds with pauses.
+    run at constant rates, each its own, with the level held, the position
+    that is due at an output sample is the one captured the level divided by
+    the rate of the sender's clock, plus the asymmetry of the speaker's
+    host, before the sample leaves. When links and hosts pause, an output
+    sample plays that position if the message of the capture block it needs
+    took less than the sample's margin, and plays nothing of the source
+    otherwise (`Unisono.Solutions.Controller.plays_under_pauses` in
+    `lean/Unisono/Solutions/Controller/Pauses.lean`, with the margin in
+    `lean/Unisono/Solutions/Controller/HeldLevel.lean`). Without pauses it
+    plays every frame at that latency
+    (`Unisono.Solutions.Controller.playsAtLatencies` in
+    `lean/Unisono/Solutions/Controller/Exact.lean`). These theorems describe
+    each output sample of one outcome; nothing is proved yet about how often
+    a block is late or about the cost of a level. The controller does not
+    yet change its pace smoothly or choose the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

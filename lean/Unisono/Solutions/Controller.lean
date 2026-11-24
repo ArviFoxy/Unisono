@@ -43,7 +43,11 @@ baseline's messages with further fields, and plays differently.
 The estimators are parameters. The theorems about this solution hold for
 every estimator that is exact on undisturbed data (`ClockEstimator.Exact`,
 `DeviceEstimator.Exact`); `twoExchanges` and `twoReports` are such
-estimators.
+estimators. A pause of a link or of a host delays a clock exchange, and it
+can only lengthen the exchange's round trip. In worlds with pauses the
+theorems hold for every clock estimator that is exact from the exchanges of
+least round trip (`ClockEstimator.ExactFromLeast`); `leastRoundTrip` is such
+an estimator.
 
 The solution sends what the baseline sends, with more in each message
 (`sendsMore`), so its run is the baseline's run once the further fields are
@@ -178,6 +182,50 @@ theorem twoExchanges_exact : twoExchanges.Exact := by
         ring
       simp only [twoExchanges, hfind]
       rw [hslope, ea, eb]
+
+/-- The round trip of a clock exchange on the querying host's clock: from
+the reading at which the query was sent to the reading at which the answer
+arrived. -/
+def Exchange.roundTrip (e : Exchange) : ℝ := e.arrived - e.sent
+
+/-- The estimator is exact from the exchanges of least round trip. Suppose
+that no exchange has a round trip shorter than `τ`, and that the sender's
+reading in every exchange whose round trip is `τ` lies on a line of slope
+`c` as a function of the reading at which the query was sent, with value `a`
+at zero, and on a line of the same slope as a function of the reading at
+which the answer arrived, with value `b` at zero. If two exchanges with
+round trip `τ` had their queries sent at different readings, the estimate is
+the line of slope `c` halfway between the two. A pause can only lengthen a
+round trip, so the exchanges of least round trip are those that no pause
+delayed. -/
+def ClockEstimator.ExactFromLeast (est : ClockEstimator) : Prop :=
+  ∀ (l : List Exchange) (a b c τ : ℝ),
+    (∀ e ∈ l, τ ≤ e.roundTrip) →
+    (∀ e ∈ l, e.roundTrip = τ →
+      e.received = a + c * e.sent ∧ e.received = b + c * e.arrived) →
+    (∃ e ∈ l, ∃ e' ∈ l, e.roundTrip = τ ∧ e'.roundTrip = τ ∧ e.sent ≠ e'.sent) →
+    est l = some ⟨(a + b) / 2, c⟩
+
+/-- The estimator that uses the exchanges of least round trip: it keeps the
+exchanges whose round trip is no longer than that of any other exchange, and
+applies the two-exchange estimator to them. -/
+def leastRoundTrip : ClockEstimator := fun l => by
+  classical
+  exact twoExchanges (l.filter fun e => decide (∀ e' ∈ l, e.roundTrip ≤ e'.roundTrip))
+
+/-- **The least-round-trip estimator is exact from the exchanges of least
+round trip.** -/
+theorem leastRoundTrip_exactFromLeast : leastRoundTrip.ExactFromLeast := by
+  intro l a b c τ hge hline hex
+  obtain ⟨e₁, h₁, e₂, h₂, hτ₁, hτ₂, hne⟩ := hex
+  unfold leastRoundTrip
+  refine twoExchanges_exact _ a b c (fun e he => ?_) ⟨e₁, ?_, e₂, ?_, hne⟩
+  · simp only [List.mem_filter, decide_eq_true_eq] at he
+    exact hline e he.1 (le_antisymm ((he.2 e₁ h₁).trans (le_of_eq hτ₁)) (hge e he.1))
+  · simp only [List.mem_filter, decide_eq_true_eq]
+    exact ⟨h₁, fun e' he' => (le_of_eq hτ₁).trans (hge e' he')⟩
+  · simp only [List.mem_filter, decide_eq_true_eq]
+    exact ⟨h₂, fun e' he' => (le_of_eq hτ₂).trans (hge e' he')⟩
 
 /-- A way to estimate, from the timestamps that a device has reported so
 far, the reading of the host's clock at which each frame or output sample of

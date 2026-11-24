@@ -17,9 +17,13 @@ more than the total weight of the `copies` answers it can trigger. Give an
 arrival the weight of its message, and give a handoff and a request a
 weight larger than anything the baseline sends at them. Then at every
 event, the messages that the baseline sends weigh less than the event. So in
-every world that satisfies the bounds, the run has an event after every
-true time (`progress`), and it handles every request of every speaker
-(`request_step`).
+every world whose capture device hands over blocks without end and whose
+playback devices request blocks without end, the run has an event after
+every true time (`progress_of_unbounded`), and it handles every request of
+every speaker (`request_step_of_unbounded`). The delays of the network play
+no part in this, so it holds in worlds whose delays have no upper bound.
+Every world that satisfies the bounds is such a world (`progress`,
+`request_step`).
 -/
 
 @[expose] public noncomputable section
@@ -51,17 +55,17 @@ theorem weight_copies (l : List H) (c : ℕ) (x : Payload × Finset ℕ) (hx : w
       List.sum_replicate, hx, smul_eq_mul, mul_one, List.length_cons]
     ring
 
-/-- **The baseline's run advances past every true time.** In a world that
-satisfies the bounds, the run has an event after every true time `T`. The
-reason is that the baseline sets no timers, and at every event the messages
-it sends weigh less than the event (see `weight`). -/
-theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+/-- **The baseline's run advances past every true time.** In a world whose
+capture device hands over blocks without end and whose playback devices
+request blocks without end, the run has an event after every true time `T`.
+The reason is that the baseline sets no timers, and at every event the
+messages it sends weigh less than the event (see `weight`). -/
+theorem progress_of_unbounded (w : World H R) (lookahead : ℕ+)
+    (hhand : ∀ T, ∃ b, T < w.source.handed b) (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b)
     (T : Time) : ∃ n, T < (solution p : Solution H R Payload).eventTime w lookahead n := by
-  obtain ⟨-, hsrc, hspk, -, -, -, hlead, -, -, -, -⟩ := hw
   refine Solution.progress w (solution p) lookahead (weight p)
     (p.copies * (p.speakers.filter (· ≠ p.sender)).length + 1) (p.copies * (1 + p.copies) + 1)
-    ?_ ?_ ?_ ?_ (CaptureDevice.handed_unbounded w.rate_pos hsrc B.deviceRate_lt_one)
-    (fun r => PlaybackDevice.asked_unbounded w.rate_pos (hspk r) B.deviceRate_lt_one (hlead r)) T
+    ?_ ?_ ?_ ?_ hhand hask T
   · intro h view
     unfold solution act
     split
@@ -88,16 +92,39 @@ theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahe
       split_ifs <;> simp [weight, List.sum_replicate]
     | answer s r => simp [act, weight]
 
-/-- **Every request is handled.** In a world that satisfies the bounds, the
-baseline's run handles every request of every speaker at some step. -/
+/-- **The baseline's run advances past every true time**, in a world that
+satisfies the bounds. -/
+theorem progress (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
+    (T : Time) : ∃ n, T < (solution p : Solution H R Payload).eventTime w lookahead n := by
+  obtain ⟨-, hsrc, hspk, -, -, -, hlead, -, -, -, -⟩ := hw
+  exact progress_of_unbounded p w lookahead
+    (CaptureDevice.handed_unbounded w.rate_pos hsrc B.deviceRate_lt_one)
+    (fun r => PlaybackDevice.asked_unbounded w.rate_pos (hspk r) B.deviceRate_lt_one (hlead r)) T
+
+/-- **Every request is handled.** In a world whose capture device hands over
+blocks without end and whose playback devices request blocks without end,
+the baseline's run handles every request of every speaker at some step. -/
+theorem request_step_of_unbounded (w : World H R) (lookahead : ℕ+)
+    (hhand : ∀ T, ∃ b, T < w.source.handed b) (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b)
+    (r : Fin R) (b : ℕ) :
+    ∃ n, ((solution p : Solution H R Payload).states w lookahead n).askedNext r = b ∧
+      earliest (((solution p : Solution H R Payload).states w lookahead n).key w)
+        ((solution p : Solution H R Payload).states w lookahead n).due = some (.asked r b) := by
+  obtain ⟨m, hm⟩ := progress_of_unbounded p w lookahead hhand hask ((w.speaker r).asked b)
+  obtain ⟨n, -, h1, h2⟩ := Solution.exists_asked_step w (solution p) lookahead
+    (Solution.lt_askedNext (solution p) w lookahead hm)
+  exact ⟨n, h1, h2⟩
+
+/-- **Every request is handled**, in a world that satisfies the bounds. -/
 theorem request_step (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lookahead : ℕ+)
     (r : Fin R) (b : ℕ) :
     ∃ n, ((solution p : Solution H R Payload).states w lookahead n).askedNext r = b ∧
       earliest (((solution p : Solution H R Payload).states w lookahead n).key w)
         ((solution p : Solution H R Payload).states w lookahead n).due = some (.asked r b) := by
-  obtain ⟨m, hm⟩ := progress p w B hw lookahead ((w.speaker r).asked b)
-  obtain ⟨n, -, h1, h2⟩ := Solution.exists_asked_step w (solution p) lookahead
-    (Solution.lt_askedNext (solution p) w lookahead hm)
-  exact ⟨n, h1, h2⟩
+  obtain ⟨-, hsrc, hspk, -, -, -, hlead, -, -, -, -⟩ := hw
+  exact request_step_of_unbounded p w lookahead
+    (CaptureDevice.handed_unbounded w.rate_pos hsrc B.deviceRate_lt_one)
+    (fun r => PlaybackDevice.asked_unbounded w.rate_pos (hspk r) B.deviceRate_lt_one (hlead r))
+    r b
 
 end Unisono.Solutions.FixedDelay
