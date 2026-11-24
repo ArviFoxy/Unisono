@@ -1008,11 +1008,19 @@ The law of the paused time that begins in a period is a probability law
 random world of the model with three hosts in which the splits, the offsets
 and the mean rates of the clocks of the hosts and of the audio devices are
 random. Its member has no pauses and no
-wander, $\mu_{ij} = 0$, $\mu_i = 0$ and $\nu_i = 0$. A random world with pauses
-needs a Poisson process, and one with wander needs a stationary Gaussian
-process with continuous paths. Both exist by standard constructions, which
-are not carried out in Lean, so the model is not yet shown to have such
-members. The generative model is not proved to belong to the classes above;
+wander, $\mu_{ij} = 0$, $\mu_i = 0$ and $\nu_i = 0$. The paused time of a
+link or of a host, as the model asks for it, is constructed in Lean for any
+rate of pauses and any law of their lengths (\lean{pausedPath} in
+\path{lean/Unisono/Spec/Models/PauseProcess.lean}). It never decreases and
+counts each pause from the instant at which it begins, and the paused time
+that begins in periods that do not overlap is independent, with the law
+\lean{pauseLaw}
+(\lean{hasIndepIncrements\_\allowbreak pausedPath},
+\lean{hasLaw\_\allowbreak pausedPath\_\allowbreak sub}). No random world
+is assembled from it yet. A random world with wander needs a stationary
+Gaussian process with continuous paths, which exists by a standard
+construction that is not carried out in Lean. The model is therefore not yet
+shown to have members with pauses or with wander. The generative model is not proved to belong to the classes above;
 its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
 
 A member is \emph{noiseless} when its links and its hosts never pause, the

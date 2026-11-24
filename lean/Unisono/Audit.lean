@@ -64,6 +64,7 @@ public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Models.GenerativeWorld
+public import Unisono.Spec.Models.PauseProcess
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
@@ -991,6 +992,138 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.pauseLaw_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.pauseLaw_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_pow_poissonMeasure' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_pow_poissonMeasure
+
+/-- info: 'Unisono.Spec.GenerativeWorld.charFun_sumLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.charFun_sumLaw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.charFun_pauseLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.charFun_pauseLaw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_cellSum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_cellSum
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_prod_marks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_prod_marks
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_cexp_cellSum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_cexp_cellSum
+
+/-- info: 'Unisono.Spec.GenerativeWorld.markIn_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.markIn_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.markIn_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.markIn_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellSum_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellSum_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellSum_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellSum_eq_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedBetween_eq_sum' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedBetween_eq_sum
+
+/-- info: 'Unisono.Spec.GenerativeWorld.markIn_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.markIn_add
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedBetween_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedBetween_add
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedBetween_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedBetween_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedBetween_self' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedBetween_self
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedPath_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedPath_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedPath_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedPath_zero
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedPath_monotone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedPath_monotone
+
+/-- info: 'Unisono.Spec.GenerativeWorld.markIn_continuousWithinAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.markIn_continuousWithinAt
+
+/-- info: 'Unisono.Spec.GenerativeWorld.pausedPath_rightContinuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.pausedPath_rightContinuous
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_markIn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_markIn
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_pausedBetween' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_pausedBetween
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_pausedPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_pausedPath
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_prod_cells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_prod_cells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.sum_volume_cells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.sum_volume_cells
+
+/-- info: 'Unisono.Spec.GenerativeWorld.unitLaw_pauseStart' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.unitLaw_pauseStart
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_stepMark' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_stepMark
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cexp_stepMark_sub_one' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cexp_stepMark_sub_one
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_cexp_stepMark' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_cexp_stepMark
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_cexp_pausedBetween' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_cexp_pausedBetween
+
+/-- info: 'Unisono.Spec.GenerativeWorld.hasLaw_pausedBetween' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.hasLaw_pausedBetween
+
+/-- info: 'Unisono.Spec.GenerativeWorld.hasLaw_pausedPath_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.hasLaw_pausedPath_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.hasIndepIncrements_pausedPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.hasIndepIncrements_pausedPath
 
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

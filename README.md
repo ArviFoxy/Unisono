@@ -132,8 +132,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     better. No lower bound on expected cost is proved for such solutions, or
     for members with pauses or clock wander.
     Random worlds are constructed for every noiseless member and for one
-    member with random mean clock rates; random worlds with pauses or
-    with clock wander are not yet constructed in Lean. The expectation that a solution loses nothing in the long run by
+    member with random mean clock rates. The random process of pauses that
+    the model asks for is constructed
+    (`lean/Unisono/Spec/Models/PauseProcess.lean`), but no random world is
+    assembled from it yet, and a random world with clock wander is not
+    constructed in Lean. The expectation that a solution loses nothing in the long run by
     not being told the numbers of its member is not proved.
   - Unconditional `Solution.WithinSpeed` across all block boundaries (including
     silence restarts and arbitrary `jump` values) for `Core.solution` remains
