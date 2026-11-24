@@ -53,6 +53,7 @@ public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
@@ -64,6 +65,7 @@ public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
+public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
 public import Unisono.Spec.Models.GenerativeNoiseless
@@ -88,6 +90,7 @@ public import Unisono.Spec.SameMessages
 public import Unisono.Spec.Solution
 public import Unisono.Spec.ShiftedPlayback
 public import Unisono.Spec.Skips
+public import Unisono.Spec.Stall
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Spec.World

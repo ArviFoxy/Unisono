@@ -147,9 +147,18 @@ simulation and integration tests (see `PRINCIPLES.md`):
     function of what is drawn, and that mean is finite
     (`Unisono.Solutions.Controller.expectedCost_le_heldLevelCost` and
     `lintegral_heldLevelCost_lt_top` in
-    `lean/Unisono/Solutions/Controller/ExpectedCost.lean`). Nothing is
-    proved about the cost of other solutions under pauses. The controller
-    does not yet change its pace smoothly or choose the level.
+    `lean/Unisono/Solutions/Controller/ExpectedCost.lean`). For every
+    solution whose hosts exchange messages only with the sender, in every
+    outcome of every member, an output sample plays a position only if a
+    message sent at the handover of the last capture block it needs arrived
+    before the request of its playback block
+    (`Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays` in
+    `lean/Unisono/Spec/Models/GenerativeEarliest.lean`), and a stretch of
+    output samples in which no newer position can be played costs missed
+    samples or discontinuities (`Unisono.Spec.stall_le_of_le` in
+    `lean/Unisono/Spec/Stall.lean`). These are not yet combined into a
+    lower bound on the expected cost of other solutions under pauses. The
+    controller does not yet change its pace smoothly or choose the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

@@ -55,6 +55,7 @@ public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
+public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
@@ -65,6 +66,7 @@ public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
+public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
 public import Unisono.Spec.Models.GenerativeNoiseless
@@ -87,6 +89,7 @@ public import Unisono.Spec.Run
 public import Unisono.Spec.SameMessages
 public import Unisono.Spec.ShiftedPlayback
 public import Unisono.Spec.Skips
+public import Unisono.Spec.Stall
 public import Unisono.Spec.StarShift
 public import Unisono.Spec.Topologies
 public import Unisono.Sync
@@ -1726,6 +1729,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.ae_lateFraction_scalars
 
+/-- info: 'Unisono.Spec.GenerativeWorld.abs_lastNeeded_sub_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.abs_lastNeeded_sub_lt
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.mem_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.mem_block
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.block_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.block_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_lt_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_lt_of_plays
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays
+
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.example_holds
@@ -1989,6 +2012,38 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.exists_time_paid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.exists_time_paid
+
+/-- info: 'Unisono.Spec.discontinuityAt_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_of_none
+
+/-- info: 'Unisono.Spec.discontinuityAt_of_some_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_of_some_none
+
+/-- info: 'Unisono.Spec.discontinuityAt_of_continuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_of_continuous
+
+/-- info: 'Unisono.Spec.discontinuityAt_of_not_continuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.discontinuityAt_of_not_continuous
+
+/-- info: 'Unisono.Spec.getD_lastPlayed_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.getD_lastPlayed_le
+
+/-- info: 'Unisono.Spec.getD_lastPlayed_le_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.getD_lastPlayed_le_of_le
+
+/-- info: 'Unisono.Spec.stall_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stall_le
+
+/-- info: 'Unisono.Spec.stall_le_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stall_le_of_le
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2801,6 +2856,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.handed_step_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.handed_step_unique
+
+/-- info: 'Unisono.Spec.Solution.frame_times' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.frame_times
+
+/-- info: 'Unisono.Spec.Solution.arrival_le_of_held' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.arrival_le_of_held
+
+/-- info: 'Unisono.Spec.Solution.arrival_lt_asked_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.arrival_lt_asked_of_plays
 
 /-- info: 'Unisono.Spec.earliest_spec_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
