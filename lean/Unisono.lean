@@ -55,6 +55,7 @@ public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
+public import Unisono.Spec.MoreInMessages
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run

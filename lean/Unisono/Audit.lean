@@ -56,6 +56,7 @@ public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
+public import Unisono.Spec.MoreInMessages
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.SameMessages
@@ -1621,6 +1622,74 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.eventTime_eq_of_sends_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.eventTime_eq_of_sends_eq
+
+/-- info: 'Unisono.Spec.Observation.frames_mapMsg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Observation.frames_mapMsg
+
+/-- info: 'Unisono.Spec.State.forget_send' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_send
+
+/-- info: 'Unisono.Spec.State.forget_sendAll' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_sendAll
+
+/-- info: 'Unisono.Spec.State.forget_observe' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_observe
+
+/-- info: 'Unisono.Spec.State.forget_addTimers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_addTimers
+
+/-- info: 'Unisono.Spec.State.forget_withoutPlays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_withoutPlays
+
+/-- info: 'Unisono.Spec.State.forget_handle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_handle
+
+/-- info: 'Unisono.Spec.State.forget_key' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_key
+
+/-- info: 'Unisono.Spec.State.forget_due' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_due
+
+/-- info: 'Unisono.Spec.State.forget_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.State.forget_step
+
+/-- info: 'Unisono.Spec.Solution.states_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.states_forget
+
+/-- info: 'Unisono.Spec.Solution.views_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_forget
+
+/-- info: 'Unisono.Spec.Solution.held_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.held_forget
+
+/-- info: 'Unisono.Spec.Solution.askedNext_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_forget
+
+/-- info: 'Unisono.Spec.Solution.earliest_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.earliest_forget
+
+/-- info: 'Unisono.Spec.Solution.handled_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handled_forget
+
+/-- info: 'Unisono.Spec.Solution.eventTime_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.eventTime_forget
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
