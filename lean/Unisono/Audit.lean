@@ -1670,6 +1670,58 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.ae_tendsto_lateFraction
 
+/-- info: 'Unisono.Spec.GenerativeWorld.map_cellPaused_eq_pathLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.map_cellPaused_eq_pathLaw
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_mem_of_indepFun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_mem_of_indepFun
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_lateFraction_prod' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_lateFraction_prod
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_lateProbability' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_lateProbability
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_lateFraction_indep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_lateFraction_indep
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_scalarCast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_scalarCast
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_pauseCast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_pauseCast
+
+/-- info: 'Unisono.Spec.GenerativeWorld.scalarComponent_injective' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.scalarComponent_injective
+
+/-- info: 'Unisono.Spec.GenerativeWorld.scalarComponent_ne_pause' depends on axioms: [propext, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.scalarComponent_ne_pause
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.aemeasurable_scalar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.aemeasurable_scalar
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.indepFun_scalars_paused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.indepFun_scalars_paused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.aemeasurable_scalars' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.aemeasurable_scalars
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.ae_lateFraction_scalars' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.ae_lateFraction_scalars
+
 /-- info: 'Unisono.Spec.GenerativeWorld.example_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.example_holds
