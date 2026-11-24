@@ -31,6 +31,7 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.Controller
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay
 public import Unisono.Solutions.FixedDelay.Arrivals

@@ -1,6 +1,6 @@
 # The theorems
 
-All 641 theorems indexed below live in `lean/Unisono` and are checked in
+All 646 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -107,7 +107,29 @@ production core) proved end to end under `World.WithinBounds`:
 | `Spec.Solution.handled_asked_time`, `Solutions.FixedDelay.act_sends`, `inFlight_provenance`, `noCrossOriginCollision` | In any world, every message of the baseline in transit to a host other than the sender comes from the sender, and every message in transit to the sender is a clock query that another host sent when one of its playback devices requested a block. Two of the baseline's messages from different hosts therefore arrive at one host at the same time only when two such requests, each delayed by the network, reach the sender at the same time. |
 | `Spec.IdealConstantWorld.Holds.out_unbounded`, `IdealConstantWorld.Holds.capture_unbounded`, `Solutions.FixedDelay.playsAtLatencies_of_ideal`, `playTime_of_ideal`, `cost_eq_of_ideal` | Under the conditions of `cost_le_of_ideal`, from some output sample on every output sample of each speaker plays the sound captured exactly the target latency plus the asymmetry of the speaker's host before it leaves; from some frame on every speaker plays every frame at that latency; and the baseline's cost equals the shift cost of the asymmetries of the speakers' hosts. |
 
-### 1.6 Optimality in expected cost (`Spec.Optimality`)
+### 1.6 The controller: playback at a level that the sender announces (`Solutions.Controller`)
+
+`Solutions.Controller.solution` sends the baseline's messages with further
+fields and plays differently. The sender announces with every block the
+level of the block's first frame, which is the latency that every speaker is
+to hold for it, and the slope of the level; how it chooses the level is a
+parameter (`LevelRule`). The sender estimates the capture time of each frame
+on its clock as a line through the capture device's timestamps, each
+receiving host estimates the sender's clock as a line in its own clock from
+its clock exchanges, and each host estimates when each output sample leaves
+as a line through its playback device's timestamps. The estimators are
+parameters. A speaker plays, at each output sample, the position whose
+capture time plus level is the sender's clock reading at which the sample
+leaves. The solution does not yet change its pace smoothly, measure what
+frames need, or choose the level from such measurements, and nothing is
+proved yet about what it plays in any world.
+
+| Theorem | What it says |
+|---|---|
+| `Solutions.Controller.twoExchanges_exact`, `twoReports_exact` | The estimator of the sender's clock that uses two clock exchanges, and the estimator of a device's line that uses two timestamps, are exact on undisturbed data: when all exchanges, or all timestamps, lie on one line, they return it. |
+| `Solutions.Controller.plain_enrich`, `sendsMore`, `plays_asked` | The controller sends what the baseline sends, with more in each message (`Solution.SendsMore`), so with the further fields forgotten its run is the baseline's, apart from what the speakers play. At a device request it plays the position that is due by its schedule, its clock line and its device line. |
+
+### 1.7 Optimality in expected cost (`Spec.Optimality`)
 
 `OptimalWithin` defines what it means for a solution to be optimal within a
 margin: its expected cost exceeds that of no compared solution by more than

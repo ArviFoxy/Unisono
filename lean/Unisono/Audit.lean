@@ -34,6 +34,7 @@ public import Unisono.Receiver
 public import Unisono.Relation
 public import Unisono.Rounds
 public import Unisono.Sender
+public import Unisono.Solutions.Controller
 public import Unisono.Solutions.Core
 public import Unisono.Solutions.FixedDelay.Arrivals
 public import Unisono.Solutions.FixedDelay.Exact
@@ -1690,6 +1691,26 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.Solution.eventTime_forget' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.eventTime_forget
+
+/-- info: 'Unisono.Solutions.Controller.twoExchanges_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.twoExchanges_exact
+
+/-- info: 'Unisono.Solutions.Controller.twoReports_exact' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.twoReports_exact
+
+/-- info: 'Unisono.Solutions.Controller.plain_enrich' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.plain_enrich
+
+/-- info: 'Unisono.Solutions.Controller.sendsMore' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.sendsMore
+
+/-- info: 'Unisono.Solutions.Controller.plays_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.plays_asked
 
 /-- info: 'Unisono.Spec.longRun_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
