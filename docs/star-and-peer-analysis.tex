@@ -382,7 +382,7 @@ quadratic value-to-go of \path{Unisono.Model.Regulation}.
 \begin{theorem}[Single-mode separation and uniqueness]
 \label{thm:single-sep}
 In \path{Analysis/ModalControl.lean} (\lean{single\_cost\_split},
-\lean{single\_law\_optimal}, \lean{single\_law\_unique\_ae}), assume:
+\lean{single\_law\_minimizes}, \lean{single\_law\_unique\_ae}), assume:
 \begin{itemize}
 \item $(\mathcal{F}_k)$ is a filtration on a probability space $(\Omega, \Prob)$,
 \item $S_k \in L^2(\Prob)$ satisfies
@@ -420,7 +420,7 @@ decentralized star or peer policy using less information.
 
 \begin{theorem}[Centralized two-gain lip-sync benchmark and long-run bounds]
 \label{thm:lipsync-opt}
-In \path{ModalControl.lean} (\lean{multi\_lipsync\_optimal},
+In \path{ModalControl.lean} (\lean{multi\_lipsync\_minimizes},
 \lean{multi\_lipsync\_unique\_ae}, \lean{multi\_lipsync\_cost\_rate},
 \lean{multi\_lipsync\_law\_cost\_le}), assume:
 \begin{itemize}
@@ -458,7 +458,7 @@ Then:
 
 \begin{theorem}[Centralized benchmark with unpriced latency ($\tilde c_\Theta = 0$)]
 \label{thm:lowlat-opt}
-In \path{ModalControl.lean} (\lean{multi\_lowlatency\_optimal},
+In \path{ModalControl.lean} (\lean{multi\_lowlatency\_minimizes},
 \lean{multi\_lowlatency\_unique\_ae}), under the same shared-filtration
 hypotheses with $\tilde c_\Theta = 0$ and $\tilde c_S = \mathrm{weight}(g_{\mathrm{diff}})$,
 $g_{\mathrm{diff}} \in (0, 1)$, the fixed-mean-pace controller
@@ -513,7 +513,7 @@ $r$ chooses $u_{r,k}$ using only its local filtration $(\mathcal{F}_{r,k})$.
 \begin{theorem}[Decentralized star minimizer under uncorrelated errors]
 \label{thm:star-weight}
 In \path{ModalControl.lean} (\lean{decentralized\_star\_cost\_eq} and
-\lean{decentralized\_star\_uncorrelated\_optimal}), assume:
+\lean{decentralized\_star\_uncorrelated\_minimizes}), assume:
 \begin{itemize}
 \item $R > 0$, and $g_{\mathrm{indep}} \in (0, 1)$ satisfies
   $\mathrm{weight}(g_{\mathrm{indep}}) = \frac{R-1}{R}\tilde c_S + \tilde c_\Theta$,
@@ -794,7 +794,7 @@ In \path{Estimation.lean}, for any two vertices $i, j \in V$:
   $a \in E$, $\hat\theta_f = \sum_{a \in E} f_a y_a$ recovers
   $\phi(j) - \phi(i)$ for all clock vectors $\phi$ if and only if $f$ is a unit
   $i \to j$ flow: $\operatorname{div}_G(f) = \mathbf{1}_j - \mathbf{1}_i$.
-\item (\lean{thomson\_blue\_optimal}, \cite{doyle1984,barooah2007,giridhar2006})
+\item (\lean{thomson\_blue\_least\_variance}, \cite{doyle1984,barooah2007,giridhar2006})
   Let $\psi : V \to \R$ solve $L_G \psi = \mathbf{1}_j - \mathbf{1}_i$ where
   $B$ is the edge-vertex incidence matrix,
   $W = \operatorname{diag}(\sigma_a^{-2})$, and $L_G = B^\top W B$, and set
@@ -1677,7 +1677,7 @@ implementation:
   window, closeness of the fixed-point Kalman recursion to real-valued
   filtering, or finite-precision error bounds comparing integer
   $\mathrm{LDL}^\top$ against real-valued
-  \lean{Analysis.\allowbreak Estimation.\allowbreak thomson\_blue\_optimal} on
+  \lean{Analysis.\allowbreak Estimation.\allowbreak thomson\_blue\_least\_variance} on
   multi-peer graphs.
 \item \emph{Nonzero clock noise in \lean{SecondOrderMoments}.} The witness
   \lean{SecondOrderMoments.\allowbreak example\_holds} currently gives zero

@@ -10,11 +10,11 @@ public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTies
 
 /-!
-# The baseline is optimal among solutions through the sender
+# A bound for the baseline against solutions through the sender
 
 In the noiseless members of the generative model, with any number of hosts
 and speakers, the baseline's expected cost exceeds that of no compared star
-solution by more than a known margin (`optimalWithin`). A star solution is
+solution by more than a known margin (`within_starMargin`). A star solution is
 one whose hosts exchange messages only with the sender. The theorem is
 stated for every member of the model: for every other member its margin is
 `⊤`, and it says nothing about them.
@@ -121,7 +121,7 @@ sender and the speaker's host. -/
 def Member.roundTripSum (f : Member H R) (m : GenerativeWorld H R) : ℝ :=
   ∑ r : Fin R, f.roundTrip m.sender (m.host r)
 
-/-- The margin within which the baseline is optimal among solutions through
+/-- The margin of the bound for the baseline against solutions through
 the sender: the sum of the weights of synchronization and of tracking, times
 `ρ ^ 3 / (4 * Θ)`, where `ρ` is `f.roundTripSum m` and `Θ` is the bound of
 the clock offsets. -/
@@ -436,7 +436,7 @@ theorem starSolutions (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠
     exact ⟨N, fun n hn r => by rw [hN n hn r]; rfl⟩)
 
 open Classical in
-/-- **The baseline is optimal among solutions through the sender, within a
+/-- **The baseline against solutions through the sender, within a
 known margin.** Consider a generative model in which no speaker is on the
 sender's host, and weights with no weight on latency or roughness. Let the
 baseline be configured for the model. In every random world of every
@@ -445,7 +445,7 @@ speakers, the baseline's expected cost exceeds that of no star solution
 compared at that member by more than `starMargin`. The statement is about
 every member of the model: for every other member the margin is `⊤`, and the
 theorem says nothing about it. -/
-theorem optimalWithin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
+theorem within_starMargin (p : Params H) (hp : p.Fits m) (hnos : ∀ r, m.host r ≠ m.sender)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (hcl : c.latency = 0)
     (hcr : c.roughness = 0) (hR : 0 < R) :
     m.OptimalWithin (fun f => m.StarSolutions f lookahead c) lookahead c
@@ -550,11 +550,11 @@ private def exampleParams : Params (Fin 3) where
   period := 1
   slew := 1 / 2
 
-/-- **The conditions of `optimalWithin` can be met.** There are a generative
+/-- **The conditions of `within_starMargin` can be met.** There are a generative
 model, a configuration of the baseline and a noiseless member within the
 delivery margin, with a random world, that satisfy the conditions of the
 theorem. -/
-theorem optimalWithin_conditions :
+theorem within_starMargin_conditions :
     ∃ (m : GenerativeWorld (Fin 3) 2) (p : Params (Fin 3)) (f : Member (Fin 3) 2),
       p.Fits m ∧ (∀ r, m.host r ≠ m.sender) ∧ (∀ h, h = m.sender ∨ ∃ r, m.host r = h)
         ∧ m.NoiselessWithMargin 1 f

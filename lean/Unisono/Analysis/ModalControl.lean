@@ -61,42 +61,42 @@ orthogonally into two decoupled control problems:
   `gainForWeight c = gainFor (√(√c))` is the unique `g ∈ (0, 1)` satisfying
   `weight g = c`.
 * **Single-mode separation and a.e. uniqueness (`single_cost_split`,
-  `single_law_optimal`, `single_law_unique_ae`).** For a fixed filtration `ℱ`
+  `single_law_minimizes`, `single_law_unique_ae`).** For a fixed filtration `ℱ`
   and martingale one-step expected increments
   (`E[S_{k+2} - S_{k+1} | ℱ_k] = E[S_{k+1} - S_k | ℱ_k]`), applying
   `Unisono.Model.Regulation.law g` to the conditional-mean state minimizes the
   expected finite-horizon cost plus terminal value-to-go among all `ℱ`-adapted
   policies, uniquely almost surely.
-* **Centralized full-information lip-sync benchmark (`multi_lipsync_optimal`,
+* **Centralized full-information lip-sync benchmark (`multi_lipsync_minimizes`,
   `multi_lipsync_unique_ae`, `multi_lipsync_cost_rate`,
   `multi_lipsync_law_cost_le`).** When a central controller observes one shared
   filtration `ℱ` for all speakers and `cΘ = weight gCom`,
   `cS + cΘ = weight gDiff`, the two-gain modal controller `modalRead` is the
-  almost-surely unique finite-horizon minimizer and achieves the optimal
+  almost-surely unique finite-horizon minimizer and achieves the least
   long-run average cost per cycle (with no terminal-value dependence). Because
   decentralized star or delayed-peer policies have strictly less information
   than a shared instantaneous `ℱ`, these theorems serve as centralized lower
-  bounds rather than attainable decentralized optima.
+  bounds rather than costs that a decentralized policy can attain.
 * **Centralized full-information benchmark for `cΘ = 0`
-  (`multi_lowlatency_optimal`, `multi_lowlatency_unique_ae`).** When `cΘ = 0`
+  (`multi_lowlatency_minimizes`, `multi_lowlatency_unique_ae`).** When `cΘ = 0`
   and latency/missed-sample costs are omitted (`multiCycleCost cS 0`),
   `consensusRead` holds the common-mode pace constant and applies `law gDiff`
   to the differential mode. Because `multiCycleCost cS 0` does not penalize
-  mean latency or missed samples, holding the mean pace constant is trivially
-  optimal for that objective, but allows unbounded mean latency drift under
+  mean latency or missed samples, holding the mean pace constant trivially
+  minimizes that objective, but allows unbounded mean latency drift under
   clock drift in the full specification; a practical low-latency controller
   must add a small common-mode loop (`0 < gCom ≪ gDiff`) to hold the playout
   margin.
 * **Decentralized pure-star decomposition (`symmetric_star_cost_split`,
-  `decentralized_star_cost_eq`, `decentralized_star_uncorrelated_optimal`).**
+  `decentralized_star_cost_eq`, `decentralized_star_uncorrelated_minimizes`).**
   Splitting receiver errors and pace changes into a shared common component
   (e.g., sender-clock wander through a shared filter) and pairwise uncorrelated
   private components shows that the common component carries weight `cΘ` while
   the private components carry weight `((R - 1) / R) * cS + cΘ`. This is a
-  cost identity, not a minimization: `decentralized_star_uncorrelated_optimal`
-  proves optimality of `gainForWeight (((R - 1) / R) * cS + cΘ)` only when
+  cost identity, not a minimization: `decentralized_star_uncorrelated_minimizes`
+  proves that `gainForWeight (((R - 1) / R) * cS + cΘ)` is the minimizing gain only when
   cross-receiver errors remain pairwise uncorrelated (zero common-mode error).
-  With noisy measurements and a Kalman filter in the loop, the optimal shared
+  With noisy measurements and a Kalman filter in the loop, the minimizing shared
   star gain can fall below `gainForWeight cΘ`.
 * **One-hot disturbance variance (`consensus_one_hot_var`).** Projecting a
   single-speaker step `Δ` onto the zero-mean subspace yields squared norm
@@ -105,7 +105,7 @@ orthogonally into two decoupled control problems:
 ## Scope and modeling assumptions
 
 These theorems assume:
-1. A fixed filtration `ℱ` (optimality is relative to what `ℱ` observes, not
+1. A fixed filtration `ℱ` (the minimum is relative to what `ℱ` observes, not
    over probing schedules or lossy front ends that shrink `ℱ`).
 2. Unconstrained real-valued `read r k` in frames per cycle; per-sample
    continuity (`0 < speed < 2` frames per output sample, which implies—though
@@ -205,7 +205,7 @@ def lawRun (g : ℝ) (start pace : Ω → ℝ) : ℕ → Ω → ℝ × ℝ
     let r := x.2 + law g ((μ[S k | ℱ k]) ω - x.1, x.2 - advance μ ℱ S k ω)
     (x.1 + r, r)
 
-/-- Frames read during cycle `k` under the optimal feedback law `law g`. -/
+/-- Frames read during cycle `k` under the feedback law `law g`. -/
 def lawRead (g : ℝ) (start pace : Ω → ℝ) (k : ℕ) (ω : Ω) : ℝ :=
   (lawRun μ ℱ S g start pace (k + 1) ω).2
 
@@ -400,10 +400,10 @@ theorem known_lawRead [IsFiniteMeasure μ] (hS : ∀ k, MemLp (S k) 2 μ) {g : �
   intro k
   exact hstep k (hrun k).1 (hrun k).2
 
-/-- **Single-channel optimality of `lawRead`.** Among all `ℱ`-adapted policies
+/-- **`lawRead` minimizes the single-channel cost.** Among all `ℱ`-adapted policies
 starting from `(start, pace)`, `lawRead` minimizes expected `n`-cycle cost plus
 expected terminal value-to-go. -/
-theorem single_law_optimal {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) [IsProbabilityMeasure μ]
+theorem single_law_minimizes {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) [IsProbabilityMeasure μ]
     (hS : ∀ k, MemLp (S k) 2 μ)
     (hstay : ∀ k, μ[S (k + 2) - S (k + 1) | ℱ k] =ᵐ[μ] μ[S (k + 1) - S k | ℱ k])
     {start pace : Ω → ℝ} {read : ℕ → Ω → ℝ} (hstart : Known ℱ μ 0 start)
@@ -434,7 +434,7 @@ theorem single_law_optimal {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) [IsProbabilityM
   linarith
 
 /-- **Single-channel almost-sure uniqueness of `lawRead`.** Any `ℱ`-adapted
-policy achieving equality in `single_law_optimal` over horizon `n` coincides
+policy achieving equality in `single_law_minimizes` over horizon `n` coincides
 almost surely with `lawRead` at every cycle `k < n`. -/
 theorem single_law_unique_ae {g : ℝ} (hg0 : 0 < g) (hg1 : g < 1) [IsProbabilityMeasure μ]
     (hS : ∀ k, MemLp (S k) 2 μ)
@@ -944,7 +944,7 @@ expected `n`-cycle cost plus expected modal terminal value-to-go among all
 `ℱ`-adapted multi-speaker policies. Because decentralized star or delayed-peer
 policies use strictly less information than a shared instantaneous `ℱ`, this
 provides a centralized lower bound. -/
-theorem multi_lipsync_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
+theorem multi_lipsync_minimizes [IsProbabilityMeasure μ] (hR : 0 < R)
     {gCom gDiff cS cΘ : ℝ} (hgC0 : 0 < gCom) (hgC1 : gCom < 1)
     (hgD0 : 0 < gDiff) (hgD1 : gDiff < 1)
     (hcΘ : cΘ = weight gCom) (hcSD : cS + cΘ = weight gDiff)
@@ -1005,7 +1005,7 @@ theorem multi_lipsync_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
       diffOf (fun i => opt i j) r ω
         = lawRead μ ℱ (Sd r) gDiff (diffOf start r) (diffOf pace r) j ω :=
     fun r => ae_all_iff.mpr fun j => (hmodes j).2 r
-  have hC_opt := single_law_optimal hgC0 hgC1 hSc hstayC hstartC hpaceC
+  have hC_opt := single_law_minimizes hgC0 hgC1 hSc hstayC hstartC hpaceC
     (fun k => known_commonOf fun r => hread r k) n
   have hC_eq :
       (∑ k ∈ Finset.range n, ∫ ω, (weight gCom * (Sc k ω - position (commonOf start)
@@ -1064,7 +1064,7 @@ theorem multi_lipsync_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
         filter_upwards [hp, hpr] with ω ep epr
         simp only [state, ep, epr]
     rw [hD_eq]
-    exact single_law_optimal hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
+    exact single_law_minimizes hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
       (fun k => known_diffOf (fun i => hread i k) r) n
   have hD_sum :
       ((∑ r : Fin R, ∑ k ∈ Finset.range n, ∫ ω, (weight gDiff * (Sd r k ω - position (diffOf start r)
@@ -1101,7 +1101,7 @@ theorem multi_lipsync_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
 
 /-- **Almost-sure uniqueness of `modalRead` in the centralized lip-sync
 benchmark.** Any `ℱ`-adapted multi-speaker policy achieving equality in
-`multi_lipsync_optimal` over horizon `n` coincides almost surely with
+`multi_lipsync_minimizes` over horizon `n` coincides almost surely with
 `modalRead` for every speaker `r` and cycle `k < n`. -/
 theorem multi_lipsync_unique_ae [IsProbabilityMeasure μ] (hR : 0 < R)
     {gCom gDiff cS cΘ : ℝ} (hgC0 : 0 < gCom) (hgC1 : gCom < 1)
@@ -1192,11 +1192,11 @@ theorem multi_lipsync_unique_ae [IsProbabilityMeasure μ] (hR : 0 < R)
       filter_upwards [hp, hpr] with ω ep epr; simp only [state, ep, epr]
   have hJc_le : Jc (lawRead μ ℱ Sc gCom (commonOf start) (commonOf pace))
       ≤ Jc (fun j => commonOf fun i => read i j) :=
-    single_law_optimal hgC0 hgC1 hSc hstayC hstartC hpaceC
+    single_law_minimizes hgC0 hgC1 hSc hstayC hstartC hpaceC
       (fun k => known_commonOf fun r => hread r k) n
   have hJd_le : ∀ r, Jd r (lawRead μ ℱ (Sd r) gDiff (diffOf start r) (diffOf pace r))
       ≤ Jd r (fun j => diffOf (fun i => read i j) r) := fun r =>
-    single_law_optimal hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
+    single_law_minimizes hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
       (fun k => known_diffOf (fun i => hread i k) r) n
   have htot : Jc (fun j => commonOf fun i => read i j)
         + (∑ r : Fin R, Jd r (fun j => diffOf (fun i => read i j) r)) / R
@@ -1744,11 +1744,11 @@ When tracking weight is zero (`cΘ = 0`) and latency and missed-sample costs are
 omitted, `consensusRead` is causal (`Known`), keeps the common-mode pace
 constant, and minimizes expected `multiCycleCost cS 0` plus differential
 terminal value-to-go among all `ℱ`-adapted multi-speaker policies. Note:
-holding the common-mode pace fixed is trivially optimal only because
+holding the common-mode pace fixed is trivially a minimizer only because
 `multiCycleCost cS 0` does not penalize mean latency or missed samples; in the
 full specification, clock drift causes unbounded mean latency drift unless a
 small common-mode loop is added. -/
-theorem multi_lowlatency_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
+theorem multi_lowlatency_minimizes [IsProbabilityMeasure μ] (hR : 0 < R)
     {gDiff cS : ℝ} (hgD0 : 0 < gDiff) (hgD1 : gDiff < 1) (hcS : cS = weight gDiff)
     {S : Fin R → ℕ → Ω → ℝ} (hS : ∀ r k, MemLp (S r k) 2 μ)
     (hstay : ∀ r k, μ[S r (k + 2) - S r (k + 1) | ℱ k] =ᵐ[μ] μ[S r (k + 1) - S r k | ℱ k])
@@ -1878,7 +1878,7 @@ theorem multi_lowlatency_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
         filter_upwards [hp, hpr] with ω ep epr
         simp only [state, ep, epr]
     rw [hD_eq]
-    exact single_law_optimal hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
+    exact single_law_minimizes hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
       (fun k => known_diffOf (fun i => hread i k) r) n
   have hD_sum :
       ((∑ r : Fin R, ∑ k ∈ Finset.range n, ∫ ω, (weight gDiff * (Sd r k ω - position (diffOf start r)
@@ -2002,7 +2002,7 @@ theorem multi_lowlatency_unique_ae [IsProbabilityMeasure μ] (hR : 0 < R)
       filter_upwards [hp, hpr] with ω ep epr; simp only [state, ep, epr]
   have hJd_le : ∀ r, Jd r (lawRead μ ℱ (Sd r) gDiff (diffOf start r) (diffOf pace r))
       ≤ Jd r (fun j => diffOf (fun i => read i j) r) := fun r =>
-    single_law_optimal hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
+    single_law_minimizes hgD0 hgD1 (hSd r) (hstayD r) (hstartD r) (hpaceD r)
       (fun k => known_diffOf (fun i => hread i k) r) n
   have hC_nonneg : 0 ≤ ∑ k ∈ Finset.range n,
       ∫ ω, paceChange (commonOf pace) (fun j => commonOf fun i => read i j) k ω ^ 2 ∂μ :=
@@ -2162,7 +2162,7 @@ cleanly into:
 This is a cost identity, not a minimization. Under a wandering sender with
 noisy measurements and a Kalman filter in the loop, increasing sender wander
 raises each receiver's Kalman gain and injects more private measurement noise
-(charged at `((R - 1) / R) * cS + cΘ`), which can push the optimal shared
+(charged at `((R - 1) / R) * cS + cΘ`), which can push the minimizing shared
 scalar gain below `gainForWeight cΘ`. -/
 theorem symmetric_star_cost_split (hR : 0 < R) (cS cΘ : ℝ)
     {eCom wCom : Ω → ℝ} {ePriv wPriv : Fin R → Ω → ℝ}
@@ -2241,7 +2241,7 @@ theorem symmetric_star_cost_split (hR : 0 < R) (cS cΘ : ℝ)
     hsum_orth wCom wPriv hwC hwP hwCP]
   ring
 
-/-- **Decentralized star optimality when cross-receiver tracking errors remain
+/-- **The decentralized star minimizer when cross-receiver tracking errors remain
 uncorrelated (zero common-mode wander).** Suppose each receiver `r` has its own
 local filtration `ℱ r` and `weight gStar = ((R - 1) / R) * cS + cΘ`. Among all
 decentralized policies `(read r)` adapted to `(ℱ r)` whose tracking errors are
@@ -2249,7 +2249,7 @@ pairwise uncorrelated across `r ≠ s` at every cycle `k < n` (as holds when the
 sender's clock does not wander and receivers have independent observations),
 running `lawRead` with gain `gStar` on each receiver's own filtration minimizes
 the expected `n`-cycle multi-speaker cost plus averaged terminal value-to-go. -/
-theorem decentralized_star_uncorrelated_optimal [IsProbabilityMeasure μ] (hR : 0 < R)
+theorem decentralized_star_uncorrelated_minimizes [IsProbabilityMeasure μ] (hR : 0 < R)
     {gStar cS cΘ : ℝ} (hg0 : 0 < gStar) (hg1 : gStar < 1)
     (hwStar : ((R : ℝ) - 1) / R * cS + cΘ = weight gStar)
     (ℱ : Fin R → Filtration ℕ m0)
@@ -2332,7 +2332,7 @@ theorem decentralized_star_uncorrelated_optimal [IsProbabilityMeasure μ] (hR : 
   apply div_le_div_of_nonneg_right _ hRpos.le
   rw [← Finset.sum_add_distrib, ← Finset.sum_add_distrib]
   refine Finset.sum_le_sum fun r _ => ?_
-  exact single_law_optimal hg0 hg1 (hS r) (hstay r) (hstart r) (hpace r) (hread r) n
+  exact single_law_minimizes hg0 hg1 (hS r) (hstay r) (hstart r) (hpace r) (hread r) n
 
 /-- **One-hot disturbance split onto the zero-mean subspace.** When one
 speaker `r₀` incurs a step `Δ` (and all other speakers incur `0`), subtracting

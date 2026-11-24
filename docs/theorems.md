@@ -182,18 +182,22 @@ at a member says nothing about that member. A statement about
 `GenerativeWorld` is always about every member
 (`GenerativeWorld.OptimalWithin`), so a statement that covers only some
 members shows the margin `⊤` for the others.
-One statement of optimality is proved: in the noiseless members of
-`GenerativeWorld`, the baseline is optimal among the compared star solutions
-within a known margin (`Solutions.FixedDelay.optimalWithin`). A star
-solution is one whose hosts exchange messages only with the sender. The
-statement does not compare solutions that use links between receiving
-hosts, and it does not cover members with pauses or clock wander.
+No solution is proved optimal. One bound of this form is proved
+(`Solutions.FixedDelay.within_starMargin`): in the noiseless members of
+`GenerativeWorld`, which are the members with every disturbance switched
+off, the baseline's expected cost exceeds that of no compared solution
+through the sender by more than a known margin. A solution through the
+sender (a star solution) is one whose hosts exchange messages only with the
+sender. In every other member the margin of the statement is `⊤`, so it says
+nothing there, and it does not compare solutions that use links between
+receiving hosts. By `PRINCIPLES.md` this does not make the baseline
+optimal.
 
 | Theorem | What it says |
 |---|---|
 | `Spec.OptimalWithin.expectedCost_eq` | Two solutions that are both optimal with no margin have the same expected cost in every random world of every member. |
 | `Spec.measurable_shiftCost`, `cond_volume_Icc_compl_le`, `GenerativeWorld.Draw.measurable_split`, `Draw.measurable_asymmetry`, `abs_asymmetry_le`, `reflectScale_mul`, `reflectShift_of_mem`, `measure_reflect_out_le`, `lintegral_asymmetry_le` | The asymmetry of a host in a draw is how far the least delay from the sender to it exceeds half the least round-trip time between the two; its size is at most half that round-trip time. The reflection moves the offset of a receiving host's clock out of the range of the offsets with a probability of at most the least round-trip time between the sender and the host divided by the bound of the offsets. The mean, over the outcomes of the concrete random world, of the shift cost of the asymmetries of the speakers' hosts exceeds `starLowerBound` by at most `starMargin`. |
-| `Solutions.FixedDelay.asymmetry_idealWorld`, `margin_idealWorld`, `noCollision_canonicalWorld`, `ae_idealWorld`, `ae_cost_eq`, `starSolutions`, `optimalWithin`, `optimalWithin_conditions` | Consider a generative model in which no speaker is on the sender's host, weights with no weight on latency or roughness, and the baseline configured for the model (`Params.Fits`). Take the noiseless members in which the target latency exceeds the delivery margin of every speaker (`NoiselessWithMargin`). In almost every outcome the baseline's cost is the shift cost of the asymmetries of the speakers' hosts. The baseline is a compared star solution (`GenerativeWorld.StarSolutions`). The theorem is stated for every member of the model: for these members, with any number of hosts and speakers, the baseline's expected cost exceeds that of no star solution compared at the member by more than `starMargin`, and for every other member its margin is `⊤`. `starMargin` is the sum of the weights of synchronization and tracking times `ρ ^ 3 / (4 * Θ)`, where `ρ` is the sum over the speakers of the least round-trip time between the sender and the speaker's host and `Θ` is the bound of the clock offsets. The conditions can be met: a model with three hosts and two speakers, a configuration of the baseline and a noiseless member with a random world satisfy them. |
+| `Solutions.FixedDelay.asymmetry_idealWorld`, `margin_idealWorld`, `noCollision_canonicalWorld`, `ae_idealWorld`, `ae_cost_eq`, `starSolutions`, `within_starMargin`, `within_starMargin_conditions` | Consider a generative model in which no speaker is on the sender's host, weights with no weight on latency or roughness, and the baseline configured for the model (`Params.Fits`). Take the noiseless members in which the target latency exceeds the delivery margin of every speaker (`NoiselessWithMargin`). In almost every outcome the baseline's cost is the shift cost of the asymmetries of the speakers' hosts. The baseline is a compared star solution (`GenerativeWorld.StarSolutions`). The theorem is stated for every member of the model: for these members, with any number of hosts and speakers, the baseline's expected cost exceeds that of no star solution compared at the member by more than `starMargin`, and for every other member its margin is `⊤`. `starMargin` is the sum of the weights of synchronization and tracking times `ρ ^ 3 / (4 * Θ)`, where `ρ` is the sum over the speakers of the least round-trip time between the sender and the speaker's host and `Θ` is the bound of the clock offsets. The conditions can be met: a model with three hosts and two speakers, a configuration of the baseline and a noiseless member with a random world satisfy them. |
 
 ## 2. Supplementary analytical results
 
@@ -228,10 +232,10 @@ per-cycle model.
 | Theorem | What it says |
 |---|---|
 | `Analysis.weight_gainForWeight`, `gainForWeight_unique` | Exact inversion of `Regulation.weight` on `(0, 1)`: `gainForWeight c = gainFor (c^{1/4})` is the unique gain with position weight `c`. |
-| `Analysis.single_cost_split`, `single_law_optimal`, `single_law_unique_ae` | Under a fixed filtration `ℱ` and martingale expected increments, applying `Regulation.law g` to the conditional-mean state uniquely (almost everywhere, a.e.) minimizes finite-horizon expected per-cycle quadratic cost plus terminal value. |
-| `Analysis.multiCycleCost_modal_split`, `multi_lipsync_optimal`, `multi_lipsync_unique_ae`, `multi_lipsync_cost_rate`, `multi_lipsync_law_cost_le` | Centralized full-information lip-sync benchmark on `multiCycleCost`: orthogonal modal decomposition into common mode (tracking weight `cΘ`) and differential mode (weight `cS + cΘ`, where `cS` is the synchronization weight), with two-gain `modalRead` as the a.e. unique finite-horizon and long-run minimizer. |
-| `Analysis.multi_lowlatency_optimal`, `multi_lowlatency_unique_ae` | Centralized `multiCycleCost` benchmark when tracking weight `cΘ = 0` and mean-latency/missed-sample costs are omitted: `consensusRead` holds mean pace constant and applies `law gDiff` (with differential-mode gain `gDiff`) to differential mode (requires an additional small common-mode loop in practice to prevent drift). |
-| `Analysis.decentralized_star_cost_eq`, `symmetric_star_cost_split`, `decentralized_star_uncorrelated_optimal`, `consensus_one_hot_var` | `multiCycleCost` decomposition for symmetric pure-star policies across `R` speakers into shared common vs. private uncorrelated components (weighting private errors by `((R - 1) / R) cS + cΘ`), minimization of `multiCycleCost` when cross-receiver errors are uncorrelated, and zero-mean projection norm `((R - 1) / R) Δ²` of a single-speaker step `Δ`. |
+| `Analysis.single_cost_split`, `single_law_minimizes`, `single_law_unique_ae` | Under a fixed filtration `ℱ` and martingale expected increments, applying `Regulation.law g` to the conditional-mean state uniquely (almost everywhere, a.e.) minimizes finite-horizon expected per-cycle quadratic cost plus terminal value. |
+| `Analysis.multiCycleCost_modal_split`, `multi_lipsync_minimizes`, `multi_lipsync_unique_ae`, `multi_lipsync_cost_rate`, `multi_lipsync_law_cost_le` | Centralized full-information lip-sync benchmark on `multiCycleCost`: orthogonal modal decomposition into common mode (tracking weight `cΘ`) and differential mode (weight `cS + cΘ`, where `cS` is the synchronization weight), with two-gain `modalRead` as the a.e. unique finite-horizon and long-run minimizer. |
+| `Analysis.multi_lowlatency_minimizes`, `multi_lowlatency_unique_ae` | Centralized `multiCycleCost` benchmark when tracking weight `cΘ = 0` and mean-latency/missed-sample costs are omitted: `consensusRead` holds mean pace constant and applies `law gDiff` (with differential-mode gain `gDiff`) to differential mode (requires an additional small common-mode loop in practice to prevent drift). |
+| `Analysis.decentralized_star_cost_eq`, `symmetric_star_cost_split`, `decentralized_star_uncorrelated_minimizes`, `consensus_one_hot_var` | `multiCycleCost` decomposition for symmetric pure-star policies across `R` speakers into shared common vs. private uncorrelated components (weighting private errors by `((R - 1) / R) cS + cΘ`), minimization of `multiCycleCost` when cross-receiver errors are uncorrelated, and zero-mean projection norm `((R - 1) / R) Δ²` of a single-speaker step `Δ`. |
 
 ### 2.3 Spectral factorization and steady-state Riccati algebra (`Analysis.Spectral`)
 
@@ -249,14 +253,14 @@ identities. `clockProcessCov_nonneg` proves positive semidefiniteness of the
 ### 2.4 Star and peer graph clock estimation (`Analysis.Estimation`)
 
 *Boundary:* static linear algebraic and square-integrable (`L²`) random-variable
-identities on fixed measurement graphs. `thomson_blue_optimal` assumes
+identities on fixed measurement graphs. `thomson_blue_least_variance` assumes
 zero-mean, mutually uncorrelated edge errors (shared wireless media can
 correlate links, and static asymmetries induce bias `graph_estimator_bias`).
 
 | Theorem | What it says |
 |---|---|
 | `Analysis.star_pair_error_same`, `star_pair_error_heterogeneous`, `disciplined_schedule_error`, `residual_variance_sub`, `residual_variance_L2` | Sender-clock wander cancels across receivers sharing one linear filter, leaks under heterogeneous filters, is reduced by an index-aligned common schedule correction, and inverse-variance residuals have strictly smaller second moment `σ_r² - V_bc` (raw error variance `σ_r²` minus broadcast variance `V_bc`) under pairwise-uncorrelated `L²` errors. |
-| `Analysis.linear_unbiased_iff_unitFlow`, `graph_estimator_bias`, `thomson_blue_optimal` | On any directed measurement graph, linear unbiasedness for phase difference `φ(t) - φ(s)` between nodes `s` and `t` holds if and only if weights `f_e` form a unit `s → t` flow; static edge biases `α_e` yield exact bias `∑ f_e α_e`; the electrical (Laplacian) flow is the unique best linear unbiased estimator (BLUE), minimizing `∑ var_e f_e²` (for edge error variances `var_e`) and attaining the effective resistance. |
+| `Analysis.linear_unbiased_iff_unitFlow`, `graph_estimator_bias`, `thomson_blue_least_variance` | On any directed measurement graph, linear unbiasedness for phase difference `φ(t) - φ(s)` between nodes `s` and `t` holds if and only if weights `f_e` form a unit `s → t` flow; static edge biases `α_e` yield exact bias `∑ f_e α_e`; the electrical (Laplacian) flow is the unique best linear unbiased estimator (BLUE), minimizing `∑ var_e f_e²` (for edge error variances `var_e`) and attaining the effective resistance. |
 | `Analysis.star_effective_resistance`, `complete_graph_effective_resistance`, `complete_graph_equal_budget`, `wifi_sender_wired_peers_resistance`, `triangle_blue_bias` | Closed-form effective resistance on star graphs (`v₁ + v₂` for star edge variances `v₁, v₂`), complete `N`-node peer graphs `K_N` (`2 v / N` at common edge variance `v`, or `v` at equal total probe budget), and two-speaker wireless-sender/wired-peer triangles (`2 v_W v_P / (2 v_W + v_P)` for wireless variance `v_W` and peer variance `v_P`), plus exact triangle BLUE bias under link asymmetries. |
 
 ### 2.5 Continuous-time Campbell pause margin (`Analysis.Level`)
@@ -443,7 +447,7 @@ rather than a proof about the runtime threads.
      fixed point, and exact single-edge Star recovery
      (`solve_blue_single_edge_star`), but not finite-precision error bounds
      comparing integer `LDL^T` against real-valued
-     `Analysis.Estimation.thomson_blue_optimal` on multi-peer graphs.
+     `Analysis.Estimation.thomson_blue_least_variance` on multi-peer graphs.
 5. **Other core gaps:** `PeerRelay` byte-level round-trip (totality and kind
    separation are proved; round-trip is covered by Rust unit tests and
    `translation-check`), lower-hull fit existence in `Relation`, cycle-step
@@ -462,10 +466,10 @@ rather than a proof about the runtime threads.
    machine-code inspection (`crates/reachable`, `crates/cycle-cost`), and
    container tests against PipeWire and Advanced Linux Sound Architecture
    (ALSA).
-7. **Optimality in expected cost under `GenerativeWorld`:** the baseline is
-   proved optimal within a margin only among star solutions and only in
-   noiseless members (`Solutions.FixedDelay.optimalWithin`). No solution is
-   proved optimal among all solutions. No lower bound on expected cost is
+7. **Optimality in expected cost under `GenerativeWorld`:** no solution is
+   proved optimal. The one bound of that form compares the baseline with
+   solutions through the sender only, and its margin is finite in noiseless
+   members only (`Solutions.FixedDelay.within_starMargin`). No lower bound on expected cost is
    proved for solutions that use links between receiving hosts, and nothing
    is proved about expected cost in members with pauses or clock
    wander. The compared star solutions exclude any solution in whose run two

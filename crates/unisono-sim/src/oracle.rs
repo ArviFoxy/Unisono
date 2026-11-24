@@ -291,7 +291,7 @@ pub fn star_lyapunov_cost(
 /// `Regulation.law` gains `g` in `(0, 1)` minimizing [`star_lyapunov_cost`]
 /// in the per-cycle quadratic model.
 #[must_use]
-pub fn optimal_shared_star_gain(
+pub fn minimizing_shared_star_gain(
     receivers: usize,
     c_sync: f64,
     c_track: f64,
@@ -466,7 +466,7 @@ fn filtered_mode_lyapunov_cost(
 
 /// `[ORACLE / MODEL BENCHMARK]` Configuration for the coupled Kalman-filter
 /// plus `Regulation.law` star Lyapunov model
-/// ([`filtered_star_lyapunov_cost`], [`optimal_filtered_star_gain`]).
+/// ([`filtered_star_lyapunov_cost`], [`minimizing_filtered_star_gain`]).
 ///
 /// Evaluates one specific decentralized star design (steady-state 2-state
 /// Kalman filter followed by `Regulation.law(gain)`) with known true noise
@@ -529,7 +529,7 @@ pub fn filtered_star_lyapunov_cost(cfg: FilteredStarLyapunov, gain: f64) -> f64 
 /// [`filtered_star_lyapunov_cost`] for one specific decentralized filter +
 /// regulator design with known true noise parameters.
 #[must_use]
-pub fn optimal_filtered_star_gain(cfg: FilteredStarLyapunov) -> f64 {
+pub fn minimizing_filtered_star_gain(cfg: FilteredStarLyapunov) -> f64 {
     let phi = 0.5 * (5.0_f64.sqrt() - 1.0);
     let mut lo = (1e-5_f64).ln();
     let mut hi = (0.99_f64).ln();
@@ -871,7 +871,7 @@ mod tests {
         blue_pair_bias, campbell_fraction, click_rate, cycle_clock_innovation_cov,
         cycle_position_weight, decentralized_star_weight, effective_resistance,
         filtered_star_lyapunov_cost, gain_for_weight, hold_margin, hold_margin_with_clicks, law,
-        mode_lyapunov_cost, optimal_filtered_star_gain, optimal_shared_star_gain,
+        minimizing_filtered_star_gain, minimizing_shared_star_gain, mode_lyapunov_cost,
         process_covariance, pure_pause_block_metrics, residual_measurement_variance,
         star_lyapunov_cost, steady_state_kalman_gain,
     };
@@ -902,7 +902,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::too_many_lines)]
-    fn lyapunov_and_optimal_star_gains_match_analytical_benchmarks() {
+    fn lyapunov_and_minimizing_star_gains_match_analytical_benchmarks() {
         assert!((law(0.5, 1.0, 0.0) - (0.25 / 1.5)).abs() < 1e-12);
         let c_pos = cycle_position_weight(1e6, 1.0, 0.01);
         assert!((c_pos - 1e-2).abs() < 1e-15);
@@ -930,11 +930,11 @@ mod tests {
         let g_track = gain_for_weight(c_track);
         let sigma_rx = cycle_clock_innovation_cov(FrequencyNoise::CONSUMER_QUARTZ, dt);
         let zero_cov = [[0.0, 0.0], [0.0, 0.0]];
-        let g0 = optimal_shared_star_gain(receivers, c_sync, c_track, zero_cov, sigma_rx);
+        let g0 = minimizing_shared_star_gain(receivers, c_sync, c_track, zero_cov, sigma_rx);
         assert!((g0 - g_indep).abs() < 1e-4 * g_indep);
 
         let sigma_s = cycle_clock_innovation_cov(FrequencyNoise::WANDERING_QUARTZ, dt);
-        let g_opt = optimal_shared_star_gain(receivers, c_sync, c_track, sigma_s, sigma_rx);
+        let g_opt = minimizing_shared_star_gain(receivers, c_sync, c_track, sigma_s, sigma_rx);
         let j_opt = star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_opt);
         assert!(j_opt < star_lyapunov_cost(receivers, c_sync, c_track, sigma_s, sigma_rx, g_indep));
         // Finite-difference local minimality around `g_opt`.
@@ -954,7 +954,7 @@ mod tests {
         // reproduces `k_ss = P_pred H^T / (P_pred[0][0] + R)`.
         let q1 = process_covariance(total_noise, 1.0);
         // Iterate posterior covariance to fixed point with fixed `k_ss` and verify
-        // the optimal gain for that covariance matches `k_ss`.
+        // the minimizing gain for that covariance matches `k_ss`.
         let mut p = [[meas_var, 0.0], [0.0, 1e-12]];
         for _ in 0..2_000 {
             let p_pred_00 = p[0][0] + 2.0 * p[0][1] + p[1][1] + q1[0][0];
@@ -983,7 +983,7 @@ mod tests {
             cycle: dt,
             meas_stride: 100,
         };
-        let g_filt = optimal_filtered_star_gain(cfg);
+        let g_filt = minimizing_filtered_star_gain(cfg);
         let j_filt = filtered_star_lyapunov_cost(cfg, g_filt);
         assert!(g_filt < g_track);
         assert!(j_filt < filtered_star_lyapunov_cost(cfg, g_track));

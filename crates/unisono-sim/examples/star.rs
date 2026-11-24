@@ -348,7 +348,7 @@ fn print_oracle_benchmarks(smoke: bool) {
             cycle,
             meas_stride: 47,
         };
-        let g_opt = oracle::optimal_filtered_star_gain(cfg);
+        let g_opt = oracle::minimizing_filtered_star_gain(cfg);
         let cost = oracle::filtered_star_lyapunov_cost(cfg, g_opt);
         println!(
             "{name:<34} | {:>7.1} us | {:>10.5} | {:>12.3e}",

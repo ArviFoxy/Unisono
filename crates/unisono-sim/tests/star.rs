@@ -923,7 +923,7 @@ fn cli_prior_variance_floor_and_modal_gain_sweeps_stay_stable() {
 }
 
 #[test]
-fn oracle_analytical_benchmarks_agree_with_closed_form_and_local_optimality() {
+fn oracle_analytical_benchmarks_agree_with_closed_form_and_local_minimality() {
     // [ORACLE / CENTRALIZED BENCHMARK] Graph-BLUE effective resistance on K_3:
     // symmetric variance sigma^2 gives R_eff(1, 2) = 2/3 * sigma^2 vs star 2 * sigma^2 (3x).
     let sigma2 = 1e-10;
@@ -968,7 +968,7 @@ fn oracle_analytical_benchmarks_agree_with_closed_form_and_local_optimality() {
         receiver_noise: FrequencyNoise::CONSUMER_QUARTZ,
         meas_var: 25e-12,
     };
-    let gain = oracle::optimal_filtered_star_gain(model);
+    let gain = oracle::minimizing_filtered_star_gain(model);
     let cost = oracle::filtered_star_lyapunov_cost(model, gain);
     assert!(gain > 0.0 && gain < 1.0 && cost.is_finite() && cost > 0.0);
     assert!(

@@ -262,7 +262,7 @@ private theorem finset_range_sum_eq_list_sum (rs : List device.Reading) (f : dev
     rw [hcongr, hlast, ih]
 
 /-- For any non-empty list of kept reports with positive spread, `beyondZ` is
-the exact integer floor of the least-squares optimal residual line from
+the exact integer floor of the least-squares residual line from
 `Unisono.Model.LineFit` evaluated at `ahead`. -/
 theorem beyondZ_eq_floor_lineFit (rate : Std.U32) (newest : device.Reading)
     (rs : List device.Reading) (ahead : ℤ)
@@ -323,7 +323,7 @@ theorem beyondZ_eq_floor_lineFit (rate : Std.U32) (newest : device.Reading)
   ring
 
 /-- For any kept report list with positive spread, `beyondSlopeQ16Z` is the
-exact integer floor of `2^16 * span` times the least-squares optimal residual
+exact integer floor of `2^16 * span` times the least-squares residual
 slope from `Unisono.Model.LineFit`. -/
 theorem beyondSlopeQ16Z_eq_floor_lineFit (rate : Std.U32) (newest : device.Reading)
     (rs : List device.Reading) (span : ℤ)

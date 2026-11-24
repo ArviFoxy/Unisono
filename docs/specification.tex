@@ -1195,8 +1195,10 @@ $w_M > 0$ or a class of solutions that play every frame.
 
 \subsection{The baseline among solutions through the sender}\label{sec:star-optimal}
 
-One statement of this kind is proved. It concerns the noiseless members of
-the generative world, and it compares the baseline
+One bound of this kind is proved. It does not make the baseline optimal:
+it has a finite margin only in the noiseless members of
+the generative world, which are the members with every disturbance switched
+off, and it compares the baseline
 (\path{docs/fixed-playout-delay.tex}) with the \emph{star solutions}: the
 solutions whose hosts exchange messages only with the sender
 (\lean{Solution.IsStar}).
@@ -1245,8 +1247,8 @@ least once, and have a slew between zero and one. Call a member
 \[
   L^* > \frac{a + 2(m - 1)}{\rho} + \frac{\tau_{h_* h_r}}{2} + \lambda
 \]
-(\lean{NoiselessWithMargin}). Then the baseline is optimal among the
-compared star solutions within the margin
+(\lean{NoiselessWithMargin}). Then the expected cost of the baseline exceeds
+that of no compared star solution by more than
 \[
   \varepsilon(f) =
   \begin{cases}
@@ -1256,12 +1258,14 @@ compared star solutions within the margin
   \end{cases}
   \qquad \tau_\Sigma = \sum_r \tau_{h_* h_r},
 \]
-for any number of hosts and speakers (\lean{optimalWithin} in
-\path{lean/Unisono/Solutions/FixedDelay/Optimal.lean}; the margin is
-\lean{starMargin}). Here $a$ is the resampler's lookahead in frames, $m$
+for any number of hosts and speakers. The theorem is
+\lean{within\_\allowbreak starMargin} in
+\path{lean/Unisono/Solutions/FixedDelay/StarMargin.lean}, and the margin is
+\lean{starMargin}. Here $a$ is the resampler's lookahead in frames, $m$
 the number of frames in a block, $\rho$ the nominal rate, $\lambda$ the
 request lead, and $\theta_{\max}$ the bound of the clock offsets. The
-conditions can be met (\lean{optimalWithin\_conditions}).
+conditions can be met
+(\lean{within\_\allowbreak starMargin\_\allowbreak conditions}).
 \end{theorem}
 
 The proof has three parts.

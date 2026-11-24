@@ -46,7 +46,7 @@ public import Unisono.Solutions.FixedDelay.Exact
 public import Unisono.Solutions.FixedDelay.Latency
 public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Solutions.FixedDelay.NoLoss
-public import Unisono.Solutions.FixedDelay.Optimal
+public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Checks
 public import Unisono.Spec.ExactCost
@@ -1578,13 +1578,13 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.starSolutions
 
-/-- info: 'Unisono.Solutions.FixedDelay.optimalWithin' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.FixedDelay.within_starMargin' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.optimalWithin
+#print axioms Unisono.Solutions.FixedDelay.within_starMargin
 
-/-- info: 'Unisono.Solutions.FixedDelay.optimalWithin_conditions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Solutions.FixedDelay.within_starMargin_conditions' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Solutions.FixedDelay.optimalWithin_conditions
+#print axioms Unisono.Solutions.FixedDelay.within_starMargin_conditions
 
 /-- info: 'Unisono.Spec.State.fields_of_withoutPlays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2584,9 +2584,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Analysis.single_cost_split
 
-/-- info: 'Unisono.Analysis.single_law_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Analysis.single_law_minimizes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Analysis.single_law_optimal
+#print axioms Unisono.Analysis.single_law_minimizes
 
 /-- info: 'Unisono.Analysis.single_law_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2596,9 +2596,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Analysis.multiCycleCost_modal_split
 
-/-- info: 'Unisono.Analysis.multi_lipsync_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Analysis.multi_lipsync_minimizes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Analysis.multi_lipsync_optimal
+#print axioms Unisono.Analysis.multi_lipsync_minimizes
 
 /-- info: 'Unisono.Analysis.multi_lipsync_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2612,9 +2612,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Analysis.multi_lipsync_law_cost_le
 
-/-- info: 'Unisono.Analysis.multi_lowlatency_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Analysis.multi_lowlatency_minimizes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Analysis.multi_lowlatency_optimal
+#print axioms Unisono.Analysis.multi_lowlatency_minimizes
 
 /-- info: 'Unisono.Analysis.multi_lowlatency_unique_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2628,9 +2628,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Analysis.symmetric_star_cost_split
 
-/-- info: 'Unisono.Analysis.decentralized_star_uncorrelated_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Analysis.decentralized_star_uncorrelated_minimizes' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Analysis.decentralized_star_uncorrelated_optimal
+#print axioms Unisono.Analysis.decentralized_star_uncorrelated_minimizes
 
 /-- info: 'Unisono.Analysis.consensus_one_hot_var' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -2704,9 +2704,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Analysis.graph_estimator_bias
 
-/-- info: 'Unisono.Analysis.thomson_blue_optimal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Analysis.thomson_blue_least_variance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Analysis.thomson_blue_optimal
+#print axioms Unisono.Analysis.thomson_blue_least_variance
 
 /-- info: 'Unisono.Analysis.star_effective_resistance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

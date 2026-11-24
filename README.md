@@ -64,10 +64,12 @@ simulation and integration tests (see `PRINCIPLES.md`):
   - A star solution's costs in a world and in the same world with the links
     to and from the sender shifted add up to at least twice the cost of half
     the shift (`lean/Unisono/Spec/StarShift.lean`), for any number of hosts.
-  - The baseline is optimal among star solutions within a known margin
-    (`Unisono.Solutions.FixedDelay.optimalWithin` in
-    `lean/Unisono/Solutions/FixedDelay/Optimal.lean`). A star solution is one
-    whose hosts exchange messages only with the sender. The theorem is
+  - A bound for the baseline against solutions through the sender
+    (`Unisono.Solutions.FixedDelay.within_starMargin` in
+    `lean/Unisono/Solutions/FixedDelay/StarMargin.lean`). It does not make
+    the baseline optimal: its margin is finite only in noiseless members,
+    which are the members with every disturbance switched off. A star
+    solution is one whose hosts exchange messages only with the sender. The theorem is
     stated for every member of `GenerativeWorld`, with the margin `⊤` for
     every member that it does not cover. In every noiseless member within
     the baseline's delivery margin, with any number of hosts and speakers,
@@ -114,8 +116,8 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `Unisono.Spec.Objectives` in any model (including `IdealConstantWorld`,
     `World.WithinBounds`, `StationaryNetworkDisturbances`,
     `SecondOrderMoments`, `StochasticWorld`, and `GenerativeWorld`).
-  - No solution is proved optimal among all solutions under `GenerativeWorld`.
-    The proved optimality compares only solutions whose hosts exchange
+  - No solution is proved optimal under `GenerativeWorld`.
+    The one bound of that form compares only solutions whose hosts exchange
     messages with the sender alone, in noiseless members; with two or more
     receiving hosts, a solution that also uses links between them can do
     better. No lower bound on expected cost is proved for such solutions, or
@@ -247,6 +249,16 @@ Supplementary component and centralized/oracle analyses live in
 `Level.lean`, `ModalControl.lean`, `Spectral.lean`); each states its
 simplified setting explicitly and supplements, rather than replaces, proofs in
 `Unisono.Spec` under the six approved models above.
+
+Some results hold in a sub-case of `GenerativeWorld`. A sub-case is not a
+model of its own, and a result in a sub-case does not make a solution
+optimal.
+
+| Sub-case | What it assumes | File |
+|---|---|---|
+| `GenerativeWorld.Member.Noiseless` | A member in which links and hosts never pause, no clock of a host or of an audio device wanders or has a spread of its mean rate, and the audio devices report exact timestamps: every disturbance is switched off. | `lean/Unisono/Spec/Models/GenerativeNoiseless.lean` |
+| `GenerativeWorld.ConstantRates` | An outcome in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. The clocks may run at different constant rates, and links and hosts may pause. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
+| `GenerativeWorld.ConstantDelays` | `ConstantRates` with no pauses, so that every message takes the least delay of its direction. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 
 ## Layout
 
