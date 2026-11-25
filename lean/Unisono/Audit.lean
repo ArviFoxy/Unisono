@@ -57,6 +57,7 @@ public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Solutions.Controller.Arrived
 public import Unisono.Solutions.Controller.Silent
 public import Unisono.Solutions.Controller.Targets
+public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -4938,6 +4939,30 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.abs_chosen_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.abs_chosen_sub_le
+
+/-- info: 'Unisono.Spec.World.knotLate_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotLate_nonneg
+
+/-- info: 'Unisono.Spec.World.knotInc_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotInc_nonneg
+
+/-- info: 'Unisono.Spec.World.knotLate_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotLate_le
+
+/-- info: 'Unisono.Spec.World.knotTime_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotTime_succ
+
+/-- info: 'Unisono.Spec.World.knotTime_succ_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotTime_succ_sub
+
+/-- info: 'Unisono.Solutions.Controller.timed_chosen_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_chosen_parts
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

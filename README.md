@@ -176,7 +176,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     it leaves plays nothing only when the stream has not yet reached the
     host or a block that the output sample needs arrived after the request
     (`Unisono.Solutions.Controller.followed_silent` in
-    `lean/Unisono/Solutions/Controller/Silent.lean`). No cost of the
+    `lean/Unisono/Solutions/Controller/Silent.lean`). The latency of the
+    position that a host chooses is, in every world, the announced level
+    plus four errors that each have one cause: of the capture schedule, of
+    the delay of the block that the host's estimate rests on, of the host's
+    slope, and of the time at which the host expects the output sample to
+    leave (`Unisono.Solutions.Controller.timed_chosen_parts` in
+    `lean/Unisono/Solutions/Controller/ChosenLatency.lean`). No cost of the
     combined solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
