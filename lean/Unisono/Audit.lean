@@ -91,6 +91,7 @@ public import Unisono.Spec.Models.MeasurableDelay
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
 public import Unisono.Spec.MoreInMessages
+public import Unisono.Spec.NewGround
 public import Unisono.Spec.Optimality
 public import Unisono.Spec.Run
 public import Unisono.Spec.SameMessages
@@ -2135,6 +2136,102 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.lastPlayed_congr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.lastPlayed_congr
+
+/-- info: 'Unisono.Spec.lastPlayed_isSome_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lastPlayed_isSome_of_le
+
+/-- info: 'Unisono.Spec.add_le_lastPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.add_le_lastPlayed
+
+/-- info: 'Unisono.Spec.maxPlayed_succ_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.maxPlayed_succ_some
+
+/-- info: 'Unisono.Spec.maxPlayed_succ_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.maxPlayed_succ_none
+
+/-- info: 'Unisono.Spec.maxPlayed_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.maxPlayed_mono
+
+/-- info: 'Unisono.Spec.le_maxPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_maxPlayed
+
+/-- info: 'Unisono.Spec.maxPlayed_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.maxPlayed_nonneg
+
+/-- info: 'Unisono.Spec.NewGround.playsContinuously' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.NewGround.playsContinuously
+
+/-- info: 'Unisono.Spec.NewGround.covers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.NewGround.covers
+
+/-- info: 'Unisono.Spec.not_covers_of_maxPlayed_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.not_covers_of_maxPlayed_lt
+
+/-- info: 'Unisono.Spec.NewGround.maxPlayed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.NewGround.maxPlayed_eq
+
+/-- info: 'Unisono.Spec.NewGround.add_le_maxPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.NewGround.add_le_maxPlayed
+
+/-- info: 'Unisono.Spec.World.latency_of_newGround' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.latency_of_newGround
+
+/-- info: 'Unisono.Spec.World.le_latency_of_newGround' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.le_latency_of_newGround
+
+/-- info: 'Unisono.Spec.newGroundCount_succ_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newGroundCount_succ_of
+
+/-- info: 'Unisono.Spec.newGroundCount_succ_of_not' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newGroundCount_succ_of_not
+
+/-- info: 'Unisono.Spec.newFrames_succ_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newFrames_succ_of
+
+/-- info: 'Unisono.Spec.newFrames_succ_of_not' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newFrames_succ_of_not
+
+/-- info: 'Unisono.Spec.newGroundCount_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newGroundCount_of_le
+
+/-- info: 'Unisono.Spec.le_floor_of_mem_newFrames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_floor_of_mem_newFrames
+
+/-- info: 'Unisono.Spec.exists_of_mem_newFrames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_of_mem_newFrames
+
+/-- info: 'Unisono.Spec.card_newFrames_succ_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.card_newFrames_succ_of
+
+/-- info: 'Unisono.Spec.newFrames_invariant' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newFrames_invariant
+
+/-- info: 'Unisono.Spec.le_card_newFrames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_card_newFrames
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
