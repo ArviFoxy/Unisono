@@ -30,8 +30,8 @@ output sample.
 * `Solution.followed_sum_missedAt_le`, `Solution.followed_sum_discontinuityAt_le`:
   for `0 ≤ u < 1 ≤ J`, the missed samples and the discontinuities of a
   speaker are bounded by the number of its output samples that play nothing
-  and by the excesses of the steps of the filled-in target
-  (`stepExcess`).
+  and by how far the steps of the filled-in target differ from one frame
+  beyond `u`, summed (`stepOver`).
 -/
 
 @[expose] public noncomputable section
@@ -62,13 +62,12 @@ theorem heldTarget_eq (X : ℕ → Option ℝ) (k : ℕ) :
 
 /-- A step of the filled-in target to an output sample at which the target
 is unknown is regular. -/
-theorem stepExcess_heldTarget_of_none {u J : ℝ} (hu : 0 ≤ u) {X : ℕ → Option ℝ} {k : ℕ}
-    (h : X (k + 1) = none) : stepExcess u J (heldTarget X) k = 0 := by
+theorem stepOver_heldTarget_of_none {u : ℝ} (hu : 0 ≤ u) {X : ℕ → Option ℝ} {k : ℕ}
+    (h : X (k + 1) = none) : stepOver u (heldTarget X) k = 0 := by
   have e : heldTarget X (k + 1) = heldTarget X k + 1 := by simp [heldTarget, h]
-  unfold stepExcess
-  rw [e, ite_eq_right]
-  rw [show heldTarget X k + 1 - heldTarget X k - 1 = 0 by ring, abs_zero]
-  exact not_lt.mpr hu
+  unfold stepOver
+  rw [e, show heldTarget X k + 1 - heldTarget X k - 1 = 0 by ring, abs_zero]
+  exact max_eq_right (by linarith)
 
 variable [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
 
@@ -173,8 +172,8 @@ theorem Solution.followed_progress (u J : ℝ) {r : Fin R}
 of speaker `r`. The missed samples counted at the speaker's output samples
 before `K` are at most `1 + u` times the number of those output samples
 that play nothing, plus `2 * J` times the number of discontinuities before
-`K`, plus twice the sum of the excesses of the steps of the filled-in
-target before `K`. -/
+`K`, plus the sum of `stepOver` of the steps of the filled-in target before
+`K`. -/
 theorem Solution.followed_sum_missedAt_le {u J : ℝ} (hu : 0 ≤ u) (hu1 : u < 1) (hJ : 1 ≤ J)
     {r : Fin R}
     (hprog : ∀ b, ∃ n, earliest ((σ.states w lookahead n).key w)
@@ -184,26 +183,27 @@ theorem Solution.followed_sum_missedAt_le {u J : ℝ} (hu : 0 ≤ u) (hu1 : u < 
           * ∑ k ∈ Finset.range K, (missingAt ((σ.followed u J).plays w lookahead r) k : ℝ)
         + 2 * J * ∑ k ∈ Finset.range K,
             (discontinuityAt ((σ.followed u J).plays w lookahead r) k : ℝ)
-        + 2 * ∑ i ∈ Finset.range K,
-            stepExcess u J (heldTarget (σ.chosen w lookahead r)) i :=
+        + ∑ i ∈ Finset.range K, stepOver u (heldTarget (σ.chosen w lookahead r)) i :=
   (σ.followed_follows w lookahead u J hprog).sum_missedAt_le hu hu1 hJ
     ((σ.followed u J).plays_none_or_chosen w lookahead
       (σ.followed_progress w lookahead u J hprog)) K
 
 /-- **The discontinuities of a speaker of a solution with the follower.**
-In the setting of `Solution.followed_sum_missedAt_le`, the discontinuities
-counted at the speaker's output samples before `K` are at most the number
-of its output samples up to `K` that play nothing, plus the sum of the
-excesses of the steps of the filled-in target before `K`. -/
+For `0 ≤ u < 1` and `u ≤ J`, when the run of `σ` handles every request of
+the device of speaker `r`: `J - u` times the discontinuities counted at the
+speaker's output samples before `K` is at most `J - u` times the number of
+its output samples up to `K` that play nothing, plus the sum of `stepOver`
+of the steps of the filled-in target before `K`. -/
 theorem Solution.followed_sum_discontinuityAt_le {u J : ℝ} (hu : 0 ≤ u) (hu1 : u < 1)
-    (hJ : 1 ≤ J) {r : Fin R}
+    (huJ : u ≤ J) {r : Fin R}
     (hprog : ∀ b, ∃ n, earliest ((σ.states w lookahead n).key w)
       (σ.states w lookahead n).due = some (.asked r b)) (K : ℕ) :
-    ∑ k ∈ Finset.range K, (discontinuityAt ((σ.followed u J).plays w lookahead r) k : ℝ)
-      ≤ ∑ k ∈ Finset.range (K + 1),
+    (J - u) * ∑ k ∈ Finset.range K,
+        (discontinuityAt ((σ.followed u J).plays w lookahead r) k : ℝ)
+      ≤ (J - u) * ∑ k ∈ Finset.range (K + 1),
           (missingAt ((σ.followed u J).plays w lookahead r) k : ℝ)
-        + ∑ i ∈ Finset.range K, stepExcess u J (heldTarget (σ.chosen w lookahead r)) i :=
-  (σ.followed_follows w lookahead u J hprog).sum_discontinuityAt_le hu hu1 hJ
+        + ∑ i ∈ Finset.range K, stepOver u (heldTarget (σ.chosen w lookahead r)) i :=
+  (σ.followed_follows w lookahead u J hprog).sum_discontinuityAt_le hu hu1 huJ
     ((σ.followed u J).plays_none_or_chosen w lookahead
       (σ.followed_progress w lookahead u J hprog)) K
 

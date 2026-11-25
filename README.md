@@ -169,7 +169,8 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Solutions/Controller/Timing.lean`). For any solution
     whose playback follows what it chooses in this way, the missed samples
     and the discontinuities are bounded by the number of output samples
-    that play nothing and by the irregular steps of what it chooses
+    that play nothing and by how far the steps of what it chooses differ
+    from one frame beyond the step bound, summed
     (`Unisono.Spec.Solution.followed_sum_missedAt_le` in
     `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss, an
     output sample of the combined solution whose request is handled before

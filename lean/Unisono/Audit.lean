@@ -4344,17 +4344,17 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.stepped_chosen_succ
 
-/-- info: 'Unisono.Spec.stepExcess_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.stepOver_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.stepExcess_nonneg
+#print axioms Unisono.Spec.stepOver_nonneg
 
-/-- info: 'Unisono.Spec.stepExcess_eq_zero_or' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.followDist_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.stepExcess_eq_zero_or
+#print axioms Unisono.Spec.followDist_nonneg
 
-/-- info: 'Unisono.Spec.abs_le_add_stepExcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.abs_le_add_stepOver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.abs_le_add_stepExcess
+#print axioms Unisono.Spec.abs_le_add_stepOver
 
 /-- info: 'Unisono.Spec.abs_sub_le_sum_steps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4368,9 +4368,33 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Follows.dist_le
 
-/-- info: 'Unisono.Spec.Follows.step_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.Follows.followDist_succ_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.Follows.step_le
+#print axioms Unisono.Spec.Follows.followDist_succ_le
+
+/-- info: 'Unisono.Spec.followDist_of_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followDist_of_some
+
+/-- info: 'Unisono.Spec.followDist_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followDist_of_none
+
+/-- info: 'Unisono.Spec.jumpAt_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.jumpAt_of_none
+
+/-- info: 'Unisono.Spec.jumpAt_of_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.jumpAt_of_some
+
+/-- info: 'Unisono.Spec.Follows.sum_jumpAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.sum_jumpAt_le
+
+/-- info: 'Unisono.Spec.follower_of_played' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.follower_of_played
 
 /-- info: 'Unisono.Spec.missedAt_of_lastPlayed_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4396,9 +4420,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.heldTarget_eq
 
-/-- info: 'Unisono.Spec.stepExcess_heldTarget_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.stepOver_heldTarget_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.stepExcess_heldTarget_of_none
+#print axioms Unisono.Spec.stepOver_heldTarget_of_none
 
 /-- info: 'Unisono.Spec.PlaybackDevice.zero_mem_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
