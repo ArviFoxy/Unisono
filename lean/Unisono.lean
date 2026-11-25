@@ -54,6 +54,7 @@ public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
 public import Unisono.Spec.AccruedLower
 public import Unisono.Spec.AtLatency
+public import Unisono.Spec.BlockCounts
 public import Unisono.Spec.Causality
 public import Unisono.Spec.Checks
 public import Unisono.Spec.EarliestArrival
