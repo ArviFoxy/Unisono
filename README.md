@@ -311,8 +311,18 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Spec/Models/StationaryGaussian.lean`) and that a clock
     whose rate wanders advances without bound almost surely
     (`Unisono.Spec.ae_tendsto_clockAdvance` in
-    `lean/Unisono/Spec/Models/ClockAdvance.lean`). No statement about the
-    cost of a solution is proved under this model.
+    `lean/Unisono/Spec/Models/ClockAdvance.lean`). In one outcome, an
+    outage, a pause of a link and a large jitter each give a stretch during
+    which nothing arrives on the link
+    (`Unisono.Spec.ProposedWorld.Builds.quiet_of_outage`, `quiet_of_linkPause`
+    and `quiet_of_jitter` in `lean/Unisono/Spec/Models/ProposedQuiet.lean`),
+    and such a stretch costs every solution that carries frames only on
+    links from the sender or to the sender missed samples or discontinuities,
+    except for the room that it kept
+    (`Unisono.Spec.Solution.stall_le_of_quiet` in
+    `lean/Unisono/Spec/FrameArrival.lean`, which holds in any world, with
+    loss and with messages that overtake one another). No bound on expected
+    cost is proved under this model.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
@@ -477,8 +487,8 @@ One more model is proposed and under review: `ProposedWorld`
 (`lean/Unisono/Spec/Models/ProposedWorld.lean`), the generative model with a
 jitter of every link, outages and single losses of messages, the kernel's
 stamp of an arrival, clocks whose wander has several parts, and a limit of
-the bandwidth for the compared solutions. It is not an approved model. The
-only result under it is that each of its members has a random world.
+the bandwidth for the compared solutions. It is not an approved model. No
+bound on expected cost is proved under it.
 
 ## Layout
 

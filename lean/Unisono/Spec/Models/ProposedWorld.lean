@@ -11,9 +11,12 @@ public import Mathlib.Probability.ProductMeasure
 # Proposed: the generative model with jitter, loss, kernel stamps and a bandwidth limit
 
 **Status: a proposal under review.** This file replaces nothing in the
-specification until it is reviewed. What is proved under it so far is that
-the model is not empty: every member has a random world
-(`Unisono.Spec.ProposedWorld.exists_holds`).
+specification until it is reviewed. What is proved under it so far: the
+model is not empty, since every member has a random world
+(`Unisono.Spec.ProposedWorld.exists_holds`); and, in one outcome, each
+disturbance of a link gives a stretch during which nothing arrives
+(`Unisono.Spec.ProposedWorld.Builds.quiet_of_jitter` and the theorems beside
+it). No bound on expected cost is proved under it.
 
 In `Unisono.Spec.GenerativeWorld` a message that meets no pause takes
 exactly the least delay of its link, and no message is lost. This file

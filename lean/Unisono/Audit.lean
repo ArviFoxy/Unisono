@@ -145,6 +145,8 @@ public import Unisono.Spec.Models.ClockAdvance
 public import Unisono.Spec.Models.ProposedWorld
 public import Unisono.Spec.Models.ProposedBuild
 public import Unisono.Spec.Models.ProposedExists
+public import Unisono.Spec.Models.ProposedQuiet
+public import Unisono.Spec.FrameArrival
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
 public import Unisono.Spec.Models.GenerativeResamplePauses
@@ -3022,6 +3024,70 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.ProposedWorld.exists_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.ProposedWorld.exists_holds
+
+/-- info: 'Unisono.Spec.Solution.frame_times_of_earliest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.frame_times_of_earliest
+
+/-- info: 'Unisono.Spec.Solution.earliest_le_of_held' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.earliest_le_of_held
+
+/-- info: 'Unisono.Spec.Solution.earliest_lt_asked_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.earliest_lt_asked_of_plays
+
+/-- info: 'Unisono.Spec.CaptureDevice.exists_mem_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.exists_mem_block
+
+/-- info: 'Unisono.Spec.Solution.le_of_plays_before_earliest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.le_of_plays_before_earliest
+
+/-- info: 'Unisono.Spec.Solution.stall_le_of_earliest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stall_le_of_earliest
+
+/-- info: 'Unisono.Spec.le_quietBound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_quietBound
+
+/-- info: 'Unisono.Spec.quietBound_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.quietBound_mono
+
+/-- info: 'Unisono.Spec.le_quietBound_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_quietBound_of_le
+
+/-- info: 'Unisono.Spec.Solution.stall_le_of_quiet' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stall_le_of_quiet
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.le_released' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.le_released
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.least_le_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.least_le_observed
+
+/-- info: 'Unisono.Spec.ProposedWorld.Builds.observed_of_deliver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Builds.observed_of_deliver
+
+/-- info: 'Unisono.Spec.ProposedWorld.Builds.quiet_of_outage' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Builds.quiet_of_outage
+
+/-- info: 'Unisono.Spec.ProposedWorld.Builds.quiet_of_linkPause' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Builds.quiet_of_linkPause
+
+/-- info: 'Unisono.Spec.ProposedWorld.Builds.quiet_of_jitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Builds.quiet_of_jitter
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
