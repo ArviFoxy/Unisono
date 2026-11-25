@@ -38,8 +38,9 @@ of the requests.
   clock, before the request, or the newest arrival if there is none
   (`windowArrivals`); the slope between the newest arrival and the newest one
   that is at least `baseline` older, kept within `slopeBound` of one
-  (`arrivalSlope`); and half of the least round trip of the newest
-  `exchanges` clock exchanges, cut to `tripCap` (`halfTrip`).
+  (`arrivalSlope`); and half of the least round trip of the clock exchanges
+  whose queries the host sent at most `exchangeWindow` before the request,
+  on its own clock, cut to `tripCap` (`recentExchanges`, `halfTrip`).
 * **Two checks before a host plays** (`checkedReading`). The estimate from
   the arrivals is too low by the delay of the least delayed arrival that it
   uses, and the arrivals alone do not show that delay. A block whose
@@ -48,10 +49,9 @@ of the requests.
   and plays nothing otherwise.
   The interval check (`intervalCheck`): a clock exchange holds a reading of
   the sender's clock from after the host sent the query, so it bounds the
-  sender's clock from above. The check asks for an exchange, with a query
-  sent at most `exchangeWindow` before the request, whose bound exceeds the
-  value from the arrivals by at most the round trip in use plus
-  `intervalSlack`.
+  sender's clock from above. The check asks for an exchange among those
+  that the host uses at the request whose bound exceeds the value from the
+  arrivals by at most the round trip in use plus `intervalSlack`.
   The block check (`blockCheck`): for the block whose header covers the
   estimate, the reading at which the block's right end is due, minus the
   input of the block's knot (`knotInput`), lies between `levelLow` and
@@ -100,13 +100,11 @@ structure TimingSettings where
   against a host's clock, and of the ratio of a host's clock to a device's
   clock, as the hosts estimate them. -/
   slopeBound : ℝ
-  /-- The number of clock exchanges from which the least round trip is
-  taken. -/
-  exchanges : ℕ
   /-- The largest round trip that is used. -/
   tripCap : ℝ
   /-- How long before a request, on the host's clock, the query of a clock
-  exchange may have been sent for the exchange to confirm the estimate. -/
+  exchange may have been sent for the exchange to be used: for the least
+  round trip, and to confirm the estimate. -/
   exchangeWindow : ℝ
   /-- By how much the upper bound that a clock exchange gives for the
   sender's clock may exceed the value from the arrivals plus the round trip
@@ -195,13 +193,89 @@ theorem arrivalSlope_mem (t : TimingSettings) (hsb : 0 ≤ t.slopeBound)
     · exact ⟨by linarith, by linarith⟩
   · exact ⟨by linarith, by linarith⟩
 
-/-- Half of the least round trip of the newest `exchanges` clock exchanges
-in a view, cut to between zero and `tripCap`. It is zero while there is no
-exchange. -/
+/-- The clock exchanges that a host uses at a request: those of its view
+whose query it sent at most `exchangeWindow` before the request, on its own
+clock. -/
+def recentExchanges (t : TimingSettings) (view : List (Event H R Payload)) : List Exchange :=
+  match view.getLast? with
+  | some e => (exchangesOf view).filter fun x => decide (e.reading - x.sent ≤ t.exchangeWindow)
+  | none => []
+
+/-- An exchange is used at a request exactly when it is in the view and its
+query was sent at most `exchangeWindow` before the request. -/
+theorem mem_recentExchanges {t : TimingSettings} {view : List (Event H R Payload)}
+    {x : Exchange} :
+    x ∈ recentExchanges t view
+      ↔ ∃ e, view.getLast? = some e ∧ x ∈ exchangesOf view
+        ∧ e.reading - x.sent ≤ t.exchangeWindow := by
+  unfold recentExchanges
+  cases hlast : view.getLast? with
+  | none => simp
+  | some e => simp [List.mem_filter]
+
+/-- Half of the least round trip of the clock exchanges that a host uses at
+a request (`recentExchanges`), cut to between zero and `tripCap`. It is zero
+while there is no such exchange. -/
 def halfTrip (t : TimingSettings) (view : List (Event H R Payload)) : ℝ :=
-  match (((exchangesOf view).reverse.take t.exchanges).map Exchange.roundTrip).min? with
+  match ((recentExchanges t view).map Exchange.roundTrip).min? with
   | some ρ => clampTo 0 t.tripCap ρ / 2
   | none => 0
+
+/-- Half of the round trip in use is at least zero and at most half of
+`tripCap`. -/
+theorem halfTrip_mem (t : TimingSettings) (hcap : 0 ≤ t.tripCap)
+    (view : List (Event H R Payload)) :
+    halfTrip t view ∈ Set.Icc 0 (t.tripCap / 2) := by
+  unfold halfTrip
+  split
+  · rename_i ρ _
+    obtain ⟨h1, h2⟩ := clampTo_mem hcap ρ
+    exact ⟨by linarith, by linarith⟩
+  · exact ⟨le_rfl, by linarith⟩
+
+/-- **The round trip in use is at most that of each exchange that the host
+uses**, when that round trip is not negative. -/
+theorem halfTrip_le_of_mem (t : TimingSettings) {view : List (Event H R Payload)}
+    {x : Exchange} (hx : x ∈ recentExchanges t view) (hx0 : 0 ≤ x.roundTrip) :
+    halfTrip t view ≤ x.roundTrip / 2 := by
+  unfold halfTrip
+  have hmem : x.roundTrip ∈ (recentExchanges t view).map Exchange.roundTrip :=
+    List.mem_map_of_mem hx
+  cases hmin : ((recentExchanges t view).map Exchange.roundTrip).min? with
+  | none =>
+    rw [List.min?_eq_none_iff] at hmin
+    rw [hmin] at hmem
+    simp at hmem
+  | some ρ =>
+    have hle : ρ ≤ x.roundTrip := (List.min?_eq_some_iff.mp hmin).2 _ hmem
+    show clampTo 0 t.tripCap ρ / 2 ≤ x.roundTrip / 2
+    have h1 : clampTo 0 t.tripCap ρ ≤ x.roundTrip := by
+      unfold clampTo
+      exact max_le hx0 ((min_le_right _ _).trans hle)
+    linarith
+
+/-- **The round trip in use is at least a common lower bound of the round
+trips of the exchanges that the host uses**, up to `tripCap`, when the host
+uses an exchange. -/
+theorem le_halfTrip (t : TimingSettings) {view : List (Event H R Payload)} {ρ₀ : ℝ}
+    (hne : recentExchanges t view ≠ [])
+    (hall : ∀ x ∈ recentExchanges t view, ρ₀ ≤ x.roundTrip) :
+    min ρ₀ t.tripCap / 2 ≤ halfTrip t view := by
+  unfold halfTrip
+  cases hmin : ((recentExchanges t view).map Exchange.roundTrip).min? with
+  | none =>
+    rw [List.min?_eq_none_iff, List.map_eq_nil_iff] at hmin
+    exact absurd hmin hne
+  | some ρ =>
+    have hmem : ρ ∈ (recentExchanges t view).map Exchange.roundTrip :=
+      (List.min?_eq_some_iff.mp hmin).1
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.mp hmem
+    have h1 := hall x hx
+    show min ρ₀ t.tripCap / 2 ≤ clampTo 0 t.tripCap x.roundTrip / 2
+    have h2 : min ρ₀ t.tripCap ≤ clampTo 0 t.tripCap x.roundTrip := by
+      unfold clampTo
+      exact le_max_of_le_right (le_min (min_le_right _ _) ((min_le_left _ _).trans h1))
+    linarith
 
 /-- The arrivals that the estimate uses, from a view that ends with a
 request: those of the blocks that arrived at most `window` before the
@@ -234,6 +308,43 @@ theorem mem_arrivalsOf_of_window (t : TimingSettings) {view : List (Event H R Pa
         exact ha
       exact (List.mem_filter.mp this).1
 
+/-- An arrival that the estimate uses at a request is an arrival of the
+view; and either the host's clock read at most `window` less at that arrival
+than at the request, or no arrival of the view is that recent and this one
+is the newest. -/
+theorem mem_windowArrivals (t : TimingSettings) {l : List (Event H R Payload)}
+    {e : Event H R Payload} {a : ℝ × ℝ} (ha : a ∈ windowArrivals t (l ++ [e])) :
+    a ∈ arrivalsOf (l ++ [e])
+      ∧ (e.reading - t.window ≤ a.1
+        ∨ ((∀ a' ∈ arrivalsOf (l ++ [e]), a'.1 < e.reading - t.window)
+          ∧ (arrivalsOf (l ++ [e])).getLast? = some a)) := by
+  refine ⟨mem_arrivalsOf_of_window t ha, ?_⟩
+  unfold windowArrivals at ha
+  rw [List.getLast?_concat] at ha
+  simp only at ha
+  cases hfilter : (arrivalsOf (l ++ [e])).filter
+      (fun a => decide (e.reading - t.window ≤ a.1)) with
+  | nil =>
+    rw [hfilter] at ha
+    simp only at ha
+    refine Or.inr ⟨fun a' ha' => ?_, ?_⟩
+    · by_contra hcon
+      have : a' ∈ (arrivalsOf (l ++ [e])).filter
+          (fun a => decide (e.reading - t.window ≤ a.1)) :=
+        List.mem_filter.mpr ⟨ha', by simpa using not_lt.mp hcon⟩
+      rw [hfilter] at this
+      simp at this
+    · rw [Option.mem_toList] at ha
+      exact ha
+  | cons a₀ as =>
+    rw [hfilter] at ha
+    simp only at ha
+    have : a ∈ (arrivalsOf (l ++ [e])).filter
+        (fun a => decide (e.reading - t.window ≤ a.1)) := by
+      rw [hfilter]
+      exact ha
+    exact Or.inl (by simpa using (List.mem_filter.mp this).2)
+
 /-- A request adds no arrival to a view. -/
 theorem arrivalsOf_append_asked (l : List (Event H R Payload)) (reading : ℝ) (r : Fin R)
     (outputs : List ℕ) (stamp : ℝ) :
@@ -250,15 +361,14 @@ exchange holds the reading of the sender's clock at a true time after the
 host sent the query. So `received + slope * (y - sent)` is, up to the error
 of the slope, an upper bound for the reading of the sender's clock when the
 host's clock reads `y`; the arrivals give a lower bound in the same way. The
-check holds when, for some exchange whose query was sent at most
-`exchangeWindow` before the request on the host's clock, that upper bound
-exceeds the lower bound from the arrivals by at most the round trip in use,
-`2 * halfTrip`, plus `intervalSlack`. Both bounds move with `y` at the same
-slope, so the check is the same for every output sample of the request. -/
+check holds when, for some exchange that the host uses at the request
+(`recentExchanges`), that upper bound exceeds the lower bound from the
+arrivals by at most the round trip in use, `2 * halfTrip`, plus
+`intervalSlack`. Both bounds move with `y` at the same slope, so the check
+is the same for every output sample of the request. -/
 def intervalCheck (t : TimingSettings) (view : List (Event H R Payload)) : Prop :=
-  ∃ e ∈ view.getLast?, ∃ x ∈ exchangesOf view, ∃ v,
-    e.reading - x.sent ≤ t.exchangeWindow
-      ∧ envelope (arrivalSlope t view) 0 (windowArrivals t view) = some v
+  ∃ x ∈ recentExchanges t view, ∃ v,
+    envelope (arrivalSlope t view) 0 (windowArrivals t view) = some v
       ∧ x.received - arrivalSlope t view * x.sent
         ≤ v + 2 * halfTrip t view + t.intervalSlack
 
@@ -363,6 +473,14 @@ def ratioAt (t : TimingSettings) (w : World H R) (r : Fin R) : ℕ → ℝ
   | β + 1 => clampTo (1 - t.slopeBound) (1 + t.slopeBound)
       ((requestReading w r (β + 1) - requestReading w r β) * t.rate
         / (((w.speaker r).first (β + 1) : ℝ) - (w.speaker r).first β))
+
+/-- The ratio that a host takes at a request is within `slopeBound` of
+one. -/
+theorem ratioAt_mem (t : TimingSettings) (hsb : 0 ≤ t.slopeBound) (w : World H R) (r : Fin R)
+    (β : ℕ) : ratioAt t w r β ∈ Set.Icc (1 - t.slopeBound) (1 + t.slopeBound) := by
+  cases β with
+  | zero => exact ⟨by show 1 - t.slopeBound ≤ 1; linarith, by show (1 : ℝ) ≤ 1 + t.slopeBound; linarith⟩
+  | succ β => exact clampTo_mem (by linarith) _
 
 /-- The reading of its clock that the host of speaker `r` expects, at the
 request of block `β`, when output sample `k` leaves. -/

@@ -58,6 +58,8 @@ public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.EstimateStep
 public import Unisono.Solutions.Controller.Checked
 public import Unisono.Solutions.Controller.Late
+public import Unisono.Solutions.Controller.BuiltLate
+public import Unisono.Solutions.Controller.BuiltRoom
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -122,6 +124,7 @@ public import Unisono.Spec.Models.GenerativeClockMean
 public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeProgress
+public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall

@@ -61,6 +61,8 @@ public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.EstimateStep
 public import Unisono.Solutions.Controller.Checked
 public import Unisono.Solutions.Controller.Late
+public import Unisono.Solutions.Controller.BuiltLate
+public import Unisono.Solutions.Controller.BuiltRoom
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -123,6 +125,7 @@ public import Unisono.Spec.Models.GenerativeClockMean
 public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeProgress
+public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2503,6 +2506,50 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.asked_unbounded
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.rate_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.rate_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.deviceRate_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.deviceRate_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.continuous_rate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.continuous_rate
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.continuous_deviceRate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.continuous_deviceRate
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.reading_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.reading_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.deviceReading_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.deviceReading_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.integral_mem_of_band' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.integral_mem_of_band
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.reading_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.reading_sub_mem
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.deviceReading_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.deviceReading_sub_mem
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.capture_succ_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.capture_succ_sub_mem
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.out_succ_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.out_succ_sub_mem
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
@@ -4807,6 +4854,30 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.checkedReading_eq_some
 
+/-- info: 'Unisono.Solutions.Controller.mem_recentExchanges' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_recentExchanges
+
+/-- info: 'Unisono.Solutions.Controller.halfTrip_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.halfTrip_mem
+
+/-- info: 'Unisono.Solutions.Controller.halfTrip_le_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.halfTrip_le_of_mem
+
+/-- info: 'Unisono.Solutions.Controller.le_halfTrip' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.le_halfTrip
+
+/-- info: 'Unisono.Solutions.Controller.mem_windowArrivals' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_windowArrivals
+
+/-- info: 'Unisono.Solutions.Controller.ratioAt_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ratioAt_mem
+
 /-- info: 'Unisono.Solutions.Controller.ruled_request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ruled_request_step
@@ -5078,6 +5149,42 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.timed_silent_room' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_silent_room
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.isBacklog_host' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.isBacklog_host
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.handed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.handed_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_handed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_handed
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.reaches_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.reaches_mono
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.blockLength_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.blockLength_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.noLoss' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.noLoss
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.knotSetting' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.knotSetting
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.silent_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.silent_reaches
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.silent_late' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.silent_late
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

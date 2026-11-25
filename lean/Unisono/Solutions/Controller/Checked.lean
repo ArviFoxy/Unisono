@@ -152,7 +152,8 @@ theorem timed_reading_upper (p : FixedDelay.Params H) (w : World H R) (t : Timin
               ++ [w.askedEvent r β])
           + t.intervalSlack := by
   obtain ⟨hs', hchecks⟩ := checkedReading_eq_some.mp hs
-  obtain ⟨⟨e, he, x, hx, v, hwin, hv, hle⟩, -⟩ := hchecks.resolve_left hr
+  obtain ⟨⟨x, hxr, v, hv, hle⟩, -⟩ := hchecks.resolve_left hr
+  obtain ⟨e, he, hx, hwin⟩ := mem_recentExchanges.mp hxr
   have he' : e = w.askedEvent r β := by
     rw [List.getLast?_concat] at he
     exact (Option.some.inj he).symm
