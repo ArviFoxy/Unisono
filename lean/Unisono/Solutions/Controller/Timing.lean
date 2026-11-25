@@ -13,15 +13,17 @@ public import Unisono.Solutions.Controller.SteppedLevel
 The rules of the controller (`Rules`) for worlds in which clocks wander and
 links pause. Every estimate is a function of a bounded stretch of what a
 host has observed, so that an estimate recovers after any disturbance. A
-host that pauses handles the events of its audio devices late; the rules
-take the readings at those events as the times of the events and do not yet
-allow for that.
+host that pauses handles the events of its audio devices late. The capture
+schedule keeps advancing through handovers that are handled together
+(`knotStep`); the readings at requests are still taken as the times of the
+requests.
 
 * **The capture schedule** comes from the readings of the sender's clock at
   the handovers (`knotCapture`).
 * **When output samples leave.** A playback device requests each block a
   told lead, on its own clock, before the block's first output sample
-  leaves, and its host observes the request when it is made. From the
+  leaves, and its host handles the request then, or later when it is busy.
+  From the
   readings of its clock at the two newest requests the host takes the
   ratio of its own clock to the device's clock: the time on its own clock
   per second of the device's clock, kept within `slopeBound` of one
@@ -315,7 +317,7 @@ theorem timed_chosen (p : FixedDelay.Params H) (w : World H R) (t : TimingSettin
       ∧ (∃ q, w.network.deliver w.sender (w.host r) (w.source.handed b') q = some tb')
       ∧ tb' < (w.speaker r).asked β
       ∧ ∀ o : Time, (w.clock w.sender).read o - s
-          = ((w.clock w.sender).read o - w.knot b')
+          = ((w.clock w.sender).read o - w.handedReading b')
             - arrivalSlope t (((ruled p (timedRules w.sender t level) :
                   Solution H R Payload).states w lookahead n).views (w.host r)
                 ++ [w.askedEvent r β])

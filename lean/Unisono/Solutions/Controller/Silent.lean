@@ -96,12 +96,9 @@ variable {H : Type} {R : ℕ} [DecidableEq H]
 
 /-- The setting of the theorems on the controller with the schedule of the
 knots: a world without loss whose devices hand over and request blocks
-without end and in which no two handovers are handled at the same true
-time, rules with the capture schedule of the knots and the level rule
-`knotLevel`, a share from zero to less than one, and a positive time from
-one frame to the next for the first block. A world whose sender's host
-pauses is not in the setting: that host handles the handovers of a pause
-together. -/
+without end, rules with the capture schedule of the knots and the level
+rule `knotLevel`, a share from zero to less than one, and a positive time
+from one frame to the next for the first block. -/
 structure KnotSetting (p : FixedDelay.Params H) (rules : Rules H R) (w : World H R)
     (A : H → H → Time → Time) (q : LevelSettings) (share nominal : ℝ) : Prop where
   noLoss : NoLoss p w A
@@ -110,7 +107,6 @@ structure KnotSetting (p : FixedDelay.Params H) (rules : Rules H R) (w : World H
   share_nonneg : 0 ≤ share
   share_lt_one : share < 1
   nominal_pos : 0 < nominal
-  handed_strictMono : StrictMono w.source.handed
   handed : ∀ T, ∃ b, T < w.source.handed b
   asked : ∀ r T, ∃ b, T < (w.speaker r).asked b
 
@@ -197,7 +193,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
   have hprog := hK.handovers lookahead
   have hreq := hK.requests lookahead r
   have hiff := fun x => ruled_chosen_iff (x := x) hK.capture hlev hK.share_nonneg
-    hK.share_lt_one hK.nominal_pos hK.handed_strictMono hK.noLoss lookahead hprog hr hE k
+    hK.share_lt_one hK.nominal_pos hK.noLoss lookahead hprog hr hE k
   have hfol := (ruled p rules : Solution H R Payload).followed_follows w lookahead u J hreq
   have hX : (ruled p rules : Solution H R Payload).chosen w lookahead r k
       = (ruled p rules : Solution H R Payload).chosenAt w lookahead n r β k :=

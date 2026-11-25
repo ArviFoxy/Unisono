@@ -145,18 +145,18 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `measuredNeed` in `lean/Unisono/Solutions/Controller/Needs.lean`). It
     is not yet proved which needs reach the sender, what the rule does
     with them, or what a level that changes costs. One solution puts the
-    parts together for worlds in which clocks wander and links pause. It
-    does not yet allow for a host that pauses and handles the events of
-    its audio devices late. Its hosts take their timing from what they
-    observe themselves:
+    parts together for worlds in which clocks wander and links and hosts
+    pause. Its hosts take their timing from what they observe themselves:
     the capture schedule from the sender's readings at the handovers, the
     time at which an output sample leaves from the host's readings at the
     requests, and the sender's clock from the arrivals of the blocks. Its
     level changes within a block by at most a share of the block's time
     from one frame to the next, so the schedule on which positions are due
-    is continuous in every world, and advances in every block of every
-    world in which no two handovers are handled at the same true time
-    (`Unisono.Solutions.Controller.dueSlope_pos`, `dueEdge_succ` in
+    is continuous and advances in every block of every world, also when
+    the sender's host was busy and handles several handovers at the same
+    time (`Unisono.Spec.knotStep` in
+    `lean/Unisono/Solutions/Controller/Knots.lean`,
+    `Unisono.Solutions.Controller.dueSlope_pos`, `dueEdge_succ` in
     `lean/Unisono/Solutions/Controller/DueSchedule.lean`). Its
     playback follows the position that is due within the step bound. In
     every world its hosts exchange messages only with the sender, it keeps
@@ -171,11 +171,10 @@ simulation and integration tests (see `PRINCIPLES.md`):
     and the discontinuities are bounded by the number of output samples
     that play nothing and by the irregular steps of what it chooses
     (`Unisono.Spec.Solution.followed_sum_missedAt_le` in
-    `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss in
-    which no two handovers are handled at the same true time, an output
-    sample of the combined solution whose request is handled before it
-    leaves plays nothing only when the stream has not yet reached the host
-    or a block that the output sample needs arrived after the request
+    `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss, an
+    output sample of the combined solution whose request is handled before
+    it leaves plays nothing only when the stream has not yet reached the
+    host or a block that the output sample needs arrived after the request
     (`Unisono.Solutions.Controller.followed_silent` in
     `lean/Unisono/Solutions/Controller/Silent.lean`). No cost of the
     combined solution is bounded yet. The cost of a held

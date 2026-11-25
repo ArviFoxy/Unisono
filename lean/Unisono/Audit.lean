@@ -4231,6 +4231,42 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.World.knot_strictMono
 
+/-- info: 'Unisono.Spec.World.handedReading_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.handedReading_mono
+
+/-- info: 'Unisono.Spec.knotStep_snd_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.knotStep_snd_pos
+
+/-- info: 'Unisono.Spec.le_knotStep_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_knotStep_fst
+
+/-- info: 'Unisono.Spec.World.knotInc_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotInc_pos
+
+/-- info: 'Unisono.Spec.World.knot_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knot_succ
+
+/-- info: 'Unisono.Spec.World.handedReading_le_knot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.handedReading_le_knot
+
+/-- info: 'Unisono.Spec.World.knot_succ_eq_handedReading' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knot_succ_eq_handedReading
+
+/-- info: 'Unisono.Spec.World.knot_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knot_sub_le
+
+/-- info: 'Unisono.Spec.World.knotPeriod_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotPeriod_zero
+
 /-- info: 'Unisono.Spec.World.knotStart_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knotStart_add
@@ -4646,6 +4682,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.knotCapture_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.knotCapture_eq
+
+/-- info: 'Unisono.Solutions.Controller.handedCount_handedEvent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.handedCount_handedEvent
+
+/-- info: 'Unisono.Solutions.Controller.knotsOf_concat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotsOf_concat
+
+/-- info: 'Unisono.Solutions.Controller.knotStep_knotsOf_range' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotStep_knotsOf_range
 
 /-- info: 'Unisono.Solutions.Controller.runHeader_knots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

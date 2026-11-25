@@ -28,7 +28,7 @@ host other than the sender's:
 * `arrival_mem_arrivalsOf`, `mem_arrivalsOf_noLoss`: under the capture
   schedule of the knots, the pairs of readings that the host holds are, for
   the blocks that arrived, the reading of its clock at the arrival and the
-  knot of the block.
+  reading of the sender's clock at the block's handover.
 * `ruled_chosen_iff`: **what a host chooses, exactly.** With the capture
   schedule of the knots and the level rule `knotLevel`, at the step that
   handles a request: the host chooses the position `x` for an output sample
@@ -158,12 +158,13 @@ theorem headersOf_noLoss (hN : NoLoss p w A) (lookahead : ℕ+) {n : ℕ} {h : H
 
 /-- **The pair of readings of a block that arrived is among the host's
 arrivals**, under the capture schedule of the knots: the reading of the
-host's clock at the arrival, and the knot of the block. -/
+host's clock at the arrival, and the reading of the sender's clock at the
+block's handover. -/
 theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
     (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {b n : ℕ}
     (hk : A w.sender (w.host r) (w.source.handed b)
       < (ruled p rules : Solution H R Payload).eventTime w lookahead n) :
-    ((w.clock (w.host r)).read (A w.sender (w.host r) (w.source.handed b)), w.knot b)
+    ((w.clock (w.host r)).read (A w.sender (w.host r) (w.source.handed b)), w.handedReading b)
       ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views
         (w.host r)) := by
   obtain ⟨stamp, cp, pd, lv, sl, hmem, hhd⟩ := ruled_block_arrived hN lookahead hr hk
@@ -176,8 +177,8 @@ theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCaptu
   have ht : t = A w.sender (w.host r) (w.source.handed b') := by
     rw [hN.deliver] at hq
     exact (Option.some.inj hq).symm
-  -- The knot is that of the block itself.
-  have hknot : cp + ((w.source.block b).toFinset.card : ℝ) * pd = w.knot b := by
+  -- The header's line ends at the reading of the block's own handover.
+  have hknot : cp + ((w.source.block b).toFinset.card : ℝ) * pd = w.handedReading b := by
     have hcard : (w.source.block b).toFinset.card = w.blockLength b := by
       unfold CaptureDevice.block
       rw [List.toFinset_card_of_nodup List.nodup_range', List.length_range']
@@ -193,10 +194,11 @@ theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCaptu
       exact hhandled
     have hH := runHeader_knots p rules w lookahead hcap hi
     rw [← hhd] at hH
-    have hcp : cp = w.knotStart nominal b := congrArg Header.capture hH
+    have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod nominal b :=
+      congrArg Header.capture hH
     have hpd : pd = w.knotPeriod nominal b := congrArg Header.period hH
     rw [hcard, hcp, hpd]
-    exact w.knotStart_add nominal b
+    ring
   rw [hknot] at hin
   exact hin
 
@@ -206,7 +208,7 @@ schedule of the knots. -/
 theorem mem_arrivalsOf_noLoss {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
     (hN : NoLoss p w A) (lookahead : ℕ+) {n : ℕ} {h : H} {a : ℝ × ℝ}
     (ha : a ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views h)) :
-    ∃ b, a = ((w.clock h).read (A w.sender h (w.source.handed b)), w.knot b)
+    ∃ b, a = ((w.clock h).read (A w.sender h (w.source.handed b)), w.handedReading b)
       ∧ ∀ r' : Fin R, A w.sender h (w.source.handed b) < (w.speaker r').asked
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r') := by
   obtain ⟨b, t, hab, ⟨q, hq⟩, hlt⟩ := mem_arrivalsOf_run p rules w hcap hN.sender lookahead ha
@@ -231,8 +233,7 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
     {need : H → List (Event H R Payload) → Option ℝ}
     (hcap : rules.capture = knotCapture nominal)
     (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
-    (hnominal : 0 < nominal)
-    (hstrict : StrictMono w.source.handed) (hN : NoLoss p w A) (lookahead : ℕ+)
+    (hnominal : 0 < nominal) (hN : NoLoss p w A) (lookahead : ℕ+)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
@@ -261,14 +262,14 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
     have ht : t = A w.sender (w.host r) (w.source.handed b) := by
       rw [hN.deliver] at hq'
       exact (Option.some.inj hq').symm
-    obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b s).mp hcov
+    obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hprog b s).mp hcov
     refine ⟨s, b, hs, h1, h2, ?_, ?_⟩
     · rw [← hnext, ← ht]
       exact hlt r
     · rw [← runHeader_due hcap hlev hprog b s, ← hdue]
       ring
   · rintro ⟨s, b, hs, h1, h2, harr, hx⟩
-    have hcov := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b s).mpr ⟨h1, h2⟩
+    have hcov := (covers_iff hcap hlev hs0 hs1 hnominal hprog b s).mpr ⟨h1, h2⟩
     have hmem := runHeader_mem_headersOf (rules := rules) hN lookahead hr
       (b := b) (n := n) (by rw [htime]; exact harr)
     have hall : ∀ y ∈ headersOf (((ruled p rules : Solution H R Payload).states w lookahead
@@ -276,7 +277,7 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
       intro y hy
       obtain ⟨c, hc, -⟩ := headersOf_noLoss hN lookahead hy
       exact ⟨c, hc⟩
-    have hdue := dueOf_eq_of_mem hcap hlev hs0 hs1 hnominal hstrict hprog hall hmem hcov
+    have hdue := dueOf_eq_of_mem hcap hlev hs0 hs1 hnominal hprog hall hmem hcov
     have hsched : rules.schedule p (w.host r)
         (((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r)
           ++ [w.askedEvent r β])

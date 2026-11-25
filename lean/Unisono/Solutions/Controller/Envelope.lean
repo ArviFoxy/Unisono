@@ -39,7 +39,8 @@ blocks of the stream as its data in the direction from the sender.
 * `mem_arrivalsOf_run`: in the run of the controller with a capture schedule
   from the knots, in every world: every arrival in a host's view is the
   reading of the host's clock at the arrival of a message that the sender
-  sent at the handover of some block, with the knot of that block.
+  sent at the handover of some block, with the reading of the sender's
+  clock at that handover.
 * `reading_le`, `exists_reading_eq`: **the error of the estimate, exactly.**
   For every arrival used, the reading of the sender's clock at any true time
   `o`, minus the estimate, is at most: the time on the sender's clock from
@@ -188,13 +189,14 @@ variable [DecidableEq H] (p : FixedDelay.Params H) (rules : Rules H R) (w : Worl
 come from the knots (`knotCapture`). Then every arrival in a host's view is,
 for some block `b` and some true time `t` at which the network delivered to
 the host a message that the sender sent at the handover of `b`: the reading
-of the host's clock at `t`, and the knot of `b`. The time `t` is before
+of the host's clock at `t`, and the reading of the sender's clock when it
+handled the handover of `b`. The time `t` is before
 every request that the run has not yet handled. This holds in every
 world. -/
 theorem mem_arrivalsOf_run {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
     (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H} {a : ℝ × ℝ}
     (ha : a ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views h)) :
-    ∃ b t, a = ((w.clock h).read t, w.knot b)
+    ∃ b t, a = ((w.clock h).read t, w.handedReading b)
       ∧ (∃ q, w.network.deliver w.sender h (w.source.handed b) q = some t)
       ∧ (∀ r' : Fin R, t < (w.speaker r').asked
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r')) := by
@@ -215,7 +217,7 @@ theorem mem_arrivalsOf_run {nominal : ℝ} (hcap : rules.capture = knotCapture n
       rw [Solution.handoverView_eq _ w lookahead hi] at hhd
       have hk := knotCapture_eq (ruled p rules : Solution H R Payload) w lookahead nominal hi
         (w.source.first b) (w.source.reported b)
-      have hcp : cp = w.knotStart nominal b := by
+      have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod nominal b := by
         have h1 := congrArg Header.capture hhd
         simp only [Rules.header, hcap] at h1
         rw [h1, hk]
@@ -229,7 +231,8 @@ theorem mem_arrivalsOf_run {nominal : ℝ} (hcap : rules.capture = knotCapture n
         rw [List.toFinset_card_of_nodup List.nodup_range', List.length_range']
         rfl
       refine ⟨b, t, ?_, hq, hlt⟩
-      rw [← hfe, hread, hcp, hpd, hcard, w.knotStart_add nominal b]
+      rw [← hfe, hread, hcp, hpd, hcard]
+      ring_nf
 
 /-- **The estimate is not above what any arrival used allows.** In the
 setting of `mem_arrivalsOf_run`, let the host use only arrivals of its view.
@@ -248,12 +251,12 @@ theorem reading_le {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
     {r : Fin R} {k : ℕ} {s : ℝ}
     (hs : envelopeReading w.sender parts h view r k = some s) {a : ℝ × ℝ}
     (ha : a ∈ parts.arrivals view) :
-    ∃ b t, a = ((w.clock h).read t, w.knot b)
+    ∃ b t, a = ((w.clock h).read t, w.handedReading b)
       ∧ (∃ q, w.network.deliver w.sender h (w.source.handed b) q = some t)
       ∧ (∀ r' : Fin R, t < (w.speaker r').asked
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r'))
       ∧ ∀ o : Time, (w.clock w.sender).read o - s
-          ≤ ((w.clock w.sender).read o - w.knot b)
+          ≤ ((w.clock w.sender).read o - w.handedReading b)
             - parts.slope view * (parts.output view r k - (w.clock h).read t)
             - parts.halfTrip view := by
   obtain ⟨b, t, hab, hq, hlt⟩ :=
@@ -279,12 +282,12 @@ theorem exists_reading_eq {nominal : ℝ} (hcap : rules.capture = knotCapture no
       a ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views h))
     {r : Fin R} {k : ℕ} {s : ℝ}
     (hs : envelopeReading w.sender parts h view r k = some s) :
-    ∃ b t, ((w.clock h).read t, w.knot b) ∈ parts.arrivals view
+    ∃ b t, ((w.clock h).read t, w.handedReading b) ∈ parts.arrivals view
       ∧ (∃ q, w.network.deliver w.sender h (w.source.handed b) q = some t)
       ∧ (∀ r' : Fin R, t < (w.speaker r').asked
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r'))
       ∧ ∀ o : Time, (w.clock w.sender).read o - s
-          = ((w.clock w.sender).read o - w.knot b)
+          = ((w.clock w.sender).read o - w.handedReading b)
             - parts.slope view * (parts.output view r k - (w.clock h).read t)
             - parts.halfTrip view := by
   obtain ⟨a, ha, hsa⟩ := exists_envelopeReading_eq hne parts hs

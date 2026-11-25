@@ -26,8 +26,9 @@ blocks.
   reports in a clock query (`LevelRule`);
 * `capture`: from the sender's view when the capture device hands over a
   block, the capture time that the block's header gives to the block's
-  first frame, and the time from one frame to the next, both on the
-  sender's clock;
+  first frame, the time from one frame to the next, both on the sender's
+  clock, and a time that the header adds to the level: by how much later
+  than that line the rules want the block's schedule to run;
 * `reading`: from a host's view when a playback device requests a block,
   the host's estimate of the reading of the sender's clock when an output
   sample of that block leaves;
@@ -68,9 +69,10 @@ structure Rules (H : Type) (R : ℕ) where
   level : LevelRule H R
   /-- From the sender's view up to and including the handover of a block,
   the block's first frame and the block's timestamp: the capture time that
-  the header gives to the first frame, and the time from one frame to the
-  next, both on the sender's clock. -/
-  capture : List (Event H R Payload) → ℕ → ℝ → ℝ × ℝ
+  the header gives to the first frame, the time from one frame to the next,
+  both on the sender's clock, and a time that the header adds to the level,
+  by which the block's schedule runs later than that line. -/
+  capture : List (Event H R Payload) → ℕ → ℝ → ℝ × ℝ × ℝ
   /-- From a host's view up to and including a request of the device of
   speaker `r`: the host's estimate of the reading of the sender's clock when
   output sample `k` leaves, if it has one. -/
@@ -83,8 +85,9 @@ structure Rules (H : Type) (R : ℕ) where
 given the sender's view up to and including the block's handover. -/
 def Rules.header (rules : Rules H R) (view : List (Event H R Payload)) (f : ℕ) (stamp : ℝ) :
     Header :=
-  ⟨f, (rules.capture view f stamp).1, (rules.capture view f stamp).2,
-    (rules.level.announce view f).1, (rules.level.announce view f).2⟩
+  ⟨f, (rules.capture view f stamp).1, (rules.capture view f stamp).2.1,
+    (rules.level.announce view f).1 + (rules.capture view f stamp).2.2,
+    (rules.level.announce view f).2⟩
 
 /-- The headers of the blocks that the sender's own capture device has
 handed over in a view, oldest first: the headers that the rules put in those

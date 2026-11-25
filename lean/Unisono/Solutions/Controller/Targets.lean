@@ -73,7 +73,7 @@ theorem chosen_eq_some_iff (hK : KnotSetting p rules w A q share nominal) (looka
   rw [Solution.chosen_eq _ w lookahead ((w.speaker r).mem_blockOf k) hE]
   unfold Rules.estimate
   rw [Solution.requestView_eq _ w lookahead hE]
-  exact ruled_chosen_iff hK.capture hlev hK.share_nonneg hK.share_lt_one hK.nominal_pos hK.handed_strictMono
+  exact ruled_chosen_iff hK.capture hlev hK.share_nonneg hK.share_lt_one hK.nominal_pos
     hK.noLoss lookahead (hK.handovers lookahead) hr hE k x
 
 /-- **Two positions against their estimates.** In the setting
@@ -104,7 +104,7 @@ theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahe
   rw [hs', Option.some.injEq] at hs₂
   subst hs₁ hs₂
   have hmono := dueEdge_strictMono (p := p) (rules := rules) (w := w) (lookahead := lookahead)
-    (q := q) hK.share_nonneg hK.share_lt_one hK.nominal_pos hK.handed_strictMono hprog
+    (q := q) hK.share_nonneg hK.share_lt_one hK.nominal_pos hprog
   have hbb' : b ≤ b' := by
     by_contra hlt
     rw [not_le] at hlt
@@ -112,9 +112,9 @@ theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahe
     linarith
   refine ⟨b, b', hbb', h1, h2, h1', h2', fun σLo σHi hσ => ?_⟩
   have hpos := dueSlope_pos (p := p) (rules := rules) (w := w) (lookahead := lookahead) (q := q)
-    hK.share_nonneg hK.share_lt_one hK.nominal_pos hK.handed_strictMono hprog b
+    hK.share_nonneg hK.share_lt_one hK.nominal_pos hprog b
   have hpos' := dueSlope_pos (p := p) (rules := rules) (w := w) (lookahead := lookahead)
-    (q := q) hK.share_nonneg hK.share_lt_one hK.nominal_pos hK.handed_strictMono hprog b'
+    (q := q) hK.share_nonneg hK.share_lt_one hK.nominal_pos hprog b'
   -- The coordinates of the two positions.
   obtain ⟨z, hz⟩ : ∃ z : ℝ, z = x + rules.back := ⟨_, rfl⟩
   obtain ⟨z', hz'⟩ : ∃ z' : ℝ, z' = x' + rules.back := ⟨_, rfl⟩

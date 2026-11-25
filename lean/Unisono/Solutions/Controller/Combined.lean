@@ -19,7 +19,9 @@ the block size of the playback devices, and its own settings.
 
 * **The capture schedule.** The sender takes the capture time of each block
   from the readings of its clock at the handovers of the capture device. The
-  schedule is continuous from block to block (`knotCapture`).
+  schedule is continuous from block to block and advances in every block,
+  also when the sender's host handles several handovers at the same time
+  (`knotCapture`, `knotStep`).
 * **When output samples leave.** Each host takes the time at which an output
   sample leaves from the readings of its clock at the requests of the
   playback device (`requestOutput`).
