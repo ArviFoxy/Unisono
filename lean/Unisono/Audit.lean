@@ -73,6 +73,7 @@ public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
 public import Unisono.Spec.Models.GenerativeLawOfDraw
+public import Unisono.Spec.Models.GenerativeLeastLatency
 public import Unisono.Spec.Models.GenerativeLinkPause
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativePauseLaw
@@ -1754,6 +1755,14 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.arrival_lt_of_plays
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.leastLatency_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.leastLatency_lt
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.lt_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.lt_latency
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
