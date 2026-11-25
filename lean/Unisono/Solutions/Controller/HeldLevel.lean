@@ -174,7 +174,7 @@ theorem exchange_of_built (hB : m.Builds f d w) (lookahead : ℕ+)
       ∧ x.received = (w.clock w.sender).read (d.arrival f h w.sender s₁)
       ∧ x.arrived
         = (w.clock h).read (d.arrival f w.sender h (d.arrival f h w.sender s₁)) := by
-  obtain ⟨e, he, i, F, hobs, hread⟩ := mem_plainExchangesOf hx
+  obtain ⟨e, he, i, F, ks, hobs, hread⟩ := mem_plainExchangesOf hx
   obtain ⟨j, hj, t, obs, hhj, rfl⟩ :=
     Solution.handled_of_mem_views w (FixedDelay.solution p) lookahead he
   simp only at hobs hread
@@ -809,7 +809,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
             ∧ y.1.level = (ann b₂).1 ∧ y.1.slope = (ann b₂).2)
           ∨ (b₂ = 0 ∧ ¬ y.1.Covers m.blockSize (S k))) := by
     intro y hy
-    obtain ⟨e, he, i, stamp, F, hobs, hcount⟩ := mem_headersOf hy
+    obtain ⟨e, he, i, stamp, F, ks, hobs, hcount⟩ := mem_headersOf hy
     obtain ⟨i₂, hi₂, t₂, obs₂, hh₂, rfl⟩ := Solution.handled_of_mem_views w
       (solution p clockEst deviceEst levelRule : Solution H R Payload) lookahead he
     dsimp only at hobs
@@ -823,7 +823,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
     have hf₂ := Solution.handled_forget w Payload.plain lookahead hmore i₂
     rw [hh₂] at hf₂
     simp only [Option.map_some, Observation.mapMsg, Payload.plain] at hf₂
-    obtain ⟨msg', hmsg', hdest', harr', -, hcont', hframes'⟩ := Solution.handled_received w
+    obtain ⟨msg', hmsg', hdest', harr', -, hcont', hframes', -⟩ := Solution.handled_received w
       (FixedDelay.solution p : Solution H R FixedDelay.Payload) lookahead hf₂.symm
     have hO := FixedDelay.origin_inFlight p w lookahead hsender i₂ msg' hmsg'
     unfold FixedDelay.Origin at hO
@@ -917,24 +917,24 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
       exact (Nat.le_div_iff_mul_le hB).mpr (by simpa using hfloorB)
     rw [← hbX] at harrX
     -- The message of that block was handled before the request.
-    obtain ⟨i₁, hi₁, hh₁⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hA hsender hnodup
+    obtain ⟨i₁, hi₁, ks₁, hh₁⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hA hsender hnodup
       hcopies hh hhs (b := bX) (k := step (k / m.blockSize)) (by rw [htime]; exact harrX)
     have hf₁ := Solution.handled_forget w Payload.plain lookahead hmore i₁
     rw [hh₁] at hf₁
     obtain ⟨⟨h', t', obs'⟩, hσh, heq⟩ := Option.map_eq_some_iff.mp hf₁
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl, hobs⟩ := heq
-    obtain ⟨c₁, F₁, hobs₁, hpl₁⟩ : ∃ (c₁ : Payload) (F₁ : Finset ℕ),
-        obs' = .received w.sender c₁ F₁
+    obtain ⟨c₁, F₁, k₁, hobs₁, hpl₁⟩ : ∃ (c₁ : Payload) (F₁ : Finset ℕ) (k₁ : ℝ),
+        obs' = .received w.sender c₁ F₁ k₁
         ∧ c₁.plain = .block (w.source.first bX) (w.source.reported bX) := by
       cases obs' with
       | handed frames stamp => simp [Observation.mapMsg] at hobs
       | asked r' outputs stamp => simp [Observation.mapMsg] at hobs
       | timer => simp [Observation.mapMsg] at hobs
-      | received j c' F' =>
+      | received j c' F' ks' =>
         simp only [Observation.mapMsg, Observation.received.injEq] at hobs
         obtain ⟨rfl, hpl, -⟩ := hobs
-        exact ⟨c', F', rfl, hpl⟩
+        exact ⟨c', F', ks', rfl, hpl⟩
     obtain ⟨cp₁, pd₁, lv₁, sl₁, hc₁⟩ : ∃ cp₁ pd₁ lv₁ sl₁ : ℝ,
         c₁ = .block (w.source.first bX) (w.source.reported bX) cp₁ pd₁ lv₁ sl₁ := by
       cases c₁ with

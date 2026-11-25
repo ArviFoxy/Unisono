@@ -87,7 +87,7 @@ records the knot of the block. Other events change nothing. -/
 def knotLevelStep (q : LevelSettings) (share : ℝ) (kn : KnotSettings) (st : KnotLevelState)
     (e : Event H R Payload) : KnotLevelState :=
   match e.observation with
-  | .received _ (.ask _ (some y)) _ => ⟨aimStep q st.aim y, st.level, st.knot⟩
+  | .received _ (.ask _ (some y)) _ _ => ⟨aimStep q st.aim y, st.level, st.knot⟩
   | .handed frames stamp =>
       ⟨st.aim,
         st.level + frames.length * knotSlope q share st.aim st.level frames.length
@@ -193,7 +193,7 @@ theorem knotLevelStep_level (q : LevelSettings) (share : ℝ) (kn : KnotSettings
   | handed frames stamp => exact absurd hobs (he frames stamp)
   | asked r outputs stamp => exact ⟨rfl, rfl⟩
   | timer => exact ⟨rfl, rfl⟩
-  | received i c F =>
+  | received i c F _ =>
     cases c with
     | block first stamp capture period level slope => exact ⟨rfl, rfl⟩
     | answer sent received => exact ⟨rfl, rfl⟩
@@ -250,7 +250,7 @@ theorem knotLevelState_knot (q : LevelSettings) (share : ℝ) (kn : KnotSettings
       have h1 : handoversOf [e] = [] := by simp [handoversOf, hobs]
       rw [h1, List.append_nil, ← ih]
       exact (knotLevelStep_level q share kn _ (by simp [hobs])).2
-    | received i c F =>
+    | received i c F _ =>
       have h1 : handoversOf [e] = [] := by simp [handoversOf, hobs]
       rw [h1, List.append_nil, ← ih]
       exact (knotLevelStep_level q share kn _ (by simp [hobs])).2
@@ -266,7 +266,7 @@ theorem knotLevelStep_mem (q : LevelSettings) (share : ℝ) (kn : KnotSettings) 
   cases hobs : e.observation with
   | asked r outputs stamp => exact ⟨ha, hl⟩
   | timer => exact ⟨ha, hl⟩
-  | received i c F =>
+  | received i c F _ =>
     cases c with
     | block first stamp capture period level slope => exact ⟨ha, hl⟩
     | answer sent received => exact ⟨ha, hl⟩
@@ -323,7 +323,7 @@ theorem knotLevelState_aim (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
       | handed frames stamp => simp [needsOf, knotLevelStep, hobs]
       | asked r outputs stamp => simp [needsOf, knotLevelStep, hobs]
       | timer => simp [needsOf, knotLevelStep, hobs]
-      | received i c F =>
+      | received i c F _ =>
         cases c with
         | block first stamp capture period level slope => simp [needsOf, knotLevelStep, hobs]
         | answer sent received => simp [needsOf, knotLevelStep, hobs]

@@ -132,7 +132,8 @@ theorem Solution.handoversOf_views (n : ℕ) :
           simp [handoversOf]
         | some msg =>
           have hh : σ.handled w lookahead n = some (msg.destination, msg.arrival,
-              .received msg.origin msg.contents msg.frames) := by
+              .received msg.origin msg.contents msg.frames
+                ((w.clock msg.destination).read msg.reached)) := by
             unfold Solution.handled
             rw [hE]
             simp [hm]
@@ -236,7 +237,8 @@ theorem Solution.requestsOf_views (r : Fin R) (n : ℕ) :
           simp [requestsOf]
         | some msg =>
           have hh : σ.handled w lookahead n = some (msg.destination, msg.arrival,
-              .received msg.origin msg.contents msg.frames) := by
+              .received msg.origin msg.contents msg.frames
+                ((w.clock msg.destination).read msg.reached)) := by
             unfold Solution.handled
             rw [hE]
             simp [hm]

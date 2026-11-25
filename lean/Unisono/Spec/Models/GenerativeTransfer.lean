@@ -69,11 +69,14 @@ theorem PlaybackDevice.ext_fields {a b : PlaybackDevice}
   obtain rfl : r₁ = r₂ := funext hr
   rfl
 
-theorem Network.ext_deliver {a b : Network H}
-    (h : ∀ i j s q, a.deliver i j s q = b.deliver i j s q) : a = b := by
-  obtain ⟨d₁, _⟩ := a
-  obtain ⟨d₂, _⟩ := b
+theorem Network.ext_fields {a b : Network H}
+    (h : ∀ i j s q, a.deliver i j s q = b.deliver i j s q)
+    (hr : ∀ i j s q, a.reach i j s q = b.reach i j s q) : a = b := by
+  obtain ⟨d₁, r₁, _⟩ := a
+  obtain ⟨d₂, r₂, _⟩ := b
   obtain rfl : d₁ = d₂ := funext fun i => funext fun j => funext fun s => funext fun q => h i j s q
+  obtain rfl : r₁ = r₂ :=
+    funext fun i => funext fun j => funext fun s => funext fun q => hr i j s q
   rfl
 
 /-- Two worlds with the same rate, hosts, clocks, devices, network and target
@@ -165,16 +168,23 @@ theorem Builds.unique {d : Draw H R} {w w' : World H R} (h : m.Builds f d w)
       rw [← hhost] at hv'
       rw [e, e', hv.unique hv']
     · rw [h.speaker_reported, h'.speaker_reported, hfirst, hout, hhost, hclock]
-  · refine Network.ext_deliver fun i j s q => ?_
-    obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := h.network i j s q
-    obtain ⟨u₁, u₂, u₃, hu₁, hu₂, hu₃, hd'⟩ := h'.network i j s q
-    have e₁ : v₁ = u₁ := IsLUB.unique hv₁ hu₁
-    subst e₁
-    have e₂ : v₂ = u₂ := IsLUB.unique hv₂ hu₂
-    subst e₂
-    have e₃ : v₃ = u₃ := IsLUB.unique hv₃ hu₃
-    subst e₃
-    rw [hd, hd']
+  · refine Network.ext_fields (fun i j s q => ?_) (fun i j s q => ?_)
+    · obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd, -⟩ := h.network i j s q
+      obtain ⟨u₁, u₂, u₃, hu₁, hu₂, hu₃, hd', -⟩ := h'.network i j s q
+      have e₁ : v₁ = u₁ := IsLUB.unique hv₁ hu₁
+      subst e₁
+      have e₂ : v₂ = u₂ := IsLUB.unique hv₂ hu₂
+      subst e₂
+      have e₃ : v₃ = u₃ := IsLUB.unique hv₃ hu₃
+      subst e₃
+      rw [hd, hd']
+    · obtain ⟨v₁, v₂, v₃, hv₁, hv₂, -, -, hr⟩ := h.network i j s q
+      obtain ⟨u₁, u₂, u₃, hu₁, hu₂, -, -, hr'⟩ := h'.network i j s q
+      have e₁ : v₁ = u₁ := IsLUB.unique hv₁ hu₁
+      subst e₁
+      have e₂ : v₂ = u₂ := IsLUB.unique hv₂ hu₂
+      subst e₂
+      rw [hr, hr']
   · funext n
     rw [h.target_eq, h'.target_eq]
 

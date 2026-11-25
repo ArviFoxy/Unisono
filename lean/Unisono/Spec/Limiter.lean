@@ -211,7 +211,7 @@ theorem limiterLast_concat_of_ne (σ : Solution H R Msg) (u : ℝ) (h : H)
       exact hne outputs s hobs
     simp only [Function.update_of_ne hr]
   | handed frames stamp => rfl
-  | received j c F => rfl
+  | received j c F _ => rfl
   | timer => rfl
 
 /-- Events none of which is a request of speaker `r` leave what the limiter

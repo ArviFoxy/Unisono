@@ -469,10 +469,13 @@ theorem CaptureDevice.block_injective (d : CaptureDevice) : Function.Injective d
 /-- Shifting every host `h`'s true timeline by `Δ h` (with `Δ w.sender = 0`):
 host `h`'s clock reads `(w.clock h).read (t - Δ h)`, speaker `r`'s device
 events shift by `+ Δ (w.host r)`, and a message sent from `i` to `j` at true
-time `t` arrives shifted by `+ Δ j` relative to `t - Δ i`, preserving all
-round-trip times while shifting link `(i, j)`'s one-way delay by `Δ j - Δ i`. -/
+time `t` reaches `j` and is handled there shifted by `+ Δ j` relative to
+`t - Δ i`, preserving all round-trip times while shifting link `(i, j)`'s
+one-way delay by `Δ j - Δ i`. The shift must leave every message reaching
+its host after it is sent (`hnet`). -/
 def World.shiftHosts (w : World H R) (Δ : H → ℝ)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j) : World H R where
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j) : World H R where
   rate := w.rate
   rate_pos := w.rate_pos
   sender := w.sender
@@ -494,18 +497,21 @@ def World.shiftHosts (w : World H R) (Δ : H → ℝ)
       reported := (w.speaker r).reported }
   network :=
     { deliver := fun i j t q => (w.network.deliver i j (t - Δ i) q).map (· + Δ j)
-      after := fun i j t q a h => by
+      reach := fun i j t q => w.network.reach i j (t - Δ i) q + Δ j
+      reach_mem := fun i j t q a h => by
         simp only [Option.map_eq_some_iff] at h
         obtain ⟨a₀, ha₀, rfl⟩ := h
-        have := hnet i j (t - Δ i) q a₀ ha₀
-        linarith }
+        have h1 := hnet i j (t - Δ i) q a₀ ha₀
+        have h2 := (w.network.reach_mem i j (t - Δ i) q a₀ ha₀).2
+        exact ⟨by linarith, by linarith⟩ }
   target := w.target
 
 /-- Shifting hosts leaves every round-trip time unchanged: if a query leaves `i`
 at `t₁`, reaches `j` at `t₂`, and its reply reaches `i` at `t₄`, the shifted
 round-trip time equals the original round-trip time. -/
 theorem World.shiftHosts_rtt_eq (w : World H R) (Δ : H → ℝ)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     {i j : H} {s₁ s₂ s₄ : Time} {q₁ q₂ : ℕ}
     (h1 : w.network.deliver i j s₁ q₁ = some s₂)
     (h2 : w.network.deliver j i s₂ q₂ = some s₄) :
@@ -519,7 +525,8 @@ theorem World.shiftHosts_rtt_eq (w : World H R) (Δ : H → ℝ)
 /-- Under a host shift `Δ`, an identical play sequence `plays` shifts speaker
 `r`'s true play time of frame `n` by `+ Δ (w.host r)`. -/
 theorem World.playTime_shiftHosts (w : World H R) (Δ : H → ℝ)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (n : ℕ) :
     (w.shiftHosts Δ hnet).playTime plays r n
       = (w.playTime plays r n).map (· + Δ (w.host r)) := by
@@ -534,7 +541,8 @@ theorem World.playTime_shiftHosts (w : World H R) (Δ : H → ℝ)
 /-- Under a host shift `Δ`, an identical play sequence `plays` shifts speaker
 `r`'s latency of frame `n` by `+ Δ (w.host r)`. -/
 theorem World.latency_shiftHosts (w : World H R) (Δ : H → ℝ)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (n : ℕ) :
     (w.shiftHosts Δ hnet).latency plays r n
       = (w.latency plays r n).map (· + Δ (w.host r)) := by
@@ -553,8 +561,10 @@ If the same playback `plays` runs in `w⁺ = w.shiftHosts Δ` and
 their synchronization costs at frame `n` is at least
 `2 * varFin (fun r => Δ (w.host r))`. -/
 theorem World.syncCost_shiftHosts_add_ge (w : World H R) (Δ : H → ℝ)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (plays : Fin R → ℕ → Option ℝ) (hR : 0 < R) (n : ℕ)
     (hplay : ∀ r, (w.playTime plays r n).isSome) :
     ENNReal.ofReal (2 * varFin (fun r => Δ (w.host r)))
@@ -610,8 +620,10 @@ speaker host and every speaker plays frame `n`, then the sum of their tracking
 costs at frame `n` is at least `2 * A ^ 2`. -/
 theorem World.trackingCost_shiftHosts_add_ge (w : World H R) (Δ : H → ℝ) (A : ℝ)
     (hΔ : ∀ r, Δ (w.host r) = A)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (plays : Fin R → ℕ → Option ℝ) (hR : 0 < R) (n : ℕ)
     (hplay : ∀ r, (w.playTime plays r n).isSome) :
     ENNReal.ofReal (2 * A ^ 2)
@@ -836,8 +848,10 @@ and `w⁻ = w.shiftHosts (-Δ)` and plays every frame from some `N` on (with
 unbounded capture times), then at least one of the two worlds suffers
 long-run synchronization cost at least `varFin (fun r => Δ (w.host r))`. -/
 theorem World.sync_shiftHosts_max_ge (w : World H R) (Δ : H → ℝ)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (plays : Fin R → ℕ → Option ℝ) (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime plays r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
@@ -876,8 +890,10 @@ theorem World.sync_shiftHosts_max_ge (w : World H R) (Δ : H → ℝ)
 /-- **Long-run tracking lower bound under opposite uniform shifts.** -/
 theorem World.tracking_shiftHosts_max_ge (w : World H R) (Δ : H → ℝ) (A : ℝ)
     (hΔ : ∀ r, Δ (w.host r) = A)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (plays : Fin R → ℕ → Option ℝ) (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime plays r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
@@ -1031,7 +1047,8 @@ def sendListArrivals [DecidableEq H] (v : World H R) (i h : H) (t s : Time)
         let evs := match v.network.deliver i h s acc.1 with
           | some a =>
               if a = t then
-                acc.2 ++ [⟨(v.clock h).read t, .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                acc.2 ++ [⟨(v.clock h).read t, .received i m.2.1 (m.2.2.filter (· ∈ held))
+                  ((v.clock h).read (v.network.reach i h s acc.1))⟩]
               else acc.2
           | none => acc.2
         (acc.1 + 1, evs)
@@ -1069,7 +1086,8 @@ private theorem sendListArrivals_nil_of_no_deliver [DecidableEq H] (v : World H 
             let evs := match v.network.deliver i h s acc.1 with
               | some a =>
                   if a = t then
-                    acc.2 ++ [⟨(v.clock h).read t, .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                    acc.2 ++ [⟨(v.clock h).read t, .received i m.2.1 (m.2.2.filter (· ∈ held))
+                      ((v.clock h).read (v.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1089,7 +1107,8 @@ private theorem sendListArrivals_nil_of_no_deliver [DecidableEq H] (v : World H 
     · exact ih q evs
 
 private theorem sendListArrivals_shift [DecidableEq H] (w : World H R) (Δ : H → ℝ)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     (i h : H) (t s : Time) (held : Finset ℕ) (q0 : ℕ) (sends : List (H × Msg × Finset ℕ)) :
     sendListArrivals (w.shiftHosts Δ hnet) i h (t + Δ h) (s + Δ i) held q0 sends
       = sendListArrivals w i h t s held q0 sends := by
@@ -1102,7 +1121,9 @@ private theorem sendListArrivals_shift [DecidableEq H] (w : World H R) (Δ : H �
               | some a =>
                   if a = t + Δ h then
                     acc.2 ++ [⟨((w.shiftHosts Δ hnet).clock h).read (t + Δ h),
-                      .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                      .received i m.2.1 (m.2.2.filter (· ∈ held))
+                        (((w.shiftHosts Δ hnet).clock h).read
+                          ((w.shiftHosts Δ hnet).network.reach i h (s + Δ i) acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1114,7 +1135,8 @@ private theorem sendListArrivals_shift [DecidableEq H] (w : World H R) (Δ : H �
               | some a =>
                   if a = t then
                     acc.2 ++ [⟨(w.clock h).read t,
-                      .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                      .received i m.2.1 (m.2.2.filter (· ∈ held))
+                        ((w.clock h).read (w.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1131,7 +1153,9 @@ private theorem sendListArrivals_shift [DecidableEq H] (w : World H R) (Δ : H �
             | some a =>
                 if a = t + Δ h then
                   acc.2 ++ [⟨((w.shiftHosts Δ hnet).clock h).read (t + Δ h),
-                    .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                    .received i m.2.1 (m.2.2.filter (· ∈ held))
+                      (((w.shiftHosts Δ hnet).clock h).read
+                          ((w.shiftHosts Δ hnet).network.reach i h (s + Δ i) acc.1))⟩]
                 else acc.2
             | none => acc.2
           (acc.1 + 1, evs)
@@ -1141,7 +1165,8 @@ private theorem sendListArrivals_shift [DecidableEq H] (w : World H R) (Δ : H �
             | some a =>
                 if a = t then
                   acc.2 ++ [⟨(w.clock h).read t,
-                    .received i m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                    .received i m.2.1 (m.2.2.filter (· ∈ held))
+                      ((w.clock h).read (w.network.reach i h s acc.1))⟩]
                 else acc.2
             | none => acc.2
           (acc.1 + 1, evs)
@@ -1226,7 +1251,8 @@ private theorem sentArrivalsFromView_append_no_deliver [DecidableEq H] (σ : Sol
       exact hl
 
 theorem sentArrivalsFromView_shiftHosts [DecidableEq H] (σ : Solution H R Msg) (w : World H R)
-    (Δ : H → ℝ) (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (Δ : H → ℝ) (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     (i h : H) (t : Time) (view : List (Event H R Msg)) :
     sentArrivalsFromView σ (w.shiftHosts Δ hnet) i h (t + Δ h) view
       = sentArrivalsFromView σ w i h t view := by
@@ -1289,7 +1315,8 @@ def filterOriginArrivals [DecidableEq H] (v : World H R) (i h : H) (t : Time)
     (inFlight : List (InFlight H Msg)) : List (Event H R Msg) :=
   inFlight.filterMap fun m =>
     if m.origin = i ∧ m.destination = h ∧ m.arrival = t then
-      some ⟨(v.clock h).read t, .received m.origin m.contents m.frames⟩
+      some ⟨(v.clock h).read t, .received m.origin m.contents m.frames
+        ((v.clock m.destination).read m.reached)⟩
     else none
 
 private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
@@ -1308,7 +1335,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
             let evs := match v.network.deliver i h s acc.1 with
               | some a =>
                   if a = t then
-                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))⟩]
+                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))
+                      ((v.clock h).read (v.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1319,7 +1347,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
             let evs := match v.network.deliver i h s acc.1 with
               | some a =>
                   if a = t then
-                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))⟩]
+                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))
+                      ((v.clock h).read (v.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1348,7 +1377,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
             let evs := match v.network.deliver i h s acc.1 with
               | some a =>
                   if a = t then
-                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))⟩]
+                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))
+                      ((v.clock h).read (v.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1359,7 +1389,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
             let evs := match v.network.deliver i h s acc.1 with
               | some a =>
                   if a = t then
-                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))⟩]
+                    acc.2 ++ [⟨(v.clock h).read t, .received i x.2.1 (x.2.2.filter (· ∈ held))
+                      ((v.clock h).read (v.network.reach i h s acc.1))⟩]
                   else acc.2
               | none => acc.2
             (acc.1 + 1, evs)
@@ -1393,7 +1424,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
                   match v.network.deliver h₀ h s (st.sentCount h₀ h) with
                   | some a =>
                       if a = t then
-                        [⟨(v.clock h).read t, .received h₀ m.2.1 (m.2.2.filter (· ∈ held))⟩]
+                        [⟨(v.clock h).read t, .received h₀ m.2.1 (m.2.2.filter (· ∈ held))
+                          ((v.clock h).read (v.network.reach h₀ h s (st.sentCount h₀ h)))⟩]
                       else []
                   | none => []
                 else []) := by
@@ -1431,7 +1463,8 @@ private theorem sendAll_filterOriginArrivals [DecidableEq H] (v : World H R)
             dsimp only
             split_ifs with hat
             · simpa using (hfold_append rest (st.sentCount h₀ h + 1)
-                [⟨(v.clock h).read t, .received h₀ m.2.1 (m.2.2.filter (· ∈ held))⟩] []).symm
+                [⟨(v.clock h).read t, .received h₀ m.2.1 (m.2.2.filter (· ∈ held))
+                  ((v.clock h).read (v.network.reach h₀ h s (st.sentCount h₀ h)))⟩] []).symm
             · simp
         · simp only [hmh, ite_false] at hsc1 ⊢
           rw [hsc1, List.nil_append]
@@ -1844,7 +1877,8 @@ def remArrivals [DecidableEq H] (v : World H R) (h : H) (t : Time) (st : State H
   (List.range (R + 2)).flatMap fun idx =>
     st.inFlight.filterMap fun m =>
       if v.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t then
-        some ⟨(v.clock h).read t, .received m.origin m.contents m.frames⟩
+        some ⟨(v.clock h).read t, .received m.origin m.contents m.frames
+          ((v.clock m.destination).read m.reached)⟩
       else none
 
 /-- No arrival remains at host `h` at time `t` when no message in transit to
@@ -2134,7 +2168,8 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
     rw [hget]
     dsimp only
     set st₀ : State H R Msg := { st with inFlight := st.inFlight.eraseIdx p }
-    set obs : Observation H R Msg := .received m.origin m.contents m.frames
+    set obs : Observation H R Msg :=
+      .received m.origin m.contents m.frames ((v.clock m.destination).read m.reached)
     set st1 := st₀.handle σ v lookahead m.destination t obs
     have hremH0 : remHanded v h t st = [] := remHanded_of_ne v h hnoH
     have hremH1 : remHanded v h t st1 = [] :=
@@ -2151,7 +2186,8 @@ theorem Solution.views_append_remAll_step [DecidableEq H] (σ : Solution H R Msg
     have htake_nil : ((st.inFlight.take p).filterMap
         (fun x => if v.hostIndex x.origin = v.hostIndex m.origin ∧ x.destination = h
             ∧ x.arrival = t then
-          some (⟨(v.clock h).read t, .received x.origin x.contents x.frames⟩ : Event H R Msg)
+          some (⟨(v.clock h).read t, .received x.origin x.contents x.frames
+            ((v.clock x.destination).read x.reached)⟩ : Event H R Msg)
         else none) : List (Event H R Msg)) = [] := by
       rw [List.filterMap_eq_nil_iff]
       intro x hx
@@ -2439,7 +2475,8 @@ interleavings — and `σ` produces identical playback decisions
 `σ.plays w' lookahead = σ.plays w lookahead`. -/
 theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
-    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+    (hnet : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet) lookahead n) :
     σ.plays (w.shiftHosts Δ hnet) lookahead = σ.plays w lookahead := by
@@ -2644,7 +2681,8 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
               if w'.hostIndex m.origin = w.hostIndex i ∧ m.destination = h
                   ∧ m.arrival = t + Δ h then
                 some (⟨(w'.clock h).read (t + Δ h),
-                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+                  .received m.origin m.contents m.frames
+                    ((w'.clock m.destination).read m.reached)⟩ : Event H R Msg)
               else none)
             = filterOriginArrivals w' i h (t + Δ h) (σ.states w' lookahead n₂).inFlight := by
           unfold filterOriginArrivals
@@ -2658,7 +2696,8 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
         have h2 : (σ.states w lookahead n₁).inFlight.filterMap (fun m =>
               if w.hostIndex m.origin = w.hostIndex i ∧ m.destination = h ∧ m.arrival = t then
                 some (⟨(w.clock h).read t,
-                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+                  .received m.origin m.contents m.frames
+                    ((w.clock m.destination).read m.reached)⟩ : Event H R Msg)
               else none)
             = filterOriginArrivals w i h t (σ.states w lookahead n₁).inFlight := by
           unfold filterOriginArrivals
@@ -2674,7 +2713,8 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
         have e1 : (σ.states w' lookahead n₂).inFlight.filterMap (fun m =>
               if w'.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t + Δ h then
                 some (⟨(w'.clock h).read (t + Δ h),
-                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+                  .received m.origin m.contents m.frames
+                    ((w'.clock m.destination).read m.reached)⟩ : Event H R Msg)
               else none) = [] := by
           rw [List.filterMap_eq_nil_iff]
           intro x _
@@ -2685,7 +2725,8 @@ theorem Solution.plays_shiftHosts [DecidableEq H] (σ : Solution H R Msg)
         have e2 : (σ.states w lookahead n₁).inFlight.filterMap (fun m =>
               if w.hostIndex m.origin = idx ∧ m.destination = h ∧ m.arrival = t then
                 some (⟨(w.clock h).read t,
-                  .received m.origin m.contents m.frames⟩ : Event H R Msg)
+                  .received m.origin m.contents m.frames
+                    ((w.clock m.destination).read m.reached)⟩ : Event H R Msg)
               else none) = [] := by
           rw [List.filterMap_eq_nil_iff]
           intro x _
@@ -2964,8 +3005,10 @@ at least one of `w⁺` and `w⁻` suffers long-run synchronization cost at least
 `varFin (fun r => Δ (w.host r))`. -/
 theorem Solution.sync_shiftHosts_lower_bound [DecidableEq H] (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet₁) lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts (-Δ) hnet₂) lookahead n)
@@ -2986,8 +3029,10 @@ one of `w⁺` and `w⁻` suffers long-run tracking cost at least `A²`. -/
 theorem Solution.tracking_shiftHosts_lower_bound [DecidableEq H] (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (Δ : H → ℝ) (A : ℝ) (hΔs : Δ w.sender = 0)
     (hΔ : ∀ r, Δ (w.host r) = A)
-    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
-    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+    (hnet₁ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + Δ i < w.network.reach i j s q + Δ j)
+    (hnet₂ : ∀ i j s q a, w.network.deliver i j s q = some a →
+      s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts Δ hnet₁) lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (w.shiftHosts (-Δ) hnet₂) lookahead n)

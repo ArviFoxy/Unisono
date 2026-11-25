@@ -172,7 +172,7 @@ omit [DecidableEq H] in
 `r`'s play time of each frame with the timeline of the speaker's host. -/
 theorem playTime_shiftStarKeepPeers [DecidableEq H] (w : World H R) (Δ : H → ℝ)
     (hstar : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+      w.network.deliver i j s q = some a → s + Δ i < w.network.reach i j s q + Δ j)
     (plays : Fin R → ℕ → Option ℝ) (r : Fin R) (n : ℕ) :
     (shiftStarKeepPeers w Δ hstar).playTime plays r n
       = (w.playTime plays r n).map (· + Δ (w.host r)) := by
@@ -195,7 +195,7 @@ theorem Solution.cost_shiftStarKeepPeers_add_ge (σ : Solution H R Msg) (w : Wor
     (lookahead : ℕ+) (c : Weights) (hstar : σ.IsStar w.sender) (X : H → ℝ)
     (hXs : X w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + X i < a + X j)
+      w.network.deliver i j s q = some a → s + X i < w.network.reach i j s q + X j)
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w X hstar₁) lookahead n)
     (hR : 0 < R) (N : ℕ)

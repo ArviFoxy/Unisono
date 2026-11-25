@@ -64,7 +64,7 @@ schedule at the right end of the block. -/
 def arrivalsOf (l : List (Event H R Payload)) : List (ℝ × ℝ) :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.block _ _ capture period _ _) F => some (e.reading, capture + F.card * period)
+    | .received _ (.block _ _ capture period _ _) F _ => some (e.reading, capture + F.card * period)
     | _ => none
 
 /-- The largest of the values `a.2 + s * (y - a.1)` over the arrivals `a` of
@@ -205,7 +205,7 @@ theorem mem_arrivalsOf_run {kn : KnotSettings} (hcap : rules.capture = knotCaptu
   | handed frames stamp => simp [hobs] at hfe
   | asked r outputs stamp => simp [hobs] at hfe
   | timer => simp [hobs] at hfe
-  | received j c F =>
+  | received j c F _ =>
     cases c with
     | ask sent need => simp [hobs] at hfe
     | answer sent received => simp [hobs] at hfe

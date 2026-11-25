@@ -92,7 +92,7 @@ slope of the cost of that need, within the bounds. A handover moves the
 level to the end of the block. Other events change nothing. -/
 def levelStep (q : LevelSettings) (st : LevelState) (e : Event H R Payload) : LevelState :=
   match e.observation with
-  | .received _ (.ask _ (some y)) _ =>
+  | .received _ (.ask _ (some y)) _ _ =>
       ⟨clampTo q.lo q.hi (st.aim - q.step * needSlope q.latencyCost q.lateCost y st.aim),
         st.level⟩
   | .handed _ _ => ⟨st.aim, st.level + q.blockSize * slopeTo q st⟩
@@ -128,7 +128,7 @@ theorem levelStep_level (q : LevelSettings) (st : LevelState) {e : Event H R Pay
   | handed frames stamp => exact absurd hobs (he frames stamp)
   | asked r outputs stamp => rfl
   | timer => rfl
-  | received i c F =>
+  | received i c F _ =>
     cases c with
     | block first stamp capture period level slope => rfl
     | answer sent received => rfl
@@ -161,7 +161,7 @@ theorem levelStep_mem (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (hlohi : q.lo 
   cases hobs : e.observation with
   | asked r outputs stamp => exact ⟨ha, hl⟩
   | timer => exact ⟨ha, hl⟩
-  | received i c F =>
+  | received i c F _ =>
     cases c with
     | block first stamp capture period level slope => exact ⟨ha, hl⟩
     | answer sent received => exact ⟨ha, hl⟩
@@ -234,7 +234,7 @@ theorem levelState_mem (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (hlohi : q.lo
 def needsOf (l : List (Event H R Payload)) : List ℝ :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.ask _ (some y)) _ => some y
+    | .received _ (.ask _ (some y)) _ _ => some y
     | _ => none
 
 /-- One step of the aim `x` for the need `y`. -/
@@ -261,7 +261,7 @@ theorem levelState_aim (q : LevelSettings) (l : List (Event H R Payload)) :
       | handed frames stamp => simp [needsOf, levelStep, hobs]
       | asked r outputs stamp => simp [needsOf, levelStep, hobs]
       | timer => simp [needsOf, levelStep, hobs]
-      | received i c F =>
+      | received i c F _ =>
         cases c with
         | block first stamp capture period level slope => simp [needsOf, levelStep, hobs]
         | answer sent received => simp [needsOf, levelStep, hobs]

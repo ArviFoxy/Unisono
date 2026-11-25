@@ -885,8 +885,8 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
           asked := fun b => b + 1 / 2
           asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
-      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
-        simp only [Option.some.injEq] at h; linarith⟩
+      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ => s + 1, fun _ _ s _ a h => by
+        simp only [Option.some.injEq] at h; exact ⟨by linarith, h.le⟩⟩
       target := fun _ => 0 },
     { clockRate := 0
       clockRate_nonneg := le_rfl
@@ -971,8 +971,9 @@ theorem IdealConstantWorld.example_holds :
             asked := fun b => b + 1 / 2
             asked_mono := StrictMono.monotone fun a b h => by simpa using h
             reported := fun b => (b + 1 : ℝ) + 1 }
-        network := ⟨fun i j s _ => some (s + d i j), fun i j s _ a h => by
-          simp only [Option.some.injEq] at h; linarith [hd i j]⟩
+        network := ⟨fun i j s _ => some (s + d i j), fun i j s _ => s + d i j,
+          fun i j s _ a h => by
+            simp only [Option.some.injEq] at h; exact ⟨by linarith [hd i j], h.le⟩⟩
         target := fun _ => 1 }
   have mkHolds : ∀ (d : Fin 2 → Fin 2 → ℝ) (hd : ∀ i j, 0 < d i j),
       IdealConstantWorld.Holds
@@ -995,6 +996,7 @@ theorem IdealConstantWorld.example_holds :
         speaker_asked := fun _ b => by simp [mkWorld]; ring
         speaker_reported := fun _ b => by simp [mkWorld]
         network := fun _ _ _ _ => rfl
+        reach := fun _ _ _ _ => rfl
         target_eq := fun _ => rfl }
   constructor
   · refine ⟨_, mkWorld (fun _ _ => 1) (fun _ _ => one_pos),
@@ -1163,7 +1165,11 @@ theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2
           asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d ω i j).deliver s q,
-        fun i j _ _ _ h => Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h⟩
+        fun i j s q => ((d ω i j).deliver s q).getD s,
+        fun i j s q a h => by
+          simp only [h, Option.getD_some]
+          exact ⟨Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h,
+            le_rfl⟩⟩
       target := fun _ => 0 }
   let ownJ : Fin 3 → Fin 3 → PacketJitterNoise := fun i j =>
     if i = 0 ∧ j = 1 then ⟨1, fun _ _ => 1⟩
@@ -1329,7 +1335,11 @@ theorem StochasticWorld.example_holds :
           asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d₀ () i j).deliver s q,
-        fun i j _ _ _ h => Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h⟩
+        fun i j s q => ((d₀ () i j).deliver s q).getD s,
+        fun i j s q a h => by
+          simp only [h, Option.getD_some]
+          exact ⟨Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h,
+            le_rfl⟩⟩
       target := fun _ => 0 }
   let P₀ : Measure Unit := Measure.dirac ()
   have hmem : ∀ f : Unit → ℝ, MemLp f 2 P₀ := fun f =>
@@ -1739,10 +1749,11 @@ private def exampleWorld (ω : Component (Fin 3) 2 → ℝ) : World (Fin 3) 2 wh
           * Real.exp (-ω (.deviceLogRate (some r))) }
   network :=
     { deliver := fun i j s _ => some (s + (exampleDraw ω).split i j * 1 + 0)
-      after := fun i j s _ a h => by
+      reach := fun i j s _ => s + (exampleDraw ω).split i j * 1 + 0
+      reach_mem := fun i j s _ a h => by
         simp only [Option.some.injEq] at h
         have := (exampleDraw_split_mem ω i j).1
-        linarith }
+        exact ⟨by linarith, h.le⟩ }
   target := fun _ => 1
 
 private theorem exp_mul_exp_neg (c : ℝ) : Real.exp c * Real.exp (-c) = 1 := by
@@ -1769,11 +1780,13 @@ private theorem exampleWorld_builds (ω : Component (Fin 3) 2 → ℝ) :
   network := fun i j s q => by
     have hzero : ∀ t : Time, IsBacklog (fun _ : Time => (0 : ℝ)) t 0 := fun t =>
       isBacklog_zero_of_const (fun _ _ => rfl) t
-    refine ⟨0, 0, 0, hzero _, hzero _, hzero _, ?_⟩
-    change some (s + (exampleDraw ω).split i j * 1 + 0)
-      = some (s + 0 + (exampleDraw ω).split i j * 1 + 0 + 0)
-    congr 1
-    ring
+    refine ⟨0, 0, 0, hzero _, hzero _, hzero _, ?_, ?_⟩
+    · change some (s + (exampleDraw ω).split i j * 1 + 0)
+        = some (s + 0 + (exampleDraw ω).split i j * 1 + 0 + 0)
+      congr 1
+      ring
+    · change s + (exampleDraw ω).split i j * 1 + 0 = s + 0 + (exampleDraw ω).split i j * 1 + 0
+      ring
   deviceClock := fun x =>
     ⟨{ read := fun t => Real.exp (ω (.deviceLogRate x)) * t
        strictMono := fun a b hab => mul_lt_mul_of_pos_left hab (Real.exp_pos _)

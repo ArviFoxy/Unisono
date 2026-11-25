@@ -157,8 +157,13 @@ A world consists of:
   strictly increasing function from true time to readings.
 \item \emph{The network} (\lean{Network}), which carries messages between
   any two hosts. When host $i$ sends its $q$-th message to host $j$ at true
-  time $s$, the network either delivers it at a true time
-  $\mathrm{deliver}_{ij}(s,q) > s$ or drops it (\lean{deliver}). Delivery
+  time $s$, the network either drops it, or the message reaches host $j$ at
+  a true time $\mathrm{reach}_{ij}(s,q) > s$ (\lean{reach}) and the program
+  of host $j$ handles it at a true time
+  $\mathrm{deliver}_{ij}(s,q) \ge \mathrm{reach}_{ij}(s,q)$
+  (\lean{deliver}). The kernel of host $j$ stamps the message with the
+  reading of the host's clock when the message reaches the host; a host
+  that is busy handles the message later. Delivery
   and loss may depend on $s$ and $q$, but not on the payload. Throughout
   this specification, a directed \emph{link} $(i, j)$ represents the entire
   end-to-end path between the application's send call on host $i$ and
@@ -197,13 +202,16 @@ own clock:
   target latency, and the block's timestamp (at the sender's host only);
 \item a speaker's device requests a block: its output samples and the
   block's timestamp;
-\item a message arrives: its sender, its payload, and the frames of the
-  source whose data it carries;
+\item a message arrives: its sender, its payload, the frames of the
+  source whose data it carries, and the kernel's stamp, which is the
+  reading of the host's clock when the message reached the host;
 \item a timer that the host set fires.
 \end{itemize}
 The reading at a handover or at a request is the reading of the host's
 clock when the host handles the event, which can be later than the true
-time at which the device raised it.
+time at which the device raised it. In the same way, the reading at an
+arrival is the reading when the host's program handles the message, and
+the kernel's stamp is the reading of the same moment or of an earlier one.
 The \emph{view} of a host at an event is the list of all events it has
 observed so far, each with its clock reading. True time is not in the view,
 and neither is anything that happens at another host unless a message
@@ -544,8 +552,9 @@ model (\lean{IdealConstantWorld.Holds}) when:
   ($o_r(g_r(b)) - a_r(b) = \lambda$), and timestamps are exact
   (\lean{ReportsWithin 0});
 \item network: every directed link $(i, j)$ delivers every message without
-  loss at constant delay $d_{ij}$,
-  $\mathrm{deliver}_{ij}(s, q) = s + d_{ij}$;
+  loss at constant delay $d_{ij}$, and the program of the receiving host
+  handles each message at the moment at which it reaches the host,
+  $\mathrm{deliver}_{ij}(s, q) = \mathrm{reach}_{ij}(s, q) = s + d_{ij}$;
 \item target latency: $L^*(n) = L^*$ for every frame $n$.
 \end{itemize}
 Two subclasses distinguish link symmetry:
@@ -967,7 +976,8 @@ The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
   same way from $W_i$.
 \item A message that host $i$ sends to host $j$ at true time $s$ leaves
   $i$ at $s_1 = s + Q_i(s)$, reaches $j$ at
-  $s_2 = s_1 + u_{ij}\tau_{ij} + Q_{ij}(s_1)$, and is observed by $j$ at
+  $s_2 = s_1 + u_{ij}\tau_{ij} + Q_{ij}(s_1)$, where the kernel of $j$
+  stamps it, and is handled by the program of $j$ at
   $s_2 + Q_j(s_2)$. No message is lost. A pause of length $x$ therefore
   delays what is sent at its start by $x$ and what is sent later by less,
   down to nothing at its end, and everything that it withheld arrives
@@ -1151,10 +1161,6 @@ simplification distorts.
   a pause of its host outlasts it.
 \item \emph{A host that was paused handles everything that waited at one
   true time.} A real host takes some time for each event.
-\item \emph{A paused host stamps a message when it handles it.} A real
-  kernel can stamp a message when it arrives, while the program is paused.
-  The model overstates what a pause of a host does to an estimate of a
-  clock.
 \item \emph{No message is lost, reordered or duplicated.}
 \item \emph{The messages of a solution are free}: they add no work to a
   link, and nothing limits their number.
@@ -1471,7 +1477,9 @@ by $\Delta(h)$ with $\Delta(\mathrm{sender}) = 0$ (\lean{World.shiftHosts})
 adds $\Delta(j) - \Delta(i)$ to link $(i, j)$'s one-way delay while leaving
 every round-trip time unchanged
 (\lean{World.\allowbreak shiftHosts\_\allowbreak rtt\_\allowbreak eq}).
-Under non-Zeno progress, every host observes the identical local view and
+The shift has to leave every message reaching its host after it is sent.
+Under non-Zeno progress, every host then observes the identical local view,
+with the same stamps of the kernel, and
 produces identical playback decisions
 (\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
 Because a star solution never sends on receiver-to-receiver links, its run

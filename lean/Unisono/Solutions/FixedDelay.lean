@@ -197,17 +197,17 @@ def remember (h : H) (m : Memory H R) (e : Event H R Payload) : Memory H R :=
         | some (f, _) => { m with block := some (f, stamp), offset := some (0, 0) }
         | none => m
       else m
-  | .received _ (.block f stamp) _ =>
+  | .received _ (.block f stamp) _ _ =>
       if h = p.sender then m
       else
         match m.block with
         | some (f', _) => if f' < f then { m with block := some (f, stamp) } else m
         | none => { m with block := some (f, stamp) }
-  | .received i (.ask sent) _ =>
+  | .received i (.ask sent) _ _ =>
       if h = p.sender ∧ answers m i sent = true then
         { m with answered := Function.update m.answered i (some sent) }
       else m
-  | .received _ (.answer sent received) _ =>
+  | .received _ (.answer sent received) _ _ =>
       if h = p.sender then m
       else
         let estimate := (sent, received - (sent + e.reading) / 2)
@@ -234,7 +234,7 @@ def act (h : H) (m : Memory H R) (e : Event H R Payload) : Action H Payload :=
               plays := fun _ => none }
         | none => ⟨[], [], fun _ => none⟩
       else ⟨[], [], fun _ => none⟩
-  | .received i (.ask sent) _ =>
+  | .received i (.ask sent) _ _ =>
       if h = p.sender ∧ answers m i sent = true then
         { sends := List.replicate p.copies (i, Payload.answer sent e.reading, ∅)
           timers := []

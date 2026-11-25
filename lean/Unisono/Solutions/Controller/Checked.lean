@@ -88,7 +88,7 @@ theorem ruled_exchange (p : FixedDelay.Params H) (rules : Rules H R) (w : World 
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r) := by
   have hmore := ruled_sendsMore (R := R) p rules
   rw [exchangesOf_eq, Solution.views_forget w Payload.plain lookahead hmore n h] at hx
-  obtain ⟨e, he, i, F, hobs, hread⟩ := mem_plainExchangesOf hx
+  obtain ⟨e, he, i, F, ks, hobs, hread⟩ := mem_plainExchangesOf hx
   obtain ⟨j, hj, t, obs, hhj, rfl⟩ :=
     Solution.handled_of_mem_views w (FixedDelay.solution p) lookahead he
   simp only at hobs hread

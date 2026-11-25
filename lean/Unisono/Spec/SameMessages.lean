@@ -142,7 +142,7 @@ theorem step_withoutPlays (σ σ' : Solution H R Msg) (lookahead : ℕ+)
           congrArg (fun s : State H R Msg =>
             ({ s with inFlight := st'.inFlight.eraseIdx p } : State H R Msg)) hst
         exact handle_withoutPlays w σ σ' lookahead hs ht hst' m.destination m.arrival
-          (.received m.origin m.contents m.frames)
+          (.received m.origin m.contents m.frames ((w.clock m.destination).read m.reached))
     | timer p =>
       dsimp only
       rw [e4]

@@ -37,7 +37,7 @@ image under `π`. -/
 def Observation.mapMsg (π : Msg' → Msg) : Observation H R Msg' → Observation H R Msg
   | .handed frames reported => .handed frames reported
   | .asked r outputs reported => .asked r outputs reported
-  | .received i contents frames => .received i (π contents) frames
+  | .received i contents frames stamp => .received i (π contents) frames stamp
   | .timer => .timer
 
 /-- Replacing a payload does not change the frames that an event brings. -/
@@ -53,7 +53,7 @@ def Event.mapMsg (π : Msg' → Msg) (e : Event H R Msg') : Event H R Msg :=
 /-- A message in transit, with its payload replaced by its image under
 `π`. -/
 def InFlight.mapMsg (π : Msg' → Msg) (m : InFlight H Msg') : InFlight H Msg :=
-  ⟨m.arrival, m.origin, m.destination, π m.contents, m.frames⟩
+  ⟨m.arrival, m.reached, m.origin, m.destination, π m.contents, m.frames⟩
 
 /-- The messages that an action sends, with their payloads replaced by their
 images under `π`. -/
@@ -202,7 +202,8 @@ theorem forget_step {σ' : Solution H R Msg'} {σ : Solution H R Msg}
       | some m =>
         have h := forget_handle w π hσ lookahead
           ({ st with inFlight := st.inFlight.eraseIdx p } : State H R Msg') m.destination
-          m.arrival (.received m.origin m.contents m.frames)
+          m.arrival
+          (.received m.origin m.contents m.frames ((w.clock m.destination).read m.reached))
         have he : ({ st with inFlight := st.inFlight.eraseIdx p } : State H R Msg').forget π
             = ({ st.forget π with
                 inFlight := (st.forget π).inFlight.eraseIdx p } : State H R Msg) := by

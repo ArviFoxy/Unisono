@@ -59,7 +59,7 @@ queries to the sender when one of its devices requests a block. -/
 theorem act_sends (h : H) (mem : Memory H R) (e : Event H R Payload)
     {s : H × Payload × Finset ℕ} (hs : s ∈ (act p h mem e).sends) :
     (h = p.sender ∧ s.1 ≠ p.sender)
-      ∨ (h = p.sender ∧ ∃ sent F, e.observation = .received s.1 (.ask sent) F)
+      ∨ (h = p.sender ∧ ∃ sent F ks, e.observation = .received s.1 (.ask sent) F ks)
       ∨ (h ≠ p.sender ∧ s.1 = p.sender
           ∧ ∃ r outs stamp, e.observation = .asked r outs stamp) := by
   unfold act at hs
@@ -76,7 +76,7 @@ theorem act_sends (h : H) (mem : Memory H R) (e : Event H R Payload)
         obtain ⟨j, ⟨-, hj⟩, -, rfl⟩ := hs
         exact Or.inl ⟨hsend, hj⟩
     · simp at hs
-  | received i payload F =>
+  | received i payload F _ =>
     cases payload with
     | block _ _ => simp [hobs] at hs
     | ask sent =>
@@ -84,7 +84,7 @@ theorem act_sends (h : H) (mem : Memory H R) (e : Event H R Payload)
       split_ifs at hs with hc
       · rw [List.mem_replicate] at hs
         obtain ⟨-, rfl⟩ := hs
-        exact Or.inr (Or.inl ⟨hc.1, sent, F, rfl⟩)
+        exact Or.inr (Or.inl ⟨hc.1, sent, F, _, rfl⟩)
       · simp at hs
     | answer _ _ => simp [hobs] at hs
   | asked r outputs stamp =>
@@ -114,13 +114,13 @@ theorem inFlight_provenance (w : World H R) (lookahead : ℕ+) (n : ℕ)
   | zero => simp [Solution.states, State.start] at hx
   | succ n ih =>
     rcases Solution.mem_inFlight_succ w (solution p) lookahead n hx with hold |
-      ⟨h, t, obs, hhandled, s, hs, ho, hd, -, -, q, hq⟩
+      ⟨h, t, obs, hhandled, s, hs, ho, hd, -, -, q, hq, -⟩
     · exact ih hold
     · rw [solution_append] at hs
-      rcases act_sends p h _ _ hs with ⟨hh, hne⟩ | ⟨hh, sent, F, hobs⟩ |
+      rcases act_sends p h _ _ hs with ⟨hh, hne⟩ | ⟨hh, sent, F, ks, hobs⟩ |
         ⟨hh, hsd, r, outs, stamp, hobs⟩
       · exact ⟨fun _ => ho.trans hh, fun hdest => absurd (hd.symm.trans hdest) hne⟩
-      · have hobs' : obs = .received s.1 (.ask sent) F := hobs
+      · have hobs' : obs = .received s.1 (.ask sent) F ks := hobs
         rw [hobs'] at hhandled
         obtain ⟨x', hx', hdst', -, horig', -, -⟩ :=
           Solution.handled_received w (solution p) lookahead hhandled

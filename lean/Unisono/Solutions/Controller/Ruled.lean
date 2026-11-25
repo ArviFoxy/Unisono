@@ -226,7 +226,7 @@ theorem ruled_sends_block (h : H) (l : List (Event H R Payload)) (e : Event H R 
       | handed frames' stamp' =>
         simpa [Event.mapMsg, Observation.mapMsg] using hobs
       | asked r outputs stamp' => simp [Event.mapMsg, Observation.mapMsg] at hobs
-      | received i c' F => simp [Event.mapMsg, Observation.mapMsg] at hobs
+      | received i c' F _ => simp [Event.mapMsg, Observation.mapMsg] at hobs
       | timer => simp [Event.mapMsg, Observation.mapMsg] at hobs
     · rw [← hc, ← hpd, ← hlv, ← hsl]
       rfl
@@ -329,8 +329,8 @@ block `b` and the header that the rules gave at the handover. -/
 theorem ruled_received_block (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H}
     {e : Event H R Payload}
     (he : e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views h)
-    {j : H} {fr : ℕ} {stamp c pd lv sl : ℝ} {F : Finset ℕ}
-    (ho : e.observation = .received j (.block fr stamp c pd lv sl) F) :
+    {j : H} {fr : ℕ} {stamp c pd lv sl : ℝ} {F : Finset ℕ} {ks : ℝ}
+    (ho : e.observation = .received j (.block fr stamp c pd lv sl) F ks) :
     ∃ b t, e.reading = (w.clock h).read t
       ∧ (∃ q, w.network.deliver w.sender h (w.source.handed b) q = some t)
       ∧ (∀ r : Fin R, t < (w.speaker r).asked
@@ -343,7 +343,7 @@ theorem ruled_received_block (hsender : p.sender = w.sender) (lookahead : ℕ+) 
   obtain ⟨i₁, hi₁, t, obs, hh, rfl⟩ := Solution.handled_of_mem_views w _ lookahead he
   dsimp only at ho
   subst ho
-  obtain ⟨m, hm, hd, ha, -, hcon, hF⟩ := Solution.handled_received w _ lookahead hh
+  obtain ⟨m, hm, hd, ha, -, hcon, hF, -⟩ := Solution.handled_received w _ lookahead hh
   obtain ⟨b, ⟨i, hi, hhi, hhd⟩, hfr, -, -, hframes, q, hq⟩ :=
     ruled_block_origin p rules w hsender lookahead i₁ hm hcon
   refine ⟨b, t, rfl, ⟨q, ?_⟩,
@@ -362,8 +362,8 @@ timestamp that the capture device reported for `b`. -/
 theorem ruled_received_stamp (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H}
     {e : Event H R Payload}
     (he : e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views h)
-    {j : H} {fr : ℕ} {stamp c pd lv sl : ℝ} {F : Finset ℕ}
-    (ho : e.observation = .received j (.block fr stamp c pd lv sl) F) {b : ℕ}
+    {j : H} {fr : ℕ} {stamp c pd lv sl : ℝ} {F : Finset ℕ} {ks : ℝ}
+    (ho : e.observation = .received j (.block fr stamp c pd lv sl) F ks) {b : ℕ}
     (hb : fr = w.source.first b) : stamp = w.source.reported b := by
   obtain ⟨i₁, hi₁, t, obs, hh, rfl⟩ := Solution.handled_of_mem_views w _ lookahead he
   dsimp only at ho
@@ -405,12 +405,12 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
       ∧ (rules.runHeader p w lookahead b).Covers (w.blockLength b) s
       ∧ x + rules.back = (rules.runHeader p w lookahead b).due s
       ∧ ∃ e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r),
-          ∃ i F, e.observation
+          ∃ i F ks, e.observation
               = .received i (.block (w.source.first b) (w.source.reported b)
                   (rules.runHeader p w lookahead b).capture
                   (rules.runHeader p w lookahead b).period
                   (rules.runHeader p w lookahead b).level
-                  (rules.runHeader p w lookahead b).slope) F
+                  (rules.runHeader p w lookahead b).slope) F ks
             ∧ F.card = w.blockLength b := by
   classical
   unfold Solution.chosenAt at hx
@@ -443,7 +443,7 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
   have hcov : hc.1.Covers hc.2 s := by
     have := List.find?_some hfind
     simpa using this
-  obtain ⟨e, he, i₀, stamp, F, hobs, hcount⟩ := mem_headersOf hmem
+  obtain ⟨e, he, i₀, stamp, F, ks, hobs, hcount⟩ := mem_headersOf hmem
   obtain ⟨b, t, -, hq, hlt, hfr, hF, hhandled, hhd⟩ :=
     ruled_received_block p rules w hsender lookahead he hobs
   have hcard : hc.2 = w.blockLength b := by
@@ -453,7 +453,7 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
     rfl
   have hheader : hc.1 = rules.runHeader p w lookahead b := hhd
   have hstamp := ruled_received_stamp p rules w hsender lookahead he hobs hfr
-  refine ⟨s, b, t, hs, hq, hlt, hhandled, ?_, ?_, e, he, i₀, F, ?_, ?_⟩
+  refine ⟨s, b, t, hs, hq, hlt, hhandled, ?_, ?_, e, he, i₀, F, ks, ?_, ?_⟩
   · rw [← hheader, ← hcard]
     exact hcov
   · rw [← hheader, hzc, ← hzx]

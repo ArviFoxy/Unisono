@@ -115,8 +115,8 @@ then `t` is before the next request of every speaker at every step from `i`
 on. So the message arrived strictly before every request that a later step
 handles. -/
 theorem Solution.received_lt_asked (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
-    {i k : ℕ} (hik : i ≤ k) {h : H} {t : Time} {j : H} {c : Msg} {F : Finset ℕ}
-    (hi : σ.handled w lookahead i = some (h, t, .received j c F)) (r : Fin R) :
+    {i k : ℕ} (hik : i ≤ k) {h : H} {t : Time} {j : H} {c : Msg} {F : Finset ℕ} {stamp : ℝ}
+    (hi : σ.handled w lookahead i = some (h, t, .received j c F stamp)) (r : Fin R) :
     t < (w.speaker r).asked ((σ.states w lookahead k).askedNext r) := by
   refine lt_of_lt_of_le ?_
     ((w.speaker r).asked_mono (Solution.askedNext_mono w σ lookahead r hik))

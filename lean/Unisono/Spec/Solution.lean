@@ -14,9 +14,12 @@ What a solution can do, and what happens when it runs.
 A host acts at **events**: the capture device hands over a block (at the
 sender), a playback device requests a block, a message arrives, or a timer
 that the host set fires. At each event the host decides from its **view**:
-the events it has observed so far, each with the reading of its own clock.
-True time is not in the view, and neither is anything that happens at
-another host unless a message reports it.
+the events it has observed so far, each with the reading of its own clock
+when its program handles the event. A message that arrives also comes with
+the kernel's stamp: the reading of the host's clock when the message reached
+the host, which is when the program handles the message or earlier. True
+time is not in the view, and neither is anything that happens at another
+host unless a message reports it.
 
 At an event a host sends messages to any hosts, sets timers at readings of
 its clock, and, when a speaker's device requests a block, chooses what each
@@ -77,9 +80,11 @@ inductive Observation (H : Type) (R : ℕ) (Msg : Type) where
   /-- Speaker `r`'s device requests a block: its output samples, and the
   timestamp that the device reports for the block. -/
   | asked (r : Fin R) (outputs : List ℕ) (reported : ℝ)
-  /-- A message arrives from host `i`: its payload, and the frames of the
-  source whose data it carries. -/
-  | received (i : H) (contents : Msg) (frames : Finset ℕ)
+  /-- A message arrives from host `i`: its payload, the frames of the source
+  whose data it carries, and the kernel's stamp, which is the reading of the
+  host's clock when the message reached the host. The reading of the event
+  is the reading when the host's program handles the message. -/
+  | received (i : H) (contents : Msg) (frames : Finset ℕ) (stamp : ℝ)
   /-- A timer that the host set fires. -/
   | timer
 
@@ -87,7 +92,7 @@ inductive Observation (H : Type) (R : ℕ) (Msg : Type) where
 device hands over, or those a message carries. -/
 def Observation.frames : Observation H R Msg → Finset ℕ
   | .handed frames _ => (frames.map Prod.fst).toFinset
-  | .received _ _ frames => frames
+  | .received _ _ frames _ => frames
   | _ => ∅
 
 /-- An event as a host sees it: the reading of its own clock, and what it
@@ -141,10 +146,12 @@ def playable (lookahead : ℕ+) (held : Finset ℕ) : Option ℝ → Option ℝ
         else none
   | none => none
 
-/-- A message in transit: when it arrives, from which host, to which host,
-its payload, and the frames of the source it carries. -/
+/-- A message in transit: when the program of its destination handles it,
+when it reaches its destination, from which host, to which host, its
+payload, and the frames of the source it carries. -/
 structure InFlight (H : Type) (Msg : Type) where
   arrival : Time
+  reached : Time
   origin : H
   destination : H
   contents : Msg
@@ -258,7 +265,8 @@ def send (h : H) (t : Time) (j : H) (contents : Msg) (frames : Finset ℕ) : Sta
     sentCount := Function.update st.sentCount h
       (Function.update (st.sentCount h) j (st.sentCount h j + 1))
     inFlight := match w.network.deliver h j t (st.sentCount h j) with
-      | some a => st.inFlight ++ [⟨a, h, j, contents, frames⟩]
+      | some a => st.inFlight
+          ++ [⟨a, w.network.reach h j t (st.sentCount h j), h, j, contents, frames⟩]
       | none => st.inFlight
     sent := st.sent ++ [⟨t, h, j, frames.card⟩] }
 
@@ -307,7 +315,8 @@ def step : State H R Msg :=
   | some (.arrival p) =>
       match st.inFlight[p]? with
       | some m => ({ st with inFlight := st.inFlight.eraseIdx p }).handle σ w lookahead
-          m.destination m.arrival (.received m.origin m.contents m.frames)
+          m.destination m.arrival
+          (.received m.origin m.contents m.frames ((w.clock m.destination).read m.reached))
       | none => st
   | some (.timer p) =>
       match st.timers[p]? with

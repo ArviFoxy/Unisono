@@ -223,19 +223,19 @@ theorem blockCheck_of_knot {p : FixedDelay.Params H} {rules : Rules H R}
     (hknot : ∀ b, dueEdge p rules w lookahead q share t.knots b ≤ s →
       s < dueEdge p rules w lookahead q share t.knots (b + 1) →
       w.knot t.knots b = w.knotInput t.knots b)
-    {e₀ : Event H R Payload} (he₀ : ∀ i msg F, e₀.observation ≠ .received i msg F) :
+    {e₀ : Event H R Payload} (he₀ : ∀ i msg F ks, e₀.observation ≠ .received i msg F ks) :
     blockCheck t (((ruled p rules : Solution H R Payload).states w lookahead n).views h
       ++ [e₀]) s := by
   obtain ⟨need, hlev⟩ := hK.level
   have hcap := hK.capture
   have hsender := hK.noLoss.sender
   have hprog := hK.handovers lookahead
-  intro e he i fr stamp capture period level slope F hobs hcov
+  intro e he i fr stamp capture period level slope F ks hobs hcov
   rcases List.mem_append.mp he with he | he
   swap
   · rw [List.mem_singleton] at he
     subst he
-    exact absurd hobs (he₀ _ _ _)
+    exact absurd hobs (he₀ _ _ _ _)
   obtain ⟨b, t', -, -, -, hfr, hF, ⟨i', hi'⟩, hhd⟩ :=
     ruled_received_block p rules w hsender lookahead he hobs
   have hstamp := ruled_received_stamp p rules w hsender lookahead he hobs hfr

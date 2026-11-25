@@ -28,8 +28,12 @@ sees the world only through what its hosts observe (`Unisono.Spec.Solution`).
   samples of the block left the device; those output samples play nothing
   of the source.
 * **Every host** has a clock that runs at its own rate.
-* **The network** carries messages between any two hosts. A message arrives
-  some time after it is sent, or is lost.
+* **The network** carries messages between any two hosts. A message reaches
+  the receiving host some time after it is sent, or is lost. The kernel of
+  the receiving host stamps the message with the reading of the host's clock
+  at the moment at which the message reaches the host. The host's program
+  handles the message at that moment or later: a host that is busy handles
+  its events late.
 * **The application** sets a target latency for each frame, for lip-sync
   mode.
 
@@ -107,11 +111,23 @@ structure PlaybackDevice where
 when, may depend on when it is sent and on how many messages the same host
 sent to the same host before it; it does not depend on the payload. -/
 structure Network (H : Type) where
-  /-- When the `q`-th message (counted from zero) that host `i` sends to host
-  `j`, sent at true time `s`, arrives; `none` if the network drops it. -/
+  /-- When the program of host `j` handles the `q`-th message (counted from
+  zero) that host `i` sends to host `j`, sent at true time `s`; `none` if the
+  network drops it. -/
   deliver : H → H → Time → ℕ → Option Time
-  /-- A message arrives after it is sent. -/
-  after : ∀ i j s q a, deliver i j s q = some a → s < a
+  /-- When that message reaches host `j`. The kernel of the host stamps the
+  message with the reading of the host's clock at that moment. It has a
+  meaning only for a message that is not dropped. -/
+  reach : H → H → Time → ℕ → Time
+  /-- A message reaches the host after it is sent, and the host's program
+  handles it then or later. -/
+  reach_mem : ∀ i j s q a, deliver i j s q = some a → s < reach i j s q ∧ reach i j s q ≤ a
+
+/-- The program of the receiving host handles a message after the message
+is sent. -/
+theorem Network.after {H : Type} (net : Network H) (i j : H) (s : Time) (q : ℕ) (a : Time)
+    (h : net.deliver i j s q = some a) : s < a :=
+  lt_of_lt_of_le (net.reach_mem i j s q a h).1 (net.reach_mem i j s q a h).2
 
 /-- The world, for hosts of type `H` and `R` speakers. The hosts are the
 sender and the hosts of the speakers; one host may drive several speakers,

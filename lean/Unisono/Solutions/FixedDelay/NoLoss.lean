@@ -67,7 +67,7 @@ theorem block_inFlight (w : World H R) (lookahead : ℕ+) {A : H → H → Time 
     (hsender : p.sender = w.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
     (hk : w.source.handed b < (solution p : Solution H R Payload).eventTime w lookahead k) :
-    ∃ n < k, (⟨A w.sender j (w.source.handed b), w.sender, j,
+    ∃ n < k, ∃ reached, (⟨A w.sender j (w.source.handed b), reached, w.sender, j,
         Payload.block (w.source.first b) (w.source.reported b), (w.source.block b).toFinset⟩ :
           InFlight H Payload)
         ∈ ((solution p : Solution H R Payload).states w lookahead (n + 1)).inFlight := by
@@ -98,7 +98,7 @@ theorem block_inFlight (w : World H R) (lookahead : ℕ+) {A : H → H → Time 
     refine Finset.filter_true_of_mem fun m hm => Finset.mem_union_right _ ?_
     simpa [Observation.frames, List.map_map, Function.comp_def, hx] using hm
   rw [hF] at hin
-  exact ⟨n, hnk, hin⟩
+  exact ⟨n, hnk, _, hin⟩
 
 /-- **A block that arrived is held.** In a world without loss, a receiving
 host `j` holds the frames of block `b` at every step whose event occurs
@@ -113,7 +113,8 @@ theorem block_arrives_of_noLoss (w : World H R) (lookahead : ℕ+) {A : H → H 
       ⊆ ((solution p : Solution H R Payload).states w lookahead k).held j := by
   have hlt : w.source.handed b < (solution p : Solution H R Payload).eventTime w lookahead k :=
     lt_trans (w.network.after _ _ _ _ _ (hA w.sender j _ 0)) hk
-  obtain ⟨n, hnk, hin⟩ := block_inFlight p w lookahead hA hsender hnodup hcopies hj hjs hlt
+  obtain ⟨n, hnk, reached, hin⟩ :=
+    block_inFlight p w lookahead hA hsender hnodup hcopies hj hjs hlt
   exact Solution.frames_arrive (solution p) w lookahead hin (Nat.succ_le_of_lt hnk) hk
 
 /-- **A block that arrived was handled.** In a world without loss, the
@@ -125,16 +126,17 @@ theorem block_handled_of_noLoss (w : World H R) (lookahead : ℕ+) {A : H → H 
     {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
     (hk : A w.sender j (w.source.handed b)
       < (solution p : Solution H R Payload).eventTime w lookahead k) :
-    ∃ i < k, (solution p : Solution H R Payload).handled w lookahead i
+    ∃ i < k, ∃ ks, (solution p : Solution H R Payload).handled w lookahead i
       = some (j, A w.sender j (w.source.handed b),
         .received w.sender (.block (w.source.first b) (w.source.reported b))
-          (w.source.block b).toFinset) := by
+          (w.source.block b).toFinset ks) := by
   have hlt : w.source.handed b < (solution p : Solution H R Payload).eventTime w lookahead k :=
     lt_trans (w.network.after _ _ _ _ _ (hA w.sender j _ 0)) hk
-  obtain ⟨n, hnk, hin⟩ := block_inFlight p w lookahead hA hsender hnodup hcopies hj hjs hlt
+  obtain ⟨n, hnk, reached, hin⟩ :=
+    block_inFlight p w lookahead hA hsender hnodup hcopies hj hjs hlt
   obtain ⟨i, -, hik, hhi⟩ := Solution.handled_before w (solution p) lookahead hin
     (Nat.succ_le_of_lt hnk) hk
-  exact ⟨i, hik, hhi⟩
+  exact ⟨i, hik, _, hhi⟩
 
 /-- **Only block messages carry frames.** A message of the baseline in
 transit that is not a block message carries no frame. -/
@@ -148,10 +150,10 @@ theorem inFlight_frames (w : World H R) (lookahead : ℕ+) :
   | succ n ih =>
     intro m hm hnb
     rcases σ.mem_inFlight_succ w lookahead n hm with hold |
-      ⟨h, t, obs, hn, s, hs, ho, hd, hc, hf, q, hq⟩
+      ⟨h, t, obs, hn, s, hs, ho, hd, hc, hf, q, hq, -⟩
     · exact ih m hold hnb
     · rcases sends_cases p h _ _ hs with
-        ⟨frames, stamp, f, t', hobs, hh, hhead, -, hs1, hs2⟩ | ⟨i, sent, F, hobs, hh, rfl⟩ |
+        ⟨frames, stamp, f, t', hobs, hh, hhead, -, hs1, hs2⟩ | ⟨i, sent, F, ks, hobs, hh, rfl⟩ |
           ⟨r, outputs, stamp, hobs, hh, rfl⟩
       · exact absurd (hc.trans hs1) (hnb f stamp)
       · rw [hf]
@@ -167,10 +169,10 @@ theorem held_of_noLoss (w : World H R) (lookahead : ℕ+) {A : H → H → Time 
     (hA : ∀ i j s q, w.network.deliver i j s q = some (A i j s))
     (hsender : p.sender = w.sender) {j : H} (hjs : j ≠ w.sender) {k n : ℕ}
     (hn : n ∈ ((solution p : Solution H R Payload).states w lookahead k).held j) :
-    ∃ b, n ∈ w.source.block b ∧ ∃ i < k, ∃ F,
+    ∃ b, n ∈ w.source.block b ∧ ∃ i < k, ∃ F ks,
       (solution p : Solution H R Payload).handled w lookahead i
         = some (j, A w.sender j (w.source.handed b),
-          .received w.sender (.block (w.source.first b) (w.source.reported b)) F) := by
+          .received w.sender (.block (w.source.first b) (w.source.reported b)) F ks) := by
   set σ : Solution H R Payload := solution p with hσ
   obtain ⟨e, he, hne⟩ := (σ.mem_held_iff w lookahead k j n).mp hn
   obtain ⟨i, hik, t, obs, hhi, rfl⟩ := Solution.handled_of_mem_views w σ lookahead he
@@ -180,9 +182,9 @@ theorem held_of_noLoss (w : World H R) (lookahead : ℕ+) {A : H → H → Time 
     exact absurd hb hjs
   | asked r outs stamp => simp [Observation.frames] at hne
   | timer => simp [Observation.frames] at hne
-  | received o c F =>
+  | received o c F ks =>
     simp only [Observation.frames] at hne
-    obtain ⟨msg, hmsg, hdest, harr, horig, hcont, hfr⟩ :=
+    obtain ⟨msg, hmsg, hdest, harr, horig, hcont, hfr, -⟩ :=
       Solution.handled_received w σ lookahead hhi
     have hO := origin_inFlight p w lookahead hsender i msg hmsg
     cases c with
@@ -194,7 +196,7 @@ theorem held_of_noLoss (w : World H R) (lookahead : ℕ+) {A : H → H → Time 
       have harr' : A w.sender j (w.source.handed b) = t := (Option.some.inj hq).trans harr
       have ho : o = w.sender := horig.symm.trans hob
       subst ho hf hst harr'
-      refine ⟨b, ?_, i, hik, F, hhi⟩
+      refine ⟨b, ?_, i, hik, F, ks, hhi⟩
       rw [← hfr, hfb] at hne
       exact List.mem_toFinset.mp hne
     | ask sent =>
@@ -231,7 +233,7 @@ theorem mem_held_iff_arrived (w : World H R) (lookahead : ℕ+) {A : H → H →
     Solution.handled_time w σ lookahead (Solution.handled_of_asked w σ lookahead hearly)
   constructor
   · intro hheld
-    obtain ⟨b', hn', i, hik, F, hhi⟩ := held_of_noLoss p w lookahead hA hsender hjs hheld
+    obtain ⟨b', hn', i, hik, F, ks, hhi⟩ := held_of_noLoss p w lookahead hA hsender hjs hheld
     obtain rfl : b' = b := w.source.block_unique hn' hn
     have hlt := Solution.received_lt_asked σ w lookahead hik.le hhi r
     rwa [hβ] at hlt

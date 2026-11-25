@@ -384,8 +384,9 @@ its host handled the handover, and the difference is the level at the
 block's right end plus the time by which the block's knot is later than its
 input. So the check bounds how far the knot is from its input. -/
 def blockCheck (t : TimingSettings) (view : List (Event H R Payload)) (s : ℝ) : Prop :=
-  ∀ e ∈ view, ∀ (i : H) (f : ℕ) (stamp capture period level slope : ℝ) (F : Finset ℕ),
-    e.observation = .received i (.block f stamp capture period level slope) F →
+  ∀ e ∈ view, ∀ (i : H) (f : ℕ) (stamp capture period level slope : ℝ) (F : Finset ℕ)
+    (ks : ℝ),
+    e.observation = .received i (.block f stamp capture period level slope) F ks →
     (⟨f, capture, period, level, slope⟩ : Header).Covers F.card s →
       t.levelLow - t.scheduleSlack
           ≤ capture + F.card * period + (level + F.card * slope)
@@ -433,7 +434,7 @@ def timedNeed (t : TimingSettings) : H → List (Event H R Payload) → Option �
           | some v =>
               (view.filterMap fun e' =>
                 match e'.observation with
-                | .received _ (.block _ _ capture period _ _) _ =>
+                | .received _ (.block _ _ capture period _ _) _ _ =>
                     if ((((exchangesOf view).map Exchange.sent).max?).map
                         fun s => decide (s ≤ e'.reading)).getD true then
                       some (v + arrivalSlope t view * e'.reading + halfTrip t view
@@ -593,12 +594,12 @@ theorem timed_chosen (p : FixedDelay.Params H) (w : World H R) (t : TimingSettin
             + (((timedRules w.sender t level).announced p w lookahead b).1
               + w.blockLength b * ((timedRules w.sender t level).announced p w lookahead b).2)
           ≤ t.levelHigh + t.scheduleSlack := by
-  obtain ⟨s, b, tb, hs0, hq, hlt, hlo, hhi, hpos, heq, e, he, j, F, hobs, hcard, hcovF⟩ :=
+  obtain ⟨s, b, tb, hs0, hq, hlt, hlo, hhi, hpos, heq, e, he, j, F, ks, hobs, hcard, hcovF⟩ :=
     ruled_chosen_knots p (timedRules w.sender t level) w (kn := t.knots) rfl hsender
       lookahead hr hx
   obtain ⟨hs, hchecks⟩ := checkedReading_eq_some.mp hs0
   obtain ⟨-, hblockCheck⟩ := hchecks.resolve_left hr
-  have hblock := hblockCheck e (List.mem_append_left _ he) j _ _ _ _ _ _ F hobs hcovF
+  have hblock := hblockCheck e (List.mem_append_left _ he) j _ _ _ _ _ _ F ks hobs hcovF
   rw [hcard] at hblock
   have hend : w.handedReading b - w.blockLength b * w.knotPeriod t.knots b
       + w.blockLength b * w.knotPeriod t.knots b = w.handedReading b := by ring

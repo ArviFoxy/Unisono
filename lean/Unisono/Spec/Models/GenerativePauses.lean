@@ -265,10 +265,22 @@ def drawWorld (m : GenerativeWorld H R) (f : Member H R)
             * Real.exp (-d.deviceLogRate (some (m.device r)))) }
   network :=
     { deliver := fun i j s _ => some (d.arrival f i j s)
-      after := fun i j s _ a h => by
+      reach := fun i j s _ =>
+        s + backlog (d.hostPaused i) s + d.split i j * f.roundTrip i j
+          + backlog (d.linkPaused i j) (s + backlog (d.hostPaused i) s)
+      reach_mem := fun i j s _ a h => by
         simp only [Option.some.injEq] at h
+        have h1 := (isBacklog_backlog (hd.hostPaused_tame i) (hd.hostPaused_monotone i)
+          s).nonneg
+        have h2 := (isBacklog_backlog (hd.linkPaused_tame i j) (hd.linkPaused_monotone i j)
+          (s + backlog (d.hostPaused i) s)).nonneg
+        have h3 := (isBacklog_backlog (hd.hostPaused_tame j) (hd.hostPaused_monotone j)
+          (s + backlog (d.hostPaused i) s + d.split i j * f.roundTrip i j
+            + backlog (d.linkPaused i j) (s + backlog (d.hostPaused i) s))).nonneg
+        have h4 := mul_pos (hd.split_mem i j).1 (f.roundTrip_pos i j)
         rw [← h]
-        exact hd.lt_arrival f i j s }
+        unfold Draw.arrival
+        exact ⟨by linarith, by linarith⟩ }
   target := fun _ => m.targetLatency
 
 /-- **The world of a draw with steady clocks is the world built from the
@@ -286,7 +298,7 @@ theorem drawWorld_builds (m : GenerativeWorld H R) (f : Member H R)
         + backlog (d.linkPaused i j) (s + backlog (d.hostPaused i) s)),
       isBacklog_backlog (hd.hostPaused_tame i) (hd.hostPaused_monotone i) _,
       isBacklog_backlog (hd.linkPaused_tame i j) (hd.linkPaused_monotone i j) _,
-      isBacklog_backlog (hd.hostPaused_tame j) (hd.hostPaused_monotone j) _, rfl⟩
+      isBacklog_backlog (hd.hostPaused_tame j) (hd.hostPaused_monotone j) _, rfl, rfl⟩
   deviceClock := fun x =>
     ⟨{ read := fun t => Real.exp (d.deviceLogRate x) * t
        strictMono := fun a b hab => mul_lt_mul_of_pos_left hab (Real.exp_pos _)

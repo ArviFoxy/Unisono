@@ -689,8 +689,8 @@ theorem plays_at_latency_example :
           asked := fun b => b + 1 / 2
           asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
-      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
-        simp only [Option.some.injEq] at h; linarith⟩
+      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ => s + 1, fun _ _ s _ a h => by
+        simp only [Option.some.injEq] at h; exact ⟨by linarith, h.le⟩⟩
       target := fun _ => 0 }
   let B : Bounds Bool :=
     { clockRate := 0

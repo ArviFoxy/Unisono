@@ -299,18 +299,54 @@ variable [DecidableEq H] {i₀ j₀ : H} {θ : Time} {w' : World H R}
 
 omit [DecidableEq H] in
 /-- Worlds built from two draws that differ by pauses of one link from `θ`
-on deliver every message at the same time, or both at or after `θ` plus the
-least delay of the direction of that link. -/
+on deliver every message at the same time, after it reaches its host at the
+same time, or both deliver it at or after `θ` plus the least delay of the
+direction of that link. -/
 theorem Builds.deliversSameBefore (hB : m.Builds f d w) (hB' : m.Builds f d' w')
     (h : d.SameExceptLinkFrom d' i₀ j₀ θ) :
     World.DeliversSameBefore (θ + d.split i₀ j₀ * f.roundTrip i₀ j₀) w w' := by
   intro i j t q
-  rw [hB.deliver i j t q, hB'.deliver i j t q]
-  rcases arrival_of_sameExceptLinkFrom h hB hB' i j t with he | ⟨h1, h2⟩
+  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hdel, hr⟩ := hB.network i j t q
+  obtain ⟨u₁, u₂, u₃, hu₁, hu₂, hu₃, hdel', hr'⟩ := hB'.network i j t q
+  -- The backlog of the sending host is the same in both worlds.
+  have e₁ : u₁ = v₁ := by
+    have hu := hu₁
+    rw [h.hostPaused] at hu
+    exact hu.unique hv₁
+  subst e₁
+  have hsplit : d'.split i j = d.split i j := by rw [h.split]
+  rw [hsplit] at hu₃ hdel' hr'
+  -- If the backlog of the link is the same as well, so is everything else.
+  have hsame : u₂ = v₂ →
+      w.network.deliver i j t q = w'.network.deliver i j t q
+        ∧ w.network.reach i j t q = w'.network.reach i j t q := by
+    intro e₂
+    subst e₂
+    have e₃ : u₃ = v₃ := by
+      have hu := hu₃
+      rw [h.hostPaused] at hu
+      exact hu.unique hv₃
+    subst e₃
+    exact ⟨by rw [hdel, hdel'], by rw [hr, hr']⟩
+  by_cases hij : (i, j) = (i₀, j₀)
+  · obtain ⟨rfl, rfl⟩ := Prod.ext_iff.mp hij
+    by_cases he : t + u₁ < θ
+    · left
+      refine hsame ?_
+      rw [← hv₂.backlog_eq, ← hu₂.backlog_eq]
+      exact backlog_eq_of_agree h.before he
+    · right
+      have he' := not_lt.mp he
+      have h2 := hv₂.nonneg
+      have h3 := hv₃.nonneg
+      have h2' := hu₂.nonneg
+      have h3' := hu₃.nonneg
+      exact ⟨_, _, hdel, hdel', by linarith, by linarith⟩
   · left
-    rw [he]
-  · right
-    exact ⟨_, _, rfl, rfl, h1, h2⟩
+    refine hsame ?_
+    have hu := hu₂
+    rw [h.linkPaused i j hij] at hu
+    exact hu.unique hv₂
 
 /-- **Before the difference can arrive, every solution plays the same in
 both worlds.** In worlds built from two draws that differ by pauses of one

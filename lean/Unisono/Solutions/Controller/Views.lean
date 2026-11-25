@@ -79,7 +79,7 @@ theorem act_sends_block (h : H) (mem : Memory H R) (e : Event H R Payload)
         obtain ⟨rfl, rfl⟩ := hb
         exact ⟨hsend, frames, t₀, rfl, hhead⟩
     · simp at hs
-  | received i payload F =>
+  | received i payload F _ =>
     cases payload with
     | block _ _ => simp [hobs] at hs
     | ask sent =>
@@ -114,7 +114,7 @@ each with the reading at which it arrived. -/
 def plainExchangesOf (l : List (Event H R FixedDelay.Payload)) : List Exchange :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.answer sent received) _ => some ⟨sent, received, e.reading⟩
+    | .received _ (.answer sent received) _ _ => some ⟨sent, received, e.reading⟩
     | _ => none
 
 /-- The clock exchanges in a view of the controller are those of the view
@@ -129,13 +129,13 @@ theorem exchangesOf_eq (l : List (Event H R Payload)) :
   | handed frames stamp => rfl
   | asked r outputs stamp => rfl
   | timer => rfl
-  | received i c F => cases c <;> rfl
+  | received i c F _ => cases c <;> rfl
 
 /-- An exchange of a view of the baseline comes from an answer in the
 view. -/
 theorem mem_plainExchangesOf {l : List (Event H R FixedDelay.Payload)} {x : Exchange}
     (hx : x ∈ plainExchangesOf l) :
-    ∃ e ∈ l, ∃ i F, e.observation = .received i (.answer x.sent x.received) F
+    ∃ e ∈ l, ∃ i F ks, e.observation = .received i (.answer x.sent x.received) F ks
       ∧ e.reading = x.arrived := by
   obtain ⟨e, he, hfe⟩ := List.mem_filterMap.mp hx
   refine ⟨e, he, ?_⟩
@@ -143,19 +143,19 @@ theorem mem_plainExchangesOf {l : List (Event H R FixedDelay.Payload)} {x : Exch
   | handed frames stamp => simp [hobs] at hfe
   | asked r outputs stamp => simp [hobs] at hfe
   | timer => simp [hobs] at hfe
-  | received i payload F =>
+  | received i payload F _ =>
     cases payload with
     | block f stamp => simp [hobs] at hfe
     | ask sent => simp [hobs] at hfe
     | answer sent received =>
       simp only [hobs, Option.some.injEq] at hfe
       subst hfe
-      exact ⟨i, F, rfl, rfl⟩
+      exact ⟨i, F, _, rfl, rfl⟩
 
 /-- An answer in a view of the baseline is an exchange of the view. -/
 theorem plainExchangesOf_mem {l : List (Event H R FixedDelay.Payload)}
     {e : Event H R FixedDelay.Payload} (he : e ∈ l) {i : H} {sent received : ℝ}
-    {F : Finset ℕ} (hobs : e.observation = .received i (.answer sent received) F) :
+    {F : Finset ℕ} {ks : ℝ} (hobs : e.observation = .received i (.answer sent received) F ks) :
     (⟨sent, received, e.reading⟩ : Exchange) ∈ plainExchangesOf l :=
   List.mem_filterMap.mpr ⟨e, he, by simp [hobs]⟩
 
@@ -165,8 +165,8 @@ theorem plainExchangesOf_mem {l : List (Event H R FixedDelay.Payload)}
 that arrived, with the number of frames that its message carried. -/
 theorem mem_headersOf {l : List (Event H R Payload)} {x : Header × ℕ}
     (hx : x ∈ headersOf l) :
-    ∃ e ∈ l, ∃ i stamp F, e.observation
-        = .received i (.block x.1.first stamp x.1.capture x.1.period x.1.level x.1.slope) F
+    ∃ e ∈ l, ∃ i stamp F ks, e.observation
+        = .received i (.block x.1.first stamp x.1.capture x.1.period x.1.level x.1.slope) F ks
       ∧ x.2 = F.card := by
   obtain ⟨e, he, hsome⟩ := List.mem_filterMap.mp hx
   refine ⟨e, he, ?_⟩
@@ -174,20 +174,20 @@ theorem mem_headersOf {l : List (Event H R Payload)} {x : Header × ℕ}
   | handed frames stamp => simp [hobs] at hsome
   | asked r outputs stamp => simp [hobs] at hsome
   | timer => simp [hobs] at hsome
-  | received i c F =>
+  | received i c F _ =>
     cases c with
     | ask sent need => simp [hobs] at hsome
     | answer sent received => simp [hobs] at hsome
     | block f stamp capture period level slope =>
       simp only [hobs, Option.some.injEq] at hsome
       subst hsome
-      exact ⟨i, stamp, F, rfl, rfl⟩
+      exact ⟨i, stamp, F, _, rfl, rfl⟩
 
 /-- The header of every block that arrived is in the schedule of the host,
 with the number of frames that its message carried. -/
 theorem headersOf_mem {l : List (Event H R Payload)} {e : Event H R Payload} (he : e ∈ l)
-    {i : H} {f : ℕ} {stamp capture period level slope : ℝ} {F : Finset ℕ}
-    (ho : e.observation = .received i (.block f stamp capture period level slope) F) :
+    {i : H} {f : ℕ} {stamp capture period level slope : ℝ} {F : Finset ℕ} {ks : ℝ}
+    (ho : e.observation = .received i (.block f stamp capture period level slope) F ks) :
     ((⟨f, capture, period, level, slope⟩ : Header), F.card) ∈ headersOf l :=
   List.mem_filterMap.mpr ⟨e, he, by simp [ho]⟩
 
@@ -212,7 +212,7 @@ theorem mem_playbackReports (σ : Solution H R Payload) (lookahead : ℕ+) {n : 
   obtain ⟨i, -, t, obs, hhi, rfl⟩ := Solution.handled_of_mem_views w σ lookahead he
   cases obs with
   | handed frames stamp => simp at hfe
-  | received j c F => simp at hfe
+  | received j c F _ => simp at hfe
   | timer => simp at hfe
   | asked r' outputs stamp =>
     dsimp only at hfe
@@ -235,7 +235,7 @@ theorem mem_captureReports (σ : Solution H R Payload) (lookahead : ℕ+) {n : �
   obtain ⟨i, -, t, obs, hhi, rfl⟩ := Solution.handled_of_mem_views w σ lookahead he
   cases obs with
   | asked r outputs stamp => simp at hfe
-  | received j c F => simp at hfe
+  | received j c F _ => simp at hfe
   | timer => simp at hfe
   | handed frames stamp =>
     dsimp only at hfe
@@ -285,7 +285,7 @@ theorem sends_block (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
       | handed frames' stamp' =>
         simpa [Event.mapMsg, Observation.mapMsg] using hobs
       | asked r outputs stamp' => simp [Event.mapMsg, Observation.mapMsg] at hobs
-      | received i c' F => simp [Event.mapMsg, Observation.mapMsg] at hobs
+      | received i c' F _ => simp [Event.mapMsg, Observation.mapMsg] at hobs
       | timer => simp [Event.mapMsg, Observation.mapMsg] at hobs
     · rw [← hc, ← hpd, ← hlv, ← hsl]
       rfl

@@ -862,7 +862,7 @@ theorem Solution.cost_shiftStar_add_ge_of_step (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (c : Weights) (hstar : σ.IsStar w.sender) (X : H → ℝ)
     (hXs : X w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + X i < a + X j)
+      w.network.deliver i j s q = some a → s + X i < w.network.reach i j s q + X j)
     (hR : 0 < R) {ρ t₀ : ℝ} (hρ : 0 < ρ)
     (hcap : ∀ n, w.source.capture n = t₀ + (n : ℝ) / ρ) (o : Fin R → ℝ)
     (hout : ∀ r k, (w.speaker r).out k = o r + (k : ℝ) / ρ)

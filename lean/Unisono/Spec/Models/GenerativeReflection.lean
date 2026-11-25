@@ -361,7 +361,8 @@ theorem idealWorld_shiftStarKeepPeers (m : GenerativeWorld H R) (f : Member H R)
     (hpeerD : ∀ i j, ¬(i = m.sender ∨ j = m.sender) → d' i j = d i j)
     (hstar : ∀ i j s q a, (i = (idealWorld m f hex θ d hd).sender
         ∨ j = (idealWorld m f hex θ d hd).sender) →
-      (idealWorld m f hex θ d hd).network.deliver i j s q = some a → s + X i < a + X j) :
+      (idealWorld m f hex θ d hd).network.deliver i j s q = some a →
+        s + X i < (idealWorld m f hex θ d hd).network.reach i j s q + X j) :
     idealWorld m f hex θ' d' hd' = shiftStarKeepPeers (idealWorld m f hex θ d hd) X hstar := by
   have hs : θ' m.sender = θ m.sender := by rw [hθ, hXs, sub_zero]
   refine World.ext_fields rfl rfl rfl ?_ ?_ ?_ ?_ rfl
@@ -383,16 +384,22 @@ theorem idealWorld_shiftStarKeepPeers (m : GenerativeWorld H R) (f : Member H R)
     · show _ - θ' (m.host r) + _ - _ = _ - θ (m.host r) + _ - _ + X (m.host r)
       rw [hθ]
       ring
-  · refine Network.ext_deliver fun i j s q => ?_
-    show some (s + d' i j)
-      = if i = m.sender ∨ j = m.sender then (some (s - X i + d i j)).map (· + X j)
-        else some (s + d i j)
-    by_cases hsj : i = m.sender ∨ j = m.sender
-    · rw [ite_eq_left hsj, hstarD i j hsj]
-      simp only [Option.map_some]
-      congr 1
-      ring
-    · rw [ite_eq_right hsj, hpeerD i j hsj]
+  · refine Network.ext_fields (fun i j s q => ?_) (fun i j s q => ?_)
+    · show some (s + d' i j)
+        = if i = m.sender ∨ j = m.sender then (some (s - X i + d i j)).map (· + X j)
+          else some (s + d i j)
+      by_cases hsj : i = m.sender ∨ j = m.sender
+      · rw [ite_eq_left hsj, hstarD i j hsj]
+        simp only [Option.map_some]
+        congr 1
+        ring
+      · rw [ite_eq_right hsj, hpeerD i j hsj]
+    · show s + d' i j
+        = if i = m.sender ∨ j = m.sender then s - X i + d i j + X j else s + d i j
+      by_cases hsj : i = m.sender ∨ j = m.sender
+      · rw [ite_eq_left hsj, hstarD i j hsj]
+        ring
+      · rw [ite_eq_right hsj, hpeerD i j hsj]
 
 end World
 
@@ -649,15 +656,14 @@ theorem reflectShift_star (m : GenerativeWorld H R) (f : Member H R)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : Component H R → ℝ) :
     ∀ i j s q a, (i = (canonicalWorld m f hex y).sender ∨ j = (canonicalWorld m f hex y).sender) →
       (canonicalWorld m f hex y).network.deliver i j s q = some a →
-        s + reflectShift m f y i < a + reflectShift m f y j := by
-  intro i j s q a hs hdel
-  have hdel' : some (s + (canonicalDraw y).split i j * f.roundTrip i j) = some a := hdel
-  have ha : a = s + (canonicalDraw y).split i j * f.roundTrip i j :=
-    (Option.some.inj hdel').symm
+        s + reflectShift m f y i
+          < (canonicalWorld m f hex y).network.reach i j s q + reflectShift m f y j := by
+  intro i j s q a hs _
   have hpos : 0 < (canonicalDraw (reflect m f y)).split i j * f.roundTrip i j :=
     mul_pos (canonicalDraw_split_mem _ i j).1 (f.roundTrip_pos i j)
   rw [reflect_delay_star m f y hs] at hpos
-  rw [ha]
+  show s + reflectShift m f y i
+    < s + (canonicalDraw y).split i j * f.roundTrip i j + reflectShift m f y j
   linarith
 
 /-- **The world of the reflected outcome is the world of the outcome with

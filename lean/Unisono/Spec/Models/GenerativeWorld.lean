@@ -543,14 +543,16 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
   /-- A message that host `i` sends to host `j` at true time `s` leaves `i`
   after the backlog `v₁` of host `i` at `s`, reaches `j` after the least
   delay of the direction plus the backlog `v₂` of the link when it leaves,
-  and is observed by `j` after the backlog `v₃` of host `j` when it reaches
-  it. No message is lost. -/
+  and is handled by the program of `j` after the backlog `v₃` of host `j`
+  when it reaches it. The kernel of `j` stamps the message when it reaches
+  `j`, before the backlog of `j`. No message is lost. -/
   network : ∀ i j s q, ∃ v₁ v₂ v₃,
     IsBacklog (d.hostPaused i) s v₁ ∧
     IsBacklog (d.linkPaused i j) (s + v₁) v₂ ∧
     IsBacklog (d.hostPaused j) (s + v₁ + d.split i j * f.roundTrip i j + v₂) v₃ ∧
     w.network.deliver i j s q
-      = some (s + v₁ + d.split i j * f.roundTrip i j + v₂ + v₃)
+      = some (s + v₁ + d.split i j * f.roundTrip i j + v₂ + v₃) ∧
+    w.network.reach i j s q = s + v₁ + d.split i j * f.roundTrip i j + v₂
   /-- What the clock of each audio device advances by is a clock: it never
   stands still. -/
   deviceClock : ∀ x, ∃ c : Clock, ∀ t, c.read t = d.deviceReading x t

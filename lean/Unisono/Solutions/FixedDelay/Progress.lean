@@ -83,7 +83,7 @@ theorem progress_of_unbounded (w : World H R) (lookahead : ℕ+)
     rw [solution_append]
     simp only [act]
     split_ifs <;> simp [weight, List.sum_replicate]
-  · intro h view i c F reading
+  · intro h view i c F ks reading
     rw [solution_append]
     cases c with
     | block f s => simp [act, weight]

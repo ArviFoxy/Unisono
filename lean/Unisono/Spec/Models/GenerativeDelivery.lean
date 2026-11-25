@@ -89,7 +89,7 @@ draw, a message from `i` to `j` sent at true time `s` arrives at
 `d.arrival f i j s`, whichever message of the link it is. -/
 theorem Builds.deliver (hB : m.Builds f d w) (i j : H) (s : Time) (q : ℕ) :
     w.network.deliver i j s q = some (d.arrival f i j s) := by
-  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := hB.network i j s q
+  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd, -⟩ := hB.network i j s q
   have e₁ := hv₁.backlog_eq
   have e₂ := hv₂.backlog_eq
   have e₃ := hv₃.backlog_eq
@@ -106,7 +106,7 @@ theorem Builds.arrival_eq (hB : m.Builds f d w) (i j : H) (s : Time) :
       ∧ IsBacklog (d.linkPaused i j) (s + v₁) v₂
       ∧ IsBacklog (d.hostPaused j) (s + v₁ + d.split i j * f.roundTrip i j + v₂) v₃
       ∧ d.arrival f i j s = s + v₁ + d.split i j * f.roundTrip i j + v₂ + v₃ := by
-  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := hB.network i j s 0
+  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd, -⟩ := hB.network i j s 0
   refine ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, ?_⟩
   rw [hB.deliver i j s 0] at hd
   exact Option.some.inj hd

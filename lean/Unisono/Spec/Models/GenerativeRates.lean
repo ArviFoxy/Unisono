@@ -304,7 +304,7 @@ theorem toConstantRates (hS : ConstantDelays m f d w) : ConstantRates m f d w wh
 /-- Every message takes the least delay of its direction. -/
 theorem deliver (hS : ConstantDelays m f d w) (i j : H) (s : Time) (q : ℕ) :
     w.network.deliver i j s q = some (s + d.split i j * f.roundTrip i j) := by
-  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := hS.builds.network i j s q
+  obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd, -⟩ := hS.builds.network i j s q
   have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hS.no_hostPauses i) s)
   have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (hS.no_linkPauses i j) _)
   have h₃ : v₃ = 0 := hv₃.unique (isBacklog_zero_of_const (hS.no_hostPauses j) _)

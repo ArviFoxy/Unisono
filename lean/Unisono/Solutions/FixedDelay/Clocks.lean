@@ -49,8 +49,8 @@ theorem query_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (hn : (solution p : Solution H R Payload).handled w lookahead n = some (h, s, .asked r outs st))
     (hask : asks p h (memoryOf p h (((solution p : Solution H R Payload).states w lookahead n).views h))
       ((w.clock h).read s) = true) :
-    ∃ arr, s + B.delayLeast h w.sender ≤ arr ∧ arr ≤ s + B.delayMost h w.sender ∧
-      (⟨arr, h, w.sender, Payload.ask ((w.clock h).read s), ∅⟩ : InFlight H Payload)
+    ∃ arr reached, s + B.delayLeast h w.sender ≤ arr ∧ arr ≤ s + B.delayMost h w.sender ∧
+      (⟨arr, reached, h, w.sender, Payload.ask ((w.clock h).read s), ∅⟩ : InFlight H Payload)
         ∈ ((solution p : Solution H R Payload).states w lookahead (n + 1)).inFlight := by
   have hS : ((solution p : Solution H R Payload) h
       (((solution p : Solution H R Payload).states w lookahead n).views h
@@ -58,9 +58,10 @@ theorem query_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
       = List.replicate p.copies (w.sender, (Payload.ask ((w.clock h).read s), (∅ : Finset ℕ))) := by
     rw [solution_append]
     simp only [act, hask, ite_true, hsender]
-  obtain ⟨arr, h1, h2, hin⟩ := Solution.copy_inFlight (solution p) w B hw lookahead hn hS hcopies
-    (replicate_copies p.copies w.sender _)
-  exact ⟨arr, h1, h2, by simpa using hin⟩
+  obtain ⟨arr, reached, h1, h2, hin⟩ :=
+    Solution.copy_inFlight (solution p) w B hw lookahead hn hS hcopies
+      (replicate_copies p.copies w.sender _)
+  exact ⟨arr, reached, h1, h2, by simpa using hin⟩
 
 /-- **An answer reaches the querying host.** When the sender answers a clock
 query from host `i` at step `n`, at true time `s₂`, one copy of the answer
@@ -68,41 +69,43 @@ is in transit after the step, and it reaches `i` within the link's delay
 bounds. -/
 theorem answer_inFlight (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     (lookahead : ℕ+) (hsender : p.sender = w.sender) (hcopies : B.lossRun < p.copies)
-    {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ}
+    {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ} {ks : ℝ}
     (hn : (solution p : Solution H R Payload).handled w lookahead n
-      = some (w.sender, s₂, .received i (.ask sent) F))
+      = some (w.sender, s₂, .received i (.ask sent) F ks))
     (hans : answers (memoryOf p w.sender
       (((solution p : Solution H R Payload).states w lookahead n).views w.sender)) i sent = true) :
-    ∃ arr, s₂ + B.delayLeast w.sender i ≤ arr ∧ arr ≤ s₂ + B.delayMost w.sender i ∧
-      (⟨arr, w.sender, i, Payload.answer sent ((w.clock w.sender).read s₂), ∅⟩ : InFlight H Payload)
+    ∃ arr reached, s₂ + B.delayLeast w.sender i ≤ arr ∧ arr ≤ s₂ + B.delayMost w.sender i ∧
+      (⟨arr, reached, w.sender, i, Payload.answer sent ((w.clock w.sender).read s₂), ∅⟩ :
+          InFlight H Payload)
         ∈ ((solution p : Solution H R Payload).states w lookahead (n + 1)).inFlight := by
   have hS : ((solution p : Solution H R Payload) w.sender
       (((solution p : Solution H R Payload).states w lookahead n).views w.sender
-        ++ [⟨(w.clock w.sender).read s₂, .received i (.ask sent) F⟩])).sends
+        ++ [⟨(w.clock w.sender).read s₂, .received i (.ask sent) F ks⟩])).sends
       = List.replicate p.copies (i, (Payload.answer sent ((w.clock w.sender).read s₂), (∅ : Finset ℕ))) := by
     rw [solution_append]
     simp only [act, hans, hsender, and_self, ite_true]
-  obtain ⟨arr, h1, h2, hin⟩ := Solution.copy_inFlight (solution p) w B hw lookahead hn hS hcopies
-    (replicate_copies p.copies i _)
-  exact ⟨arr, h1, h2, by simpa using hin⟩
+  obtain ⟨arr, reached, h1, h2, hin⟩ :=
+    Solution.copy_inFlight (solution p) w B hw lookahead hn hS hcopies
+      (replicate_copies p.copies i _)
+  exact ⟨arr, reached, h1, h2, by simpa using hin⟩
 
 /-- **Every clock query that reaches the sender is answered.** When a query
 from host `i` reaches the sender at step `n`, at true time `s₂`, the sender
 answers it at that step, or it answered a query from `i` with a reading at
 least as large at an earlier step. -/
 theorem query_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender = w.sender)
-    {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ}
+    {n : ℕ} {s₂ : Time} {i : H} {sent : ℝ} {F : Finset ℕ} {ks : ℝ}
     (hn : (solution p : Solution H R Payload).handled w lookahead n
-      = some (w.sender, s₂, .received i (.ask sent) F)) :
-    ∃ n₀ ≤ n, ∃ s₀ ≤ s₂, ∃ sent₀ F₀, sent ≤ sent₀ ∧
+      = some (w.sender, s₂, .received i (.ask sent) F ks)) :
+    ∃ n₀ ≤ n, ∃ s₀ ≤ s₂, ∃ sent₀ F₀ ks₀, sent ≤ sent₀ ∧
       (solution p : Solution H R Payload).handled w lookahead n₀
-        = some (w.sender, s₀, .received i (.ask sent₀) F₀) ∧
+        = some (w.sender, s₀, .received i (.ask sent₀) F₀ ks₀) ∧
       answers (memoryOf p w.sender
         (((solution p : Solution H R Payload).states w lookahead n₀).views w.sender)) i sent₀
         = true := by
   set σ : Solution H R Payload := solution p
   by_cases hans : answers (memoryOf p w.sender ((σ.states w lookahead n).views w.sender)) i sent = true
-  · exact ⟨n, le_rfl, s₂, le_rfl, sent, F, le_rfl, hn, hans⟩
+  · exact ⟨n, le_rfl, s₂, le_rfl, sent, F, ks, le_rfl, hn, hans⟩
   · -- The sender has already answered a query from `i` with a later reading.
     obtain ⟨a, ha, hle⟩ : ∃ a, (memoryOf p w.sender ((σ.states w lookahead n).views w.sender)).answered i
         = some a ∧ sent ≤ a := by
@@ -113,7 +116,7 @@ theorem query_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender = 
         exact ⟨a, ha, hans⟩
       · simp at hans
     rw [← hsender] at ha
-    obtain ⟨l₁, e, l₂, hl, ⟨F₀, he⟩, hans₀⟩ := answered_query p _ ha
+    obtain ⟨l₁, e, l₂, hl, ⟨F₀, ks₀, he⟩, hans₀⟩ := answered_query p _ ha
     rw [hsender] at hl hans₀
     obtain ⟨n₀, hn₀, hv₀, t, obs, hh₀, rfl⟩ := σ.handled_of_views_eq w lookahead hl
     simp only at he
@@ -121,7 +124,7 @@ theorem query_answered (w : World H R) (lookahead : ℕ+) (hsender : p.sender = 
     have ht₀ := σ.handled_time w lookahead hh₀
     have ht := σ.handled_time w lookahead hn
     have hmono := σ.eventTime_mono w lookahead hn₀.le
-    refine ⟨n₀, hn₀.le, t, by rw [← ht₀, ← ht]; exact hmono, a, F₀, hle, hh₀, ?_⟩
+    refine ⟨n₀, hn₀.le, t, by rw [← ht₀, ← ht]; exact hmono, a, F₀, ks₀, hle, hh₀, ?_⟩
     rw [hv₀]
     exact hans₀
 
@@ -146,7 +149,8 @@ theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
     exact this.1
   have hd₁ := (B.delayLeast_pos h w.sender).trans_le (B.delayLeast_le h w.sender)
   have hd₂ := (B.delayLeast_pos w.sender h).trans_le (B.delayLeast_le w.sender h)
-  obtain ⟨arr₁, -, harr₁, hin₁⟩ := query_inFlight p w B hw lookahead hsender hcopies hn hask
+  obtain ⟨arr₁, reached₁, -, harr₁, hin₁⟩ :=
+    query_inFlight p w B hw lookahead hsender hcopies hn hask
   have hnk : n + 1 ≤ k := by
     by_contra hcon
     have hmono := Solution.eventTime_mono w (solution p) lookahead (Nat.lt_succ_iff.mp (not_le.mp hcon))
@@ -155,9 +159,10 @@ theorem answer_reaches (w : World H R) (B : Bounds H) (hw : w.WithinBounds B)
   obtain ⟨n₁, -, hn₁k, hh₁⟩ := Solution.handled_before w (solution p) lookahead hin₁ hnk
     (by simp only; linarith)
   simp only at hh₁
-  obtain ⟨n₀, hn₀, s₀, hs₀, sent₀, F₀, hle, hh₀, hans₀⟩ :=
+  obtain ⟨n₀, hn₀, s₀, hs₀, sent₀, F₀, ks₀, hle, hh₀, hans₀⟩ :=
     query_answered p w lookahead hsender hh₁
-  obtain ⟨arr₂, -, harr₂, hin₂⟩ := answer_inFlight p w B hw lookahead hsender hcopies hh₀ hans₀
+  obtain ⟨arr₂, reached₂, -, harr₂, hin₂⟩ :=
+    answer_inFlight p w B hw lookahead hsender hcopies hh₀ hans₀
   have h0k : n₀ + 1 ≤ k := by omega
   have harr₂k : arr₂ < (solution p : Solution H R Payload).eventTime w lookahead k := by linarith
   obtain ⟨n₂, -, hn₂k, hh₂⟩ := Solution.handled_before w (solution p) lookahead hin₂ h0k harr₂k
@@ -184,7 +189,7 @@ theorem offset_sample (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
       ∧ B.delayLeast w.sender h ≤ s₄ - s₂ ∧ s₄ - s₂ ≤ B.delayMost w.sender h
       ∧ θ = (w.clock w.sender).read s₂ - ((w.clock h).read s₁ + (w.clock h).read s₄) / 2 := by
   obtain ⟨-, -, -, -, -, -, -, -, -, hdelays, -⟩ := hw
-  obtain ⟨e, he, i, t₂, F, heo, hθ⟩ := offset_received p h (hsender ▸ hh) _ ho
+  obtain ⟨e, he, i, t₂, F, ks, heo, hθ⟩ := offset_received p h (hsender ▸ hh) _ ho
   obtain ⟨j, hj, s₄, obs, hhj, rfl⟩ := Solution.handled_of_mem_views w (solution p) lookahead he
   simp only at heo hθ
   subst heo

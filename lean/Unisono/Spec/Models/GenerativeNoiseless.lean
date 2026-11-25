@@ -284,11 +284,18 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
         rw [(hB ω).speaker_reported r b, herr, add_zero]
         simp
       network := fun i j s q => by
-        obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hdel⟩ := (hB ω).network i j s q
+        obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hdel, -⟩ := (hB ω).network i j s q
         have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hh i) s)
         have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (ht i j) _)
         have h₃ : v₃ = 0 := hv₃.unique (isBacklog_zero_of_const (hh j) _)
         rw [hdel, h₁, h₂, h₃]
+        simp only [add_zero]
+        rfl
+      reach := fun i j s q => by
+        obtain ⟨v₁, v₂, v₃, hv₁, hv₂, -, -, hreach⟩ := (hB ω).network i j s q
+        have h₁ : v₁ = 0 := hv₁.unique (isBacklog_zero_of_const (hh i) s)
+        have h₂ : v₂ = 0 := hv₂.unique (isBacklog_zero_of_const (ht i j) _)
+        rw [hreach, h₁, h₂]
         simp only [add_zero]
         rfl
       target_eq := (hB ω).target_eq }

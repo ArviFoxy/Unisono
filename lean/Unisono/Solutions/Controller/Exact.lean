@@ -163,8 +163,10 @@ theorem exists_two_exchanges (hS : ConstantDelays m f d w) {ε : ℝ} (hε0 : 0 
     linarith
   -- Both answers are in the view at step `n`.
   have hns : w.host r ≠ p.sender := hsender ▸ hhs
-  obtain ⟨e₁, he₁, i₁, u₁, F₁, hobs₁, -⟩ := FixedDelay.offset_received p (w.host r) hns _ ho₁
-  obtain ⟨e₂, he₂, i₂, u₂, F₂, hobs₂, -⟩ := FixedDelay.offset_received p (w.host r) hns _ ho₂
+  obtain ⟨e₁, he₁, i₁, u₁, F₁, ks₁, hobs₁, -⟩ :=
+    FixedDelay.offset_received p (w.host r) hns _ ho₁
+  obtain ⟨e₂, he₂, i₂, u₂, F₂, ks₂, hobs₂, -⟩ :=
+    FixedDelay.offset_received p (w.host r) hns _ ho₂
   have hk₁n : k₁ ≤ n := by
     by_contra hcon
     have hmono := Solution.eventTime_mono w (FixedDelay.solution p) lookahead (not_le.mp hcon).le

@@ -217,7 +217,7 @@ def blockNeeds (p : FixedDelay.Params H) (s : NeedSettings) (cl dl : Line) (star
     (l : List (Event H R Payload)) : List ℝ :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.block first _ capture period level slope) _ =>
+    | .received _ (.block first _ capture period level slope) _ _ =>
         if (start.map fun t => decide (t ≤ e.reading)).getD true then
           some (needOfBlock p s cl dl e.reading ⟨first, capture, period, level, slope⟩)
         else none

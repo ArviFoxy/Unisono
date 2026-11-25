@@ -146,7 +146,8 @@ theorem exchange_of_query_before (w : World H R) (lookahead : ℕ+) {A : H → H
   obtain ⟨i₁, -, -, hh₁⟩ := Solution.handled_before w σ lookahead hin₁ hnk₁ hk₁
   simp only at hh₁
   -- The sender answers a query of `h` that is this one.
-  obtain ⟨n₀, -, s₀, hs₀, sent₀, F₀, hle, hh₀, hans₀⟩ := query_answered p w lookahead hsender hh₁
+  obtain ⟨n₀, -, s₀, hs₀, sent₀, F₀, ks₀, hle, hh₀, hans₀⟩ :=
+    query_answered p w lookahead hsender hh₁
   obtain ⟨mq, hmq, -, harr, hor, hcont, -⟩ := Solution.handled_received w σ lookahead hh₀
   have hO := origin_inFlight p w lookahead hsender n₀ mq hmq
   unfold Origin at hO
@@ -166,7 +167,7 @@ theorem exchange_of_query_before (w : World H R) (lookahead : ℕ+) {A : H → H
   subst hs₁
   -- The answer is in transit after step `n₀`.
   have hS₂ : (σ w.sender ((σ.states w lookahead n₀).views w.sender
-        ++ [⟨(w.clock w.sender).read s₀, .received h (.ask sent₀) F₀⟩])).sends
+        ++ [⟨(w.clock w.sender).read s₀, .received h (.ask sent₀) F₀ ks₀⟩])).sends
       = List.replicate p.copies
           (h, (Payload.answer sent₀ ((w.clock w.sender).read s₀), (∅ : Finset ℕ))) := by
     rw [hσ, solution_append]

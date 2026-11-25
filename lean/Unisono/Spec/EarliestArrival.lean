@@ -85,8 +85,8 @@ theorem Solution.frame_times (σ : Solution H R Msg) (w : World H R) (lookahead 
         have hbb : b = b' := w.source.block_unique hb hnb
         rw [ite_eq_left hh, hbb, ht]
       | asked r outputs stamp => simp [Observation.frames] at hn
-      | received j c F =>
-        obtain ⟨m, hm, hdest, harr, -, -, hF⟩ := σ.handled_received w lookahead hk
+      | received j c F _ =>
+        obtain ⟨m, hm, hdest, harr, -, -, hF, -⟩ := σ.handled_received w lookahead hk
         have h1 := hJ m hm (by rw [hF]; exact hn)
         rw [hdest, harr] at h1
         exact h1
@@ -100,7 +100,7 @@ theorem Solution.frame_times (σ : Solution H R Msg) (w : World H R) (lookahead 
       · exact hPk h t obs hih hn
     refine ⟨hP', fun m hm hn => ?_⟩
     rcases σ.mem_inFlight_succ w lookahead k hm with hold
-      | ⟨h, t, obs, hk, s, hs, -, hdest, -, hfr, q, hq⟩
+      | ⟨h, t, obs, hk, s, hs, -, hdest, -, hfr, q, hq, -⟩
     · exact hJ m hold hn
     · -- The host that sends the message holds the frame at the time of sending.
       rw [hA] at hq
@@ -147,7 +147,7 @@ theorem Solution.arrival_le_of_held (σ : Solution H R Msg) (w : World H R) (loo
     (hmono : ∀ i j, Monotone (A i j)) (hle : ∀ i j s, s ≤ A i j s)
     (hstar : σ.IsStar w.sender) {k : ℕ} {h : H} (hh : h ≠ w.sender) {n b : ℕ}
     (hb : n ∈ w.source.block b) (hn : n ∈ (σ.states w lookahead k).held h) :
-    ∃ i < k, ∃ t j c F, σ.handled w lookahead i = some (h, t, .received j c F) ∧ n ∈ F
+    ∃ i < k, ∃ t j c F ks, σ.handled w lookahead i = some (h, t, .received j c F ks) ∧ n ∈ F
       ∧ A w.sender h (w.source.handed b) ≤ t := by
   obtain ⟨e, he, hne⟩ := (σ.mem_held_iff w lookahead k h n).mp hn
   obtain ⟨i, hi, t, obs, hi', rfl⟩ := σ.handled_of_mem_views w lookahead he
@@ -158,7 +158,7 @@ theorem Solution.arrival_le_of_held (σ : Solution H R Msg) (w : World H R) (loo
     obtain ⟨-, hsender, -⟩ := σ.handled_handed w lookahead hi'
     exact absurd hsender hh
   | asked r outputs stamp => simp [Observation.frames] at hne
-  | received j c F => exact ⟨i, hi, t, j, c, F, hi', hne, h2⟩
+  | received j c F ks => exact ⟨i, hi, t, j, c, F, ks, hi', hne, h2⟩
   | timer => simp [Observation.frames] at hne
 
 /-- **No solution through the sender plays a position before its frames can
@@ -186,7 +186,7 @@ theorem Solution.arrival_lt_asked_of_plays (σ : Solution H R Msg) (w : World H 
   simp only [playable] at hp
   split_ifs at hp with hc
   refine ⟨hc.1, b, hkb, fun n c hn hcn => ?_⟩
-  obtain ⟨j, hj, t, o, m, F, hj', -, hjt⟩ :=
+  obtain ⟨j, hj, t, o, m, F, ks, hj', -, hjt⟩ :=
     σ.arrival_le_of_held w lookahead hA hmono hle hstar hr hcn (hc.2 n hn)
   have hlt := σ.received_lt_asked w lookahead hj.le hj' r
   rw [hnb] at hlt

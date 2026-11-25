@@ -73,18 +73,18 @@ theorem ruled_block_arrived (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R}
     (hr : w.host r ≠ w.sender) {b n : ℕ}
     (hk : A w.sender (w.host r) (w.source.handed b)
       < (ruled p rules : Solution H R Payload).eventTime w lookahead n) :
-    ∃ stamp cp pd lv sl,
+    ∃ stamp cp pd lv sl ks,
       (⟨(w.clock (w.host r)).read (A w.sender (w.host r) (w.source.handed b)),
           .received w.sender (.block (w.source.first b) stamp cp pd lv sl)
-            (w.source.block b).toFinset⟩ : Event H R Payload)
+            (w.source.block b).toFinset ks⟩ : Event H R Payload)
         ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r)
       ∧ (⟨w.source.first b, cp, pd, lv, sl⟩ : Header) = rules.runHeader p w lookahead b := by
   have hk' : A w.sender (w.host r) (w.source.handed b)
       < (FixedDelay.solution p : Solution H R FixedDelay.Payload).eventTime w lookahead n := by
     rw [← Solution.eventTime_forget w Payload.plain lookahead (ruled_sendsMore p rules) n]
     exact hk
-  obtain ⟨i, hin, hi⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hN.deliver hN.sender
-    hN.nodup hN.copies (hN.speakers r) hr hk'
+  obtain ⟨i, hin, ks₀, hi⟩ := FixedDelay.block_handled_of_noLoss p w lookahead hN.deliver
+    hN.sender hN.nodup hN.copies (hN.speakers r) hr hk'
   have hf := Solution.handled_forget w Payload.plain lookahead (ruled_sendsMore p rules) i
   rw [hi] at hf
   obtain ⟨x, hx, hxeq⟩ := Option.map_eq_some_iff.mp hf
@@ -96,9 +96,9 @@ theorem ruled_block_arrived (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R}
   | handed frames stamp => simp [Observation.mapMsg] at hobs
   | asked r' outputs stamp => simp [Observation.mapMsg] at hobs
   | timer => simp [Observation.mapMsg] at hobs
-  | received j c F =>
+  | received j c F ks =>
     simp only [Observation.mapMsg, Observation.received.injEq] at hobs
-    obtain ⟨hj, hc, hF⟩ := hobs
+    obtain ⟨hj, hc, hF, -⟩ := hobs
     subst hj hF
     cases c with
     | ask sent need => simp [Payload.plain] at hc
@@ -112,7 +112,7 @@ theorem ruled_block_arrived (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R}
         ruled_received_block p rules w hN.sender lookahead hmem rfl
       have hb : b = b' := w.source.first_strictMono.injective hfr'
       subst hb
-      exact ⟨stamp, cp, pd, lv, sl, hmem, hhd⟩
+      exact ⟨stamp, cp, pd, lv, sl, ks, hmem, hhd⟩
 
 /-- **The header of a block that arrived is in the host's schedule.** -/
 theorem runHeader_mem_headersOf (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R}
@@ -122,7 +122,7 @@ theorem runHeader_mem_headersOf (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin 
     (rules.runHeader p w lookahead b, w.blockLength b)
       ∈ headersOf (((ruled p rules : Solution H R Payload).states w lookahead n).views
         (w.host r)) := by
-  obtain ⟨stamp, cp, pd, lv, sl, hmem, hhd⟩ := ruled_block_arrived hN lookahead hr hk
+  obtain ⟨stamp, cp, pd, lv, sl, ks, hmem, hhd⟩ := ruled_block_arrived hN lookahead hr hk
   have h1 := headersOf_mem hmem (i := w.sender) (f := w.source.first b) (stamp := stamp)
     (capture := cp) (period := pd) (level := lv) (slope := sl)
     (F := (w.source.block b).toFinset) rfl
@@ -141,7 +141,7 @@ theorem headersOf_noLoss (hN : NoLoss p w A) (lookahead : ℕ+) {n : ℕ} {h : H
     ∃ c, x = (rules.runHeader p w lookahead c, w.blockLength c)
       ∧ ∀ r' : Fin R, A w.sender h (w.source.handed c) < (w.speaker r').asked
           (((ruled p rules : Solution H R Payload).states w lookahead n).askedNext r') := by
-  obtain ⟨e, he, i₀, stamp, F, hobs, hcount⟩ := mem_headersOf hx
+  obtain ⟨e, he, i₀, stamp, F, ks, hobs, hcount⟩ := mem_headersOf hx
   obtain ⟨c, t, -, ⟨q, hq⟩, hlt, -, hF, -, hhd⟩ :=
     ruled_received_block p rules w hN.sender lookahead he hobs
   have ht : t = A w.sender h (w.source.handed c) := by
@@ -167,7 +167,7 @@ theorem arrival_mem_arrivalsOf {kn : KnotSettings} (hcap : rules.capture = knotC
     ((w.clock (w.host r)).read (A w.sender (w.host r) (w.source.handed b)), w.handedReading b)
       ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views
         (w.host r)) := by
-  obtain ⟨stamp, cp, pd, lv, sl, hmem, hhd⟩ := ruled_block_arrived hN lookahead hr hk
+  obtain ⟨stamp, cp, pd, lv, sl, ks, hmem, hhd⟩ := ruled_block_arrived hN lookahead hr hk
   have hin : ((w.clock (w.host r)).read (A w.sender (w.host r) (w.source.handed b)),
       cp + ((w.source.block b).toFinset.card : ℝ) * pd)
       ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views

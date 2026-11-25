@@ -345,13 +345,14 @@ solution that makes progress in both worlds plays the same in both worlds. -/
 theorem Solution.plays_shiftStarKeepPeers (σ : Solution H R Msg) (w : World H R)
     (lookahead : ℕ+) (hstar : σ.IsStar w.sender) (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+      w.network.deliver i j s q = some a → s + Δ i < w.network.reach i j s q + Δ j)
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w Δ hstar₁) lookahead n) :
     σ.plays (shiftStarKeepPeers w Δ hstar₁) lookahead = σ.plays w lookahead := by
   set wPlus := shiftStarKeepPeers w Δ hstar₁
   set wAux := dropPeerLinks w
-  have hnet₁ : ∀ i j s q a, wAux.network.deliver i j s q = some a → s + Δ i < a + Δ j := by
+  have hnet₁ : ∀ i j s q a, wAux.network.deliver i j s q = some a →
+    s + Δ i < wAux.network.reach i j s q + Δ j := by
     intro i j s q a h
     dsimp only [wAux, dropPeerLinks] at h
     split_ifs at h with hs
@@ -404,9 +405,9 @@ the sender positive satisfies the condition of `shiftStarKeepPeers`. -/
 theorem Holds.starNet {m : IdealConstantWorld H R} {w : World H R} (hw : m.Holds w)
     {x : H → ℝ} (hx : ∀ i j, (i = m.sender ∨ j = m.sender) → x i - x j < m.delay i j) :
     ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + x i < a + x j := by
-  intro i j s q a hs ha
-  rw [hw.network i j s q, Option.some.injEq] at ha
+      w.network.deliver i j s q = some a → s + x i < w.network.reach i j s q + x j := by
+  intro i j s q a hs _
+  rw [hw.reach i j s q]
   rw [hw.sender_eq] at hs
   linarith [hx i j hs]
 
@@ -467,6 +468,16 @@ theorem Holds.shiftStarKeepPeers {m : IdealConstantWorld H R} {w : World H R}
       simp only [Option.map_some, Option.some.injEq]
       ring
     · exact hw.network i j s q
+  reach := fun i j s q => by
+    change (if i = w.sender ∨ j = w.sender then w.network.reach i j (s - x i) q + x j
+      else w.network.reach i j s q)
+      = s + (if i = m.sender ∨ j = m.sender then m.delay i j + x j - x i
+        else m.delay i j)
+    rw [hw.sender_eq]
+    split_ifs with hs
+    · rw [hw.reach]
+      ring
+    · exact hw.reach i j s q
   target_eq := hw.target_eq
 
 end IdealConstantWorld

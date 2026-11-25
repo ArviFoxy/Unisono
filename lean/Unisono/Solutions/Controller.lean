@@ -307,7 +307,7 @@ reading at which it arrived. -/
 def exchangesOf (l : List (Event H R Payload)) : List Exchange :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.answer sent received) _ => some ⟨sent, received, e.reading⟩
+    | .received _ (.answer sent received) _ _ => some ⟨sent, received, e.reading⟩
     | _ => none
 
 /-- The reports of the capture device in a view: for each block handed over,
@@ -349,7 +349,7 @@ first, each with the number of frames that its message carried. -/
 def headersOf (l : List (Event H R Payload)) : List (Header × ℕ) :=
   l.filterMap fun e =>
     match e.observation with
-    | .received _ (.block f _ capture period level slope) F =>
+    | .received _ (.block f _ capture period level slope) F _ =>
         some (⟨f, capture, period, level, slope⟩, F.card)
     | _ => none
 

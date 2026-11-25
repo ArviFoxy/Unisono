@@ -343,7 +343,12 @@ theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.spl
     intro x t
     unfold Draw.deviceReading
     rw [hdevlog, hdevwander]
-  have hlt : ∀ i j s, s < d'.arrival f i j s := by
+  have hreach : ∀ i j s,
+      s < s + backlog (d'.hostPaused i) s + d'.split i j * f.roundTrip i j
+          + backlog (d'.linkPaused i j) (s + backlog (d'.hostPaused i) s)
+        ∧ s + backlog (d'.hostPaused i) s + d'.split i j * f.roundTrip i j
+            + backlog (d'.linkPaused i j) (s + backlog (d'.hostPaused i) s)
+          ≤ d'.arrival f i j s := by
     intro i j s
     have h1 := (hbh i s).nonneg
     have h2 := (hbl i j (s + backlog (d'.hostPaused i) s)).nonneg
@@ -352,19 +357,22 @@ theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.spl
     have h4 := hpos i j
     rw [← hsplit] at h4
     unfold Draw.arrival
-    linarith
+    exact ⟨by linarith, by linarith⟩
   refine ⟨{ w with
     network :=
       { deliver := fun i j s _ => some (d'.arrival f i j s)
-        after := fun i j s _ a h => by
+        reach := fun i j s _ =>
+          s + backlog (d'.hostPaused i) s + d'.split i j * f.roundTrip i j
+            + backlog (d'.linkPaused i j) (s + backlog (d'.hostPaused i) s)
+        reach_mem := fun i j s _ a h => by
           rw [← Option.some.inj h]
-          exact hlt i j s } }, ?_⟩
+          exact hreach i j s } }, ?_⟩
   exact
     { rate_eq := hB.rate_eq
       sender_eq := hB.sender_eq
       host_eq := hB.host_eq
       clock := fun h t => (hB.clock h t).trans (hread h t).symm
-      network := fun i j s _ => ⟨_, _, _, hbh i s, hbl i j _, hbh j _, rfl⟩
+      network := fun i j s _ => ⟨_, _, _, hbh i s, hbl i j _, hbh j _, rfl, rfl⟩
       deviceClock := fun x => by
         obtain ⟨c, hc⟩ := hB.deviceClock x
         exact ⟨c, fun t => (hc t).trans (hdev x t).symm⟩
@@ -374,7 +382,7 @@ theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.spl
         exact hB.capture n
       capture_first := hB.capture_first
       capture_handed := fun b => by
-        rw [hhostp]
+        simp only [hhostp]
         exact hB.capture_handed b
       capture_reported := fun b => by
         rw [herr]

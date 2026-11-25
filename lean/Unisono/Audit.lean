@@ -3480,9 +3480,9 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.PlaybackDevice.ext_fields
 
-/-- info: 'Unisono.Spec.Network.ext_deliver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.Network.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.Network.ext_deliver
+#print axioms Unisono.Spec.Network.ext_fields
 
 /-- info: 'Unisono.Spec.World.ext_fields' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -5915,6 +5915,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.tracking_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.tracking_le
+
+/-- info: 'Unisono.Spec.Network.after' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Network.after
 
 /-- info: 'Unisono.Spec.Solution.held_mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

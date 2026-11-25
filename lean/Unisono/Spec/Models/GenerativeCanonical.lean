@@ -474,9 +474,10 @@ def idealWorld (m : GenerativeWorld H R) (f : Member H R)
       reported := fun b => f.speakerStart (m.device r) + ((b * m.blockSize : ℕ) : ℝ) / m.rate }
   network :=
     { deliver := fun i j t _ => some (t + delay i j)
-      after := fun i j t _ a h => by
+      reach := fun i j t _ => t + delay i j
+      reach_mem := fun i j t _ a h => by
         simp only [Option.some.injEq] at h
-        linarith [hdelay i j] }
+        exact ⟨by linarith [hdelay i j], h.le⟩ }
   target := fun _ => m.targetLatency
 
 /-- **The ideal constant world of a noiseless draw is the world built from
@@ -500,6 +501,7 @@ theorem idealWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     ⟨0, 0, 0, isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) s,
       isBacklog_zero_of_const (fun s t => by rw [hlink, hlink]) _,
       isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) _, by
+      simp [idealWorld], by
       simp [idealWorld]⟩
   deviceClock := fun x => ⟨⟨fun t => t, strictMono_id, continuous_id⟩, fun t =>
     (Draw.deviceReading_noiseless (hdevlog x) (hdevwander x) t).symm⟩

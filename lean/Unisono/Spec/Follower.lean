@@ -160,7 +160,7 @@ theorem carried_concat_of_ne (σ : Solution H R Msg) (g : Option ℝ → Option 
       exact hne outputs s hobs
     simp only [Function.update_of_ne hr]
   | handed frames stamp => rfl
-  | received j c F => rfl
+  | received j c F _ => rfl
   | timer => rfl
 
 /-- Events none of which is a request of speaker `r` leave what the rule

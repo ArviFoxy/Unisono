@@ -10,8 +10,9 @@ public import Unisono.Spec.Held
 # What a run does before a time does not depend on later deliveries
 
 Take two worlds with the same hosts, clocks, audio devices and target
-latencies, whose networks differ only in when they deliver messages, and
-only in deliveries that arrive at or after a true time `T` in both worlds.
+latencies, whose networks differ only in when messages reach their hosts
+and are handled there, and only for messages that are handled at or after a
+true time `T` in both worlds.
 This file proves that every solution plays the same, in both worlds, at
 every output sample of every playback block that is requested before `T`.
 
@@ -130,21 +131,24 @@ theorem forall₂_eraseIdx {α β : Type} {S : α → β → Prop} :
 /-! ## States that agree up to a time -/
 
 /-- Two messages in transit are the same up to `T`: they have the same
-origin, destination, payload and frames, and they arrive at the same time or
-both at or after `T`. -/
+origin, destination, payload and frames, and they arrive at the same time,
+having reached their destination at the same time, or both arrive at or
+after `T`. -/
 def InFlight.SameBefore (T : Time) (m₁ m₂ : InFlight H Msg) : Prop :=
   m₁.origin = m₂.origin ∧ m₁.destination = m₂.destination ∧ m₁.contents = m₂.contents
-    ∧ m₁.frames = m₂.frames ∧ (m₁.arrival = m₂.arrival ∨ (T ≤ m₁.arrival ∧ T ≤ m₂.arrival))
+    ∧ m₁.frames = m₂.frames
+    ∧ ((m₁.arrival = m₂.arrival ∧ m₁.reached = m₂.reached)
+      ∨ (T ≤ m₁.arrival ∧ T ≤ m₂.arrival))
 
 theorem InFlight.SameBefore.refl (T : Time) (m : InFlight H Msg) : InFlight.SameBefore T m m :=
-  ⟨rfl, rfl, rfl, rfl, Or.inl rfl⟩
+  ⟨rfl, rfl, rfl, rfl, Or.inl ⟨rfl, rfl⟩⟩
 
 /-- Two messages that are the same up to `T`, one of which arrives before
 `T`, are equal. -/
 theorem InFlight.SameBefore.eq_of_lt {T : Time} {m₁ m₂ : InFlight H Msg}
     (h : InFlight.SameBefore T m₁ m₂) (hlt : m₁.arrival < T) : m₁ = m₂ := by
   obtain ⟨h1, h2, h3, h4, h5⟩ := h
-  have harr : m₁.arrival = m₂.arrival := by
+  have harr : m₁.arrival = m₂.arrival ∧ m₁.reached = m₂.reached := by
     rcases h5 with h5 | ⟨h5, -⟩
     · exact h5
     · exact absurd hlt (not_lt.mpr h5)
@@ -152,7 +156,7 @@ theorem InFlight.SameBefore.eq_of_lt {T : Time} {m₁ m₂ : InFlight H Msg}
   cases m₂
   dsimp only at harr h1 h2 h3 h4
   rw [InFlight.mk.injEq]
-  exact ⟨harr, h1, h2, h3, h4⟩
+  exact ⟨harr.1, harr.2, h1, h2, h3, h4⟩
 
 /-- Two states of a run agree up to `T`: they are equal except that a
 message in transit may arrive at different times in the two, both at or
@@ -175,10 +179,11 @@ theorem State.SameBefore.due_eq {T : Time} {st₁ st₂ : State H R Msg}
 
 variable [DecidableEq H]
 
-/-- The two worlds deliver each message at the same time, or both at or
-after `T`. -/
+/-- The two worlds deliver each message at the same time, after it reaches
+its host at the same time in both, or both deliver it at or after `T`. -/
 def World.DeliversSameBefore (T : Time) (w₁ w₂ : World H R) : Prop :=
-  ∀ i j t q, w₁.network.deliver i j t q = w₂.network.deliver i j t q ∨
+  ∀ i j t q, (w₁.network.deliver i j t q = w₂.network.deliver i j t q
+      ∧ w₁.network.reach i j t q = w₂.network.reach i j t q) ∨
     ∃ a₁ a₂, w₁.network.deliver i j t q = some a₁ ∧ w₂.network.deliver i j t q = some a₂
       ∧ T ≤ a₁ ∧ T ≤ a₂
 
@@ -190,8 +195,8 @@ theorem State.SameBefore.send {T : Time} {w₁ w₂ : World H R}
   refine ⟨h.views, h.handedNext, h.askedNext, ?_, h.timers, ?_, h.held, h.plays, ?_⟩
   · simp only [State.send]
     rw [hcount]
-    rcases hnet i j t (st₁.sentCount i j) with heq | ⟨a₁, a₂, h1, h2, hT1, hT2⟩
-    · rw [← heq]
+    rcases hnet i j t (st₁.sentCount i j) with ⟨heq, hreach⟩ | ⟨a₁, a₂, h1, h2, hT1, hT2⟩
+    · rw [← heq, ← hreach]
       cases w₁.network.deliver i j t (st₁.sentCount i j) with
       | none => exact h.inFlight
       | some a =>
@@ -261,7 +266,7 @@ theorem State.SameBefore.key {T : Time} {w₁ w₂ : World H R} (hsender : w₂.
     · left
       simp [State.key, h1, h2]
     · obtain ⟨ho, -, -, -, harr⟩ := hm
-      rcases harr with harr | ⟨hT1, hT2⟩
+      rcases harr with ⟨harr, -⟩ | ⟨hT1, hT2⟩
       · left
         simp [State.key, h1, h2, harr, ho, hidx]
       · right
@@ -316,6 +321,7 @@ theorem State.SameBefore.step {T : Time} {w₁ w₂ : World H R} (hsender : w₂
       subst hmm
       rw [h1, h2]
       dsimp only
+      rw [hclock]
       have hrel : State.SameBefore T
           ({ st₁ with inFlight := st₁.inFlight.eraseIdx p } : State H R Msg)
           { st₂ with inFlight := st₂.inFlight.eraseIdx p } :=

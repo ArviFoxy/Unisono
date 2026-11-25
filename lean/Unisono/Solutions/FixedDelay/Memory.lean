@@ -61,13 +61,13 @@ theorem memoryOf_append (h : H) (l : List (Event H R Payload)) (e : Event H R Pa
 arrived. -/
 theorem block_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload)) {f : ℕ} {c : ℝ}
     (hb : (memoryOf p h l).block = some (f, c)) :
-    ∃ e ∈ l, ∃ i F, e.observation = .received i (.block f c) F := by
+    ∃ e ∈ l, ∃ i F ks, e.observation = .received i (.block f c) F ks := by
   induction l using List.reverseRecOn generalizing f c with
   | nil => simp [memoryOf, Memory.empty] at hb
   | append_singleton l e ih =>
     rw [memoryOf_append] at hb
     have keep : (memoryOf p h l).block = some (f, c) →
-        ∃ e' ∈ l ++ [e], ∃ i F, e'.observation = .received i (.block f c) F := by
+        ∃ e' ∈ l ++ [e], ∃ i F ks, e'.observation = .received i (.block f c) F ks := by
       intro hb'
       obtain ⟨e', he', i, F, ho⟩ := ih hb'
       exact ⟨e', List.mem_append_left _ he', i, F, ho⟩
@@ -76,7 +76,7 @@ theorem block_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payloa
     · split_ifs at hb with hs
       · exact absurd hs hh
       · exact keep hb
-    · rename_i i f' c' F ho
+    · rename_i i f' c' F ks ho
       split_ifs at hb with hs
       · exact absurd hs hh
       · split at hb
@@ -84,11 +84,11 @@ theorem block_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payloa
           split_ifs at hb with hlt
           · simp only [Option.some.injEq, Prod.mk.injEq] at hb
             obtain ⟨rfl, rfl⟩ := hb
-            exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ho⟩
+            exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ks, ho⟩
           · exact keep hb
         · simp only [Option.some.injEq, Prod.mk.injEq] at hb
           obtain ⟨rfl, rfl⟩ := hb
-          exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ho⟩
+          exact ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, F, ks, ho⟩
     · split_ifs at hb
       · exact keep hb
       · exact keep hb
@@ -101,8 +101,8 @@ theorem block_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payloa
 /-- At a host other than the sender's host, no block that arrived is newer
 than the remembered block. -/
 theorem block_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload))
-    {e : Event H R Payload} (he : e ∈ l) {i : H} {f : ℕ} {c : ℝ} {F : Finset ℕ}
-    (ho : e.observation = .received i (.block f c) F) :
+    {e : Event H R Payload} (he : e ∈ l) {i : H} {f : ℕ} {c : ℝ} {F : Finset ℕ} {ks : ℝ}
+    (ho : e.observation = .received i (.block f c) F ks) :
     ∃ f' c', (memoryOf p h l).block = some (f', c') ∧ f ≤ f' := by
   induction l using List.reverseRecOn with
   | nil => simp at he
@@ -117,7 +117,7 @@ theorem block_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload)
       · split_ifs with hs
         · exact absurd hs hh
         · exact ⟨f₀, c₀, h₀, le_rfl⟩
-      · rename_i i' f₁ c₁ F₁ ho₁
+      · rename_i i' f₁ c₁ F₁ ks₁ ho₁
         split_ifs with hs
         · exact absurd hs hh
         · rw [h₀]
@@ -153,23 +153,24 @@ and the value `t₂ - (t₁ + t₄) / 2`, where `t₂` is the sender's reading i
 the answer and `t₄` is the host's reading when the answer arrived. -/
 theorem offset_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload)) {t₁ θ : ℝ}
     (ho : (memoryOf p h l).offset = some (t₁, θ)) :
-    ∃ e ∈ l, ∃ i t₂ F, e.observation = .received i (.answer t₁ t₂) F
+    ∃ e ∈ l, ∃ i t₂ F ks, e.observation = .received i (.answer t₁ t₂) F ks
       ∧ θ = t₂ - (t₁ + e.reading) / 2 := by
   induction l using List.reverseRecOn generalizing t₁ θ with
   | nil => simp [memoryOf, Memory.empty] at ho
   | append_singleton l e ih =>
     rw [memoryOf_append] at ho
     have keep : (memoryOf p h l).offset = some (t₁, θ) →
-        ∃ e' ∈ l ++ [e], ∃ i t₂ F, e'.observation = .received i (.answer t₁ t₂) F
+        ∃ e' ∈ l ++ [e], ∃ i t₂ F ks, e'.observation = .received i (.answer t₁ t₂) F ks
           ∧ θ = t₂ - (t₁ + e'.reading) / 2 := by
       intro ho'
       obtain ⟨e', he', i, t₂, F, ho₁, hθ⟩ := ih ho'
       exact ⟨e', List.mem_append_left _ he', i, t₂, F, ho₁, hθ⟩
-    have here : ∀ i t₂ F, e.observation = .received i (.answer t₁ t₂) F →
+    have here : ∀ i t₂ F ks, e.observation = .received i (.answer t₁ t₂) F ks →
         θ = t₂ - (t₁ + e.reading) / 2 →
-        ∃ e' ∈ l ++ [e], ∃ i t₂ F, e'.observation = .received i (.answer t₁ t₂) F
+        ∃ e' ∈ l ++ [e], ∃ i t₂ F ks, e'.observation = .received i (.answer t₁ t₂) F ks
           ∧ θ = t₂ - (t₁ + e'.reading) / 2 :=
-      fun i t₂ F h1 h2 => ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, t₂, F, h1, h2⟩
+      fun i t₂ F ks h1 h2 =>
+        ⟨e, List.mem_append_right _ (List.mem_singleton_self e), i, t₂, F, ks, h1, h2⟩
     unfold remember at ho
     split at ho
     · split_ifs at ho with hs
@@ -177,18 +178,18 @@ theorem offset_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Paylo
       · exact keep ho
     · split_ifs at ho <;> (try split at ho) <;> (try split_ifs at ho) <;> exact keep ho
     · split_ifs at ho <;> exact keep ho
-    · rename_i i sent received F hobs
+    · rename_i i sent received F ks hobs
       split_ifs at ho with hs
       · exact absurd hs hh
       · split at ho
         · split_ifs at ho with hlt
           · simp only [Option.some.injEq, Prod.mk.injEq] at ho
             obtain ⟨rfl, rfl⟩ := ho
-            exact here i received F hobs rfl
+            exact here i received F ks hobs rfl
           · exact keep ho
         · simp only [Option.some.injEq, Prod.mk.injEq] at ho
           obtain ⟨rfl, rfl⟩ := ho
-          exact here i received F hobs rfl
+          exact here i received F ks hobs rfl
     · exact keep ho
     · exact keep ho
 
@@ -196,8 +197,8 @@ theorem offset_received (h : H) (hh : h ≠ p.sender) (l : List (Event H R Paylo
 carries a query reading no later than the query reading of the remembered
 estimate. -/
 theorem offset_latest (h : H) (hh : h ≠ p.sender) (l : List (Event H R Payload))
-    {e : Event H R Payload} (he : e ∈ l) {i : H} {t₁ t₂ : ℝ} {F : Finset ℕ}
-    (ho : e.observation = .received i (.answer t₁ t₂) F) :
+    {e : Event H R Payload} (he : e ∈ l) {i : H} {t₁ t₂ : ℝ} {F : Finset ℕ} {ks : ℝ}
+    (ho : e.observation = .received i (.answer t₁ t₂) F ks) :
     ∃ t₁' θ, (memoryOf p h l).offset = some (t₁', θ) ∧ t₁ ≤ t₁' := by
   induction l using List.reverseRecOn with
   | nil => simp at he
@@ -345,14 +346,14 @@ reading of a query from `i` that the sender answered, given what it
 remembered before that query arrived. -/
 theorem answered_query (l : List (Event H R Payload)) {i : H} {a : ℝ}
     (ha : (memoryOf p p.sender l).answered i = some a) :
-    ∃ l₁ e l₂, l = l₁ ++ e :: l₂ ∧ (∃ F, e.observation = .received i (.ask a) F)
+    ∃ l₁ e l₂, l = l₁ ++ e :: l₂ ∧ (∃ F ks, e.observation = .received i (.ask a) F ks)
       ∧ answers (memoryOf p p.sender l₁) i a = true := by
   induction l using List.reverseRecOn generalizing a with
   | nil => simp [memoryOf, Memory.empty] at ha
   | append_singleton l e ih =>
     rw [memoryOf_append] at ha
     have keep : (memoryOf p p.sender l).answered i = some a →
-        ∃ l₁ e' l₂, l ++ [e] = l₁ ++ e' :: l₂ ∧ (∃ F, e'.observation = .received i (.ask a) F)
+        ∃ l₁ e' l₂, l ++ [e] = l₁ ++ e' :: l₂ ∧ (∃ F ks, e'.observation = .received i (.ask a) F ks)
           ∧ answers (memoryOf p p.sender l₁) i a = true := by
       intro ha'
       obtain ⟨l₁, e', l₂, hl, h1, h2⟩ := ih ha'
@@ -361,13 +362,13 @@ theorem answered_query (l : List (Event H R Payload)) {i : H} {a : ℝ}
     split at ha
     · split_ifs at ha <;> (try split at ha) <;> exact keep ha
     · split_ifs at ha <;> (try split at ha) <;> (try split_ifs at ha) <;> exact keep ha
-    · rename_i i' sent F hobs
+    · rename_i i' sent F ks hobs
       split_ifs at ha with hans
       · by_cases hi : i' = i
         · subst hi
           simp only [Function.update_self, Option.some.injEq] at ha
           subst ha
-          exact ⟨l, e, [], rfl, ⟨F, hobs⟩, hans.2⟩
+          exact ⟨l, e, [], rfl, ⟨F, ks, hobs⟩, hans.2⟩
         · simp only [Function.update_of_ne (Ne.symm hi)] at ha
           exact keep ha
       · exact keep ha
@@ -380,7 +381,7 @@ theorem answered_query (l : List (Event H R Payload)) {i : H} {a : ℝ}
 /-- At the sender, every query from host `i` that arrived carries a reading
 no later than the reading remembered as answered for `i`. -/
 theorem answered_latest (l : List (Event H R Payload)) {e : Event H R Payload} (he : e ∈ l)
-    {i : H} {sent : ℝ} {F : Finset ℕ} (ho : e.observation = .received i (.ask sent) F) :
+    {i : H} {sent : ℝ} {F : Finset ℕ} {ks : ℝ} (ho : e.observation = .received i (.ask sent) F ks) :
     ∃ a, (memoryOf p p.sender l).answered i = some a ∧ sent ≤ a := by
   induction l using List.reverseRecOn with
   | nil => simp at he
@@ -393,7 +394,7 @@ theorem answered_latest (l : List (Event H R Payload)) {e : Event H R Payload} (
       split
       · split_ifs <;> (try split) <;> exact ⟨a₀, h₀, le_rfl⟩
       · split_ifs <;> (try split) <;> (try split_ifs) <;> exact ⟨a₀, h₀, le_rfl⟩
-      · rename_i i' sent' F' hobs
+      · rename_i i' sent' F' ks' hobs
         split_ifs with hans
         · by_cases hi : i' = i
           · subst hi
