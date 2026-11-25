@@ -59,12 +59,12 @@ structure KnotLevelState where
   knot : Option (ℝ × ℝ)
 
 /-- The time from one frame to the next, on the schedule of the knots, of a
-block of `count` frames that is handed over when the sender's clock reads
-`σ`, given the knot `prev` of the block before and its advance, if there
-was one: the advance of the block's knot (`knotStep`) divided by the number
-of frames. -/
-def periodFrom (nominal : ℝ) (prev : Option (ℝ × ℝ)) (σ : ℝ) (count : ℕ) : ℝ :=
-  (knotStep nominal prev σ count).2 / count
+block of `count` frames with the timestamp `stamp` that is handed over when
+the sender's clock reads `σ`, given the knot `prev` of the block before and
+its advance, if there was one: the advance of the block's knot (`knotStep`)
+divided by the number of frames. -/
+def periodFrom (kn : KnotSettings) (prev : Option (ℝ × ℝ)) (σ stamp : ℝ) (count : ℕ) : ℝ :=
+  (knotStep kn prev σ stamp count).2 / count
 
 /-- The largest change of the level from one frame to the next that the
 rule allows in a block whose time from one frame to the next is `period`:
@@ -84,40 +84,40 @@ def knotSlope (q : LevelSettings) (share aim level : ℝ) (count : ℕ) (period 
 clock query that carries a need moves the aim one step, as in
 `steppedLevel`. A handover moves the level to the end of the block and
 records the knot of the block. Other events change nothing. -/
-def knotLevelStep (q : LevelSettings) (share nominal : ℝ) (st : KnotLevelState)
+def knotLevelStep (q : LevelSettings) (share : ℝ) (kn : KnotSettings) (st : KnotLevelState)
     (e : Event H R Payload) : KnotLevelState :=
   match e.observation with
   | .received _ (.ask _ (some y)) _ => ⟨aimStep q st.aim y, st.level, st.knot⟩
-  | .handed frames _ =>
+  | .handed frames stamp =>
       ⟨st.aim,
         st.level + frames.length * knotSlope q share st.aim st.level frames.length
-          (periodFrom nominal st.knot e.reading frames.length),
-        some (knotStep nominal st.knot e.reading frames.length)⟩
+          (periodFrom kn st.knot e.reading stamp frames.length),
+        some (knotStep kn st.knot e.reading stamp frames.length)⟩
   | _ => st
 
 /-- What the level rule remembers after the events `l` at the sender. -/
-def knotLevelState (q : LevelSettings) (share nominal : ℝ) (l : List (Event H R Payload)) :
-    KnotLevelState :=
-  l.foldl (knotLevelStep q share nominal) ⟨q.start, q.start, none⟩
+def knotLevelState (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
+    (l : List (Event H R Payload)) : KnotLevelState :=
+  l.foldl (knotLevelStep q share kn) ⟨q.start, q.start, none⟩
 
 /-- **The level rule for the schedule of the knots.** At a handover, from
 the sender's view up to and including the handover: the level of the left
 end of the block, and the slope that moves the level toward the aim within
 the limit for the block. What a host reports in a clock query is the
 parameter `need`. -/
-def knotLevel (q : LevelSettings) (share nominal : ℝ)
+def knotLevel (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (need : H → List (Event H R Payload) → Option ℝ) : LevelRule H R :=
   ⟨fun view _ =>
     match view.getLast? with
     | some e =>
         match e.observation with
-        | .handed frames _ =>
-            ((knotLevelState q share nominal view.dropLast).level,
-              knotSlope q share (knotLevelState q share nominal view.dropLast).aim
-                (knotLevelState q share nominal view.dropLast).level frames.length
-                (periodFrom nominal (knotLevelState q share nominal view.dropLast).knot
-                  e.reading frames.length))
-        | _ => ((knotLevelState q share nominal view.dropLast).level, 0)
+        | .handed frames stamp =>
+            ((knotLevelState q share kn view.dropLast).level,
+              knotSlope q share (knotLevelState q share kn view.dropLast).aim
+                (knotLevelState q share kn view.dropLast).level frames.length
+                (periodFrom kn (knotLevelState q share kn view.dropLast).knot
+                  e.reading stamp frames.length))
+        | _ => ((knotLevelState q share kn view.dropLast).level, 0)
     | none => (q.start, 0), need⟩
 
 theorem slopeLimit_nonneg (q : LevelSettings) (share period : ℝ) :
@@ -175,19 +175,19 @@ theorem knotSlope_between (q : LevelSettings) (share aim level : ℝ) (count : �
       constructor <;> linarith
 
 /-- What the rule remembers after one more event. -/
-theorem knotLevelState_concat (q : LevelSettings) (share nominal : ℝ)
+theorem knotLevelState_concat (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (l : List (Event H R Payload)) (e : Event H R Payload) :
-    knotLevelState q share nominal (l ++ [e])
-      = knotLevelStep q share nominal (knotLevelState q share nominal l) e := by
+    knotLevelState q share kn (l ++ [e])
+      = knotLevelStep q share kn (knotLevelState q share kn l) e := by
   unfold knotLevelState
   rw [List.foldl_append, List.foldl_cons, List.foldl_nil]
 
 /-- An event that is not a handover leaves the level of the next block and
 the recorded reading in place. -/
-theorem knotLevelStep_level (q : LevelSettings) (share nominal : ℝ) (st : KnotLevelState)
-    {e : Event H R Payload} (he : ∀ frames stamp, e.observation ≠ .handed frames stamp) :
-    (knotLevelStep q share nominal st e).level = st.level
-      ∧ (knotLevelStep q share nominal st e).knot = st.knot := by
+theorem knotLevelStep_level (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
+    (st : KnotLevelState) {e : Event H R Payload} (he : ∀ frames stamp, e.observation ≠ .handed frames stamp) :
+    (knotLevelStep q share kn st e).level = st.level
+      ∧ (knotLevelStep q share kn st e).knot = st.knot := by
   unfold knotLevelStep
   cases hobs : e.observation with
   | handed frames stamp => exact absurd hobs (he frames stamp)
@@ -204,35 +204,35 @@ theorem knotLevelStep_level (q : LevelSettings) (share nominal : ℝ) (st : Knot
 
 /-- Events that are not handovers leave the level of the next block and the
 recorded reading in place. -/
-theorem foldl_knotLevelStep_level (q : LevelSettings) (share nominal : ℝ)
+theorem foldl_knotLevelStep_level (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (l : List (Event H R Payload)) (st : KnotLevelState)
     (hl : ∀ e ∈ l, ∀ frames stamp, e.observation ≠ .handed frames stamp) :
-    (l.foldl (knotLevelStep q share nominal) st).level = st.level
-      ∧ (l.foldl (knotLevelStep q share nominal) st).knot = st.knot := by
+    (l.foldl (knotLevelStep q share kn) st).level = st.level
+      ∧ (l.foldl (knotLevelStep q share kn) st).knot = st.knot := by
   induction l generalizing st with
   | nil => exact ⟨rfl, rfl⟩
   | cons e l ih =>
     rw [List.foldl_cons]
-    obtain ⟨h1, h2⟩ := ih (knotLevelStep q share nominal st e)
+    obtain ⟨h1, h2⟩ := ih (knotLevelStep q share kn st e)
       fun e' he' => hl e' (List.mem_cons_of_mem e he')
-    obtain ⟨h3, h4⟩ := knotLevelStep_level q share nominal st (hl e List.mem_cons_self)
+    obtain ⟨h3, h4⟩ := knotLevelStep_level q share kn st (hl e List.mem_cons_self)
     exact ⟨h1.trans h3, h2.trans h4⟩
 
 /-- Events that are not handovers, after the events `l`, leave the level of
 the next block in place. -/
-theorem knotLevelState_append_level (q : LevelSettings) (share nominal : ℝ)
+theorem knotLevelState_append_level (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (l mid : List (Event H R Payload))
     (hl : ∀ e ∈ mid, ∀ frames stamp, e.observation ≠ .handed frames stamp) :
-    (knotLevelState q share nominal (l ++ mid)).level
-      = (knotLevelState q share nominal l).level := by
+    (knotLevelState q share kn (l ++ mid)).level
+      = (knotLevelState q share kn l).level := by
   unfold knotLevelState
   rw [List.foldl_append]
-  exact (foldl_knotLevelStep_level q share nominal mid _ hl).1
+  exact (foldl_knotLevelStep_level q share kn mid _ hl).1
 
 /-- **The recorded knot is the knot after the handovers of the view.** -/
-theorem knotLevelState_knot (q : LevelSettings) (share nominal : ℝ)
+theorem knotLevelState_knot (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (l : List (Event H R Payload)) :
-    (knotLevelState q share nominal l).knot = knotsOf nominal (handoversOf l) := by
+    (knotLevelState q share kn l).knot = knotsOf kn (handoversOf l) := by
   induction l using List.reverseRecOn with
   | nil => rfl
   | append_singleton l e ih =>
@@ -241,27 +241,27 @@ theorem knotLevelState_knot (q : LevelSettings) (share nominal : ℝ)
     | handed frames stamp =>
       have h1 : handoversOf [e] = [e] := by simp [handoversOf, hobs]
       rw [h1, knotsOf_concat, ← ih]
-      simp [knotLevelStep, hobs, handedCount]
+      simp [knotLevelStep, hobs, handedCount, handedStamp]
     | asked r outputs stamp =>
       have h1 : handoversOf [e] = [] := by simp [handoversOf, hobs]
       rw [h1, List.append_nil, ← ih]
-      exact (knotLevelStep_level q share nominal _ (by simp [hobs])).2
+      exact (knotLevelStep_level q share kn _ (by simp [hobs])).2
     | timer =>
       have h1 : handoversOf [e] = [] := by simp [handoversOf, hobs]
       rw [h1, List.append_nil, ← ih]
-      exact (knotLevelStep_level q share nominal _ (by simp [hobs])).2
+      exact (knotLevelStep_level q share kn _ (by simp [hobs])).2
     | received i c F =>
       have h1 : handoversOf [e] = [] := by simp [handoversOf, hobs]
       rw [h1, List.append_nil, ← ih]
-      exact (knotLevelStep_level q share nominal _ (by simp [hobs])).2
+      exact (knotLevelStep_level q share kn _ (by simp [hobs])).2
 
 /-- **The aim and the level stay within the bounds.** If both lie between
 `q.lo` and `q.hi`, they do after any event, for `q.lo ≤ q.hi`. -/
-theorem knotLevelStep_mem (q : LevelSettings) (share nominal : ℝ) (hlohi : q.lo ≤ q.hi)
+theorem knotLevelStep_mem (q : LevelSettings) (share : ℝ) (kn : KnotSettings) (hlohi : q.lo ≤ q.hi)
     {st : KnotLevelState} (ha : st.aim ∈ Set.Icc q.lo q.hi)
     (hl : st.level ∈ Set.Icc q.lo q.hi) (e : Event H R Payload) :
-    (knotLevelStep q share nominal st e).aim ∈ Set.Icc q.lo q.hi
-      ∧ (knotLevelStep q share nominal st e).level ∈ Set.Icc q.lo q.hi := by
+    (knotLevelStep q share kn st e).aim ∈ Set.Icc q.lo q.hi
+      ∧ (knotLevelStep q share kn st e).level ∈ Set.Icc q.lo q.hi := by
   unfold knotLevelStep
   cases hobs : e.observation with
   | asked r outputs stamp => exact ⟨ha, hl⟩
@@ -279,7 +279,7 @@ theorem knotLevelStep_mem (q : LevelSettings) (share nominal : ℝ) (hlohi : q.l
     obtain ⟨ha1, ha2⟩ := ha
     obtain ⟨hl1, hl2⟩ := hl
     obtain ⟨hup, hdown⟩ := knotSlope_between q share st.aim st.level frames.length
-      (periodFrom nominal st.knot e.reading frames.length)
+      (periodFrom kn st.knot e.reading stamp frames.length)
     rcases le_total st.level st.aim with h | h
     · obtain ⟨h1, h2⟩ := hup h
       exact ⟨by linarith, by linarith⟩
@@ -288,30 +288,30 @@ theorem knotLevelStep_mem (q : LevelSettings) (share nominal : ℝ) (hlohi : q.l
 
 /-- After any events, the aim and the level of the rule lie between `q.lo`
 and `q.hi`, when the start does and `q.lo ≤ q.hi`. -/
-theorem knotLevelState_mem (q : LevelSettings) (share nominal : ℝ) (hlohi : q.lo ≤ q.hi)
+theorem knotLevelState_mem (q : LevelSettings) (share : ℝ) (kn : KnotSettings) (hlohi : q.lo ≤ q.hi)
     (hstart : q.start ∈ Set.Icc q.lo q.hi) (l : List (Event H R Payload)) :
-    (knotLevelState q share nominal l).aim ∈ Set.Icc q.lo q.hi
-      ∧ (knotLevelState q share nominal l).level ∈ Set.Icc q.lo q.hi := by
+    (knotLevelState q share kn l).aim ∈ Set.Icc q.lo q.hi
+      ∧ (knotLevelState q share kn l).level ∈ Set.Icc q.lo q.hi := by
   have hgen : ∀ (l : List (Event H R Payload)) (st : KnotLevelState),
       st.aim ∈ Set.Icc q.lo q.hi → st.level ∈ Set.Icc q.lo q.hi →
-      (l.foldl (knotLevelStep q share nominal) st).aim ∈ Set.Icc q.lo q.hi
-        ∧ (l.foldl (knotLevelStep q share nominal) st).level ∈ Set.Icc q.lo q.hi := by
+      (l.foldl (knotLevelStep q share kn) st).aim ∈ Set.Icc q.lo q.hi
+        ∧ (l.foldl (knotLevelStep q share kn) st).level ∈ Set.Icc q.lo q.hi := by
     intro l
     induction l with
     | nil => exact fun st ha hl => ⟨ha, hl⟩
     | cons e l ih =>
       intro st ha hl
-      obtain ⟨h1, h2⟩ := knotLevelStep_mem q share nominal hlohi ha hl e
+      obtain ⟨h1, h2⟩ := knotLevelStep_mem q share kn hlohi ha hl e
       exact ih _ h1 h2
   exact hgen l _ hstart hstart
 
 /-- **The aim depends on the sender's view only through the needs that its
 clock queries carried**, in their order; it is the aim of `steppedLevel`. -/
-theorem knotLevelState_aim (q : LevelSettings) (share nominal : ℝ)
+theorem knotLevelState_aim (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
     (l : List (Event H R Payload)) :
-    (knotLevelState q share nominal l).aim = aimAfter q (needsOf l) := by
+    (knotLevelState q share kn l).aim = aimAfter q (needsOf l) := by
   have hgen : ∀ (l : List (Event H R Payload)) (st : KnotLevelState),
-      (l.foldl (knotLevelStep q share nominal) st).aim
+      (l.foldl (knotLevelStep q share kn) st).aim
         = (needsOf l).foldl (aimStep q) st.aim := by
     intro l
     induction l with
@@ -339,8 +339,8 @@ variable [DecidableEq H] (σ : Solution H R Payload) (w : World H R) (lookahead 
 
 /-- What the rule `knotLevel` announces with block `b` in the run of `σ`:
 the rule at the sender's view when it handles the handover of `b`. -/
-def announcedAt (q : LevelSettings) (share nominal : ℝ) (b : ℕ) : ℝ × ℝ :=
-  (knotLevel q share nominal (fun (_ : H) _ => none)).announce
+def announcedAt (q : LevelSettings) (share : ℝ) (kn : KnotSettings) (b : ℕ) : ℝ × ℝ :=
+  (knotLevel q share kn (fun (_ : H) _ => none)).announce
     (σ.handoverView w lookahead b) (w.source.first b)
 
 /-- The sender's view just before it handles the handover of block `b`. -/
@@ -356,37 +356,38 @@ theorem handoverView_dropLast {i b : ℕ}
 handover of block `b`: the level that the rule has reached, and the slope
 toward its aim within the limit for the block's time from one frame to the
 next on the schedule of the knots. -/
-theorem announcedAt_eq (q : LevelSettings) (share nominal : ℝ) {i b : ℕ}
+theorem announcedAt_eq (q : LevelSettings) (share : ℝ) (kn : KnotSettings) {i b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
-    announcedAt σ w lookahead q share nominal b
-      = ((knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).level,
+    announcedAt σ w lookahead q share kn b
+      = ((knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).level,
         knotSlope q share
-          (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).aim
-          (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).level
-          (w.blockLength b) (w.knotPeriod nominal b)) := by
+          (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).aim
+          (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).level
+          (w.blockLength b) (w.knotPeriod kn b)) := by
   obtain ⟨hdrop, hlast⟩ := handoverView_dropLast σ w lookahead hi
   have hE := σ.earliest_of_handled_handed w lookahead hi
   obtain ⟨hn, -⟩ := σ.handedNext_of_earliest w lookahead hE
   have hlen : ((w.source.block b).map fun k => (k, w.target k)).length = w.blockLength b := by
     simp [CaptureDevice.block, World.blockLength]
-  have hknot : (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).knot
-      = knotsOf nominal ((List.range b).map (w.handedEvent : ℕ → Event H R Payload)) := by
+  have hknot : (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).knot
+      = knotsOf kn ((List.range b).map (w.handedEvent : ℕ → Event H R Payload)) := by
     rw [knotLevelState_knot, σ.handoversOf_views w lookahead i, hn]
-  have hperiod : periodFrom nominal
-      (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).knot
-      (w.handedEvent b : Event H R Payload).reading (w.blockLength b)
-      = w.knotPeriod nominal b := by
+  have hperiod : periodFrom kn
+      (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).knot
+      (w.handedEvent b : Event H R Payload).reading (w.source.reported b) (w.blockLength b)
+      = w.knotPeriod kn b := by
     rw [hknot]
     unfold periodFrom
-    show (knotStep nominal _ (w.handedReading b) (w.blockLength b)).2 / _ = _
+    show (knotStep kn _ (w.handedReading b) (w.source.reported b) (w.blockLength b)).2 / _
+      = _
     rw [knotStep_knotsOf_range]
     rfl
   unfold announcedAt knotLevel
   simp only [hlast, hdrop]
   show (_, knotSlope q share _ _
       ((w.source.block b).map fun k => (k, w.target k)).length
-      (periodFrom nominal _ (w.handedEvent b : Event H R Payload).reading
+      (periodFrom kn _ (w.handedEvent b : Event H R Payload).reading (w.source.reported b)
         ((w.source.block b).map fun k => (k, w.target k)).length)) = _
   rw [hlen, hperiod]
 
@@ -394,17 +395,17 @@ theorem announcedAt_eq (q : LevelSettings) (share nominal : ℝ) {i b : ℕ}
 the handovers of blocks `b` and `b + 1` are both handled, the level
 announced with block `b + 1` is the level announced with block `b` plus the
 number of frames of block `b` times the slope announced with block `b`. -/
-theorem announcedAt_succ (q : LevelSettings) (share nominal : ℝ) {i i' b : ℕ}
+theorem announcedAt_succ (q : LevelSettings) (share : ℝ) (kn : KnotSettings) {i i' b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
     (hi' : σ.handled w lookahead i' = some (w.sender, w.source.handed (b + 1),
       .handed ((w.source.block (b + 1)).map fun k => (k, w.target k))
         (w.source.reported (b + 1)))) :
-    (announcedAt σ w lookahead q share nominal (b + 1)).1
-      = (announcedAt σ w lookahead q share nominal b).1
-        + (w.blockLength b : ℝ) * (announcedAt σ w lookahead q share nominal b).2 := by
-  rw [announcedAt_eq σ w lookahead q share nominal hi,
-    announcedAt_eq σ w lookahead q share nominal hi']
+    (announcedAt σ w lookahead q share kn (b + 1)).1
+      = (announcedAt σ w lookahead q share kn b).1
+        + (w.blockLength b : ℝ) * (announcedAt σ w lookahead q share kn b).2 := by
+  rw [announcedAt_eq σ w lookahead q share kn hi,
+    announcedAt_eq σ w lookahead q share kn hi']
   obtain ⟨mid, hmid, hno⟩ := σ.handoverView_succ w lookahead hi hi'
   rw [σ.handoverView_eq w lookahead hi, σ.handoverView_eq w lookahead hi'] at hmid
   have hviews : (σ.states w lookahead i').views w.sender
@@ -414,24 +415,25 @@ theorem announcedAt_succ (q : LevelSettings) (share nominal : ℝ) {i i' b : ℕ
     simp [CaptureDevice.block, World.blockLength]
   have hE := σ.earliest_of_handled_handed w lookahead hi
   obtain ⟨hn, -⟩ := σ.handedNext_of_earliest w lookahead hE
-  have hknot : (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).knot
-      = knotsOf nominal ((List.range b).map (w.handedEvent : ℕ → Event H R Payload)) := by
+  have hknot : (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).knot
+      = knotsOf kn ((List.range b).map (w.handedEvent : ℕ → Event H R Payload)) := by
     rw [knotLevelState_knot, σ.handoversOf_views w lookahead i, hn]
-  have hperiod : periodFrom nominal
-      (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).knot
-      (w.handedEvent b : Event H R Payload).reading (w.blockLength b)
-      = w.knotPeriod nominal b := by
+  have hperiod : periodFrom kn
+      (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).knot
+      (w.handedEvent b : Event H R Payload).reading (w.source.reported b) (w.blockLength b)
+      = w.knotPeriod kn b := by
     rw [hknot]
     unfold periodFrom
-    show (knotStep nominal _ (w.handedReading b) (w.blockLength b)).2 / _ = _
+    show (knotStep kn _ (w.handedReading b) (w.source.reported b) (w.blockLength b)).2 / _
+      = _
     rw [knotStep_knotsOf_range]
     rfl
-  show (knotLevelState q share nominal ((σ.states w lookahead i').views w.sender)).level = _
-  rw [hviews, knotLevelState_append_level q share nominal _ mid hno, knotLevelState_concat]
-  show (knotLevelState q share nominal ((σ.states w lookahead i).views w.sender)).level
+  show (knotLevelState q share kn ((σ.states w lookahead i').views w.sender)).level = _
+  rw [hviews, knotLevelState_append_level q share kn _ mid hno, knotLevelState_concat]
+  show (knotLevelState q share kn ((σ.states w lookahead i).views w.sender)).level
       + (((w.source.block b).map fun k => (k, w.target k)).length : ℝ)
         * knotSlope q share _ _ ((w.source.block b).map fun k => (k, w.target k)).length
-          (periodFrom nominal _ (w.handedEvent b : Event H R Payload).reading
+          (periodFrom kn _ (w.handedEvent b : Event H R Payload).reading (w.source.reported b)
             ((w.source.block b).map fun k => (k, w.target k)).length) = _
   rw [hlen, hperiod]
 
@@ -439,43 +441,62 @@ theorem announcedAt_succ (q : LevelSettings) (share nominal : ℝ) {i i' b : ℕ
 run handles the handover of block `b`, the slope that the rule announces is
 at most `slopeLimit` for the block's time from one frame to the next on the
 schedule of the knots, in absolute value. -/
-theorem abs_announcedAt_slope_le (q : LevelSettings) (share nominal : ℝ) {i b : ℕ}
+theorem abs_announcedAt_slope_le (q : LevelSettings) (share : ℝ) (kn : KnotSettings) {i b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
-    |(announcedAt σ w lookahead q share nominal b).2|
-      ≤ slopeLimit q share (w.knotPeriod nominal b) := by
-  rw [announcedAt_eq σ w lookahead q share nominal hi]
+    |(announcedAt σ w lookahead q share kn b).2|
+      ≤ slopeLimit q share (w.knotPeriod kn b) := by
+  rw [announcedAt_eq σ w lookahead q share kn hi]
   exact abs_knotSlope_le q share _ _ _ _
 
-/-- **The schedule advances in every block.** For `0 ≤ share < 1` and a
-positive time from one frame to the next for the first block: when the run
-handles the handover of block `b`, the block's time from one frame to the
+/-- **The schedule advances in every block.** For `0 ≤ share < 1` and valid
+settings of the knots (`KnotSettings.Valid`): when the run handles the
+handover of block `b`, the block's time from one frame to the
 next on the schedule of the knots, plus the slope that the rule announces,
 is at least `1 - share` times that time, which is positive. This holds in
 every world. -/
-theorem knotPeriod_add_slope_pos (q : LevelSettings) {share nominal : ℝ} (hs0 : 0 ≤ share)
-    (hs1 : share < 1) (hnominal : 0 < nominal) {i b : ℕ}
+theorem knotPeriod_add_slope_pos (q : LevelSettings) {share : ℝ} {kn : KnotSettings}
+    (hs0 : 0 ≤ share) (hs1 : share < 1) (hnominal : kn.Valid) {i b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
-    0 < (1 - share) * w.knotPeriod nominal b
-      ∧ (1 - share) * w.knotPeriod nominal b
-        ≤ w.knotPeriod nominal b + (announcedAt σ w lookahead q share nominal b).2 := by
+    0 < (1 - share) * w.knotPeriod kn b
+      ∧ (1 - share) * w.knotPeriod kn b
+        ≤ w.knotPeriod kn b + (announcedAt σ w lookahead q share kn b).2 := by
   have hp := w.knotPeriod_pos hnominal b
-  have habs := abs_announcedAt_slope_le σ w lookahead q share nominal hi
-  have hlim : slopeLimit q share (w.knotPeriod nominal b) ≤ share * w.knotPeriod nominal b := by
+  have habs := abs_announcedAt_slope_le σ w lookahead q share kn hi
+  have hlim : slopeLimit q share (w.knotPeriod kn b) ≤ share * w.knotPeriod kn b := by
     unfold slopeLimit
     exact max_le (mul_nonneg hs0 hp.le) (min_le_right _ _)
   have h1 := (abs_le.mp habs).1
   exact ⟨mul_pos (by linarith) hp, by nlinarith⟩
 
-/-- **Every level that the rule announces at a handover lies between `q.lo`
-and `q.hi`**, when the start does and `q.lo ≤ q.hi`. -/
-theorem announcedAt_fst_mem (q : LevelSettings) (share nominal : ℝ) (hlohi : q.lo ≤ q.hi)
-    (hstart : q.start ∈ Set.Icc q.lo q.hi) {i b : ℕ}
+/-- **The schedule advances by at most `1 + share` times a block's time from
+one frame to the next.** For `0 ≤ share`: when the run handles the handover
+of block `b`, the block's time from one frame to the next on the schedule of
+the knots, plus the slope that the rule announces, is at most `1 + share`
+times that time. This holds in every world. -/
+theorem knotPeriod_add_slope_le (q : LevelSettings) {share : ℝ} {kn : KnotSettings}
+    (hs0 : 0 ≤ share) (hnominal : kn.Valid) {i b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
-    (announcedAt σ w lookahead q share nominal b).1 ∈ Set.Icc q.lo q.hi := by
-  rw [announcedAt_eq σ w lookahead q share nominal hi]
-  exact (knotLevelState_mem q share nominal hlohi hstart _).2
+    w.knotPeriod kn b + (announcedAt σ w lookahead q share kn b).2
+      ≤ (1 + share) * w.knotPeriod kn b := by
+  have hp := w.knotPeriod_pos hnominal b
+  have habs := abs_announcedAt_slope_le σ w lookahead q share kn hi
+  have hlim : slopeLimit q share (w.knotPeriod kn b) ≤ share * w.knotPeriod kn b := by
+    unfold slopeLimit
+    exact max_le (mul_nonneg hs0 hp.le) (min_le_right _ _)
+  have h1 := (abs_le.mp habs).2
+  nlinarith
+
+/-- **Every level that the rule announces at a handover lies between `q.lo`
+and `q.hi`**, when the start does and `q.lo ≤ q.hi`. -/
+theorem announcedAt_fst_mem (q : LevelSettings) (share : ℝ) (kn : KnotSettings)
+    (hlohi : q.lo ≤ q.hi) (hstart : q.start ∈ Set.Icc q.lo q.hi) {i b : ℕ}
+    (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
+      .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
+    (announcedAt σ w lookahead q share kn b).1 ∈ Set.Icc q.lo q.hi := by
+  rw [announcedAt_eq σ w lookahead q share kn hi]
+  exact (knotLevelState_mem q share kn hlohi hstart _).2
 
 end Unisono.Solutions.Controller

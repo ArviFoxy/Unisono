@@ -14,12 +14,12 @@ The rules of the controller (`Rules`) for worlds in which clocks wander and
 links pause. Every estimate is a function of a bounded stretch of what a
 host has observed, so that an estimate recovers after any disturbance. A
 host that pauses handles the events of its audio devices late. The capture
-schedule keeps advancing through handovers that are handled together
-(`knotStep`); the readings at requests are still taken as the times of the
-requests.
+schedule keeps its nominal advance through handovers that are handled
+together (`knotStep`); the readings at requests are still taken as the times
+of the requests.
 
 * **The capture schedule** comes from the readings of the sender's clock at
-  the handovers (`knotCapture`).
+  the handovers and from the timestamps of the blocks (`knotCapture`).
 * **When output samples leave.** A playback device requests each block a
   told lead, on its own clock, before the block's first output sample
   leaves, and its host handles the request then, or later when it is busy.
@@ -52,10 +52,13 @@ requests.
   sent at most `exchangeWindow` before the request, whose bound exceeds the
   value from the arrivals by at most the round trip in use plus
   `intervalSlack`.
-  The block check (`blockCheck`): the block whose header covers the estimate
-  has a time from one frame to the next within `periodBound` of the nominal
-  one, as a share of it, and the sender's host handled its handover at most
-  `stampSlack` later than the block's timestamp allows.
+  The block check (`blockCheck`): for the block whose header covers the
+  estimate, the reading at which the block's right end is due, minus the
+  input of the block's knot (`knotInput`), lies between `levelLow` and
+  `levelHigh` within `scheduleSlack`. The sender keeps the level between
+  those two bounds, so the check holds when the knot is at its input, and it
+  fails when the schedule has moved away from the block's reading and
+  timestamp.
 * **The need** that a host reports in a clock query (`timedNeed`): the
   largest need of the blocks that arrived since the host sent the newest
   query that has been answered. The need of a block is the level at which
@@ -109,12 +112,30 @@ structure TimingSettings where
   sender's clock may exceed the value from the arrivals plus the round trip
   in use. -/
   intervalSlack : ℝ
-  /-- The largest distance from one of a block's time from one frame to the
-  next, times the nominal rate, at which the block is played. -/
+  /-- The bound of the capture schedule (`KnotSettings.bound`): the largest
+  distance from one of a block's time from one frame to the next on the
+  schedule, times the nominal rate. -/
   periodBound : ℝ
-  /-- By how much later than its timestamp allows the handover of a block
-  may have been handled for the block to be played. -/
+  /-- The slack of the capture schedule (`KnotSettings.slack`): the time
+  added to a block's timestamp, beyond the nominal time of the block's
+  frames, when the timestamp stands in for the reading at a handover that
+  was handled late. -/
   stampSlack : ℝ
+  /-- The least level that the sender announces, as the hosts are told
+  it. -/
+  levelLow : ℝ
+  /-- The largest level that the sender announces, as the hosts are told
+  it. -/
+  levelHigh : ℝ
+  /-- By how much the reading at which a block's right end is due, minus the
+  input of the block's knot, may lie outside the bounds of the level for
+  the block to be played. -/
+  scheduleSlack : ℝ
+
+/-- The settings of the capture schedule: the nominal time from one frame to
+the next, `periodBound` and `stampSlack`. -/
+def TimingSettings.knots (t : TimingSettings) : KnotSettings :=
+  ⟨1 / t.rate, t.periodBound, t.stampSlack⟩
 
 /-- The first output sample of the block that a request asks for. -/
 def firstOutput (e : Event H R Payload) : ℕ :=
@@ -153,6 +174,26 @@ def arrivalSlope (t : TimingSettings) (view : List (Event H R Payload)) : ℝ :=
       | some a' => clampTo (1 - t.slopeBound) (1 + t.slopeBound) ((a.2 - a'.2) / (a.1 - a'.1))
       | none => 1
   | [] => 1
+
+/-- The ratio that a host uses is within `slopeBound` of one. -/
+theorem deviceRatio_mem (t : TimingSettings) (hsb : 0 ≤ t.slopeBound) (r : Fin R)
+    (view : List (Event H R Payload)) :
+    deviceRatio t r view ∈ Set.Icc (1 - t.slopeBound) (1 + t.slopeBound) := by
+  unfold deviceRatio
+  split
+  · exact clampTo_mem (by linarith) _
+  · exact ⟨by linarith, by linarith⟩
+
+/-- The slope that a host uses is within `slopeBound` of one. -/
+theorem arrivalSlope_mem (t : TimingSettings) (hsb : 0 ≤ t.slopeBound)
+    (view : List (Event H R Payload)) :
+    arrivalSlope t view ∈ Set.Icc (1 - t.slopeBound) (1 + t.slopeBound) := by
+  unfold arrivalSlope
+  split
+  · split
+    · exact clampTo_mem (by linarith) _
+    · exact ⟨by linarith, by linarith⟩
+  · exact ⟨by linarith, by linarith⟩
 
 /-- Half of the least round trip of the newest `exchanges` clock exchanges
 in a view, cut to between zero and `tripCap`. It is zero while there is no
@@ -222,22 +263,26 @@ def intervalCheck (t : TimingSettings) (view : List (Event H R Payload)) : Prop 
         ≤ v + 2 * halfTrip t view + t.intervalSlack
 
 /-- **The block check**, for the estimate `s`. Every block in the view whose
-header covers the position that it says is due at `s` satisfies two
-conditions. Its time from one frame to the next, times the nominal rate, is
-within `periodBound` of one. And the value of its capture line at its right
-end is at most the block's timestamp plus the nominal time of the block's
-frames, longer by the share `periodBound`, plus `stampSlack`. Under the
-schedule of the knots that value is the reading of the sender's clock when
-its host handled the handover, so the second condition says that the
-handover was not handled much later than the timestamp of the block's first
-frame allows. -/
+header covers the position that it says is due at `s` satisfies this: the
+reading at which the header puts the block's right end, the value of its
+capture line there plus its level there, minus the input of the block's
+knot (`knotInput`, from the value of the capture line at the right end and
+the block's timestamp), lies between `levelLow - scheduleSlack` and
+`levelHigh + scheduleSlack`. Under the schedule of the knots the value of
+the capture line at the right end is the reading of the sender's clock when
+its host handled the handover, and the difference is the level at the
+block's right end plus the time by which the block's knot is later than its
+input. So the check bounds how far the knot is from its input. -/
 def blockCheck (t : TimingSettings) (view : List (Event H R Payload)) (s : ℝ) : Prop :=
   ∀ e ∈ view, ∀ (i : H) (f : ℕ) (stamp capture period level slope : ℝ) (F : Finset ℕ),
     e.observation = .received i (.block f stamp capture period level slope) F →
     (⟨f, capture, period, level, slope⟩ : Header).Covers F.card s →
-      |period * t.rate - 1| ≤ t.periodBound
-        ∧ capture + F.card * period - stamp
-          ≤ F.card / t.rate * (1 + t.periodBound) + t.stampSlack
+      t.levelLow - t.scheduleSlack
+          ≤ capture + F.card * period + (level + F.card * slope)
+            - knotInput t.knots (capture + F.card * period) stamp F.card
+        ∧ capture + F.card * period + (level + F.card * slope)
+            - knotInput t.knots (capture + F.card * period) stamp F.card
+          ≤ t.levelHigh + t.scheduleSlack
 
 /-- **The estimate by which a host plays**: the estimate of the sender's
 clock from the arrivals of blocks (`envelopeReading`), kept only where the
@@ -293,13 +338,13 @@ def timedNeed (t : TimingSettings) : H → List (Event H R Payload) → Option �
 
 /-- **The rules of the controller's timing**, for the sender's host, the
 settings `t` and a level rule: the capture schedule from the knots, with the
-nominal time from one frame to the next for the first block; the estimate of
+settings `t.knots`; the estimate of
 the sender's clock from the arrivals of blocks, kept where the two checks
 hold (`checkedReading`); and positions counted one frame back, as the
 schedule of the knots counts them. -/
 def timedRules [DecidableEq H] (sender : H) (t : TimingSettings) (level : LevelRule H R) :
     Rules H R :=
-  ⟨level, knotCapture (1 / t.rate), checkedReading sender t, 1⟩
+  ⟨level, knotCapture t.knots, checkedReading sender t, 1⟩
 
 /-! ## What the output schedule is, as a function of the world -/
 
@@ -380,12 +425,10 @@ the request, such that:
   clock from the arrival of `b'` to the reading that the host expects when
   the output sample leaves (`outputAt`), minus half of the round trip.
 
-* **The block check.** The time from one frame to the next of block `b` on
-  the schedule of the knots, times the nominal rate, is within
-  `periodBound` of one. The reading of the sender's clock when its host
-  handled the handover of `b` is at most the timestamp of `b` plus the
-  nominal time of the block's frames, longer by the share `periodBound`,
-  plus `stampSlack`.
+* **The block check.** The time by which the knot of block `b` is later
+  than its input (`World.knotInput`), plus the level that the sender
+  announced for the right end of `b`, lies between `levelLow` and
+  `levelHigh` within `scheduleSlack`.
 
 The estimate `s` is the one that the rules give at the host's view, so the
 interval check holds at that view (`checkedReading_eq_some`). With `o` the
@@ -407,9 +450,9 @@ theorem timed_chosen (p : FixedDelay.Params H) (w : World H R) (t : TimingSettin
       ∧ (∃ q, w.network.deliver w.sender (w.host r) (w.source.handed b) q = some tb)
       ∧ tb < (w.speaker r).asked β
       ∧ (w.source.first b : ℝ) ≤ x + 1 ∧ x + 1 < w.source.first b + w.blockLength b
-      ∧ 0 < w.knotPeriod (1 / t.rate) b
+      ∧ 0 < w.knotPeriod t.knots b
           + ((timedRules w.sender t level).announced p w lookahead b).2
-      ∧ w.knotTime (1 / t.rate) b (x + 1)
+      ∧ w.knotTime t.knots b (x + 1)
           + (((timedRules w.sender t level).announced p w lookahead b).1
             + (x + 1 - w.source.first b)
               * ((timedRules w.sender t level).announced p w lookahead b).2) = s
@@ -424,16 +467,27 @@ theorem timed_chosen (p : FixedDelay.Params H) (w : World H R) (t : TimingSettin
             - halfTrip t (((ruled p (timedRules w.sender t level) :
                   Solution H R Payload).states w lookahead n).views (w.host r)
                 ++ [w.askedEvent r β]))
-      ∧ |w.knotPeriod (1 / t.rate) b * t.rate - 1| ≤ t.periodBound
-      ∧ w.handedReading b - w.source.reported b
-          ≤ w.blockLength b / t.rate * (1 + t.periodBound) + t.stampSlack := by
+      ∧ t.levelLow - t.scheduleSlack
+          ≤ w.knot t.knots b - w.knotInput t.knots b
+            + (((timedRules w.sender t level).announced p w lookahead b).1
+              + w.blockLength b * ((timedRules w.sender t level).announced p w lookahead b).2)
+      ∧ w.knot t.knots b - w.knotInput t.knots b
+            + (((timedRules w.sender t level).announced p w lookahead b).1
+              + w.blockLength b * ((timedRules w.sender t level).announced p w lookahead b).2)
+          ≤ t.levelHigh + t.scheduleSlack := by
   obtain ⟨s, b, tb, hs0, hq, hlt, hlo, hhi, hpos, heq, e, he, j, F, hobs, hcard, hcovF⟩ :=
-    ruled_chosen_knots p (timedRules w.sender t level) w (nominal := 1 / t.rate) rfl hsender
+    ruled_chosen_knots p (timedRules w.sender t level) w (kn := t.knots) rfl hsender
       lookahead hr hx
   obtain ⟨hs, hchecks⟩ := checkedReading_eq_some.mp hs0
   obtain ⟨-, hblockCheck⟩ := hchecks.resolve_left hr
   have hblock := hblockCheck e (List.mem_append_left _ he) j _ _ _ _ _ _ F hobs hcovF
   rw [hcard] at hblock
+  have hend : w.handedReading b - w.blockLength b * w.knotPeriod t.knots b
+      + w.blockLength b * w.knotPeriod t.knots b = w.handedReading b := by ring
+  rw [hend] at hblock
+  have hinput : knotInput t.knots (w.handedReading b) (w.source.reported b) (w.blockLength b)
+      = w.knotInput t.knots b := rfl
+  rw [hinput] at hblock
   have hnext := Solution.askedNext_of_earliest _ w lookahead hE
   have happ : arrivalsOf (((ruled p (timedRules w.sender t level) :
         Solution H R Payload).states w lookahead n).views (w.host r) ++ [w.askedEvent r β])
@@ -449,17 +503,18 @@ theorem timed_chosen (p : FixedDelay.Params H) (w : World H R) (t : TimingSettin
     rw [← happ]
     exact mem_arrivalsOf_of_window t ha
   obtain ⟨b', tb', -, hq', hlt', herr⟩ :=
-    exists_reading_eq p (timedRules w.sender t level) w (nominal := 1 / t.rate) rfl hsender
+    exists_reading_eq p (timedRules w.sender t level) w (kn := t.knots) rfl hsender
       lookahead hr (timingParts t) hsub hs
   have ho := requestOutput_eq (ruled p (timedRules w.sender t level)) w lookahead t hE k
-  refine ⟨s, b, tb, b', tb', hs0, hq, ?_, hlo, hhi, hpos, heq, hq', ?_, fun o => ?_, hblock.1,
-    ?_⟩
+  refine ⟨s, b, tb, b', tb', hs0, hq, ?_, hlo, hhi, hpos, heq, hq', ?_, fun o => ?_, ?_, ?_⟩
   · rw [← hnext]
     exact hlt r
   · rw [← hnext]
     exact hlt' r
   · rw [herr o, ← ho]
     rfl
+  · have h1 := hblock.1
+    linarith
   · have h2 := hblock.2
     linarith
 

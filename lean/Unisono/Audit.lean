@@ -4242,29 +4242,29 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.knotStep_snd_pos
 
-/-- info: 'Unisono.Spec.le_knotStep_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.knotStep_snd_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.le_knotStep_fst
+#print axioms Unisono.Spec.knotStep_snd_mem
 
 /-- info: 'Unisono.Spec.World.knotInc_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knotInc_pos
 
+/-- info: 'Unisono.Spec.World.knotInc_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotInc_mem
+
 /-- info: 'Unisono.Spec.World.knot_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knot_succ
 
-/-- info: 'Unisono.Spec.World.handedReading_le_knot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.World.knot_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.World.handedReading_le_knot
+#print axioms Unisono.Spec.World.knot_zero
 
-/-- info: 'Unisono.Spec.World.knot_succ_eq_handedReading' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.World.knot_succ_eq_knotInput' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.World.knot_succ_eq_handedReading
-
-/-- info: 'Unisono.Spec.World.knot_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.World.knot_sub_le
+#print axioms Unisono.Spec.World.knot_succ_eq_knotInput
 
 /-- info: 'Unisono.Spec.World.knotPeriod_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4281,6 +4281,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.World.knotPeriod_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knotPeriod_pos
+
+/-- info: 'Unisono.Spec.World.knotPeriod_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotPeriod_mem
 
 /-- info: 'Unisono.Spec.World.knotTime_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4718,6 +4722,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.handedCount_handedEvent
 
+/-- info: 'Unisono.Solutions.Controller.handedStamp_handedEvent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.handedStamp_handedEvent
+
 /-- info: 'Unisono.Solutions.Controller.knotsOf_concat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.knotsOf_concat
@@ -4773,6 +4781,14 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.arrivalsOf_append_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.arrivalsOf_append_asked
+
+/-- info: 'Unisono.Solutions.Controller.deviceRatio_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.deviceRatio_mem
+
+/-- info: 'Unisono.Solutions.Controller.arrivalSlope_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalSlope_mem
 
 /-- info: 'Unisono.Solutions.Controller.firstOutput_askedEvent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4862,6 +4878,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.knotPeriod_add_slope_pos
 
+/-- info: 'Unisono.Solutions.Controller.knotPeriod_add_slope_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotPeriod_add_slope_le
+
 /-- info: 'Unisono.Solutions.Controller.announcedAt_fst_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.announcedAt_fst_mem
@@ -4877,6 +4897,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.dueSlope_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.dueSlope_pos
+
+/-- info: 'Unisono.Solutions.Controller.dueSlope_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueSlope_mem
 
 /-- info: 'Unisono.Solutions.Controller.dueEdge_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4974,18 +4998,6 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.abs_chosen_sub_le
 
-/-- info: 'Unisono.Spec.World.knotLate_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.World.knotLate_nonneg
-
-/-- info: 'Unisono.Spec.World.knotInc_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.World.knotInc_nonneg
-
-/-- info: 'Unisono.Spec.World.knotLate_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
-#guard_msgs in
-#print axioms Unisono.Spec.World.knotLate_le
-
 /-- info: 'Unisono.Spec.World.knotTime_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knotTime_succ
@@ -5025,6 +5037,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.stepOver_chosen_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.stepOver_chosen_eq_zero
+
+/-- info: 'Unisono.Solutions.Controller.estimateStep_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.estimateStep_mem
+
+/-- info: 'Unisono.Solutions.Controller.chosen_succ_of_settings' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.chosen_succ_of_settings
+
+/-- info: 'Unisono.Solutions.Controller.stepOver_eq_zero_of_settings' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.stepOver_eq_zero_of_settings
 
 /-- info: 'Unisono.Solutions.Controller.ruled_exchange' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

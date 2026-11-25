@@ -18,10 +18,12 @@ errors of the timestamps. It is told the nominal rate, the request lead and
 the block size of the playback devices, and its own settings.
 
 * **The capture schedule.** The sender takes the capture time of each block
-  from the readings of its clock at the handovers of the capture device. The
-  schedule is continuous from block to block and advances in every block,
-  also when the sender's host handles several handovers at the same time
-  (`knotCapture`, `knotStep`).
+  from the readings of its clock at the handovers of the capture device and
+  from the timestamps of the blocks. The schedule is continuous from block
+  to block, and in every block its time from one frame to the next is the
+  nominal one within a set share, also when the sender's host handles
+  several handovers at the same time (`knotCapture`, `knotStep`,
+  `World.knotPeriod_mem`).
 * **When output samples leave.** Each host takes the time at which an output
   sample leaves from the readings of its clock at the requests of the
   playback device (`requestOutput`).
@@ -29,8 +31,9 @@ the block size of the playback devices, and its own settings.
   from the arrivals of the blocks of the stream, and takes half of the least
   round trip from its clock exchanges (`envelopeReading`, `timingParts`).
 * **Two checks.** A host plays an output sample only where a clock exchange
-  confirms its estimate of the sender's clock and the block that is due was
-  handed over on time by its timestamp (`checkedReading`).
+  confirms its estimate of the sender's clock and the schedule of the block
+  that is due agrees with the block's reading and timestamp
+  (`checkedReading`).
 * **Needs.** Each host reports, in its clock queries, the largest need of
   the blocks that arrived since its last answered query (`timedNeed`).
 * **The level.** The sender steps the level against the reported needs and
@@ -95,7 +98,7 @@ the step bound `u`, with jumps beyond `J` frames. -/
 def combined (t : TimingSettings) (q : LevelSettings) (share u J : ℝ) :
     Solution H R Payload :=
   (ruled p (timedRules p.sender t
-    (knotLevel q share (1 / t.rate) (timedNeed t)))).followed u J
+    (knotLevel q share t.knots (timedNeed t)))).followed u J
 
 /-- The hosts of the combined solution exchange messages only with the
 sender. -/

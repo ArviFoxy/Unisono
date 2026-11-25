@@ -193,7 +193,7 @@ of the host's clock at `t`, and the reading of the sender's clock when it
 handled the handover of `b`. The time `t` is before
 every request that the run has not yet handled. This holds in every
 world. -/
-theorem mem_arrivalsOf_run {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
+theorem mem_arrivalsOf_run {kn : KnotSettings} (hcap : rules.capture = knotCapture kn)
     (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H} {a : ℝ × ℝ}
     (ha : a ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views h)) :
     ∃ b t, a = ((w.clock h).read t, w.handedReading b)
@@ -215,13 +215,13 @@ theorem mem_arrivalsOf_run {nominal : ℝ} (hcap : rules.capture = knotCapture n
         ruled_received_block p rules w hsender lookahead he hobs
       unfold Rules.runHeader at hhd
       rw [Solution.handoverView_eq _ w lookahead hi] at hhd
-      have hk := knotCapture_eq (ruled p rules : Solution H R Payload) w lookahead nominal hi
+      have hk := knotCapture_eq (ruled p rules : Solution H R Payload) w lookahead kn hi
         (w.source.first b) (w.source.reported b)
-      have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod nominal b := by
+      have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod kn b := by
         have h1 := congrArg Header.capture hhd
         simp only [Rules.header, hcap] at h1
         rw [h1, hk]
-      have hpd : pd = w.knotPeriod nominal b := by
+      have hpd : pd = w.knotPeriod kn b := by
         have h1 := congrArg Header.period hhd
         simp only [Rules.header, hcap] at h1
         rw [h1, hk]
@@ -243,7 +243,7 @@ For every true time `o`: the reading of the sender's clock at `o` minus `s`
 is at most the time on the sender's clock from the handover of `b` to `o`,
 minus the slope times the time on the host's clock from `t` to the reading
 that the host expects, minus half of the round trip. -/
-theorem reading_le {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
+theorem reading_le {kn : KnotSettings} (hcap : rules.capture = knotCapture kn)
     (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H} (hne : h ≠ w.sender)
     (parts : ClockParts H R) {view : List (Event H R Payload)}
     (hsub : ∀ a ∈ parts.arrivals view,
@@ -275,7 +275,7 @@ at `o` minus the estimate `s` is the time on the sender's clock from the
 handover of `b` to `o`, minus the slope times the time on the host's clock
 from `t` to the reading that the host expects, minus half of the round
 trip. -/
-theorem exists_reading_eq {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
+theorem exists_reading_eq {kn : KnotSettings} (hcap : rules.capture = knotCapture kn)
     (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H} (hne : h ≠ w.sender)
     (parts : ClockParts H R) {view : List (Event H R Payload)}
     (hsub : ∀ a ∈ parts.arrivals view,

@@ -48,7 +48,7 @@ def Rules.estimate (p : FixedDelay.Params H) (rules : Rules H R) (w : World H R)
       ((w.speaker r).blockOf k)) r k
 
 variable {p : FixedDelay.Params H} {rules : Rules H R} {w : World H R}
-  {A : H → H → Time → Time} {q : LevelSettings} {share nominal : ℝ}
+  {A : H → H → Time → Time} {q : LevelSettings} {share : ℝ} {kn : KnotSettings}
 
 /-- **What the controller chooses for an output sample.** In the setting
 `KnotSetting`, for a speaker on a host other than the sender's: the
@@ -58,16 +58,16 @@ to just before the edge of `b + 1`, the message of `b` arrived before the
 request of the block of `k`, and `x` is the first frame of `b` plus the
 distance of `s` from the edge divided by the slope of `b`, moved back by
 `rules.back`. -/
-theorem chosen_eq_some_iff (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem chosen_eq_some_iff (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     {r : Fin R} (hr : w.host r ≠ w.sender) (k : ℕ) (x : ℝ) :
     (ruled p rules : Solution H R Payload).chosen w lookahead r k = some x
       ↔ ∃ s b, rules.estimate p w lookahead r k = some s
-        ∧ dueEdge p rules w lookahead q share nominal b ≤ s
-        ∧ s < dueEdge p rules w lookahead q share nominal (b + 1)
+        ∧ dueEdge p rules w lookahead q share kn b ≤ s
+        ∧ s < dueEdge p rules w lookahead q share kn (b + 1)
         ∧ A w.sender (w.host r) (w.source.handed b)
           < (w.speaker r).asked ((w.speaker r).blockOf k)
-        ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share nominal b)
-              / dueSlope p rules w lookahead q share nominal b - rules.back := by
+        ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share kn b)
+              / dueSlope p rules w lookahead q share kn b - rules.back := by
   obtain ⟨need, hlev⟩ := hK.level
   obtain ⟨n, hE⟩ := hK.requests lookahead r ((w.speaker r).blockOf k)
   rw [Solution.chosen_eq _ w lookahead ((w.speaker r).mem_blockOf k) hE]
@@ -82,20 +82,20 @@ estimate `s`, and `x'` for output sample `k` with the estimate `s'`, where
 `s ≤ s'`. There are blocks `b ≤ b'` whose edges enclose `s` and `s'` such
 that: if the slopes of the blocks from `b` to `b'` lie between `σLo` and
 `σHi`, then `σLo * (x' - x) ≤ s' - s` and `s' - s ≤ σHi * (x' - x)`. -/
-theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem estimate_sub_mem (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     {r : Fin R} (hr : w.host r ≠ w.sender) {j k : ℕ} {x x' s s' : ℝ}
     (hx : (ruled p rules : Solution H R Payload).chosen w lookahead r j = some x)
     (hx' : (ruled p rules : Solution H R Payload).chosen w lookahead r k = some x')
     (hs : rules.estimate p w lookahead r j = some s)
     (hs' : rules.estimate p w lookahead r k = some s') (hss' : s ≤ s') :
     ∃ b b', b ≤ b'
-      ∧ dueEdge p rules w lookahead q share nominal b ≤ s
-      ∧ s < dueEdge p rules w lookahead q share nominal (b + 1)
-      ∧ dueEdge p rules w lookahead q share nominal b' ≤ s'
-      ∧ s' < dueEdge p rules w lookahead q share nominal (b' + 1)
+      ∧ dueEdge p rules w lookahead q share kn b ≤ s
+      ∧ s < dueEdge p rules w lookahead q share kn (b + 1)
+      ∧ dueEdge p rules w lookahead q share kn b' ≤ s'
+      ∧ s' < dueEdge p rules w lookahead q share kn (b' + 1)
       ∧ ∀ σLo σHi : ℝ,
-        (∀ c, b ≤ c → c ≤ b' → σLo ≤ dueSlope p rules w lookahead q share nominal c
-          ∧ dueSlope p rules w lookahead q share nominal c ≤ σHi) →
+        (∀ c, b ≤ c → c ≤ b' → σLo ≤ dueSlope p rules w lookahead q share kn c
+          ∧ dueSlope p rules w lookahead q share kn c ≤ σHi) →
         σLo * (x' - x) ≤ s' - s ∧ s' - s ≤ σHi * (x' - x) := by
   have hprog := hK.handovers lookahead
   obtain ⟨s₁, b, hs₁, h1, h2, -, hxeq⟩ := (chosen_eq_some_iff hK lookahead hr j x).mp hx
@@ -118,28 +118,28 @@ theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahe
   -- The coordinates of the two positions.
   obtain ⟨z, hz⟩ : ∃ z : ℝ, z = x + rules.back := ⟨_, rfl⟩
   obtain ⟨z', hz'⟩ : ∃ z' : ℝ, z' = x' + rules.back := ⟨_, rfl⟩
-  have hzv : z = w.source.first b + (s - dueEdge p rules w lookahead q share nominal b)
-      / dueSlope p rules w lookahead q share nominal b := by
+  have hzv : z = w.source.first b + (s - dueEdge p rules w lookahead q share kn b)
+      / dueSlope p rules w lookahead q share kn b := by
     rw [hz, hxeq]
     ring
-  have hzv' : z' = w.source.first b' + (s' - dueEdge p rules w lookahead q share nominal b')
-      / dueSlope p rules w lookahead q share nominal b' := by
+  have hzv' : z' = w.source.first b' + (s' - dueEdge p rules w lookahead q share kn b')
+      / dueSlope p rules w lookahead q share kn b' := by
     rw [hz', hxeq']
     ring
-  have hdz : dueAt p rules w lookahead q share nominal b z = s := by
+  have hdz : dueAt p rules w lookahead q share kn b z = s := by
     unfold dueAt
     rw [hzv]
     field_simp
     ring
-  have hdz' : dueAt p rules w lookahead q share nominal b' z' = s' := by
+  have hdz' : dueAt p rules w lookahead q share kn b' z' = s' := by
     unfold dueAt
     rw [hzv']
     field_simp
     ring
-  have hfrac : 0 ≤ (s - dueEdge p rules w lookahead q share nominal b)
-      / dueSlope p rules w lookahead q share nominal b := div_nonneg (by linarith) hpos.le
-  have hfrac' : 0 ≤ (s' - dueEdge p rules w lookahead q share nominal b')
-      / dueSlope p rules w lookahead q share nominal b' := div_nonneg (by linarith) hpos'.le
+  have hfrac : 0 ≤ (s - dueEdge p rules w lookahead q share kn b)
+      / dueSlope p rules w lookahead q share kn b := div_nonneg (by linarith) hpos.le
+  have hfrac' : 0 ≤ (s' - dueEdge p rules w lookahead q share kn b')
+      / dueSlope p rules w lookahead q share kn b' := div_nonneg (by linarith) hpos'.le
   have hzlo' : (w.source.first b' : ℝ) ≤ z' := by linarith
   have hlen : ∀ c, ((w.blockLength c : ℕ) : ℝ)
       = (w.source.first (c + 1) : ℝ) - w.source.first c := by
@@ -147,20 +147,20 @@ theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahe
     unfold World.blockLength
     rw [Nat.cast_sub (w.source.first_strictMono (Nat.lt_succ_self c)).le]
   have hzhi : z ≤ w.source.first (b + 1) := by
-    have h3 : (s - dueEdge p rules w lookahead q share nominal b)
-        / dueSlope p rules w lookahead q share nominal b ≤ w.blockLength b := by
+    have h3 : (s - dueEdge p rules w lookahead q share kn b)
+        / dueSlope p rules w lookahead q share kn b ≤ w.blockLength b := by
       rw [div_le_iff₀ hpos]
       have := dueEdge_succ (p := p) (rules := rules) (w := w) (lookahead := lookahead)
-        (q := q) (share := share) (nominal := nominal) hprog b
+        (q := q) (share := share) (kn := kn) hprog b
       linarith
     rw [hlen b] at h3
     linarith
   have hzhi' : z' ≤ w.source.first (b' + 1) := by
-    have h3 : (s' - dueEdge p rules w lookahead q share nominal b')
-        / dueSlope p rules w lookahead q share nominal b' ≤ w.blockLength b' := by
+    have h3 : (s' - dueEdge p rules w lookahead q share kn b')
+        / dueSlope p rules w lookahead q share kn b' ≤ w.blockLength b' := by
       rw [div_le_iff₀ hpos']
       have := dueEdge_succ (p := p) (rules := rules) (w := w) (lookahead := lookahead)
-        (q := q) (share := share) (nominal := nominal) hprog b'
+        (q := q) (share := share) (kn := kn) hprog b'
       linarith
     rw [hlen b'] at h3
     linarith
@@ -168,16 +168,16 @@ theorem estimate_sub_mem (hK : KnotSetting p rules w A q share nominal) (lookahe
     rcases Nat.eq_or_lt_of_le hbb' with heq | hlt
     · subst heq
       rw [hzv, hzv']
-      have : (s - dueEdge p rules w lookahead q share nominal b)
-          / dueSlope p rules w lookahead q share nominal b
-          ≤ (s' - dueEdge p rules w lookahead q share nominal b)
-            / dueSlope p rules w lookahead q share nominal b :=
+      have : (s - dueEdge p rules w lookahead q share kn b)
+          / dueSlope p rules w lookahead q share kn b
+          ≤ (s' - dueEdge p rules w lookahead q share kn b)
+            / dueSlope p rules w lookahead q share kn b :=
         div_le_div_of_nonneg_right (by linarith) hpos.le
       linarith
     · have hf : (w.source.first (b + 1) : ℝ) ≤ w.source.first b' := by
         exact_mod_cast w.source.first_strictMono.monotone (show b + 1 ≤ b' from hlt)
       linarith
-  obtain ⟨g1, g2⟩ := dueAt_sub_mem (q := q) (share := share) (nominal := nominal) hprog hzhi
+  obtain ⟨g1, g2⟩ := dueAt_sub_mem (q := q) (share := share) (kn := kn) hprog hzhi
     b' hbb' hσ z' hzlo' hzhi' hzz'
   rw [hdz, hdz'] at g1 g2
   have hd : z' - z = x' - x := by
@@ -191,15 +191,15 @@ the setting of `estimate_sub_mem`, let the estimate advance by `g * a`, with
 `g ≥ 0` and `a > 0`, and let `a` divided by the slope of every block from
 the one of `x` to the one of `x'` be within `v` of one, with `0 ≤ v < 1`.
 Then the position advances by `g` frames within `g * v`. -/
-theorem abs_chosen_sub_le (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem abs_chosen_sub_le (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     {r : Fin R} (hr : w.host r ≠ w.sender) {j k : ℕ} {x x' s s' : ℝ}
     (hx : (ruled p rules : Solution H R Payload).chosen w lookahead r j = some x)
     (hx' : (ruled p rules : Solution H R Payload).chosen w lookahead r k = some x')
     (hs : rules.estimate p w lookahead r j = some s)
     (hs' : rules.estimate p w lookahead r k = some s') {g a v : ℝ} (hg : 0 ≤ g) (ha : 0 < a)
     (hv0 : 0 ≤ v) (hv1 : v < 1) (hadv : s' - s = g * a)
-    (hslope : ∀ c, a / (1 + v) ≤ dueSlope p rules w lookahead q share nominal c
-      ∧ dueSlope p rules w lookahead q share nominal c ≤ a / (1 - v)) :
+    (hslope : ∀ c, a / (1 + v) ≤ dueSlope p rules w lookahead q share kn c
+      ∧ dueSlope p rules w lookahead q share kn c ≤ a / (1 - v)) :
     |x' - x - g| ≤ g * v := by
   have hss' : s ≤ s' := by nlinarith
   obtain ⟨b, b', -, -, -, -, -, hsand⟩ := estimate_sub_mem hK lookahead hr hx hx' hs hs' hss'

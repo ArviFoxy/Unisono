@@ -160,7 +160,7 @@ theorem headersOf_noLoss (hN : NoLoss p w A) (lookahead : ℕ+) {n : ℕ} {h : H
 arrivals**, under the capture schedule of the knots: the reading of the
 host's clock at the arrival, and the reading of the sender's clock at the
 block's handover. -/
-theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
+theorem arrival_mem_arrivalsOf {kn : KnotSettings} (hcap : rules.capture = knotCapture kn)
     (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {b n : ℕ}
     (hk : A w.sender (w.host r) (w.source.handed b)
       < (ruled p rules : Solution H R Payload).eventTime w lookahead n) :
@@ -194,9 +194,9 @@ theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCaptu
       exact hhandled
     have hH := runHeader_knots p rules w lookahead hcap hi
     rw [← hhd] at hH
-    have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod nominal b :=
+    have hcp : cp = w.handedReading b - w.blockLength b * w.knotPeriod kn b :=
       congrArg Header.capture hH
-    have hpd : pd = w.knotPeriod nominal b := congrArg Header.period hH
+    have hpd : pd = w.knotPeriod kn b := congrArg Header.period hH
     rw [hcard, hcp, hpd]
     ring
   rw [hknot] at hin
@@ -205,7 +205,7 @@ theorem arrival_mem_arrivalsOf {nominal : ℝ} (hcap : rules.capture = knotCaptu
 /-- **Every pair among a host's arrivals is that of a block that arrived**
 before every request that the run has not yet handled, under the capture
 schedule of the knots. -/
-theorem mem_arrivalsOf_noLoss {nominal : ℝ} (hcap : rules.capture = knotCapture nominal)
+theorem mem_arrivalsOf_noLoss {kn : KnotSettings} (hcap : rules.capture = knotCapture kn)
     (hN : NoLoss p w A) (lookahead : ℕ+) {n : ℕ} {h : H} {a : ℝ × ℝ}
     (ha : a ∈ arrivalsOf (((ruled p rules : Solution H R Payload).states w lookahead n).views h)) :
     ∃ b, a = ((w.clock h).read (A w.sender h (w.source.handed b)), w.handedReading b)
@@ -219,7 +219,7 @@ theorem mem_arrivalsOf_noLoss {nominal : ℝ} (hcap : rules.capture = knotCaptur
 
 /-- **What a host chooses, exactly.** Take the controller with the capture
 schedule of the knots and the level rule `knotLevel`, with `0 ≤ share < 1`
-and a positive time from one frame to the next for the first block, in a
+and valid settings of the knots (`KnotSettings.Valid`), in a
 world without loss whose capture device hands over blocks without end. Let
 speaker `r` be on a host other than the sender's, and let step `n` handle
 the request of block `β`. The host chooses the position `x` for output
@@ -229,11 +229,11 @@ block `b` to just before the edge of `b + 1`; the message of `b` arrived
 before the request; and `x` is the first frame of `b` plus the distance of
 `s` from the edge of `b` divided by the slope of `b`, moved back by
 `rules.back`. -/
-theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
+theorem ruled_chosen_iff {q : LevelSettings} {share : ℝ} {kn : KnotSettings}
     {need : H → List (Event H R Payload) → Option ℝ}
-    (hcap : rules.capture = knotCapture nominal)
-    (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
-    (hnominal : 0 < nominal) (hN : NoLoss p w A) (lookahead : ℕ+)
+    (hcap : rules.capture = knotCapture kn)
+    (hlev : rules.level = knotLevel q share kn need) (hs0 : 0 ≤ share) (hs1 : share < 1)
+    (hnominal : kn.Valid) (hN : NoLoss p w A) (lookahead : ℕ+)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
@@ -246,11 +246,11 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
         rules.reading (w.host r)
             (((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r)
               ++ [w.askedEvent r β]) r k = some s
-        ∧ dueEdge p rules w lookahead q share nominal b ≤ s
-        ∧ s < dueEdge p rules w lookahead q share nominal (b + 1)
+        ∧ dueEdge p rules w lookahead q share kn b ≤ s
+        ∧ s < dueEdge p rules w lookahead q share kn (b + 1)
         ∧ A w.sender (w.host r) (w.source.handed b) < (w.speaker r).asked β
-        ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share nominal b)
-              / dueSlope p rules w lookahead q share nominal b - rules.back := by
+        ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share kn b)
+              / dueSlope p rules w lookahead q share kn b - rules.back := by
   have hnext := Solution.askedNext_of_earliest _ w lookahead hE
   have htime : (ruled p rules : Solution H R Payload).eventTime w lookahead n
       = (w.speaker r).asked β :=

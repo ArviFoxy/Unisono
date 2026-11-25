@@ -147,18 +147,20 @@ simulation and integration tests (see `PRINCIPLES.md`):
     with them, or what a level that changes costs. One solution puts the
     parts together for worlds in which clocks wander and links and hosts
     pause. Its hosts take their timing from what they observe themselves:
-    the capture schedule from the sender's readings at the handovers, the
-    time at which an output sample leaves from the host's readings at the
-    requests, and the sender's clock from the arrivals of the blocks. A
-    host plays only where a clock exchange confirms its estimate of the
-    sender's clock and the block that is due was handed over on time by
-    its timestamp (`Unisono.Solutions.Controller.checkedReading` in
+    the capture schedule from the sender's readings at the handovers and
+    the timestamps of the blocks, the time at which an output sample leaves
+    from the host's readings at the requests, and the sender's clock from
+    the arrivals of the blocks. A host plays only where a clock exchange
+    confirms its estimate of the sender's clock and the schedule of the
+    block that is due agrees with the block's reading and timestamp
+    (`Unisono.Solutions.Controller.checkedReading` in
     `lean/Unisono/Solutions/Controller/Timing.lean`). Its
     level changes within a block by at most a share of the block's time
     from one frame to the next, so the schedule on which positions are due
-    is continuous and advances in every block of every world, also when
-    the sender's host was busy and handles several handovers at the same
-    time (`Unisono.Spec.knotStep` in
+    is continuous and advances in every block of every world at the nominal
+    rate within set shares, also when the sender's host was busy and
+    handles several handovers at the same time (`Unisono.Spec.knotStep`,
+    `Unisono.Spec.World.knotPeriod_mem` in
     `lean/Unisono/Solutions/Controller/Knots.lean`,
     `Unisono.Solutions.Controller.dueSlope_pos`, `dueEdge_succ` in
     `lean/Unisono/Solutions/Controller/DueSchedule.lean`). Its

@@ -19,13 +19,11 @@ delays or pauses.
 **The schedule against the capture times.** `World.captureReading n` is the
 reading of the sender's clock when frame `n` is captured, and
 `World.knotLate b` is by how much the knot of block `b` is later than the
-reading at the capture of the block's last frame. It is not negative
-(`World.knotLate_nonneg`): the sender's host handles a handover when the
-block's last frame is captured, or later, and a knot is no earlier than the
-reading at the handover. Within a block after the first, the schedule of
-the knots is the line between two knots (`World.knotTime_succ`), so its
-distance from any reading `G` is a mean of the lateness of the two knots,
-plus the distance of `G` from the line between the two capture readings
+reading at the capture of the block's last frame; it is negative when the
+knot is earlier. Within a block after the first, the schedule of the knots
+is the line between two knots (`World.knotTime_succ`), so its distance from
+any reading `G` is a mean of the lateness of the two knots, plus the
+distance of `G` from the line between the two capture readings
 (`World.knotTime_succ_sub`).
 
 **The parts** (`timed_chosen_parts`). Let the host of speaker `r` choose the
@@ -63,51 +61,21 @@ def World.captureReading (w : World H R) (n : ℕ) : ℝ :=
   (w.clock w.sender).read (w.source.capture n)
 
 /-- By how much the knot of block `b` is later, on the sender's clock, than
-the capture of the block's last frame. -/
-def World.knotLate (w : World H R) (nominal : ℝ) (b : ℕ) : ℝ :=
-  w.knot nominal b - w.captureReading (w.source.first (b + 1) - 1)
-
-/-- **A knot is no earlier than the capture of its block's last frame.** -/
-theorem World.knotLate_nonneg (w : World H R) (nominal : ℝ) (b : ℕ) :
-    0 ≤ w.knotLate nominal b := by
-  have h1 := w.handedReading_le_knot nominal b
-  have h2 : w.captureReading (w.source.first (b + 1) - 1) ≤ w.handedReading b :=
-    (w.clock w.sender).strictMono.monotone (w.source.handed_after b)
-  unfold World.knotLate
-  linarith
-
-/-- A knot does not go back, when the nominal time is not negative. -/
-theorem World.knotInc_nonneg (w : World H R) {nominal : ℝ} (hn : 0 ≤ nominal) (b : ℕ) :
-    0 ≤ w.knotInc nominal b := by
-  induction b with
-  | zero => exact mul_nonneg (Nat.cast_nonneg _) hn
-  | succ b ih =>
-    have h : 0 ≤ min (w.knotInc nominal b) nominal / 2 :=
-      div_nonneg (le_min ih hn) (by norm_num)
-    exact le_trans h (le_max_right _ _)
-
-/-- **A knot is later than the capture of its block's last frame by the
-time that the handover waited, plus at most the nominal time of one
-frame.** -/
-theorem World.knotLate_le (w : World H R) {nominal : ℝ} (hn : 0 ≤ nominal) (b : ℕ) :
-    w.knotLate nominal b
-      ≤ (w.handedReading b - w.captureReading (w.source.first (b + 1) - 1)) + nominal := by
-  have h1 := w.knot_sub_le nominal b
-  have h2 : 0 ≤ min (w.knotInc nominal b) nominal := le_min (w.knotInc_nonneg hn b) hn
-  unfold World.knotLate
-  linarith
+the capture of the block's last frame; negative when the knot is earlier. -/
+def World.knotLate (w : World H R) (kn : KnotSettings) (b : ℕ) : ℝ :=
+  w.knot kn b - w.captureReading (w.source.first (b + 1) - 1)
 
 /-- **Within a block after the first, the schedule of the knots is the line
 between two knots**: at the coordinate `z` its value is the knot of the
 block before plus the share of the block that lies before `z` times the
 advance of the knot. -/
-theorem World.knotTime_succ (w : World H R) (nominal : ℝ) (b : ℕ) (z : ℝ) :
-    w.knotTime nominal (b + 1) z
-      = w.knot nominal b
+theorem World.knotTime_succ (w : World H R) (kn : KnotSettings) (b : ℕ) (z : ℝ) :
+    w.knotTime kn (b + 1) z
+      = w.knot kn b
         + (z - w.source.first (b + 1)) / w.blockLength (b + 1)
-          * (w.knot nominal (b + 1) - w.knot nominal b) := by
+          * (w.knot kn (b + 1) - w.knot kn b) := by
   unfold World.knotTime World.knotPeriod
-  rw [w.knotStart_succ nominal b, w.knot_succ nominal b]
+  rw [w.knotStart_succ kn b, w.knot_succ kn b]
   ring
 
 /-- **The schedule of the knots against a reading.** Within a block after
@@ -116,16 +84,16 @@ the first, with `θ` the share of the block that lies before the coordinate
 with the weights `1 - θ` and `θ`, of the lateness of the knot before and of
 the block's own knot, plus the same mean of the readings at the captures of
 the two blocks' last frames, minus `G`. -/
-theorem World.knotTime_succ_sub (w : World H R) (nominal : ℝ) (b : ℕ) (z G : ℝ) :
-    w.knotTime nominal (b + 1) z - G
-      = (1 - (z - w.source.first (b + 1)) / w.blockLength (b + 1)) * w.knotLate nominal b
-        + (z - w.source.first (b + 1)) / w.blockLength (b + 1) * w.knotLate nominal (b + 1)
+theorem World.knotTime_succ_sub (w : World H R) (kn : KnotSettings) (b : ℕ) (z G : ℝ) :
+    w.knotTime kn (b + 1) z - G
+      = (1 - (z - w.source.first (b + 1)) / w.blockLength (b + 1)) * w.knotLate kn b
+        + (z - w.source.first (b + 1)) / w.blockLength (b + 1) * w.knotLate kn (b + 1)
         + ((1 - (z - w.source.first (b + 1)) / w.blockLength (b + 1))
               * w.captureReading (w.source.first (b + 1) - 1)
             + (z - w.source.first (b + 1)) / w.blockLength (b + 1)
               * w.captureReading (w.source.first (b + 1 + 1) - 1)
             - G) := by
-  rw [w.knotTime_succ nominal b z]
+  rw [w.knotTime_succ kn b z]
   unfold World.knotLate
   ring
 
@@ -171,7 +139,7 @@ theorem timed_chosen_parts (p : FixedDelay.Params H) (w : World H R) (t : Timing
           = (((timedRules w.sender t level).announced p w lookahead b).1
               + (x + 1 - w.source.first b)
                 * ((timedRules w.sender t level).announced p w lookahead b).2)
-            + (w.knotTime (1 / t.rate) b (x + 1) - G)
+            + (w.knotTime t.knots b (x + 1) - G)
             + ((w.clock w.sender).read tb' - w.handedReading b'
               - halfTrip t (((ruled p (timedRules w.sender t level) :
                     Solution H R Payload).states w lookahead n).views (w.host r)

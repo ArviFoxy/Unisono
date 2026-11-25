@@ -97,24 +97,24 @@ variable {H : Type} {R : ℕ} [DecidableEq H]
 /-- The setting of the theorems on the controller with the schedule of the
 knots: a world without loss whose devices hand over and request blocks
 without end, rules with the capture schedule of the knots and the level
-rule `knotLevel`, a share from zero to less than one, and a positive time
-from one frame to the next for the first block. -/
+rule `knotLevel`, a share from zero to less than one, and valid settings of
+the knots (`KnotSettings.Valid`). -/
 structure KnotSetting (p : FixedDelay.Params H) (rules : Rules H R) (w : World H R)
-    (A : H → H → Time → Time) (q : LevelSettings) (share nominal : ℝ) : Prop where
+    (A : H → H → Time → Time) (q : LevelSettings) (share : ℝ) (kn : KnotSettings) : Prop where
   noLoss : NoLoss p w A
-  capture : rules.capture = knotCapture nominal
-  level : ∃ need, rules.level = knotLevel q share nominal need
+  capture : rules.capture = knotCapture kn
+  level : ∃ need, rules.level = knotLevel q share kn need
   share_nonneg : 0 ≤ share
   share_lt_one : share < 1
-  nominal_pos : 0 < nominal
+  nominal_pos : kn.Valid
   handed : ∀ T, ∃ b, T < w.source.handed b
   asked : ∀ r T, ∃ b, T < (w.speaker r).asked b
 
 variable {p : FixedDelay.Params H} {rules : Rules H R} {w : World H R}
-  {A : H → H → Time → Time} {q : LevelSettings} {share nominal : ℝ}
+  {A : H → H → Time → Time} {q : LevelSettings} {share : ℝ} {kn : KnotSettings}
 
 /-- In the setting, the run handles every handover. -/
-theorem KnotSetting.handovers (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem KnotSetting.handovers (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     (b : ℕ) :
     ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
@@ -122,7 +122,7 @@ theorem KnotSetting.handovers (hK : KnotSetting p rules w A q share nominal) (lo
   ruled_handover_step p rules w hK.handed hK.asked lookahead b
 
 /-- In the setting, the run handles every request. -/
-theorem KnotSetting.requests (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem KnotSetting.requests (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     (r : Fin R) (b : ℕ) :
     ∃ n, earliest (((ruled p rules : Solution H R Payload).states w lookahead n).key w)
       ((ruled p rules : Solution H R Payload).states w lookahead n).due = some (.asked r b) :=
@@ -163,7 +163,7 @@ estimate; or it has an estimate `s` and one of these holds:
   position that the header of `b` gives for `s`, moved back by
   `rules.back`: `x < J - u`, or some block whose first frame is less than
   `x + J - u` plus the lookahead arrived at or after the request. -/
-theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahead : ℕ+)
+theorem followed_silent (hK : KnotSetting p rules w A q share kn) (lookahead : ℕ+)
     {u J : ℝ} (huJ : u ≤ J) {n : ℕ} {r : Fin R} (hr : w.host r ≠ w.sender) {β k : ℕ}
     (hE : earliest (((ruled p rules : Solution H R Payload).states w lookahead n).key w)
         ((ruled p rules : Solution H R Payload).states w lookahead n).due = some (.asked r β))
@@ -177,13 +177,13 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
       ∨ ∃ s, rules.reading (w.host r)
           (((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r)
             ++ [w.askedEvent r β]) r k = some s
-        ∧ (s < dueEdge p rules w lookahead q share nominal 0
-          ∨ (∃ b, dueEdge p rules w lookahead q share nominal b ≤ s
+        ∧ (s < dueEdge p rules w lookahead q share kn 0
+          ∨ (∃ b, dueEdge p rules w lookahead q share kn b ≤ s
               ∧ (w.speaker r).asked β ≤ A w.sender (w.host r) (w.source.handed b))
-          ∨ ∃ b x, dueEdge p rules w lookahead q share nominal b ≤ s
-              ∧ s < dueEdge p rules w lookahead q share nominal (b + 1)
-              ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share nominal b)
-                  / dueSlope p rules w lookahead q share nominal b - rules.back
+          ∨ ∃ b x, dueEdge p rules w lookahead q share kn b ≤ s
+              ∧ s < dueEdge p rules w lookahead q share kn (b + 1)
+              ∧ x = w.source.first b + (s - dueEdge p rules w lookahead q share kn b)
+                  / dueSlope p rules w lookahead q share kn b - rules.back
               ∧ (x < J - u
                 ∨ ∃ b', (w.source.first b' : ℝ) < x + (J - u) + (lookahead : ℕ)
                     ∧ (w.speaker r).asked β
@@ -218,7 +218,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
   | none => exact Or.inl rfl
   | some s =>
     refine Or.inr ⟨s, rfl, ?_⟩
-    by_cases hs0 : s < dueEdge p rules w lookahead q share nominal 0
+    by_cases hs0 : s < dueEdge p rules w lookahead q share kn 0
     · exact Or.inl hs0
     · refine Or.inr ?_
       rw [not_lt] at hs0
@@ -228,8 +228,8 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
         have hXnone := (hfol.none_iff k).mp hc
         rw [hX] at hXnone
         refine Or.inl ?_
-        by_cases hcov : ∃ b, dueEdge p rules w lookahead q share nominal b ≤ s
-            ∧ s < dueEdge p rules w lookahead q share nominal (b + 1)
+        by_cases hcov : ∃ b, dueEdge p rules w lookahead q share kn b ≤ s
+            ∧ s < dueEdge p rules w lookahead q share kn (b + 1)
         · obtain ⟨b, h1, h2⟩ := hcov
           refine ⟨b, h1, ?_⟩
           by_contra hlt
@@ -238,7 +238,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
           rw [hXnone] at this
           exact absurd this (by simp)
         · -- Every edge is at or before the estimate.
-          have hall : ∀ b, dueEdge p rules w lookahead q share nominal b ≤ s := by
+          have hall : ∀ b, dueEdge p rules w lookahead q share kn b ≤ s := by
             intro b
             induction b with
             | zero => exact hs0

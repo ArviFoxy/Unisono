@@ -35,8 +35,17 @@ block the estimate is therefore a line in the number of the output sample.
 * `stepOver_chosen_eq_zero`: for `v ≤ u` such a step of the target costs
   the follower nothing (`stepOver`).
 
+* `chosen_succ_of_settings`: the slope and the ratio that a host
+  uses are within `slopeBound` of one, and the slope of the schedule in
+  every block is within the shares `periodBound` and `share` of the nominal
+  time (`dueSlope_mem`). So, by a condition on the settings alone, **in
+  every world the position that a host chooses advances by one frame within
+  `v` from one output sample of a playback block to the next**, and for
+  `v ≤ u` such a step costs the follower nothing
+  (`stepOver_eq_zero_of_settings`).
+
 Not proved here: how the estimate changes from one playback block to the
-next, and when the slopes of the schedule are close to the step.
+next.
 -/
 
 @[expose] public noncomputable section
@@ -189,7 +198,7 @@ of the estimate is positive and, divided by the slope of every block of the
 schedule, is within `v` of one, with `0 ≤ v < 1`, then `x'` is one frame
 after `x` within `v`. -/
 theorem abs_chosen_succ_sub_le
-    (hK : KnotSetting p (timedRules w.sender t level) w A q share (1 / t.rate))
+    (hK : KnotSetting p (timedRules w.sender t level) w A q share t.knots)
     (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {k : ℕ} {x x' : ℝ}
     (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k)
     (hx : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r k
@@ -200,8 +209,8 @@ theorem abs_chosen_succ_sub_le
     (hstep : 0 < estimateStep p w t level lookahead r ((w.speaker r).blockOf k))
     (hslope : ∀ c,
       estimateStep p w t level lookahead r ((w.speaker r).blockOf k) / (1 + v)
-          ≤ dueSlope p (timedRules w.sender t level) w lookahead q share (1 / t.rate) c
-        ∧ dueSlope p (timedRules w.sender t level) w lookahead q share (1 / t.rate) c
+          ≤ dueSlope p (timedRules w.sender t level) w lookahead q share t.knots c
+        ∧ dueSlope p (timedRules w.sender t level) w lookahead q share t.knots c
           ≤ estimateStep p w t level lookahead r ((w.speaker r).blockOf k) / (1 - v)) :
     |x' - x - 1| ≤ v := by
   obtain ⟨s, b, hs, -⟩ := (chosen_eq_some_iff hK lookahead hr k x).mp hx
@@ -217,7 +226,7 @@ of `abs_chosen_succ_sub_le`, with `v ≤ u`: the step of the filled-in target
 from output sample `k` to the next differs from one frame by at most `u`,
 so its `stepOver` is zero. -/
 theorem stepOver_chosen_eq_zero
-    (hK : KnotSetting p (timedRules w.sender t level) w A q share (1 / t.rate))
+    (hK : KnotSetting p (timedRules w.sender t level) w A q share t.knots)
     (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {k : ℕ} {x x' : ℝ}
     (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k)
     (hx : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r k
@@ -228,13 +237,129 @@ theorem stepOver_chosen_eq_zero
     (hstep : 0 < estimateStep p w t level lookahead r ((w.speaker r).blockOf k))
     (hslope : ∀ c,
       estimateStep p w t level lookahead r ((w.speaker r).blockOf k) / (1 + v)
-          ≤ dueSlope p (timedRules w.sender t level) w lookahead q share (1 / t.rate) c
-        ∧ dueSlope p (timedRules w.sender t level) w lookahead q share (1 / t.rate) c
+          ≤ dueSlope p (timedRules w.sender t level) w lookahead q share t.knots c
+        ∧ dueSlope p (timedRules w.sender t level) w lookahead q share t.knots c
           ≤ estimateStep p w t level lookahead r ((w.speaker r).blockOf k) / (1 - v)) :
     stepOver u
       (heldTarget ((ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w
         lookahead r)) k = 0 := by
   have h := abs_chosen_succ_sub_le hK lookahead hr hblock hx hx' hv0 hv1 hstep hslope
+  have e1 : heldTarget ((ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w
+      lookahead r) k = x := by
+    rcases heldTarget_eq ((ruled p (timedRules w.sender t level) :
+      Solution H R Payload).chosen w lookahead r) k with hn | hs
+    · rw [hx] at hn
+      exact absurd hn (by simp)
+    · rw [hx] at hs
+      exact (Option.some.inj hs).symm
+  have e2 : heldTarget ((ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w
+      lookahead r) (k + 1) = x' := by
+    rcases heldTarget_eq ((ruled p (timedRules w.sender t level) :
+      Solution H R Payload).chosen w lookahead r) (k + 1) with hn | hs
+    · rw [hx'] at hn
+      exact absurd hn (by simp)
+    · rw [hx'] at hs
+      exact (Option.some.inj hs).symm
+  unfold stepOver
+  rw [e1, e2]
+  exact max_eq_right (by linarith)
+
+/-- **The step of the estimate is the nominal time of one output sample,
+within the square of `1 ± slopeBound`.** -/
+theorem estimateStep_mem (p : FixedDelay.Params H) (w : World H R) (t : TimingSettings)
+    (level : LevelRule H R) (lookahead : ℕ+) (r : Fin R) (β : ℕ) (hrate : 0 < t.rate)
+    (hsb0 : 0 ≤ t.slopeBound) (hsb1 : t.slopeBound ≤ 1) :
+    (1 - t.slopeBound) ^ 2 / t.rate ≤ estimateStep p w t level lookahead r β
+      ∧ estimateStep p w t level lookahead r β ≤ (1 + t.slopeBound) ^ 2 / t.rate := by
+  obtain ⟨ha1, ha2⟩ := arrivalSlope_mem t hsb0
+    ((ruled p (timedRules w.sender t level) : Solution H R Payload).requestView w lookahead r β)
+  obtain ⟨hd1, hd2⟩ := deviceRatio_mem t hsb0 r
+    ((ruled p (timedRules w.sender t level) : Solution H R Payload).requestView w lookahead r β)
+  unfold estimateStep
+  rw [← mul_div_assoc]
+  refine ⟨?_, ?_⟩
+  · rw [div_le_div_iff_of_pos_right hrate]
+    nlinarith
+  · rw [div_le_div_iff_of_pos_right hrate]
+    nlinarith
+
+/-- **The chosen position advances regularly within every playback block,
+by a condition on the settings alone.** In the setting `KnotSetting` for the
+controller with the timing rules and the schedule of its settings, let the
+host of speaker `r`, other than the sender's, choose the positions `x` and
+`x'` for the output samples `k` and `k + 1` of one playback block. Let
+`0 ≤ v < 1` satisfy
+`(1 + slopeBound)² ≤ (1 + v) * (1 - share) * (1 - periodBound)` and
+`(1 - v) * (1 + share) * (1 + periodBound) ≤ (1 - slopeBound)²`. Then `x'`
+is one frame after `x` within `v`. Nothing is assumed about the world beyond
+the setting. -/
+theorem chosen_succ_of_settings
+    (hK : KnotSetting p (timedRules w.sender t level) w A q share t.knots)
+    (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {k : ℕ} {x x' : ℝ}
+    (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k)
+    (hx : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r k
+      = some x)
+    (hx' : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r
+      (k + 1) = some x')
+    {v : ℝ} (hv0 : 0 ≤ v) (hv1 : v < 1) (hrate : 0 < t.rate) (hsb0 : 0 ≤ t.slopeBound)
+    (hsb1 : t.slopeBound < 1)
+    (hlo : (1 + t.slopeBound) ^ 2 ≤ (1 + v) * ((1 - share) * (1 - t.periodBound)))
+    (hhi : (1 - v) * ((1 + share) * (1 + t.periodBound)) ≤ (1 - t.slopeBound) ^ 2) :
+    |x' - x - 1| ≤ v := by
+  obtain ⟨he1, he2⟩ := estimateStep_mem p w t level lookahead r ((w.speaker r).blockOf k)
+    hrate hsb0 hsb1.le
+  have hsq : 0 < (1 - t.slopeBound) ^ 2 := pow_pos (by linarith) 2
+  have hstep : 0 < estimateStep p w t level lookahead r ((w.speaker r).blockOf k) :=
+    lt_of_lt_of_le (div_pos hsq hrate) he1
+  refine abs_chosen_succ_sub_le hK lookahead hr hblock hx hx' hv0 hv1 hstep fun c => ?_
+  obtain ⟨hd1, hd2⟩ := dueSlope_mem (q := q) hK.share_nonneg hK.share_lt_one hK.nominal_pos
+    (hK.handovers lookahead) c
+  have hnom : t.knots.nominal = 1 / t.rate := rfl
+  have hbound : t.knots.bound = t.periodBound := rfl
+  rw [hnom, hbound] at hd1 hd2
+  have h1v : 0 < 1 + v := by linarith
+  have h1v' : 0 < 1 - v := by linarith
+  refine ⟨le_trans ?_ hd1, le_trans hd2 ?_⟩
+  · rw [div_le_iff₀ h1v]
+    have h3 : (1 + t.slopeBound) ^ 2 / t.rate
+        ≤ (1 - share) * (1 / t.rate * (1 - t.periodBound)) * (1 + v) := by
+      rw [div_le_iff₀ hrate]
+      have h4 : (1 - share) * (1 / t.rate * (1 - t.periodBound)) * (1 + v) * t.rate
+          = (1 + v) * ((1 - share) * (1 - t.periodBound)) := by
+        field_simp
+      rw [h4]
+      exact hlo
+    linarith
+  · rw [le_div_iff₀ h1v']
+    have h3 : (1 + share) * (1 / t.rate * (1 + t.periodBound)) * (1 - v)
+        ≤ (1 - t.slopeBound) ^ 2 / t.rate := by
+      rw [le_div_iff₀ hrate]
+      have h4 : (1 + share) * (1 / t.rate * (1 + t.periodBound)) * (1 - v) * t.rate
+          = (1 - v) * ((1 + share) * (1 + t.periodBound)) := by
+        field_simp
+      rw [h4]
+      exact hhi
+    linarith
+
+/-- **Such a step of the target costs the follower nothing**, for `v ≤ u`,
+by the same condition on the settings. -/
+theorem stepOver_eq_zero_of_settings
+    (hK : KnotSetting p (timedRules w.sender t level) w A q share t.knots)
+    (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {k : ℕ} {x x' : ℝ}
+    (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k)
+    (hx : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r k
+      = some x)
+    (hx' : (ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w lookahead r
+      (k + 1) = some x')
+    {u v : ℝ} (hv0 : 0 ≤ v) (hv1 : v < 1) (hvu : v ≤ u) (hrate : 0 < t.rate)
+    (hsb0 : 0 ≤ t.slopeBound) (hsb1 : t.slopeBound < 1)
+    (hlo : (1 + t.slopeBound) ^ 2 ≤ (1 + v) * ((1 - share) * (1 - t.periodBound)))
+    (hhi : (1 - v) * ((1 + share) * (1 + t.periodBound)) ≤ (1 - t.slopeBound) ^ 2) :
+    stepOver u
+      (heldTarget ((ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w
+        lookahead r)) k = 0 := by
+  have h := chosen_succ_of_settings hK lookahead hr hblock hx hx' hv0 hv1 hrate hsb0
+    hsb1 hlo hhi
   have e1 : heldTarget ((ruled p (timedRules w.sender t level) : Solution H R Payload).chosen w
       lookahead r) k = x := by
     rcases heldTarget_eq ((ruled p (timedRules w.sender t level) :
