@@ -152,6 +152,13 @@ variable, and its expected cost, a lower integral, can lie below its cost in
 almost every outcome. Optimality under the model is always stated for every
 member (`GenerativeWorld.OptimalWithin`).
 
+A second class holds the solutions whose playback in a member is a
+measurable function of what is drawn (`GenerativeWorld.measurablePlays`):
+at every output sample of every speaker, whether the speaker plays the
+source, and at which position. A bound that reasons about what a solution
+has played before a pause begins needs what was played to be a random
+variable, and is stated for the solutions in both classes.
+
 ## What the model leaves out
 
 Loss; pauses that cluster in time; pauses and asymmetry that some links
@@ -610,6 +617,24 @@ def measurableCost [DecidableEq H] (m : GenerativeWorld H R) (f : Member H R)
       (world : Ω' → World H R),
       m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →
         ∀ᵐ ω ∂P, τ.cost (world ω) lookahead c = F (D ω)
+
+/-- **The solutions whose playback is a measurable function of what is
+drawn.** For every speaker `r` and every output sample `k` there are a
+measurable set `S` of draws and a measurable function `G` of the draw such
+that, in every random world of the member `f`, in almost every outcome: the
+speaker plays the source at that output sample exactly when the draw is in
+`S`, and then it plays the position `G` of the draw. The class asks nothing
+of a solution in other members. The lookahead is the one for which the
+playback is taken. -/
+def measurablePlays [DecidableEq H] (m : GenerativeWorld H R) (f : Member H R)
+    (lookahead : ℕ+) : SolutionClass H R :=
+  fun _ τ => ∀ (r : Fin R) (k : ℕ), ∃ (S : Set (Draw H R)) (G : Draw H R → ℝ),
+    MeasurableSet S ∧ Measurable G ∧
+    ∀ (Ω' : Type) [MeasurableSpace Ω'] (P : Measure Ω') (D : Ω' → Draw H R)
+      (world : Ω' → World H R),
+      m.Prior f P D → (∀ ω, m.Builds f (D ω) (world ω)) →
+        ∀ᵐ ω ∂P, ∀ x : ℝ,
+          τ.plays (world ω) lookahead r k = some x ↔ D ω ∈ S ∧ G (D ω) = x
 
 /-- **Optimality under the generative model.** In every random world of
 every member `f` of the model, the expected cost of the solution `σ` exceeds

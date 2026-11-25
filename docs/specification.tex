@@ -1244,6 +1244,21 @@ function of the draw that equals the cost of the solution in almost every
 outcome, in every random world of the member. This is the least that makes
 the expected cost of a solution in a member one number.
 
+A second class holds the solutions whose playback in a member is a
+measurable function of what is drawn
+(\lean{GenerativeWorld.\allowbreak measurablePlays}). For every speaker and
+every output sample there are a measurable set of draws and a measurable
+function of the draw such that, in almost every outcome of every random
+world of the member, the speaker plays the source at that output sample
+exactly when the draw lies in the set, and then it plays the position that
+the function gives. A bound that reasons about what a solution has played
+before a pause begins needs what was played to be a random variable: a pause
+begins independently of the past, and that can be used only for quantities
+that have a law. The class is meant to hold every solution that can be run
+as a program. No theorem in this document uses it yet, and no solution has
+been proved to belong to it; Theorem~\ref{thm:star-optimal} is about the
+larger class without this condition.
+
 No comparison in this document limits which frames a solution plays. A
 speaker that does not play a frame adds nothing to that frame's
 synchronization, latency and tracking costs; what such a frame costs is the
