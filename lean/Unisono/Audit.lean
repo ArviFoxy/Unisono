@@ -4186,6 +4186,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.foldl_levelStep_level
 
+/-- info: 'Unisono.Solutions.Controller.levelState_aim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.levelState_aim
+
+/-- info: 'Unisono.Solutions.Controller.sum_needCost_aimAfter_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.sum_needCost_aimAfter_sub_le
+
 /-- info: 'Unisono.Solutions.Controller.announced_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.announced_eq

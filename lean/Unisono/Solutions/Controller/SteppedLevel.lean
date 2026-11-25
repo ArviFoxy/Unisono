@@ -30,6 +30,11 @@ which `speaker_plays_of_levels` says what every speaker plays.
   every world.
 * `abs_announced_slope_le`: every announced slope is at most
   `slopeMax` in absolute value.
+* `levelState_aim`, `sum_needCost_aimAfter_sub_le`: the aim depends on the
+  sender's view only through the needs that its clock queries carried, and
+  on those needs it costs at most what any fixed level costs, plus a
+  constant, plus a term proportional to the step for each need. No world
+  model is involved.
 * `speaker_plays_of_steppedLevel`: with clocks at constant rates, the
   conclusion of `speaker_plays_of_levels` holds for this rule when
   `slopeMax` is less than the time from one frame to the next on the
@@ -222,6 +227,106 @@ theorem levelState_mem (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (hlohi : q.lo
       obtain ⟨h1, h2⟩ := levelStep_mem q hq hlohi ha hl e
       exact ih _ h1 h2
   exact hgen l _ hstart hstart
+
+/-! ## The aim as a function of the needs that reached the sender -/
+
+/-- The needs that the clock queries in a view carry, oldest first. -/
+def needsOf (l : List (Event H R Payload)) : List ℝ :=
+  l.filterMap fun e =>
+    match e.observation with
+    | .received _ (.ask _ (some y)) _ => some y
+    | _ => none
+
+/-- One step of the aim `x` for the need `y`. -/
+def aimStep (q : LevelSettings) (x y : ℝ) : ℝ :=
+  clampTo q.lo q.hi (x - q.step * needSlope q.latencyCost q.lateCost y x)
+
+/-- The aim after the needs `ys`, oldest first. -/
+def aimAfter (q : LevelSettings) (ys : List ℝ) : ℝ :=
+  ys.foldl (aimStep q) q.start
+
+/-- **The aim depends on the sender's view only through the needs that its
+clock queries carried**, in their order. -/
+theorem levelState_aim (q : LevelSettings) (l : List (Event H R Payload)) :
+    (levelState q l).aim = aimAfter q (needsOf l) := by
+  have hgen : ∀ (l : List (Event H R Payload)) (st : LevelState),
+      (l.foldl (levelStep q) st).aim = (needsOf l).foldl (aimStep q) st.aim := by
+    intro l
+    induction l with
+    | nil => exact fun st => rfl
+    | cons e l ih =>
+      intro st
+      rw [List.foldl_cons, ih]
+      cases hobs : e.observation with
+      | handed frames stamp => simp [needsOf, levelStep, hobs]
+      | asked r outputs stamp => simp [needsOf, levelStep, hobs]
+      | timer => simp [needsOf, levelStep, hobs]
+      | received i c F =>
+        cases c with
+        | block first stamp capture period level slope => simp [needsOf, levelStep, hobs]
+        | answer sent received => simp [needsOf, levelStep, hobs]
+        | ask sent need =>
+          cases need with
+          | none => simp [needsOf, levelStep, hobs]
+          | some y => simp [needsOf, levelStep, hobs, aimStep]
+  exact hgen l _
+
+/-- **The rule against every fixed level, on the needs that reached the
+sender.** Let `ys` be needs in the order in which they reached the sender,
+with a step `q.step > 0`, bounds `q.lo ≤ q.hi` that hold the start, and
+costs `q.latencyCost ≥ 0`, `q.lateCost ≥ 0`. For need number `t`, compare
+the cost of the aim that the sender had when the need arrived
+(`needCost` at `aimAfter` of the needs before it) with the cost of a fixed
+level `z` between the bounds. Summed over all the needs, the aims cost at
+most what `z` costs, plus `(q.start - z) ^ 2 / (2 * q.step)`, plus
+`q.step * (max q.latencyCost q.lateCost) ^ 2 / 2` for each need. Nothing is
+assumed about the needs. -/
+theorem sum_needCost_aimAfter_sub_le (q : LevelSettings) (hη : 0 < q.step)
+    (hlohi : q.lo ≤ q.hi) (ha : 0 ≤ q.latencyCost) (hc : 0 ≤ q.lateCost)
+    (hstart : q.start ∈ Set.Icc q.lo q.hi) (ys : List ℝ) {z : ℝ}
+    (hz : z ∈ Set.Icc q.lo q.hi) :
+    ∑ t ∈ Finset.range ys.length,
+        (Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0) (aimAfter q (ys.take t))
+          - Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0) z)
+      ≤ (q.start - z) ^ 2 / (2 * q.step)
+        + q.step * max q.latencyCost q.lateCost ^ 2 * ys.length / 2 := by
+  -- The aims as a sequence, continued past the last need with needs of zero.
+  obtain ⟨x, hx0, hxs⟩ : ∃ x : ℕ → ℝ, x 0 = q.start
+      ∧ ∀ t, x (t + 1) = aimStep q (x t) (ys.getD t 0) :=
+    ⟨fun t => Nat.rec q.start (fun t xt => aimStep q xt (ys.getD t 0)) t, rfl, fun _ => rfl⟩
+  have hxt : ∀ t, t ≤ ys.length → x t = aimAfter q (ys.take t) := by
+    intro t
+    induction t with
+    | zero =>
+      intro _
+      rw [hx0]
+      rfl
+    | succ t ih =>
+      intro ht
+      have hlt : t < ys.length := ht
+      rw [hxs, ih hlt.le, List.take_add_one, List.getElem?_eq_getElem hlt]
+      unfold aimAfter
+      rw [List.foldl_append]
+      simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hlt]
+  have h := Model.Descent.sum_needCost_sub_le (d := 0) (x := x)
+    (y := fun t => ys.getD t 0) hη hlohi ha hc hstart
+    (fun t ht => by
+      have h0 : t = 0 := Nat.le_zero.mp ht
+      rw [h0, hx0])
+    (fun t => hxs t) hz ys.length
+  have hsum : ∑ t ∈ Finset.range ys.length,
+        (Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0)
+            (aimAfter q (ys.take t))
+          - Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0) z)
+      = ∑ t ∈ Finset.range ys.length,
+        (Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0) (x t)
+          - Model.Descent.needCost q.latencyCost q.lateCost (ys.getD t 0) z) :=
+    Finset.sum_congr rfl fun t ht => by
+      rw [hxt t (Finset.mem_range.mp ht).le]
+  rw [hsum]
+  refine h.trans (le_of_eq ?_)
+  push_cast
+  ring
 
 variable [DecidableEq H] (p : FixedDelay.Params H) (clockEst : ClockEstimator)
   (deviceEst : DeviceEstimator) (levelRule : LevelRule H R) (w : World H R) (lookahead : ℕ+)
