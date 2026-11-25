@@ -56,6 +56,7 @@ public import Unisono.Solutions.Controller.KnotLevel
 public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Solutions.Controller.Arrived
 public import Unisono.Solutions.Controller.Silent
+public import Unisono.Solutions.Controller.Targets
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -4186,6 +4187,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.handoversOf_handoverView
 
+/-- info: 'Unisono.Spec.Solution.requestView_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.requestView_eq
+
 /-- info: 'Unisono.Spec.World.knot_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knot_strictMono
@@ -4778,6 +4783,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.dueOf_eq_of_mem
 
+/-- info: 'Unisono.Solutions.Controller.dueAt_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueAt_right
+
+/-- info: 'Unisono.Solutions.Controller.dueAt_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueAt_sub_mem
+
 /-- info: 'Unisono.Solutions.Controller.ruled_block_arrived' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ruled_block_arrived
@@ -4829,6 +4842,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.followed_silent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.followed_silent
+
+/-- info: 'Unisono.Solutions.Controller.chosen_eq_some_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.chosen_eq_some_iff
+
+/-- info: 'Unisono.Solutions.Controller.estimate_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.estimate_sub_mem
+
+/-- info: 'Unisono.Solutions.Controller.abs_chosen_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.abs_chosen_sub_le
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

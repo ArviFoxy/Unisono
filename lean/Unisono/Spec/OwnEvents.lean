@@ -372,4 +372,31 @@ theorem Solution.handoversOf_handoverView {i b : ℕ}
     hn, List.range_succ, List.map_append]
   simp [handoversOf, World.handedEvent]
 
+open Classical in
+/-- The view of the host of speaker `r` when it handles the request of
+block `β`, with that request as its last event; the empty list if the run
+never handles the request. -/
+def Solution.requestView (r : Fin R) (β : ℕ) : List (Event H R Msg) :=
+  if h : ∃ n, earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r β)
+  then (σ.states w lookahead (Classical.choose h)).views (w.host r) ++ [w.askedEvent r β]
+  else []
+
+/-- At a step that handles the request of block `β` of speaker `r`, the
+host's view with the request is `requestView r β`. -/
+theorem Solution.requestView_eq {n : ℕ} {r : Fin R} {β : ℕ}
+    (hE : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r β)) :
+    σ.requestView w lookahead r β
+      = (σ.states w lookahead n).views (w.host r) ++ [w.askedEvent r β] := by
+  classical
+  have hex : ∃ n, earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r β) := ⟨n, hE⟩
+  have hu : Classical.choose hex = n :=
+    σ.asked_step_unique w lookahead
+      (σ.askedNext_of_earliest w lookahead (Classical.choose_spec hex))
+      (Classical.choose_spec hex) (σ.askedNext_of_earliest w lookahead hE) hE
+  unfold Solution.requestView
+  rw [dite_eq_left hex, hu]
+
 end Unisono.Spec

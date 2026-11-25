@@ -237,4 +237,80 @@ theorem dueOf_eq_of_mem {need : H → List (Event H R Payload) → Option ℝ}
     obtain rfl := covers_unique hcap hlev hs0 hs1 hnominal hprog hxc hcov
     rfl
 
+/-! ## The schedule as a function of the coordinate -/
+
+variable (p rules w lookahead q share nominal) in
+/-- The reading of the sender's clock at which the coordinate `z` is due, by
+the line of block `b`. -/
+def dueAt (b : ℕ) (z : ℝ) : ℝ :=
+  dueEdge p rules w lookahead q share nominal b
+    + (z - w.source.first b) * dueSlope p rules w lookahead q share nominal b
+
+/-- At the first frame of the next block, the line of a block gives the edge
+of the next block. -/
+theorem dueAt_right
+    (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
+      = some (w.sender, w.source.handed b,
+        .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
+    (b : ℕ) :
+    dueAt p rules w lookahead q share nominal b (w.source.first (b + 1))
+      = dueEdge p rules w lookahead q share nominal (b + 1) := by
+  have hle : w.source.first b ≤ w.source.first (b + 1) :=
+    (w.source.first_strictMono (Nat.lt_succ_self b)).le
+  have hcast : ((w.blockLength b : ℕ) : ℝ)
+      = (w.source.first (b + 1) : ℝ) - w.source.first b := by
+    unfold World.blockLength
+    rw [Nat.cast_sub hle]
+  unfold dueAt
+  rw [dueEdge_succ hprog b, hcast]
+
+/-- **The schedule against the slopes of the blocks.** Let the coordinate
+`z` lie at or before the right end of block `b`, and the coordinate `z'` in
+a block `b'` at or after `b`, with `z ≤ z'`, and let the slopes of the blocks from `b` to `b'` lie
+between `σLo` and `σHi`. Then from `z` to `z'` the reading that is due
+increases by at least `σLo * (z' - z)` and by at most `σHi * (z' - z)`. -/
+theorem dueAt_sub_mem
+    (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
+      = some (w.sender, w.source.handed b,
+        .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
+    {σLo σHi : ℝ} {b : ℕ} {z : ℝ} (hz2 : z ≤ w.source.first (b + 1)) :
+    ∀ b', b ≤ b' →
+      (∀ c, b ≤ c → c ≤ b' → σLo ≤ dueSlope p rules w lookahead q share nominal c
+        ∧ dueSlope p rules w lookahead q share nominal c ≤ σHi) →
+      ∀ z' : ℝ, (w.source.first b' : ℝ) ≤ z' → z' ≤ w.source.first (b' + 1) → z ≤ z' →
+        σLo * (z' - z) ≤ dueAt p rules w lookahead q share nominal b' z'
+            - dueAt p rules w lookahead q share nominal b z
+          ∧ dueAt p rules w lookahead q share nominal b' z'
+              - dueAt p rules w lookahead q share nominal b z ≤ σHi * (z' - z) := by
+  intro b' hbb'
+  induction b', hbb' using Nat.le_induction with
+  | base =>
+    intro hσ z' _ _ hzz'
+    obtain ⟨h1, h2⟩ := hσ b le_rfl le_rfl
+    have hd : dueAt p rules w lookahead q share nominal b z'
+        - dueAt p rules w lookahead q share nominal b z
+        = (z' - z) * dueSlope p rules w lookahead q share nominal b := by
+      unfold dueAt
+      ring
+    rw [hd]
+    have h0 : 0 ≤ z' - z := sub_nonneg.mpr hzz'
+    constructor <;> nlinarith
+  | succ b' hbb' ih =>
+    intro hσ z' hz1' hz2' hzz'
+    obtain ⟨h1, h2⟩ := hσ (b' + 1) (Nat.le_succ_of_le hbb') le_rfl
+    have hfirst : (w.source.first (b + 1) : ℝ) ≤ w.source.first (b' + 1) := by
+      exact_mod_cast w.source.first_strictMono.monotone (Nat.succ_le_succ hbb')
+    have hfb' : (w.source.first b' : ℝ) ≤ w.source.first (b' + 1) := by
+      exact_mod_cast (w.source.first_strictMono (Nat.lt_succ_self b')).le
+    obtain ⟨i1, i2⟩ := ih (fun c hc1 hc2 => hσ c hc1 (Nat.le_succ_of_le hc2))
+      (w.source.first (b' + 1)) hfb' le_rfl (le_trans hz2 hfirst)
+    rw [dueAt_right hprog b'] at i1 i2
+    have hd : dueAt p rules w lookahead q share nominal (b' + 1) z'
+        = dueEdge p rules w lookahead q share nominal (b' + 1)
+          + (z' - w.source.first (b' + 1))
+            * dueSlope p rules w lookahead q share nominal (b' + 1) := rfl
+    rw [hd]
+    have h0 : 0 ≤ z' - w.source.first (b' + 1) := sub_nonneg.mpr hz1'
+    constructor <;> nlinarith
+
 end Unisono.Solutions.Controller
