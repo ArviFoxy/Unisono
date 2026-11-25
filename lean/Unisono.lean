@@ -42,6 +42,7 @@ public import Unisono.Solutions.Controller.LateRate
 public import Unisono.Solutions.Controller.Limited
 public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
+public import Unisono.Solutions.Controller.Schedule
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core

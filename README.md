@@ -126,7 +126,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Solutions/Controller/HeldLevel.lean`). Without pauses it
     plays every frame at that latency
     (`Unisono.Solutions.Controller.playsAtLatencies` in
-    `lean/Unisono/Solutions/Controller/Exact.lean`). The cost of a held
+    `lean/Unisono/Solutions/Controller/Exact.lean`). When the level
+    changes, and each block starts at the level at which the block before
+    it ended, every position is played at the latency of its own level,
+    if the capture block that it needs arrived before the request
+    (`Unisono.Solutions.Controller.speaker_plays_of_levels` in
+    `lean/Unisono/Solutions/Controller/HeldLevel.lean`); no rule that
+    chooses such levels is part of the controller yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in
