@@ -51,6 +51,7 @@ public import Unisono.Solutions.Controller.Envelope
 public import Unisono.Solutions.Controller.Timing
 public import Unisono.Solutions.Controller.KnotLevel
 public import Unisono.Solutions.Controller.DueSchedule
+public import Unisono.Solutions.Controller.Arrived
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
