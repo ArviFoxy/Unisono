@@ -29,13 +29,18 @@ this output sample, and then defines one such rule, the follower.
   is further, but within `J` frames, the follower advances by one frame
   moved by `u` toward it. When it is further than that, the follower jumps
   to it. With `J ≥ 1` such a jump is not a step of continuous playback.
+* `followStep_error_le`, `Solution.followed_plays_eq`: when the solution
+  chooses, from some output sample on, nothing or a target that advances by
+  one frame within `u - η`, with `η > 0`, the follower's distance to the
+  target falls by `η` per output sample until it is zero, and from then on
+  the solution with the follower plays what the solution plays.
 * `Solution.followed_withinStep`: so the solution with the follower keeps
   the step bound `u` in every world, for `u ≥ 0` and `J ≥ 1`: in every step
   of continuous playback its position advances by one frame within `u`.
 
 The follower never plays nothing where the solution chooses a position, and
 it does not need the solution's positions to respect any bound. How close
-it stays to what the solution chooses is not stated here.
+it stays to a target that moves irregularly is not stated here.
 -/
 
 @[expose] public noncomputable section
@@ -427,6 +432,270 @@ theorem Solution.followed_withinStep [DecidableEq H] (σ : Solution H R Msg) {u 
   have h2 : (σ.stepped (followStep u J)).chosenAt w lookahead n₂ r b₂ (k + 1) = some y := hc₂
   rw [h1, h2] at hchain
   exact followStep_within hu hJ hchain.symm hxy hyx
+
+/-! ## The follower reaches what the solution chooses -/
+
+theorem followStep_none_left (u J : ℝ) (x : Option ℝ) : followStep u J none x = x := by
+  cases x <;> rfl
+
+theorem followStep_none_right (u J : ℝ) (prev : Option ℝ) : followStep u J prev none = none := by
+  cases prev <;> rfl
+
+/-- The follower gives nothing only where the solution chooses nothing. -/
+theorem followStep_eq_none {u J : ℝ} {prev x : Option ℝ} (h : followStep u J prev x = none) :
+    x = none := by
+  rcases prev with _ | y <;> rcases x with _ | x'
+  · rfl
+  · simp [followStep] at h
+  · rfl
+  · simp only [followStep] at h
+    split_ifs at h
+
+/-- **One step of the follower toward a target that advances within the
+bound.** Let the target go from `x` to `x'` by one frame within `u - η`, and
+let the follower hold `y`. Then what it gives next is at most
+`max (|y - x| - η) 0` from `x'`: the distance to the target falls by `η`
+until it is zero. -/
+theorem followStep_error_le {u J η y x x' z : ℝ} (hstep : |x' - x - 1| ≤ u - η)
+    (h : followStep u J (some y) (some x') = some z) :
+    |z - x'| ≤ max (|y - x| - η) 0 := by
+  obtain ⟨hs1, hs2⟩ := abs_le.mp hstep
+  have hyx := abs_nonneg (y - x)
+  have hle1 := le_abs_self (y - x)
+  have hle2 := neg_abs_le (y - x)
+  simp only [followStep] at h
+  by_cases h3 : |x' - y - 1| ≤ u
+  · rw [ite_eq_left h3] at h
+    obtain rfl := Option.some.inj h
+    rw [sub_self, abs_zero]
+    exact le_max_right _ _
+  · rw [ite_eq_right h3] at h
+    by_cases h4 : |x' - y - 1| ≤ J
+    · rw [ite_eq_left h4] at h
+      obtain rfl := Option.some.inj h
+      refine le_max_of_le_left ?_
+      by_cases h5 : y + 1 < x'
+      · rw [ite_eq_left h5]
+        have h6 : u < x' - y - 1 := by
+          have h7 := not_le.mp h3
+          rwa [abs_of_pos (by linarith)] at h7
+        rw [abs_of_nonpos (by linarith)]
+        linarith
+      · rw [ite_eq_right h5]
+        have h6 : u < -(x' - y - 1) := by
+          have h7 := not_le.mp h3
+          rwa [abs_of_nonpos (by linarith)] at h7
+        rw [abs_of_nonneg (by linarith)]
+        linarith
+    · rw [ite_eq_right h4] at h
+      obtain rfl := Option.some.inj h
+      rw [sub_self, abs_zero]
+      exact le_max_right _ _
+
+section Reach
+
+variable [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
+
+/-- **The follower plays what the solution plays, once it has reached it.**
+Suppose that from output sample `K` on, at every request of speaker `r`,
+the solution `σ` chooses nothing or the position `X k` for output sample
+`k`, and that `X` advances by one frame per output sample within `u - η`,
+with `η > 0`. Then from some output sample on the solution with the follower
+plays what `σ` plays. -/
+theorem Solution.followed_plays_eq {u J η : ℝ} (hη : 0 < η) {r : Fin R} {K : ℕ}
+    {X : ℕ → ℝ} (hX : ∀ k, K ≤ k → |X (k + 1) - X k - 1| ≤ u - η)
+    (hline : ∀ n b k, K ≤ k → k ∈ (w.speaker r).block b →
+      (σ.states w lookahead n).askedNext r = b →
+      earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+        = some (.asked r b) →
+      ∀ x, σ.chosenAt w lookahead n r b k = some x → x = X k) :
+    ∃ K', ∀ k, K' ≤ k → (σ.followed u J).plays w lookahead r k = σ.plays w lookahead r k := by
+  classical
+  show ∃ K', ∀ k, K' ≤ k →
+    (σ.stepped (followStep u J)).plays w lookahead r k = σ.plays w lookahead r k
+  have hmono := (w.speaker r).first_strictMono
+  have hrange : ∀ {b k : ℕ}, k ∈ (w.speaker r).block b →
+      (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
+    intro b k h
+    unfold PlaybackDevice.block at h
+    rw [List.mem_range'_1] at h
+    have := hmono (Nat.lt_add_one b)
+    omega
+  have hblock : ∀ {b b' k : ℕ}, k ∈ (w.speaker r).block b → k ∈ (w.speaker r).block b' →
+      b = b' := by
+    intro b b' k h h'
+    have h1 := hrange h
+    have h2 := hrange h'
+    rcases lt_trichotomy b b' with hlt | heq | hgt
+    · have := hmono.monotone (show b + 1 ≤ b' from hlt)
+      omega
+    · exact heq
+    · have := hmono.monotone (show b' + 1 ≤ b from hgt)
+      omega
+  -- The request step of the block of the output sample before.
+  have hprevStep : ∀ {j b₂ n₂ : ℕ}, j + 1 ∈ (w.speaker r).block b₂ →
+      (σ.states w lookahead n₂).askedNext r = b₂ →
+      earliest ((σ.states w lookahead n₂).key w) (σ.states w lookahead n₂).due
+        = some (.asked r b₂) →
+      ∃ b₁ n₁, j ∈ (w.speaker r).block b₁ ∧ (σ.states w lookahead n₁).askedNext r = b₁
+        ∧ earliest ((σ.states w lookahead n₁).key w) (σ.states w lookahead n₁).due
+          = some (.asked r b₁) := by
+    intro j b₂ n₂ hk₂ hb₂ he₂
+    have hr₂ := hrange hk₂
+    by_cases hin : (w.speaker r).first b₂ ≤ j
+    · refine ⟨b₂, n₂, ?_, hb₂, he₂⟩
+      unfold PlaybackDevice.block
+      rw [List.mem_range'_1]
+      omega
+    · have hb0 : b₂ ≠ 0 := by
+        rintro rfl
+        have := (w.speaker r).first_zero
+        omega
+      obtain ⟨b₁, rfl⟩ : ∃ b₁, b₂ = b₁ + 1 := ⟨b₂ - 1, by omega⟩
+      obtain ⟨n₁, -, hb₁, he₁⟩ := σ.exists_asked_step w lookahead (m := n₂) (r := r) (b := b₁)
+        (by rw [hb₂]; exact Nat.lt_succ_self b₁)
+      refine ⟨b₁, n₁, ?_, hb₁, he₁⟩
+      have := hmono (Nat.lt_add_one b₁)
+      unfold PlaybackDevice.block
+      rw [List.mem_range'_1]
+      omega
+  -- How far the follower is from the target at output sample `K`.
+  obtain ⟨M, hM⟩ : ∃ M : ℝ, ∀ n b, K ∈ (w.speaker r).block b →
+      (σ.states w lookahead n).askedNext r = b →
+      earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+        = some (.asked r b) →
+      ∀ y, (σ.stepped (followStep u J)).chosenAt w lookahead n r b K = some y →
+        |y - X K| ≤ M := by
+    by_cases hex : ∃ n b y, K ∈ (w.speaker r).block b
+        ∧ (σ.states w lookahead n).askedNext r = b
+        ∧ earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+          = some (.asked r b)
+        ∧ (σ.stepped (followStep u J)).chosenAt w lookahead n r b K = some y
+    · obtain ⟨n₀, b₀, y₀, hk₀, hb₀, he₀, hy₀⟩ := hex
+      refine ⟨|y₀ - X K|, fun n b hk hb he y hy => ?_⟩
+      obtain rfl := hblock hk hk₀
+      obtain rfl := σ.asked_step_unique w lookahead hb he hb₀ he₀
+      rw [hy] at hy₀
+      obtain rfl := Option.some.inj hy₀
+      exact le_rfl
+    · exact ⟨0, fun n b hk hb he y hy => absurd ⟨n, b, y, hk, hb, he, hy⟩ hex⟩
+  -- The distance falls by `η` per output sample until it is zero.
+  have hpot : ∀ j, K ≤ j → ∀ n b, j ∈ (w.speaker r).block b →
+      (σ.states w lookahead n).askedNext r = b →
+      earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+        = some (.asked r b) →
+      ∀ y, (σ.stepped (followStep u J)).chosenAt w lookahead n r b j = some y →
+        |y - X j| ≤ max (M - ((j - K : ℕ) : ℝ) * η) 0 := by
+    intro j hj
+    induction j, hj using Nat.le_induction with
+    | base =>
+      intro n b hk hb he y hy
+      rw [Nat.sub_self, Nat.cast_zero, zero_mul, sub_zero]
+      exact le_max_of_le_left (hM n b hk hb he y hy)
+    | succ j hj ih =>
+      intro n₂ b₂ hk₂ hb₂ he₂ y hy
+      obtain ⟨b₁, n₁, hk₁, hb₁, he₁⟩ := hprevStep hk₂ hb₂ he₂
+      have hchain := σ.stepped_chosenAt_succ (followStep u J) w lookahead hb₁ he₁ hk₁ hb₂ he₂
+        hk₂
+      rw [hchain] at hy
+      have hcast : ((j + 1 - K : ℕ) : ℝ) = ((j - K : ℕ) : ℝ) + 1 := by
+        rw [Nat.succ_sub hj]
+        push_cast
+        ring
+      rw [hcast]
+      cases hσ : σ.chosenAt w lookahead n₂ r b₂ (j + 1) with
+      | none =>
+        rw [hσ, followStep_none_right] at hy
+        exact absurd hy (by simp)
+      | some x' =>
+        have hx' := hline n₂ b₂ (j + 1) (Nat.le_succ_of_le hj) hk₂ hb₂ he₂ x' hσ
+        rw [hσ] at hy
+        cases hprev : (σ.stepped (followStep u J)).chosenAt w lookahead n₁ r b₁ j with
+        | none =>
+          rw [hprev, followStep_none_left] at hy
+          obtain rfl := Option.some.inj hy
+          rw [hx', sub_self, abs_zero]
+          exact le_max_right _ _
+        | some y₀ =>
+          rw [hprev, hx'] at hy
+          have h0 := ih n₁ b₁ hk₁ hb₁ he₁ y₀ hprev
+          have h1 := followStep_error_le (hX j hj) hy
+          refine h1.trans (max_le ?_ (le_max_right _ _))
+          rcases le_total 0 (M - ((j - K : ℕ) : ℝ) * η) with hc | hc
+          · rw [max_eq_left hc] at h0
+            exact le_max_of_le_left (by linarith)
+          · rw [max_eq_right hc] at h0
+            exact le_max_of_le_right (by linarith)
+  refine ⟨K + ⌈M / η⌉₊ + 1, fun k hk => ?_⟩
+  obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
+  have hjK : K ≤ j := by omega
+  -- At a request step of the block of `j + 1` the two solutions choose the same.
+  have hmain : ∀ (b₂ n₂ : ℕ), j + 1 ∈ (w.speaker r).block b₂ →
+      (σ.states w lookahead n₂).askedNext r = b₂ →
+      earliest ((σ.states w lookahead n₂).key w) (σ.states w lookahead n₂).due
+        = some (.asked r b₂) →
+      (σ.stepped (followStep u J)).plays w lookahead r (j + 1)
+        = σ.plays w lookahead r (j + 1) := by
+    intro b₂ n₂ hk₂ hb₂ he₂
+    obtain ⟨b₁, n₁, hk₁, hb₁, he₁⟩ := hprevStep hk₂ hb₂ he₂
+    have hchain := σ.stepped_chosenAt_succ (followStep u J) w lookahead hb₁ he₁ hk₁ hb₂ he₂
+      hk₂
+    have hzero : max (M - ((j + 1 - K : ℕ) : ℝ) * η) 0 = 0 := by
+      refine max_eq_right ?_
+      have h1 : (⌈M / η⌉₊ : ℝ) ≤ ((j + 1 - K : ℕ) : ℝ) := by
+        exact_mod_cast (show ⌈M / η⌉₊ ≤ j + 1 - K by omega)
+      have h2 := (div_le_iff₀ hη).mp ((Nat.le_ceil (M / η)).trans h1)
+      linarith
+    have hsame : (σ.stepped (followStep u J)).chosenAt w lookahead n₂ r b₂ (j + 1)
+        = σ.chosenAt w lookahead n₂ r b₂ (j + 1) := by
+      cases hy : (σ.stepped (followStep u J)).chosenAt w lookahead n₂ r b₂ (j + 1) with
+      | none =>
+        rw [hchain] at hy
+        exact (followStep_eq_none hy).symm
+      | some y =>
+        have hp := hpot (j + 1) (Nat.le_succ_of_le hjK) n₂ b₂ hk₂ hb₂ he₂ y hy
+        rw [hzero] at hp
+        have hyX : y = X (j + 1) := by
+          have h1 := abs_nonneg (y - X (j + 1))
+          have h2 : |y - X (j + 1)| = 0 := le_antisymm hp h1
+          linarith [abs_eq_zero.mp h2]
+        cases hσ : σ.chosenAt w lookahead n₂ r b₂ (j + 1) with
+        | none =>
+          rw [hchain, hσ, followStep_none_right] at hy
+          exact absurd hy (by simp)
+        | some x' =>
+          rw [hyX, hline n₂ b₂ (j + 1) (Nat.le_succ_of_le hjK) hk₂ hb₂ he₂ x' hσ]
+    obtain ⟨hb₂', he₂'⟩ :=
+      (σ.stepped_asked_iff (followStep u J) w lookahead n₂ r b₂).mpr ⟨hb₂, he₂⟩
+    have hp := (σ.stepped (followStep u J)).plays_of_asked_step w lookahead hb₂' he₂' hk₂
+    have hq := σ.plays_of_asked_step w lookahead hb₂ he₂ hk₂
+    have hheld := Solution.held_eq_of_sends_eq w lookahead (σ := σ.stepped (followStep u J))
+      (σ' := σ) (fun _ _ => rfl) (fun _ _ => rfl) n₂
+    have hsame' : ((σ.stepped (followStep u J)) (w.host r)
+          (((σ.stepped (followStep u J)).states w lookahead n₂).views (w.host r)
+            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b₂),
+              .asked r ((w.speaker r).block b₂) ((w.speaker r).reported b₂)⟩])).plays (j + 1)
+        = (σ (w.host r) ((σ.states w lookahead n₂).views (w.host r)
+            ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b₂),
+              .asked r ((w.speaker r).block b₂) ((w.speaker r).reported b₂)⟩])).plays (j + 1) :=
+      hsame
+    rw [hp, hq, hheld, hsame']
+  cases hl : (σ.stepped (followStep u J)).plays w lookahead r (j + 1) with
+  | some x =>
+    obtain ⟨b, n, hkb, hb, he, -⟩ :=
+      exists_asked_of_plays_some (σ.stepped (followStep u J)) w lookahead hl
+    obtain ⟨hb', he'⟩ := (σ.stepped_asked_iff (followStep u J) w lookahead n r b).mp ⟨hb, he⟩
+    rw [← hl]
+    exact hmain b n hkb hb' he'
+  | none =>
+    cases hs : σ.plays w lookahead r (j + 1) with
+    | none => rfl
+    | some x =>
+      obtain ⟨b, n, hkb, hb, he, -⟩ := exists_asked_of_plays_some σ w lookahead hs
+      rw [← hl, ← hs]
+      exact hmain b n hkb hb he
+
+end Reach
 
 /-- The solution with a rule sends what the solution sends, so it is a star
 solution when the solution is one. -/

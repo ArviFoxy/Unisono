@@ -4104,6 +4104,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.followed_withinStep
 
+/-- info: 'Unisono.Spec.followStep_none_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_none_left
+
+/-- info: 'Unisono.Spec.followStep_none_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_none_right
+
+/-- info: 'Unisono.Spec.followStep_eq_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_eq_none
+
+/-- info: 'Unisono.Spec.followStep_error_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_error_le
+
+/-- info: 'Unisono.Spec.Solution.followed_plays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_plays_eq
+
 /-- info: 'Unisono.Spec.Solution.stepped_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.stepped_isStar
