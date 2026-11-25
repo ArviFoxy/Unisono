@@ -90,6 +90,7 @@ public import Unisono.Spec.Models.GenerativeBlockSum
 public import Unisono.Spec.Models.GenerativeCellStall
 public import Unisono.Spec.Models.GenerativeCellMean
 public import Unisono.Spec.Models.GenerativeCellPause
+public import Unisono.Spec.Models.GenerativeHorizon
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2237,6 +2238,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.cell_mean_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.cell_mean_ge
+
+/-- info: 'Unisono.Spec.sum_ite_cellSamples_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sum_ite_cellSamples_le
+
+/-- info: 'Unisono.Spec.sum_share_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sum_share_le
+
+/-- info: 'Unisono.Spec.sum_lintegral_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sum_lintegral_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.sum_cells_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.sum_cells_le
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
