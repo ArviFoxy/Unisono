@@ -81,6 +81,7 @@ public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
+public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
 public import Unisono.Spec.Models.GenerativeTransfer
@@ -1770,6 +1771,18 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ConstantRates.block_lt_latency
 
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.exists_le_handed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.exists_le_handed
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.room_lt_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.room_lt_latency
+
+/-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_stall_le_room' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.drawWorld_stall_le_room
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
@@ -2261,6 +2274,14 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.continuousBefore_le_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.continuousBefore_le_add
+
+/-- info: 'Unisono.Spec.World.le_handed_blockFrom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.le_handed_blockFrom
+
+/-- info: 'Unisono.Spec.World.handed_lt_of_lt_blockFrom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.handed_lt_of_lt_blockFrom
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
