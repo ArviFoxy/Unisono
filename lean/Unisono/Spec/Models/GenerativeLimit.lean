@@ -22,6 +22,9 @@ anything accrued, is a measurable function of the outcome.
   measurable function below it with the same mean.
 * `limsup_le_longRun`: the long-run average is at least the limit superior
   along any sequence of horizons that grows without bound.
+* `le_limsup_sub_div`: if `X n` is at least `T n * a` minus a finite number
+  and `L n` at most `T n * b` plus a finite number, the limit superior of
+  `(X n - L n) / T n` is at least `a - b`.
 * `limsup_le_lintegral_cost`: if a quantity `A n` of the outcome is bounded
   by a multiple of the horizon `T n`, has a mean of at least `V n`, and is at
   most the weighted latency, missed samples and discontinuities accrued
@@ -34,7 +37,7 @@ anything accrued, is a measurable function of the outcome.
 namespace Unisono.Spec
 
 open MeasureTheory Filter
-open scoped ENNReal
+open scoped ENNReal NNReal
 
 /-- **The limit superior of the means of bounded functions.** Let the
 functions `h n` be at most a finite number `M` everywhere, on a space of
@@ -63,6 +66,53 @@ theorem limsup_le_longRun (G : Time → ℝ≥0∞) {T : ℕ → ℝ} (hT : Tend
     limsup (fun n => G (T n) / ENNReal.ofReal (T n)) atTop ≤ longRun G := by
   unfold longRun
   exact limsup_le_limsup_of_le (u := fun t : Time => G t / ENNReal.ofReal t) hT
+
+/-- **The limit superior of a difference that grows linearly with the
+horizon.** Let the horizons `T n` be positive and grow without bound. Let
+`X n` be at least `T n * a` minus a finite number, and `L n` at most
+`T n * b` plus a finite number. Then the limit superior of
+`(X n - L n) / T n` is at least `a - b`. -/
+theorem le_limsup_sub_div {T : ℕ → ℝ} (hT : Tendsto T atTop atTop) (hTpos : ∀ n, 0 < T n)
+    {X L : ℕ → ℝ≥0∞} {a b C₁ C₂ : ℝ≥0∞} (hC₁ : C₁ ≠ ⊤) (hC₂ : C₂ ≠ ⊤)
+    (hX : ∀ n, ENNReal.ofReal (T n) * a ≤ X n + C₁)
+    (hL : ∀ n, L n ≤ ENNReal.ofReal (T n) * b + C₂) :
+    a - b ≤ limsup (fun n => (X n - L n) / ENNReal.ofReal (T n)) atTop := by
+  have hC : C₁ + C₂ ≠ ⊤ := ENNReal.add_ne_top.mpr ⟨hC₁, hC₂⟩
+  refine ENNReal.le_of_forall_pos_le_add fun ε hε _ => ?_
+  have hεR : (0 : ℝ) < (ε : ℝ) := by exact_mod_cast hε
+  have hev : ∀ᶠ n in atTop, (C₁ + C₂) / ENNReal.ofReal (T n) ≤ (ε : ℝ≥0∞) := by
+    filter_upwards [hT.eventually_ge_atTop ((C₁ + C₂).toReal / ε)] with n hn
+    rw [ENNReal.div_le_iff (ENNReal.ofReal_pos.mpr (hTpos n)).ne' ENNReal.ofReal_ne_top]
+    have h1 : (C₁ + C₂).toReal ≤ ε * T n := by
+      have h2 := (div_le_iff₀ hεR).mp hn
+      linarith
+    calc C₁ + C₂ = ENNReal.ofReal ((C₁ + C₂).toReal) := (ENNReal.ofReal_toReal hC).symm
+      _ ≤ ENNReal.ofReal (ε * T n) := ENNReal.ofReal_le_ofReal h1
+      _ = (ε : ℝ≥0∞) * ENNReal.ofReal (T n) := by
+          rw [ENNReal.ofReal_mul (NNReal.coe_nonneg ε), ENNReal.ofReal_coe_nnreal]
+  have hfreq : ∃ᶠ n in atTop, a - b - (ε : ℝ≥0∞) ≤ (X n - L n) / ENNReal.ofReal (T n) := by
+    refine (hev.mono fun n hn => ?_).frequently
+    have hTne : ENNReal.ofReal (T n) ≠ 0 := (ENNReal.ofReal_pos.mpr (hTpos n)).ne'
+    have hTtop : ENNReal.ofReal (T n) ≠ ⊤ := ENNReal.ofReal_ne_top
+    have h1 : (a - b) * ENNReal.ofReal (T n) ≤ X n - L n + (C₁ + C₂) := by
+      rw [ENNReal.sub_mul (fun _ _ => hTtop), tsub_le_iff_right]
+      calc a * ENNReal.ofReal (T n) = ENNReal.ofReal (T n) * a := mul_comm _ _
+        _ ≤ X n + C₁ := hX n
+        _ ≤ X n - L n + L n + C₁ := add_le_add le_tsub_add le_rfl
+        _ ≤ X n - L n + (ENNReal.ofReal (T n) * b + C₂) + C₁ :=
+            add_le_add (add_le_add le_rfl (hL n)) le_rfl
+        _ = X n - L n + (C₁ + C₂) + b * ENNReal.ofReal (T n) := by ring
+    have h2 : a - b ≤ (X n - L n) / ENNReal.ofReal (T n)
+        + (C₁ + C₂) / ENNReal.ofReal (T n) := by
+      rw [← ENNReal.add_div, ENNReal.le_div_iff_mul_le (Or.inl hTne) (Or.inl hTtop)]
+      exact h1
+    calc a - b - (ε : ℝ≥0∞)
+        ≤ (X n - L n) / ENNReal.ofReal (T n) + (C₁ + C₂) / ENNReal.ofReal (T n) - ε :=
+          tsub_le_tsub_right h2 _
+      _ ≤ (X n - L n) / ENNReal.ofReal (T n) + ε - ε :=
+          tsub_le_tsub_right (add_le_add le_rfl hn) _
+      _ = (X n - L n) / ENNReal.ofReal (T n) := ENNReal.add_sub_cancel_right ENNReal.coe_ne_top
+  exact tsub_le_iff_right.mp (le_limsup_of_frequently_le' hfreq)
 
 variable {H : Type} {R : ℕ}
 

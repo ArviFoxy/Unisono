@@ -59,6 +59,7 @@ public import Unisono.Spec.AtLatency
 public import Unisono.Spec.BlockCounts
 public import Unisono.Spec.Causality
 public import Unisono.Spec.CellWindows
+public import Unisono.Spec.CellCount
 public import Unisono.Spec.Checks
 public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
@@ -95,6 +96,8 @@ public import Unisono.Spec.Models.GenerativeLongRun
 public import Unisono.Spec.Models.GenerativeLimit
 public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeClockMean
+public import Unisono.Spec.Models.GenerativeLevelProgram
+public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2199,6 +2202,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.card_mul_le_of_firstFrom
 
+/-- info: 'Unisono.Spec.le_windowCount' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_windowCount
+
+/-- info: 'Unisono.Spec.mem_countedCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mem_countedCells
+
+/-- info: 'Unisono.Spec.card_countedCells_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.card_countedCells_le
+
+/-- info: 'Unisono.Spec.le_card_countedCells' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_card_countedCells
+
+/-- info: 'Unisono.Spec.mul_le_card_countedCells_mul' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mul_le_card_countedCells_mul
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.exists_le_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.exists_le_asked
@@ -2299,6 +2322,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.limsup_le_lintegral_cost
 
+/-- info: 'Unisono.Spec.le_limsup_sub_div' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_limsup_sub_div
+
 /-- info: 'Unisono.Spec.GenerativeWorld.cellFloor_le_cellValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.cellFloor_le_cellValue
@@ -2322,6 +2349,82 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.levelFloor_le_levelValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.levelFloor_le_levelValue
+
+/-- info: 'Unisono.Spec.GenerativeWorld.levelValue_ne_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.levelValue_ne_top
+
+/-- info: 'Unisono.Spec.GenerativeWorld.mul_levelLatency_le_cell' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.mul_levelLatency_le_cell
+
+/-- info: 'Unisono.Spec.GenerativeWorld.mul_levelFloor_le_cellFloor' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.mul_levelFloor_le_cellFloor
+
+/-- info: 'Unisono.Spec.GenerativeWorld.mul_levelValue_le_cellValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.mul_levelValue_le_cellValue
+
+/-- info: 'Unisono.Spec.GenerativeWorld.capturePeriodOf_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.capturePeriodOf_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.outputPeriodOf_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.outputPeriodOf_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.leadOf_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.leadOf_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.capture_succ_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.capture_succ_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.out_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.out_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.asked_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.asked_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.blocksBefore_spec' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.blocksBefore_spec
+
+/-- info: 'Unisono.Spec.GenerativeWorld.steadyHorizon_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.steadyHorizon_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.out_zero_lt_steadyHorizon' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.out_zero_lt_steadyHorizon
+
+/-- info: 'Unisono.Spec.GenerativeWorld.steadyChoices_valid' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.steadyChoices_valid
+
+/-- info: 'Unisono.Spec.GenerativeWorld.steadyRate_ne_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.steadyRate_ne_top
+
+/-- info: 'Unisono.Spec.GenerativeWorld.mul_steadyRate_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.mul_steadyRate_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.steadyBound_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.steadyBound_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.lintegral_steadyBound_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.lintegral_steadyBound_le
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

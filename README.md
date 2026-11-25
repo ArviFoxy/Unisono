@@ -184,10 +184,24 @@ simulation and integration tests (see `PRINCIPLES.md`):
     for all the pauses together, which leaves the clocks and the audio
     devices of the first outcome in place (`Prior.prior_resamplePaused`
     in `lean/Unisono/Spec/Models/GenerativeResamplePauses.lean`). These
-    are not yet
-    combined into a lower bound on the expected cost of other solutions
-    under pauses. The controller does not yet change its pace smoothly or
-    choose the level.
+    are combined into a lower bound on the expected cost, in every member,
+    of every solution through the sender that keeps the step bound and
+    whose playback is a measurable function of what is drawn: the expected
+    cost is at least the mean, over the outcomes, of a bound for the
+    clocks of the outcome
+    (`Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le` in
+    `lean/Unisono/Spec/Models/GenerativeClockMean.lean`). For members
+    whose clocks do not wander and whose audio devices report exact
+    timestamps that bound is evaluated in closed form, as a level program
+    per second that trades the latency of the room that a solution keeps
+    against what a pause costs with that room
+    (`Unisono.Spec.GenerativeWorld.lintegral_steadyBound_le` in
+    `lean/Unisono/Spec/Models/GenerativeSteadyBound.lean`). The bound is
+    not yet compared with the cost of the controller, it is not evaluated
+    for members whose clocks wander, and the part of a lower bound that
+    comes from the unknown split of each round trip is proved only for
+    noiseless members. The controller does not yet change its pace
+    smoothly or choose the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

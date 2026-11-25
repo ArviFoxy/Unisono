@@ -57,6 +57,7 @@ public import Unisono.Spec.AtLatency
 public import Unisono.Spec.BlockCounts
 public import Unisono.Spec.Causality
 public import Unisono.Spec.CellWindows
+public import Unisono.Spec.CellCount
 public import Unisono.Spec.Checks
 public import Unisono.Spec.EarliestArrival
 public import Unisono.Spec.ExactCost
@@ -94,6 +95,8 @@ public import Unisono.Spec.Models.GenerativeLongRun
 public import Unisono.Spec.Models.GenerativeLimit
 public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeClockMean
+public import Unisono.Spec.Models.GenerativeLevelProgram
+public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
