@@ -58,6 +58,7 @@ public import Unisono.Solutions.Controller.Arrived
 public import Unisono.Solutions.Controller.Silent
 public import Unisono.Solutions.Controller.Targets
 public import Unisono.Solutions.Controller.ChosenLatency
+public import Unisono.Solutions.Controller.EstimateStep
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -4987,6 +4988,30 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.timed_chosen_parts' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_chosen_parts
+
+/-- info: 'Unisono.Solutions.Controller.envelope_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.envelope_add
+
+/-- info: 'Unisono.Solutions.Controller.requestOutput_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.requestOutput_succ
+
+/-- info: 'Unisono.Solutions.Controller.timed_reading_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_reading_succ
+
+/-- info: 'Unisono.Solutions.Controller.timed_estimate_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_estimate_succ
+
+/-- info: 'Unisono.Solutions.Controller.abs_chosen_succ_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.abs_chosen_succ_sub_le
+
+/-- info: 'Unisono.Solutions.Controller.stepOver_chosen_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.stepOver_chosen_eq_zero
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
