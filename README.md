@@ -131,8 +131,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     it ended, every position is played at the latency of its own level,
     if the capture block that it needs arrived before the request
     (`Unisono.Solutions.Controller.speaker_plays_of_levels` in
-    `lean/Unisono/Solutions/Controller/HeldLevel.lean`); no rule that
-    chooses such levels is part of the controller yet. The cost of a held
+    `lean/Unisono/Solutions/Controller/HeldLevel.lean`). A level rule with
+    such levels, which steps the level against the needs that clock
+    queries report, is defined and shown to be continuous from block to
+    block (`Unisono.Solutions.Controller.steppedLevel` in
+    `lean/Unisono/Solutions/Controller/SteppedLevel.lean`); the hosts that
+    play do not measure needs yet, and no cost of a level that changes is
+    bounded. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in

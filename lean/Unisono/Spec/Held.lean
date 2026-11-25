@@ -212,4 +212,37 @@ theorem Solution.handed_step_unique (σ : Solution H R Msg) (w : World H R) (loo
         ≤ (σ.states w lookahead i).handedNext := hmono (Nat.succ_le_of_lt hgt)
     omega
 
+/-- The step whose earliest event is the handover of block `b` handles that
+handover: the event is at the sender, at the true time of the handover, with
+the frames of the block and the timestamp that the capture device reports. -/
+theorem Solution.handled_of_handed (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
+    {n b : ℕ}
+    (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.handed b)) :
+    σ.handled w lookahead n = some (w.sender, w.source.handed b,
+      .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)) := by
+  unfold Solution.handled
+  rw [hearly]
+
+/-- At the step that handles the handover of block `b`, block `b` is the
+capture device's next block, and after the step block `b + 1` is. -/
+theorem Solution.handedNext_of_earliest (σ : Solution H R Msg) (w : World H R)
+    (lookahead : ℕ+) {j b : ℕ}
+    (hj : earliest ((σ.states w lookahead j).key w) (σ.states w lookahead j).due
+      = some (.handed b)) :
+    (σ.states w lookahead j).handedNext = b
+      ∧ (σ.states w lookahead (j + 1)).handedNext = b + 1 := by
+  have hmem := (earliest_spec _ _ _ hj).1
+  have hb : (σ.states w lookahead j).handedNext = b := by
+    rcases (σ.states w lookahead j).mem_due hmem with h | ⟨r, h⟩ | ⟨q, _, h⟩ | ⟨q, _, h⟩
+    · simp only [Due.handed.injEq] at h
+      exact h.symm
+    · simp at h
+    · simp at h
+    · simp at h
+  refine ⟨hb, ?_⟩
+  show ((σ.states w lookahead j).step σ w lookahead).handedNext = b + 1
+  unfold State.step
+  rw [hj]
+
 end Unisono.Spec
