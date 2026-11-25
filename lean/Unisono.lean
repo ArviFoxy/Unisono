@@ -49,6 +49,8 @@ public import Unisono.Solutions.Controller.Ruled
 public import Unisono.Solutions.Controller.Knots
 public import Unisono.Solutions.Controller.Envelope
 public import Unisono.Solutions.Controller.Timing
+public import Unisono.Solutions.Controller.KnotLevel
+public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -112,6 +114,7 @@ public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeClockMean
 public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
+public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall

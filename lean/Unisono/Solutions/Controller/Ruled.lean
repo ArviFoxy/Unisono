@@ -8,6 +8,7 @@ public import Unisono.Solutions.Controller.Views
 public import Unisono.Spec.Limits
 public import Unisono.Spec.OwnEvents
 public import Unisono.Solutions.FixedDelay.Views
+public import Unisono.Solutions.FixedDelay.Progress
 
 /-!
 # The controller with given rules
@@ -425,5 +426,36 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
     exact hcov
   · rw [← hheader, hzc, ← hzx]
     ring
+
+/-- **Every request is handled**, in a world whose capture device hands over
+blocks without end and whose playback devices request blocks without end:
+the run of the controller with given rules handles every request of every
+speaker at some step. -/
+theorem ruled_request_step (hhand : ∀ T, ∃ b, T < w.source.handed b)
+    (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b) (lookahead : ℕ+) (r : Fin R) (b : ℕ) :
+    ∃ n, earliest (((ruled p rules : Solution H R Payload).states w lookahead n).key w)
+      ((ruled p rules : Solution H R Payload).states w lookahead n).due
+        = some (.asked r b) := by
+  obtain ⟨m, hm⟩ := FixedDelay.progress_of_unbounded p w lookahead hhand hask
+    ((w.speaker r).asked b)
+  rw [← Solution.eventTime_forget w Payload.plain lookahead (ruled_sendsMore p rules) m] at hm
+  obtain ⟨n, -, -, h2⟩ := Solution.exists_asked_step w (ruled p rules) lookahead
+    (Solution.lt_askedNext (ruled p rules) w lookahead hm)
+  exact ⟨n, h2⟩
+
+/-- **Every handover is handled**, in a world whose capture device hands
+over blocks without end and whose playback devices request blocks without
+end. -/
+theorem ruled_handover_step (hhand : ∀ T, ∃ b, T < w.source.handed b)
+    (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b) (lookahead : ℕ+) (b : ℕ) :
+    ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
+      = some (w.sender, w.source.handed b,
+        .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)) := by
+  obtain ⟨n, hn⟩ := FixedDelay.progress_of_unbounded p w lookahead hhand hask
+    (w.source.handed b)
+  rw [← Solution.eventTime_forget w Payload.plain lookahead (ruled_sendsMore p rules) n] at hn
+  obtain ⟨i, -, -, hE⟩ := Solution.exists_handed_step w (ruled p rules) lookahead
+    (Solution.lt_handedNext w (ruled p rules) lookahead hn)
+  exact ⟨i, Solution.handled_of_handed _ w lookahead hE⟩
 
 end Unisono.Solutions.Controller

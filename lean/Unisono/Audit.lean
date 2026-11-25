@@ -52,6 +52,8 @@ public import Unisono.Solutions.Controller.Ruled
 public import Unisono.Solutions.Controller.Knots
 public import Unisono.Solutions.Controller.Envelope
 public import Unisono.Solutions.Controller.Timing
+public import Unisono.Solutions.Controller.KnotLevel
+public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -113,6 +115,7 @@ public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeClockMean
 public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
+public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2473,6 +2476,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.lintegral_steadyBound_le
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.handed_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.handed_unbounded
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.asked_unbounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.asked_unbounded
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
@@ -4652,6 +4663,118 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.timed_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_chosen
+
+/-- info: 'Unisono.Solutions.Controller.ruled_request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_request_step
+
+/-- info: 'Unisono.Solutions.Controller.ruled_handover_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_handover_step
+
+/-- info: 'Unisono.Solutions.Controller.slopeLimit_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.slopeLimit_nonneg
+
+/-- info: 'Unisono.Solutions.Controller.abs_knotSlope_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.abs_knotSlope_le
+
+/-- info: 'Unisono.Solutions.Controller.knotSlope_between' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotSlope_between
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelState_concat' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelState_concat
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelStep_level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelStep_level
+
+/-- info: 'Unisono.Solutions.Controller.foldl_knotLevelStep_level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.foldl_knotLevelStep_level
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelState_append_level' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelState_append_level
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelState_knot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelState_knot
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelStep_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelStep_mem
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelState_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelState_mem
+
+/-- info: 'Unisono.Solutions.Controller.knotLevelState_aim' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotLevelState_aim
+
+/-- info: 'Unisono.Solutions.Controller.handoverView_dropLast' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.handoverView_dropLast
+
+/-- info: 'Unisono.Solutions.Controller.announcedAt_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.announcedAt_eq
+
+/-- info: 'Unisono.Solutions.Controller.announcedAt_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.announcedAt_succ
+
+/-- info: 'Unisono.Solutions.Controller.abs_announcedAt_slope_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.abs_announcedAt_slope_le
+
+/-- info: 'Unisono.Solutions.Controller.knotPeriod_add_slope_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotPeriod_add_slope_pos
+
+/-- info: 'Unisono.Solutions.Controller.announcedAt_fst_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.announcedAt_fst_mem
+
+/-- info: 'Unisono.Solutions.Controller.announced_eq_announcedAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.announced_eq_announcedAt
+
+/-- info: 'Unisono.Solutions.Controller.dueEdge_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueEdge_succ
+
+/-- info: 'Unisono.Solutions.Controller.dueSlope_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueSlope_pos
+
+/-- info: 'Unisono.Solutions.Controller.dueEdge_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueEdge_strictMono
+
+/-- info: 'Unisono.Solutions.Controller.runHeader_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.runHeader_eq
+
+/-- info: 'Unisono.Solutions.Controller.runHeader_due' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.runHeader_due
+
+/-- info: 'Unisono.Solutions.Controller.covers_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.covers_iff
+
+/-- info: 'Unisono.Solutions.Controller.covers_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.covers_unique
+
+/-- info: 'Unisono.Solutions.Controller.dueOf_eq_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.dueOf_eq_of_mem
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -169,16 +169,19 @@ theorem Solution.followed_progress (u J : ℝ) {r : Fin R}
 /-- **The missed samples of a speaker of a solution with the follower.** Let
 `0 ≤ u < 1 ≤ J`, and let the run of `σ` handle every request of the device
 of speaker `r`. The missed samples counted at the speaker's output samples
-before `K` are at most `1 + 2 * J + 2 * u` times the number of those output
-samples that play nothing, plus twice the sum of the excesses of the steps
-of the filled-in target before `K`. -/
+before `K` are at most `1 + u` times the number of those output samples
+that play nothing, plus `2 * J` times the number of discontinuities before
+`K`, plus twice the sum of the excesses of the steps of the filled-in
+target before `K`. -/
 theorem Solution.followed_sum_missedAt_le {u J : ℝ} (hu : 0 ≤ u) (hu1 : u < 1) (hJ : 1 ≤ J)
     {r : Fin R}
     (hprog : ∀ b, ∃ n, earliest ((σ.states w lookahead n).key w)
       (σ.states w lookahead n).due = some (.asked r b)) (K : ℕ) :
     ∑ k ∈ Finset.range K, (missedAt ((σ.followed u J).plays w lookahead r) k : ℝ)
-      ≤ (1 + 2 * J + 2 * u)
+      ≤ (1 + u)
           * ∑ k ∈ Finset.range K, (missingAt ((σ.followed u J).plays w lookahead r) k : ℝ)
+        + 2 * J * ∑ k ∈ Finset.range K,
+            (discontinuityAt ((σ.followed u J).plays w lookahead r) k : ℝ)
         + 2 * ∑ i ∈ Finset.range K,
             stepExcess u J (heldTarget (σ.chosen w lookahead r)) i :=
   (σ.followed_follows w lookahead u J hprog).sum_missedAt_le hu hu1 hJ

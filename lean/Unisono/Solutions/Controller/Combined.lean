@@ -6,6 +6,7 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 module
 public import Unisono.Solutions.Controller.Needs
 public import Unisono.Solutions.Controller.Timing
+public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Spec.Follower
 
 /-!
@@ -28,8 +29,11 @@ the block size of the playback devices, and its own settings.
 * **Needs.** Each host reports, in its clock queries, the largest need of
   the blocks that arrived since its last answered query (`timedNeed`).
 * **The level.** The sender steps the level against the reported needs and
-  announces a level that is continuous from block to block
-  (`steppedLevel`).
+  announces a level that is continuous from block to block. Within a block
+  the level changes, from one frame to the next, by at most the share
+  `share` of the block's time from one frame to the next, so that the
+  schedule on which positions are due advances in every block of every
+  world (`knotLevel`, `dueSlope_pos`).
 * **Playback.** A speaker aims at the position that is due by the sender's
   schedule and its host's estimates, and follows it within the step bound
   `u`, with jumps beyond `J` frames (`Solution.followed`).
@@ -78,26 +82,29 @@ theorem isStar (clockEst : ClockEstimator) (deviceEst : DeviceEstimator)
   exact h1
 
 /-- **The combined solution**: the controller with the timing rules for the
-settings `t`, the level rule that steps against the needs (`steppedLevel q`),
-hosts that report the needs that they measure (`timedNeed t`), and playback
-that follows the position that is due within the step bound `u`, with jumps
-beyond `J` frames. -/
-def combined (t : TimingSettings) (q : LevelSettings) (u J : ℝ) : Solution H R Payload :=
-  (ruled p (timedRules p.sender t (steppedLevel q (timedNeed t)))).followed u J
+settings `t`, the level rule that steps against the needs with the slope
+limited to the share `share` of a block's time from one frame to the next
+(`knotLevel q share`), hosts that report the needs that they measure
+(`timedNeed t`), and playback that follows the position that is due within
+the step bound `u`, with jumps beyond `J` frames. -/
+def combined (t : TimingSettings) (q : LevelSettings) (share u J : ℝ) :
+    Solution H R Payload :=
+  (ruled p (timedRules p.sender t
+    (knotLevel q share (1 / t.rate) (timedNeed t)))).followed u J
 
 /-- The hosts of the combined solution exchange messages only with the
 sender. -/
-theorem combined_isStar (t : TimingSettings) (q : LevelSettings) (u J : ℝ) :
-    (combined p t q u J : Solution H R Payload).IsStar p.sender :=
+theorem combined_isStar (t : TimingSettings) (q : LevelSettings) (share u J : ℝ) :
+    (combined p t q share u J : Solution H R Payload).IsStar p.sender :=
   Solution.stepped_isStar _ _ (ruled_isStar p _)
 
 /-- **The combined solution keeps the step bound in every world**, for
 `u ≥ 0` and `J ≥ 1`: in every step of continuous playback its position
 advances by one frame per output sample within `u`. Nothing is assumed
 about the world. -/
-theorem combined_withinStep (t : TimingSettings) (q : LevelSettings) {u J : ℝ} (hu : 0 ≤ u)
-    (hJ : 1 ≤ J) (w : World H R) (lookahead : ℕ+) :
-    (combined p t q u J : Solution H R Payload).WithinStep w lookahead u :=
+theorem combined_withinStep (t : TimingSettings) (q : LevelSettings) (share : ℝ) {u J : ℝ}
+    (hu : 0 ≤ u) (hJ : 1 ≤ J) (w : World H R) (lookahead : ℕ+) :
+    (combined p t q share u J : Solution H R Payload).WithinStep w lookahead u :=
   Solution.followed_withinStep _ hu hJ w lookahead
 
 end Unisono.Solutions.Controller

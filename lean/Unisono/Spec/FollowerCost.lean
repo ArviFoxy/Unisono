@@ -35,9 +35,10 @@ For `0 ≤ u < 1 ≤ J`:
 * `Follows.step_le`: from one output sample to the next, the follower
   advances by one frame within `u` plus the excess of the target's step.
 * `Follows.sum_missedAt_le`: **the missed samples** counted at the output
-  samples before `K` are at most `1 + 2 * J + 2 * u` times the number of
-  those output samples that play nothing, plus twice the sum of the
-  excesses of the target's steps before `K`.
+  samples before `K` are at most `1 + u` times the number of those output
+  samples that play nothing, plus `2 * J` times the number of
+  discontinuities before `K`, plus twice the sum of the excesses of the
+  target's steps before `K`.
 * `Follows.sum_discontinuityAt_le`: **the discontinuities** counted at the
   output samples before `K` are at most the number of output samples up to
   `K` that play nothing, plus the sum of the excesses of the target's steps
@@ -187,18 +188,23 @@ theorem missedAt_of_lastPlayed_none {plays : ℕ → Option ℝ} {K : ℕ} {y : 
     exact absurd hs (by simp)
   simp [missedAt, hy, hno]
 
-/-- **The missed samples of one output sample that plays the source.** They
-are at most `2 * J + 2 * u` times the number of output samples just before
-it that play nothing, plus twice the sum of the excesses of the target's
-steps since the last output sample that played the source. -/
+/-- **The missed samples of one output sample that plays the source.** Let
+`t` be the number of output samples just before it that play nothing. The
+missed samples counted at it are at most `u * t`, plus `2 * J` times the
+number of discontinuities since the last output sample that played the
+source, plus twice the sum of the excesses of the target's steps since
+then. -/
 theorem Follows.missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1) (hJ : 1 ≤ J)
     (hp : ∀ k, p k = none ∨ p k = c k) {K : ℕ} {y : ℝ} (hy : p K = some y) :
-    (missedAt p K : ℝ) ≤ (2 * J + 2 * u) * trailing p K
+    (missedAt p K : ℝ) ≤ u * trailing p K
+      + 2 * J * ∑ k ∈ Finset.Ico (K - 1 - trailing p K) K, (discontinuityAt p k : ℝ)
       + 2 * ∑ i ∈ Finset.Ico (K - 1 - trailing p K) K, stepExcess u J ξ i := by
   have hJ0 : 0 ≤ J := by linarith
   have huJ : u ≤ J := by linarith
   have hsum0 : 0 ≤ ∑ i ∈ Finset.Ico (K - 1 - trailing p K) K, stepExcess u J ξ i :=
     Finset.sum_nonneg fun i _ => stepExcess_nonneg hJ0 ξ i
+  have hdisc0 : 0 ≤ ∑ k ∈ Finset.Ico (K - 1 - trailing p K) K, (discontinuityAt p k : ℝ) :=
+    Finset.sum_nonneg fun i _ => Nat.cast_nonneg _
   have ht0 : (0 : ℝ) ≤ trailing p K := Nat.cast_nonneg _
   have hcK : c K = some y := by
     rcases hp K with hn | hc
@@ -221,7 +227,7 @@ theorem Follows.missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1
     have hmiss := missedAt_le_abs hy hlast
     rcases Nat.eq_zero_or_pos (trailing p K) with ht | ht
     · -- The output sample just before played the source.
-      rw [ht] at hcj hmiss ⊢
+      rw [ht] at hcj hmiss hdisc0 ⊢
       have hK : K - 1 - 0 + 1 = K := by omega
       have hcK' : c (K - 1 - 0 + 1) = some y := by
         rw [hK]
@@ -231,7 +237,8 @@ theorem Follows.missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1
         ext i
         simp only [Finset.mem_Ico, Finset.mem_singleton]
         omega
-      rw [hIco, Finset.sum_singleton]
+      rw [hIco, Finset.sum_singleton] at hdisc0 ⊢
+      rw [Finset.sum_singleton]
       simp only [Nat.cast_zero, zero_add, mul_zero] at hmiss ⊢
       rcases stepExcess_eq_zero_or (u := u) (J := J) ξ (K - 1 - 0) with he | he
       · rw [he] at hstep ⊢
@@ -239,12 +246,24 @@ theorem Follows.missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1
         have hzero : missedAt p K = 0 := by
           have : missedAt p K < 1 := by exact_mod_cast hlt
           omega
-        rw [hzero]
-        simp
-      · linarith
+        rw [hzero, Nat.cast_zero]
+        nlinarith
+      · nlinarith
     · -- Output samples in between played nothing.
-      have ht1 : (1 : ℝ) ≤ trailing p K := by exact_mod_cast ht
       have hle : K - 1 - trailing p K ≤ K := by omega
+      have hnext : p (K - 1 - trailing p K + 1) = none :=
+        eq_none_of_trailing (plays := p) (K := K) (by omega) (by omega)
+      have hbreak : discontinuityAt p (K - 1 - trailing p K) = 1 :=
+        discontinuityAt_of_some_none hj hnext
+      have hone : (1 : ℝ)
+          ≤ ∑ k ∈ Finset.Ico (K - 1 - trailing p K) K, (discontinuityAt p k : ℝ) := by
+        have hmem : K - 1 - trailing p K ∈ Finset.Ico (K - 1 - trailing p K) K := by
+          rw [Finset.mem_Ico]
+          omega
+        have hsingle := Finset.single_le_sum
+          (f := fun k => (discontinuityAt p k : ℝ)) (fun i _ => Nat.cast_nonneg _) hmem
+        simp only [hbreak, Nat.cast_one] at hsingle
+        exact hsingle
       have hd1 := h.dist_le huJ hcK
       have hd2 := h.dist_le huJ hcj
       have htel := abs_sub_le_sum_steps ξ hle
@@ -281,18 +300,19 @@ theorem Follows.missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1
 
 /-- **The missed samples of playback that follows a target.** For
 `0 ≤ u < 1 ≤ J`, the missed samples counted at the output samples before
-`K` are at most `1 + 2 * J + 2 * u` times the number of those output
-samples that play nothing, plus twice the sum of the excesses of the
-target's steps before `K`. -/
+`K` are at most `1 + u` times the number of those output samples that play
+nothing, plus `2 * J` times the number of discontinuities before `K`, plus
+twice the sum of the excesses of the target's steps before `K`. -/
 theorem Follows.sum_missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u < 1)
     (hJ : 1 ≤ J) (hp : ∀ k, p k = none ∨ p k = c k) (K : ℕ) :
     ∑ k ∈ Finset.range K, (missedAt p k : ℝ)
-      ≤ (1 + 2 * J + 2 * u) * ∑ k ∈ Finset.range K, (missingAt p k : ℝ)
+      ≤ (1 + u) * ∑ k ∈ Finset.range K, (missingAt p k : ℝ)
+        + 2 * J * ∑ k ∈ Finset.range K, (discontinuityAt p k : ℝ)
         + 2 * ∑ i ∈ Finset.range K, stepExcess u J ξ i := by
   have hJ0 : 0 ≤ J := by linarith
   have hinv : ∀ K, ∑ k ∈ Finset.range K, (missedAt p k : ℝ)
-      ≤ (1 + 2 * J + 2 * u) * ∑ k ∈ Finset.range K, (missingAt p k : ℝ)
-        - (2 * J + 2 * u) * trailing p K
+      ≤ (1 + u) * ∑ k ∈ Finset.range K, (missingAt p k : ℝ) - u * trailing p K
+        + 2 * J * ∑ k ∈ Finset.range (K - 1 - trailing p K), (discontinuityAt p k : ℝ)
         + 2 * ∑ i ∈ Finset.range (K - 1 - trailing p K), stepExcess u J ξ i := by
     intro K
     induction K with
@@ -314,19 +334,25 @@ theorem Follows.sum_missedAt_le (h : Follows u J ξ X c) (hu : 0 ≤ u) (hu1 : u
         have hle : K - 1 - trailing p K ≤ K := by omega
         have hsplit := Finset.sum_Ico_consecutive (fun i => stepExcess u J ξ i)
           (Nat.zero_le (K - 1 - trailing p K)) hle
-        rw [← Finset.range_eq_Ico, ← Finset.range_eq_Ico] at hsplit
+        have hsplit' := Finset.sum_Ico_consecutive (fun k => (discontinuityAt p k : ℝ))
+          (Nat.zero_le (K - 1 - trailing p K)) hle
+        rw [← Finset.range_eq_Ico, ← Finset.range_eq_Ico] at hsplit hsplit'
         rw [e2, trailing_succ_some hK, e3]
         push_cast
-        linarith
+        nlinarith
   have h1 := hinv K
-  have h2 : (0 : ℝ) ≤ (2 * J + 2 * u) * trailing p K :=
-    mul_nonneg (by linarith) (Nat.cast_nonneg _)
+  have h2 : (0 : ℝ) ≤ u * trailing p K := mul_nonneg hu (Nat.cast_nonneg _)
   have h3 : ∑ i ∈ Finset.range (K - 1 - trailing p K), stepExcess u J ξ i
       ≤ ∑ i ∈ Finset.range K, stepExcess u J ξ i :=
     Finset.sum_le_sum_of_subset_of_nonneg
       (Finset.range_subset_range.mpr (by omega))
       fun i _ _ => stepExcess_nonneg hJ0 ξ i
-  linarith
+  have h4 : ∑ k ∈ Finset.range (K - 1 - trailing p K), (discontinuityAt p k : ℝ)
+      ≤ ∑ k ∈ Finset.range K, (discontinuityAt p k : ℝ) :=
+    Finset.sum_le_sum_of_subset_of_nonneg
+      (Finset.range_subset_range.mpr (by omega))
+      fun i _ _ => Nat.cast_nonneg _
+  nlinarith
 
 /-- **The discontinuity of one output sample.** It is at most one if the
 next output sample plays nothing, plus the excess of the target's step. -/

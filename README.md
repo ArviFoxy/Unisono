@@ -147,6 +147,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     the capture schedule from the sender's readings at the handovers, the
     time at which an output sample leaves from the host's readings at the
     requests, and the sender's clock from the arrivals of the blocks. Its
+    level changes within a block by at most a share of the block's time
+    from one frame to the next, so the schedule on which positions are due
+    is continuous and advances in every block of every world
+    (`Unisono.Solutions.Controller.dueSlope_pos`, `dueEdge_succ` in
+    `lean/Unisono/Solutions/Controller/DueSchedule.lean`). Its
     playback follows the position that is due within the step bound. In
     every world its hosts exchange messages only with the sender, it keeps
     the step bound, and the position that a host chooses satisfies an
