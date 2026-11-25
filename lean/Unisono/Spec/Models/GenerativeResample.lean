@@ -477,6 +477,41 @@ theorem Prior.ae_linkOutside (hD : m.Prior f P D) (i₀ j₀ : H) {a b : ℝ}
   · exact ae_iff.mpr h0
   · exact absurd h0 hE.ne'
 
+/-- **The playback in the world without the pauses of a period, for a given
+description.** Let the set `S` and the function `G` describe what speaker
+`r` plays at output sample `k` in almost every outcome of every random
+world of the member, as in `measurablePlays`. Then they also describe it in
+the worlds built from the draw without the paused time of a link that begins
+within a period from `a` to `b` with `0 ≤ a ≤ b`, for almost every
+outcome. -/
+theorem ae_plays_linkOutside_of [Countable H] {Msg : Type} {τ : Solution H R Msg}
+    {lookahead : ℕ+} {r : Fin R} {k : ℕ} {S : Set (Draw H R)} {G : Draw H R → ℝ}
+    (hSG : ∀ (Ω' : Type) [MeasurableSpace Ω'] (P' : Measure Ω') (D' : Ω' → Draw H R)
+      (world' : Ω' → World H R), m.Prior f P' D' → (∀ ω, m.Builds f (D' ω) (world' ω)) →
+        ∀ᵐ ω ∂P', ∀ x : ℝ,
+          τ.plays (world' ω) lookahead r k = some x ↔ D' ω ∈ S ∧ G (D' ω) = x)
+    (hD : m.Prior f P D) {world : Ω → World H R} (hB : ∀ ω, m.Builds f (D ω) (world ω))
+    (i₀ j₀ : H) {a b : ℝ} (ha : 0 ≤ a) (hab : a ≤ b) {worldOut : Ω → World H R}
+    (hOut : ∀ ω, m.Builds f ((D ω).linkOutside i₀ j₀ a b) (worldOut ω)) :
+    ∀ᵐ ω ∂P, ∀ x : ℝ, τ.plays (worldOut ω) lookahead r k = some x
+      ↔ (D ω).linkOutside i₀ j₀ a b ∈ S ∧ G ((D ω).linkOutside i₀ j₀ a b) = x := by
+  have := hD.prob
+  have hex := fun ω : Ω × Ω => hD.exists_resample hB i₀ j₀ hab ω
+  have h2 := hSG (Ω × Ω) (P.prod P) (resample D i₀ j₀ a b)
+    (fun ω => Classical.choose (hex ω)) (hD.prior_resample i₀ j₀ ha hab)
+    (fun ω => Classical.choose_spec (hex ω))
+  have h3 : ∀ᵐ ω ∂(P.prod P), (fun d : Draw H R => ∀ w : World H R, m.Builds f d w →
+      ∀ x : ℝ, τ.plays w lookahead r k = some x ↔ d ∈ S ∧ G d = x)
+        (resample D i₀ j₀ a b ω) := by
+    filter_upwards [h2] with ω hω w hw
+    rw [hw.unique (Classical.choose_spec (hex ω))]
+    exact hω
+  have h4 := Prior.ae_linkOutside
+    (p := fun d : Draw H R => ∀ w : World H R, m.Builds f d w →
+      ∀ x : ℝ, τ.plays w lookahead r k = some x ↔ d ∈ S ∧ G d = x) hD i₀ j₀ hab h3
+  filter_upwards [h4] with ω hω
+  exact hω (worldOut ω) (hOut ω)
+
 /-- **The playback in the world without the pauses of a period is the same
 measurable function of the draw.** Take a solution whose playback is a
 measurable function of what is drawn (`measurablePlays`), a random world of
@@ -500,22 +535,7 @@ theorem ae_plays_linkOutside [Countable H] {Msg : Type} {τ : Solution H R Msg}
       ∀ᵐ ω ∂P, ∀ x : ℝ, τ.plays (worldOut ω) lookahead r k = some x
         ↔ (D ω).linkOutside i₀ j₀ a b ∈ S ∧ G ((D ω).linkOutside i₀ j₀ a b) = x := by
   obtain ⟨S, G, hS, hG, hSG⟩ := hτ r k
-  refine ⟨S, G, hS, hG, hSG Ω P D world hD hB, ?_⟩
-  have := hD.prob
-  have hex := fun ω : Ω × Ω => hD.exists_resample hB i₀ j₀ hab ω
-  have h2 := hSG (Ω × Ω) (P.prod P) (resample D i₀ j₀ a b)
-    (fun ω => Classical.choose (hex ω)) (hD.prior_resample i₀ j₀ ha hab)
-    (fun ω => Classical.choose_spec (hex ω))
-  have h3 : ∀ᵐ ω ∂(P.prod P), (fun d : Draw H R => ∀ w : World H R, m.Builds f d w →
-      ∀ x : ℝ, τ.plays w lookahead r k = some x ↔ d ∈ S ∧ G d = x)
-        (resample D i₀ j₀ a b ω) := by
-    filter_upwards [h2] with ω hω w hw
-    rw [hw.unique (Classical.choose_spec (hex ω))]
-    exact hω
-  have h4 := Prior.ae_linkOutside
-    (p := fun d : Draw H R => ∀ w : World H R, m.Builds f d w →
-      ∀ x : ℝ, τ.plays w lookahead r k = some x ↔ d ∈ S ∧ G d = x) hD i₀ j₀ hab h3
-  filter_upwards [h4] with ω hω
-  exact hω (worldOut ω) (hOut ω)
+  exact ⟨S, G, hS, hG, hSG Ω P D world hD hB,
+    ae_plays_linkOutside_of hSG hD hB i₀ j₀ ha hab hOut⟩
 
 end Unisono.Spec.GenerativeWorld

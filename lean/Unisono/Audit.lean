@@ -94,6 +94,7 @@ public import Unisono.Spec.Models.GenerativeHorizon
 public import Unisono.Spec.Models.GenerativeLongRun
 public import Unisono.Spec.Models.GenerativeLimit
 public import Unisono.Spec.Models.GenerativeFrameBound
+public import Unisono.Spec.Models.GenerativeClockMean
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2114,6 +2115,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ae_plays_linkOutside
 
+/-- info: 'Unisono.Spec.GenerativeWorld.ae_plays_linkOutside_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ae_plays_linkOutside_of
+
 /-- info: 'Unisono.Spec.GenerativeWorld.ofReal_mul_min_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ofReal_mul_min_le
@@ -2301,6 +2306,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.limsup_cells_le_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.limsup_cells_le_cost
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellsCost_le_cellsCap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellsCost_le_cellsCap
+
+/-- info: 'Unisono.Spec.GenerativeWorld.le_fixedClockBound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.le_fixedClockBound
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.value_le_lintegral_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.value_le_lintegral_cost
+
+/-- info: 'Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
