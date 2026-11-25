@@ -190,6 +190,144 @@ theorem drawWorld_stall_le_room {hex : ∀ h, h = m.sender ∨ ∃ r, m.host r =
   exact drawWorld_stall_le_of_pause hd hd' h σ hstar lookahead hr hs0 hs1 hslow hjump hK hKβ hb
     (by linarith) hβ
 
+/-- **The latency that one playback block accrues, against the room before
+the next.** In the setting of `ConstantRates.room_lt_latency`, let `G` be
+`leastLatency` plus the time in which the capture device captures as many
+frames as the room before block `b + 1` holds, minus two periods of the
+playback device and `blockSize` times the positive part of one period of the
+playback device less the time in which the capture device captures `s`
+frames. Let `Gcap ≥ 0` be any cap. Then the latencies of the frames that the
+steps between two output samples of block `b` pass on new ground sum to at
+least `s * (blockSize - 1)` times the smaller of `G` and `Gcap` (zero if `G`
+is negative), minus `(1 + 2 s) * Gcap` for each of those steps that does not
+break new ground, minus `(1 + s) * Gcap`, and minus `s * (blockSize - 1)`
+times the time in which the capture device captures `s` frames for each step
+of the block that is not continuous and one frame for each missed sample
+counted in the block. -/
+theorem ConstantRates.le_sum_latencyAt (hS : ConstantRates m f d w) (σ : Solution H R Msg)
+    (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R} (hr : m.host r ≠ m.sender)
+    {s : ℝ} (hs0 : 0 ≤ s)
+    (hslow : ∀ k x y, σ.plays w lookahead r k = some x →
+      σ.plays w lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
+    {b : ℕ} {xLast : ℝ}
+    (hlast : lastPlayed (σ.plays w lookahead r) ((b + 1) * m.blockSize) = some xLast)
+    {Gcap : ℝ} (hcap : 0 ≤ Gcap) :
+    ENNReal.ofReal
+        (s * ((m.blockSize : ℝ) - 1)
+            * min (max (leastLatency m f d lookahead r
+                + room m f d w lookahead (σ.plays w lookahead r) r (b + 1)
+                  / (m.rate * Real.exp (d.deviceLogRate none))
+                - 2 / (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
+                - (m.blockSize : ℝ)
+                  * max (1 / (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
+                    - s / (m.rate * Real.exp (d.deviceLogRate none))) 0) 0) Gcap
+          - ((1 + 2 * s) * ((m.blockSize : ℝ) - 1
+                - newGroundCount (σ.plays w lookahead r) (b * m.blockSize)
+                    ((b + 1) * m.blockSize - 1))
+              + (1 + s)) * Gcap
+          - s * ((m.blockSize : ℝ) - 1)
+            * ((s * (((m.blockSize : ℝ) - 1)
+                  - ((continuousBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize - 1) : ℝ)
+                    - continuousBefore (σ.plays w lookahead r) (b * m.blockSize)))
+                + ((missedBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize) : ℝ)
+                  - missedBefore (σ.plays w lookahead r) (b * m.blockSize)))
+              / (m.rate * Real.exp (d.deviceLogRate none))))
+      ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize) ((b + 1) * m.blockSize - 1),
+          w.latencyAt (σ.plays w lookahead) r n := by
+  have hc0 : 0 < m.rate * Real.exp (d.deviceLogRate none) :=
+    mul_pos m.rate_pos (Real.exp_pos _)
+  have hBpos := m.blockSize_pos
+  -- The quantities of the block.
+  obtain ⟨G, hG⟩ : ∃ G : ℝ, G = leastLatency m f d lookahead r
+      + room m f d w lookahead (σ.plays w lookahead r) r (b + 1)
+        / (m.rate * Real.exp (d.deviceLogRate none))
+      - 2 / (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
+      - (m.blockSize : ℝ)
+        * max (1 / (m.rate * Real.exp (d.deviceLogRate (some (m.device r))))
+          - s / (m.rate * Real.exp (d.deviceLogRate none))) 0 := ⟨_, rfl⟩
+  obtain ⟨pen, hpen⟩ : ∃ pen : ℝ, pen = (s * (((m.blockSize : ℝ) - 1)
+        - ((continuousBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize - 1) : ℝ)
+          - continuousBefore (σ.plays w lookahead r) (b * m.blockSize)))
+      + ((missedBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize) : ℝ)
+        - missedBefore (σ.plays w lookahead r) (b * m.blockSize)))
+      / (m.rate * Real.exp (d.deviceLogRate none)) := ⟨_, rfl⟩
+  rw [← hG, ← hpen]
+  have hle : b * m.blockSize ≤ (b + 1) * m.blockSize - 1 := by
+    have e : (b + 1) * m.blockSize = b * m.blockSize + m.blockSize := by ring
+    omega
+  have hsize : (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) - ((b * m.blockSize : ℕ) : ℝ)
+      = (m.blockSize : ℝ) - 1 := by
+    have e : (b + 1) * m.blockSize - 1 + 1 = b * m.blockSize + m.blockSize := by
+      have e' : (b + 1) * m.blockSize = b * m.blockSize + m.blockSize := by ring
+      omega
+    have e2 : (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) + 1
+        = ((b * m.blockSize : ℕ) : ℝ) + (m.blockSize : ℝ) := by exact_mod_cast e
+    linarith
+  -- The losses are not negative.
+  have hcont := continuousBefore_le_add (plays := σ.plays w lookahead r) hle
+  have hcont' : (continuousBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize - 1) : ℝ)
+      - continuousBefore (σ.plays w lookahead r) (b * m.blockSize)
+      ≤ (m.blockSize : ℝ) - 1 := by
+    have h' : (continuousBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize - 1) : ℝ)
+        ≤ continuousBefore (σ.plays w lookahead r) (b * m.blockSize)
+          + (((b + 1) * m.blockSize - 1 - b * m.blockSize : ℕ) : ℝ) := by exact_mod_cast hcont
+    rw [Nat.cast_sub hle, hsize] at h'
+    linarith
+  have hmiss : (missedBefore (σ.plays w lookahead r) (b * m.blockSize) : ℝ)
+      ≤ missedBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize) := by
+    have h := missedBefore_mono (σ.plays w lookahead r)
+      (show b * m.blockSize ≤ (b + 1) * m.blockSize by
+        exact Nat.mul_le_mul_right _ (Nat.le_succ b))
+    exact_mod_cast h
+  have hpen0 : 0 ≤ pen := by
+    rw [hpen]
+    exact div_nonneg (add_nonneg (mul_nonneg hs0 (by linarith)) (by linarith)) hc0.le
+  -- The smaller of `G` and the cap.
+  have hĜ0 : 0 ≤ min (max G 0) Gcap := le_min (le_max_right _ _) hcap
+  have hĜcap : min (max G 0) Gcap ≤ Gcap := min_le_right _ _
+  have hĜg : min (max G 0) Gcap - pen ≤ max (G - pen) 0 := by
+    have h1 : min (max G 0) Gcap ≤ max G 0 := min_le_left _ _
+    rcases le_total 0 G with hG0 | hG0
+    · have hmax : max G 0 = G := max_eq_left hG0
+      have h2 : min (max G 0) Gcap - pen ≤ G - pen := by linarith
+      exact h2.trans (le_max_left _ _)
+    · have hmax : max G 0 = 0 := max_eq_right hG0
+      have h2 : min (max G 0) Gcap - pen ≤ 0 := by linarith
+      exact h2.trans (le_max_right _ _)
+  have hcount := le_card_newFrames_mul hs0 hslow hle hĜ0 hĜcap hpen0 hĜg
+  rw [hsize] at hcount
+  -- Each frame is worth at least `max (G - pen) 0`.
+  have hframe : ∀ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
+      ((b + 1) * m.blockSize - 1),
+      ENNReal.ofReal (max (G - pen) 0) ≤ w.latencyAt (σ.plays w lookahead) r n := by
+    intro n hn
+    obtain ⟨l, hl, hlt⟩ := hS.room_lt_latency σ hstar lookahead hr hs0 hslow hlast hn
+    rw [← hG, ← hpen] at hlt
+    unfold World.latencyAt
+    rw [hl]
+    rcases le_total (G - pen) 0 with hneg | hpos
+    · rw [max_eq_right hneg, ENNReal.ofReal_zero]
+      exact bot_le
+    · rw [max_eq_left hpos]
+      exact ENNReal.ofReal_le_ofReal hlt.le
+  calc ENNReal.ofReal
+        (s * ((m.blockSize : ℝ) - 1) * min (max G 0) Gcap
+          - ((1 + 2 * s) * ((m.blockSize : ℝ) - 1
+                - newGroundCount (σ.plays w lookahead r) (b * m.blockSize)
+                    ((b + 1) * m.blockSize - 1))
+              + (1 + s)) * Gcap
+          - s * ((m.blockSize : ℝ) - 1) * pen)
+      ≤ ENNReal.ofReal (((newFrames (σ.plays w lookahead r) (b * m.blockSize)
+          ((b + 1) * m.blockSize - 1)).card : ℝ) * max (G - pen) 0) :=
+        ENNReal.ofReal_le_ofReal hcount
+    _ = ∑ _n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
+          ((b + 1) * m.blockSize - 1), ENNReal.ofReal (max (G - pen) 0) := by
+        rw [Finset.sum_const, nsmul_eq_mul, ENNReal.ofReal_mul (Nat.cast_nonneg _),
+          ENNReal.ofReal_natCast]
+    _ ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
+          ((b + 1) * m.blockSize - 1), w.latencyAt (σ.plays w lookahead) r n :=
+        Finset.sum_le_sum hframe
+
 end GenerativeWorld
 
 end Unisono.Spec

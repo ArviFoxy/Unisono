@@ -609,4 +609,77 @@ theorem newGroundCount_add_replay {a : ℕ} :
           replayBefore_succ_of_not fun h => hcont h.1]
         omega
 
+/-! ## A sum over the frames on new ground -/
+
+/-- The steps of a stretch that break new ground number at most the steps of
+the stretch. -/
+theorem newGroundCount_le {a : ℕ} : ∀ b, a ≤ b → newGroundCount plays a b ≤ b - a := by
+  intro b hab
+  induction b, hab using Nat.le_induction with
+  | base => rw [(newGroundCount_of_le (plays := plays) a a le_rfl).1]; omega
+  | succ b hab ih =>
+    by_cases hng : a ≤ b ∧ NewGround plays b
+    · rw [newGroundCount_succ_of hng]
+      omega
+    · rw [newGroundCount_succ_of_not hng]
+      omega
+
+/-- **What the frames on new ground are worth, with the losses spelled
+out.** Let the position advance by at least `s`, with `0 ≤ s`, in every step
+of continuous playback, and consider the steps from output sample `a` to
+output sample `b - 1`. Suppose that each frame which those steps pass on new
+ground is worth at least `max g 0`, and let `0 ≤ G ≤ Gcap` and `0 ≤ g'` be
+numbers with `G - g' ≤ max g 0`. Then the frames together are worth at least `s * G` for
+each step, minus `(1 + 2 s) * Gcap` for each step that does not break new
+ground, minus `(1 + s) * Gcap` once, and minus `s * g'` for each step. -/
+theorem le_card_newFrames_mul {s : ℝ} (hs0 : 0 ≤ s)
+    (hslow : ∀ k x y, plays k = some x → plays (k + 1) = some y → x < y → y < x + 2 →
+      x + s ≤ y)
+    {a b : ℕ} (hab : a ≤ b) {g G Gcap g' : ℝ} (hG0 : 0 ≤ G) (hGcap : G ≤ Gcap)
+    (hg' : 0 ≤ g') (hg : G - g' ≤ max g 0) :
+    s * ((b : ℝ) - a) * G
+        - ((1 + 2 * s) * ((b : ℝ) - a - newGroundCount plays a b) + (1 + s)) * Gcap
+        - s * ((b : ℝ) - a) * g'
+      ≤ ((newFrames plays a b).card : ℝ) * max g 0 := by
+  have hcard := le_card_newFrames hs0 hslow hab
+  have hP : (newGroundCount plays a b : ℝ) ≤ (b : ℝ) - a := by
+    have h := newGroundCount_le (plays := plays) b hab
+    have h' : ((newGroundCount plays a b : ℕ) : ℝ) ≤ ((b - a : ℕ) : ℝ) := by exact_mod_cast h
+    rw [Nat.cast_sub hab] at h'
+    exact h'
+  have hba : (0 : ℝ) ≤ (b : ℝ) - a := by
+    have : (a : ℝ) ≤ b := by exact_mod_cast hab
+    linarith
+  have hc0 : (0 : ℝ) ≤ ((newFrames plays a b).card : ℝ) := Nat.cast_nonneg _
+  have hM0 : (0 : ℝ) ≤ max g 0 := le_max_right _ _
+  -- The two sides of the count: what all steps would give, and what is lost.
+  obtain ⟨A, hA⟩ : ∃ A : ℝ, A = s * ((b : ℝ) - a) := ⟨_, rfl⟩
+  obtain ⟨L, hL⟩ : ∃ L : ℝ,
+      L = (1 + 2 * s) * ((b : ℝ) - a - newGroundCount plays a b) + (1 + s) := ⟨_, rfl⟩
+  have hA0 : 0 ≤ A := by
+    rw [hA]
+    exact mul_nonneg hs0 hba
+  have hL0 : 0 ≤ L := by
+    rw [hL]
+    have : (0 : ℝ) ≤ (1 + 2 * s) * ((b : ℝ) - a - newGroundCount plays a b) :=
+      mul_nonneg (by linarith) (by linarith)
+    linarith
+  have hAL : A - L ≤ ((newFrames plays a b).card : ℝ) := by
+    rw [hA, hL]
+    linarith
+  rw [← hA, ← hL]
+  rcases le_total L A with hLA | hAL'
+  · have h1 : (A - L) * (G - g') ≤ (A - L) * max g 0 :=
+      mul_le_mul_of_nonneg_left hg (by linarith)
+    have h2 : (A - L) * max g 0 ≤ ((newFrames plays a b).card : ℝ) * max g 0 :=
+      mul_le_mul_of_nonneg_right hAL hM0
+    have h3 : 0 ≤ L * (Gcap - G) := mul_nonneg hL0 (by linarith)
+    have h4 : 0 ≤ L * g' := mul_nonneg hL0 hg'
+    nlinarith
+  · have h1 : 0 ≤ ((newFrames plays a b).card : ℝ) * max g 0 := mul_nonneg hc0 hM0
+    have h2 : A * G ≤ A * Gcap := mul_le_mul_of_nonneg_left hGcap hA0
+    have h3 : A * Gcap ≤ L * Gcap := mul_le_mul_of_nonneg_right hAL' (by linarith)
+    have h4 : 0 ≤ A * g' := mul_nonneg hA0 hg'
+    linarith
+
 end Unisono.Spec
