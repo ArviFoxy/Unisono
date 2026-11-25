@@ -65,6 +65,8 @@ public import Unisono.Solutions.Controller.IdleView
 public import Unisono.Solutions.Controller.IdleExchanges
 public import Unisono.Solutions.Controller.IdleRequests
 public import Unisono.Solutions.Controller.IdleEstimate
+public import Unisono.Solutions.Controller.IdleKnots
+public import Unisono.Solutions.Controller.DuePosition
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views

@@ -68,6 +68,8 @@ public import Unisono.Solutions.Controller.IdleView
 public import Unisono.Solutions.Controller.IdleExchanges
 public import Unisono.Solutions.Controller.IdleRequests
 public import Unisono.Solutions.Controller.IdleEstimate
+public import Unisono.Solutions.Controller.IdleKnots
+public import Unisono.Solutions.Controller.DuePosition
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -5469,6 +5471,34 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.envelopeReading_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.envelopeReading_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.capture_sub_mem_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.capture_sub_mem_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.knotInput_eq_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotInput_eq_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.knot_eq_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knot_eq_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.blockCheck_of_knot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.blockCheck_of_knot
+
+/-- info: 'Unisono.Solutions.Controller.exists_dueEdge_cover' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_dueEdge_cover
+
+/-- info: 'Unisono.Solutions.Controller.duePos_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.duePos_eq
+
+/-- info: 'Unisono.Solutions.Controller.duePos_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.duePos_sub_mem
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
