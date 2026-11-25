@@ -91,6 +91,8 @@ public import Unisono.Spec.Models.GenerativeCellMean
 public import Unisono.Spec.Models.GenerativeCellPause
 public import Unisono.Spec.Models.GenerativeHorizon
 public import Unisono.Spec.Models.GenerativeLongRun
+public import Unisono.Spec.Models.GenerativeLimit
+public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall

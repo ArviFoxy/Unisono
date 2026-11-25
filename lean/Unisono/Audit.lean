@@ -92,6 +92,8 @@ public import Unisono.Spec.Models.GenerativeCellMean
 public import Unisono.Spec.Models.GenerativeCellPause
 public import Unisono.Spec.Models.GenerativeHorizon
 public import Unisono.Spec.Models.GenerativeLongRun
+public import Unisono.Spec.Models.GenerativeLimit
+public import Unisono.Spec.Models.GenerativeFrameBound
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2279,6 +2281,26 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_clear_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_clear_ge
+
+/-- info: 'Unisono.Spec.limsup_lintegral_le_of_bounded' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limsup_lintegral_le_of_bounded
+
+/-- info: 'Unisono.Spec.limsup_le_longRun' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limsup_le_longRun
+
+/-- info: 'Unisono.Spec.limsup_le_lintegral_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limsup_le_lintegral_cost
+
+/-- info: 'Unisono.Spec.GenerativeWorld.cellFloor_le_cellValue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.cellFloor_le_cellValue
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.limsup_cells_le_cost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.limsup_cells_le_cost
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
