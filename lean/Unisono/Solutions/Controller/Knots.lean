@@ -28,15 +28,17 @@ schedule therefore uses a knot for each block (`World.knot`) that always
 advances (`knotStep`). The knot of block zero is its reading. After that
 the knot of a block is its reading, unless that would advance the knot by
 less than half of the advance of the block before, or by less than half of
-the block's nominal time if that is less; then the knot advances by that
-half.
+the nominal time of one frame if that is less; then the knot advances by
+that half.
 
 * Every knot is later than the knot before (`World.knot_strictMono`), and no
   earlier than the block's reading (`World.handedReading_le_knot`). A knot
-  is at most the largest nominal time of a block after its reading
-  (`World.knot_sub_le`). It is the reading whenever the reading advances
-  enough (`World.knot_succ_eq_handedReading`), which is so while no two
-  handovers are handled close together.
+  is at most the nominal time of one frame after its reading
+  (`World.knot_sub_le`), so the knots of blocks that are handed over
+  together lie within one frame's nominal time. A knot is the reading
+  whenever the reading advances enough
+  (`World.knot_succ_eq_handedReading`), which is so while no two handovers
+  are handled close together.
 * Within block `b ≥ 1` the schedule is the line from the knot of block
   `b - 1`, at the left end, to the knot of block `b`, at the right end
   (`World.knotStart`, `World.knotPeriod`). Block zero has no knot before it;
@@ -61,8 +63,9 @@ half.
 
 All of this holds in every world. Not proved here: how far the schedule is
 from the true capture times. After a pause of the sender's host the knots
-of the blocks that were handed over together advance by little, so the
-schedule asks for their frames almost at once.
+of the blocks that were handed over together lie within one frame's nominal
+time, so the schedule asks for all of their frames at once, and playback
+that follows the schedule skips them with one jump.
 -/
 
 @[expose] public noncomputable section
@@ -88,13 +91,12 @@ the knot of the block, and by how much it advances over the knot before.
 The first knot is the reading, and its advance counts as the nominal time
 of the block. After that the knot is the reading, unless that would advance
 it by less than half of the advance before, or by less than half of the
-block's nominal time if that is less; then it advances by that half. -/
+nominal time of one frame if that is less; then it advances by that half. -/
 def knotStep (nominal : ℝ) (prev : Option (ℝ × ℝ)) (σ : ℝ) (count : ℕ) : ℝ × ℝ :=
   match prev with
   | none => (σ, count * nominal)
   | some κ =>
-      (κ.1 + max (σ - κ.1) (min κ.2 (count * nominal) / 2),
-        max (σ - κ.1) (min κ.2 (count * nominal) / 2))
+      (κ.1 + max (σ - κ.1) (min κ.2 nominal / 2), max (σ - κ.1) (min κ.2 nominal / 2))
 
 /-- A knot advances by a positive time, when the advance before was
 positive, the nominal time is positive and the block has a frame. -/
@@ -106,7 +108,7 @@ theorem knotStep_snd_pos {nominal : ℝ} (hn : 0 < nominal) {prev : Option (ℝ 
   | none => exact hcn
   | some κ =>
     have hκ := hprev κ rfl
-    exact lt_of_lt_of_le (half_pos (lt_min hκ hcn)) (le_max_right _ _)
+    exact lt_of_lt_of_le (half_pos (lt_min hκ hn)) (le_max_right _ _)
 
 /-- A knot is no earlier than the reading of its handover. -/
 theorem le_knotStep_fst (nominal : ℝ) (prev : Option (ℝ × ℝ)) (σ : ℝ) (count : ℕ) :
@@ -114,8 +116,8 @@ theorem le_knotStep_fst (nominal : ℝ) (prev : Option (ℝ × ℝ)) (σ : ℝ) 
   cases prev with
   | none => exact le_rfl
   | some κ =>
-    have h := le_max_left (σ - κ.1) (min κ.2 (count * nominal) / 2)
-    show σ ≤ κ.1 + max (σ - κ.1) (min κ.2 (count * nominal) / 2)
+    have h := le_max_left (σ - κ.1) (min κ.2 nominal / 2)
+    show σ ≤ κ.1 + max (σ - κ.1) (min κ.2 nominal / 2)
     linarith
 
 /-- The knot of capture block `b` and its advance over the knot of the
@@ -180,46 +182,41 @@ theorem World.handedReading_le_knot (w : World H R) (nominal : ℝ) (b : ℕ) :
 
 /-- **The knot of a block is the reading at its handover when the reading
 advances enough**: by at least half of the advance of the knot before, or
-of the block's nominal time if that is less. -/
+of the nominal time of one frame if that is less. -/
 theorem World.knot_succ_eq_handedReading (w : World H R) (nominal : ℝ) {b : ℕ}
-    (h : min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) / 2
+    (h : min (w.knotInc nominal b) nominal / 2
       ≤ w.handedReading (b + 1) - w.knot nominal b) :
     w.knot nominal (b + 1) = w.handedReading (b + 1) := by
   show w.knot nominal b + max (w.handedReading (b + 1) - w.knot nominal b)
-      (min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) / 2) = _
+      (min (w.knotInc nominal b) nominal / 2) = _
   rw [max_eq_left h]
   ring
 
-/-- **A knot is at most the largest nominal time of a block after its
-reading.** If every block's nominal time is at most `C`, then for every
-block the time from the reading at its handover to its knot, plus the
-lesser of the knot's advance and the next block's nominal time, is at most
-`C`. -/
-theorem World.knot_sub_le (w : World H R) {nominal C : ℝ}
-    (hC : ∀ b, (w.blockLength b : ℝ) * nominal ≤ C) (b : ℕ) :
-    w.knot nominal b - w.handedReading b
-        + min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) ≤ C := by
+/-- **A knot is at most the nominal time of one frame after its reading.**
+For every block, the time from the reading at its handover to its knot,
+plus the lesser of the knot's advance and the nominal time of one frame, is
+at most that nominal time. So the knots of blocks that are handed over
+together lie within one frame's nominal time. -/
+theorem World.knot_sub_le (w : World H R) (nominal : ℝ) (b : ℕ) :
+    w.knot nominal b - w.handedReading b + min (w.knotInc nominal b) nominal ≤ nominal := by
   induction b with
   | zero =>
     have h0 : w.knot nominal 0 = w.handedReading 0 := rfl
     rw [h0, sub_self, zero_add]
-    exact (min_le_right _ _).trans (hC 1)
+    exact min_le_right _ _
   | succ b ih =>
     have hR := w.handedReading_mono (Nat.le_add_right b 1)
     have hinc : w.knotInc nominal (b + 1)
         = max (w.handedReading (b + 1) - w.knot nominal b)
-          (min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) / 2) := rfl
+          (min (w.knotInc nominal b) nominal / 2) := rfl
     rw [w.knot_succ nominal b, hinc]
     rcases le_total (w.handedReading (b + 1) - w.knot nominal b)
-        (min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) / 2) with hle | hle
+        (min (w.knotInc nominal b) nominal / 2) with hle | hle
     · rw [max_eq_right hle]
-      have h1 := min_le_left
-        (min (w.knotInc nominal b) (w.blockLength (b + 1) * nominal) / 2)
-        ((w.blockLength (b + 1 + 1) : ℝ) * nominal)
+      have h1 := min_le_left (min (w.knotInc nominal b) nominal / 2) nominal
       linarith
     · rw [max_eq_left hle]
-      have h1 := (min_le_right (w.handedReading (b + 1) - w.knot nominal b)
-        ((w.blockLength (b + 1 + 1) : ℝ) * nominal)).trans (hC (b + 1 + 1))
+      have h1 := min_le_right (w.handedReading (b + 1) - w.knot nominal b) nominal
       linarith
 
 /-- **Every block ends at its knot.** -/

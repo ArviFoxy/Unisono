@@ -82,20 +82,18 @@ theorem World.knotInc_nonneg (w : World H R) {nominal : ℝ} (hn : 0 ≤ nominal
   induction b with
   | zero => exact mul_nonneg (Nat.cast_nonneg _) hn
   | succ b ih =>
-    have h : 0 ≤ min (w.knotInc nominal b) ((w.blockLength (b + 1) : ℝ) * nominal) / 2 :=
-      div_nonneg (le_min ih (mul_nonneg (Nat.cast_nonneg _) hn)) (by norm_num)
+    have h : 0 ≤ min (w.knotInc nominal b) nominal / 2 :=
+      div_nonneg (le_min ih hn) (by norm_num)
     exact le_trans h (le_max_right _ _)
 
 /-- **A knot is later than the capture of its block's last frame by the
-time that the handover waited, plus at most the largest nominal time of a
-block.** -/
-theorem World.knotLate_le (w : World H R) {nominal C : ℝ} (hn : 0 ≤ nominal)
-    (hC : ∀ b, (w.blockLength b : ℝ) * nominal ≤ C) (b : ℕ) :
+time that the handover waited, plus at most the nominal time of one
+frame.** -/
+theorem World.knotLate_le (w : World H R) {nominal : ℝ} (hn : 0 ≤ nominal) (b : ℕ) :
     w.knotLate nominal b
-      ≤ (w.handedReading b - w.captureReading (w.source.first (b + 1) - 1)) + C := by
-  have h1 := w.knot_sub_le hC b
-  have h2 : 0 ≤ min (w.knotInc nominal b) ((w.blockLength (b + 1) : ℝ) * nominal) :=
-    le_min (w.knotInc_nonneg hn b) (mul_nonneg (Nat.cast_nonneg _) hn)
+      ≤ (w.handedReading b - w.captureReading (w.source.first (b + 1) - 1)) + nominal := by
+  have h1 := w.knot_sub_le nominal b
+  have h2 : 0 ≤ min (w.knotInc nominal b) nominal := le_min (w.knotInc_nonneg hn b) hn
   unfold World.knotLate
   linarith
 
