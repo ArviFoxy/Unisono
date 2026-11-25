@@ -103,7 +103,7 @@ the link from the sender to the host of speaker `r` that begins in cell `j`,
 from `j * ℓ` to `(j + 1) * ℓ`. -/
 def frameOutside (m : GenerativeWorld H R) (d₁ e : Draw H R) (r : Fin R) (ℓ : ℝ) (j : ℕ) :
     Draw H R :=
-  d₁.withPaused (e.linkOutside m.sender (m.host r) ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))
+  d₁.withLinks (e.linkOutside m.sender (m.host r) ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))
 
 /-- The paused time of the link from the sender to the host of speaker `r`
 that begins in cell `j`, in the draw `e`. -/
@@ -140,10 +140,11 @@ the least of `φ`. Here `count` is the number of pauses of the link that
 begin in the cell on average. -/
 theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable D P)
     {d₁ : Draw H R} {w₁ : World H R} (hB₁ : m.Builds f d₁ w₁)
-    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j) (σ : Solution H R Msg)
+    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
+    (hhost₁ : ∀ h, Monotone (d₁.hostPaused h)) (σ : Solution H R Msg)
     (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R} (hr : m.host r ≠ m.sender)
     {s : ℝ} (hs0 : 0 ≤ s) (hs1 : s ≤ 1) {ℓ : ℝ} (hℓ : 0 ≤ ℓ) (j : ℕ) {Xmax : ℝ} {Nbar : ℕ}
-    {w wOut : Ω → World H R} (hw : ∀ ω, m.Builds f (d₁.withPaused (D ω)) (w ω))
+    {w wOut : Ω → World H R} (hw : ∀ ω, m.Builds f (d₁.withLinks (D ω)) (w ω))
     (hOut : ∀ ω, m.Builds f (frameOutside m d₁ (D ω) r ℓ j) (wOut ω))
     (hslow : ∀ᵐ ω ∂P, ∀ k x y, σ.plays (w ω) lookahead r k = some x →
       σ.plays (w ω) lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
@@ -168,7 +169,7 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
                   (s * ((windowCount (w₁.speaker r).asked ℓ δ Xmax Nbar j x : ℝ)
                     * m.blockSize) - ρ - s) ∂(f.linkPauseLength m.sender (m.host r))
           else ⨅ ρ : {ρ : ℝ // 0 ≤ ρ}, φ ρ) ∂P
-      ≤ ∫⁻ ω, (φ (max (room m f (d₁.withPaused (D ω)) (w ω) lookahead
+      ≤ ∫⁻ ω, (φ (max (room m f (d₁.withLinks (D ω)) (w ω) lookahead
             (σ.plays (w ω) lookahead r) r β₀) 0)
           + (if frameOutside m d₁ (D ω) r ℓ j ∈ SC then
               w' * ENNReal.ofReal
@@ -185,8 +186,8 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
   have ha : (0 : ℝ) ≤ (j : ℝ) * ℓ := mul_nonneg (Nat.cast_nonneg j) hℓ
   have hab : (j : ℝ) * ℓ ≤ ((j : ℝ) + 1) * ℓ := by nlinarith
   have hne : MeasurableSet {x : ℝ | x ≠ 0} := (measurableSet_singleton (0 : ℝ)).compl
-  have hg : Measurable fun e : Draw H R => d₁.withPaused e :=
-    measurable_withPaused.comp (measurable_const.prodMk measurable_id)
+  have hg : Measurable fun e : Draw H R => d₁.withLinks e :=
+    measurable_withLinks.comp (measurable_const.prodMk measurable_id)
   -- The room, as a function of the draw without the pauses of the cell.
   obtain ⟨ρ, hρdef⟩ : ∃ ρ : Draw H R → ℝ, ρ = fun e =>
       max (top - (lastPlayed (describedPlays S G e) (β₀ * m.blockSize)).getD 0) 0 := ⟨_, rfl⟩
@@ -223,32 +224,32 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
   refine le_trans (lintegral_mono fun ω => mul_le_mul' le_rfl ?_)
     (key.trans (lintegral_mono_ae ?_))
   · -- The level program of the cell is at most what the one-pause term gives.
-    have h0 : φ (ρ (d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+    have h0 : φ (ρ (d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
           (((j : ℝ) + 1) * ℓ))))
-        ≤ Φ (d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+        ≤ Φ (d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
           (((j : ℝ) + 1) * ℓ)), 0) := by
       rw [hΦapp, ite_eq_left rfl]
       exact le_self_add
-    by_cases hC : d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+    by_cases hC : d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
         (((j : ℝ) + 1) * ℓ)) ∈ SC
     · rw [ite_eq_left hC]
-      refine (iInf_le _ ⟨ρ (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+      refine (iInf_le _ ⟨ρ (d₁.withLinks ((D ω).linkOutside m.sender (m.host r)
         ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))), hρ0 _⟩).trans ?_
       refine add_le_add h0 (mul_le_mul' le_rfl (setLIntegral_mono' hne fun x hx => ?_))
       rw [hΦapp, ite_eq_right hx, ite_eq_left hC, zero_add]
     · rw [ite_eq_right hC]
-      exact (iInf_le _ ⟨ρ (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+      exact (iInf_le _ ⟨ρ (d₁.withLinks ((D ω).linkOutside m.sender (m.host r)
         ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))), hρ0 _⟩).trans (h0.trans le_self_add)
   · -- In almost every outcome, the cost of the cell is at least the function.
     filter_upwards [ae_all_iff.mpr hdesc, hslow] with ω hω hslowω
     have hpl : ∀ k, σ.plays (wOut ω) lookahead r k
-        = describedPlays S G (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+        = describedPlays S G (d₁.withLinks ((D ω).linkOutside m.sender (m.host r)
           ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))) k := fun k => eq_describedPlays (hω k)
-    obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices (hOut ω) rfl rfl rfl rfl rfl rfl
-    have hRout : max (room m f (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+    obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices (hOut ω) rfl rfl rfl rfl rfl rfl rfl
+    have hRout : max (room m f (d₁.withLinks ((D ω).linkOutside m.sender (m.host r)
           ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ))) (wOut ω) lookahead
           (σ.plays (wOut ω) lookahead r) r β₀) 0
-        = ρ (d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+        = ρ (d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
           (((j : ℝ) + 1) * ℓ))) := by
       have hlp := lastPlayed_congr (K := β₀ * m.blockSize) fun k _ => hpl k
       rw [hρdef]
@@ -268,16 +269,16 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
         rw [hself, hww, hRout]
       · rw [ite_eq_right hI0]
         exact bot_le
-    · by_cases hC : d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+    · by_cases hC : d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
           (((j : ℝ) + 1) * ℓ)) ∈ SC
       · rw [ite_eq_left hC, ite_eq_left hC]
         refine mul_le_mul' le_rfl (ENNReal.ofReal_le_ofReal (le_min ?_ ?_))
-        have hsame : (d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
-            (((j : ℝ) + 1) * ℓ))).SameExceptLinkFrom (d₁.withPaused (D ω)) m.sender
+        have hsame : (d₁.withLinks ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+            (((j : ℝ) + 1) * ℓ))).SameExceptLinkFrom (d₁.withLinks (D ω)) m.sender
             (m.host r) ((j : ℝ) * ℓ) :=
-          (d₁.withPaused (D ω)).sameExcept_linkOutside m.sender (m.host r) hab
+          (d₁.withLinks (D ω)).sameExcept_linkOutside m.sender (m.host r) hab
         have hstall := (hOut ω).cell_stall_le (hw ω) hℓ hsame hpos₁
-          (fun i j' => hD.linkPaused_monotone ω i j') (fun x => hD.hostPaused_monotone ω x)
+          (fun i j' => hD.linkPaused_monotone ω i j') hhost₁
           σ hstar lookahead hr hs0 hs1 hslowω (Xmax := Xmax) (Nbar := Nbar) (δ := δ)
           (I := (D ω).linkPaused m.sender (m.host r) (((j : ℝ) + 1) * ℓ)
             - (D ω).linkPaused m.sender (m.host r) ((j : ℝ) * ℓ)) hδ rfl
@@ -291,7 +292,7 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
               - (D ω).linkPaused m.sender (m.host r) ((j : ℝ) * ℓ)) : ℕ) : ℝ)
             ≤ (Nbar : ℝ) := by
           exact_mod_cast windowCount_le _ ℓ δ Xmax Nbar j _
-        have h2 := hρ0 (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+        have h2 := hρ0 (d₁.withLinks ((D ω).linkOutside m.sender (m.host r)
           ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ)))
         have h3 : (0 : ℝ) ≤ (m.blockSize : ℝ) := Nat.cast_nonneg _
         have h4 := mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right h1 h3) hs0

@@ -104,14 +104,14 @@ theorem windowCount_mono (asked : ℕ → ℝ) (ℓ δ Xmax : ℝ) (Nbar j : ℕ
 
 /-- A window that is not empty needs paused time of at least the length of
 the cell. -/
-theorem le_min_of_windowCount_pos {asked : ℕ → ℝ} (hmono : StrictMono asked)
+theorem le_min_of_windowCount_pos {asked : ℕ → ℝ} (hmono : Monotone asked)
     {ℓ δ Xmax : ℝ} {Nbar j : ℕ} {x : ℝ} (hex : ∃ b, ((j : ℝ) + 1) * ℓ + δ ≤ asked b)
     (h : 0 < windowCount asked ℓ δ Xmax Nbar j x) : ℓ ≤ min x Xmax := by
   have h1 := asked_le_of_windowCount_pos h
   have h2 := le_asked_firstFrom hex
   have h3 : asked (firstFrom asked (((j : ℝ) + 1) * ℓ + δ))
       ≤ asked (firstFrom asked (((j : ℝ) + 1) * ℓ + δ)
-        + windowCount asked ℓ δ Xmax Nbar j x - 1) := hmono.monotone (by omega)
+        + windowCount asked ℓ δ Xmax Nbar j x - 1) := hmono (by omega)
   linarith
 
 /-- The output samples of the playback blocks that the paused time `x` that
@@ -123,7 +123,7 @@ def cellSamples (asked : ℕ → ℝ) (ℓ δ Xmax : ℝ) (Nbar B j : ℕ) (x : 
 /-- **The windows of two cells do not overlap** when no paused time begins
 in the cells before the later one that are within `m` cells of it, and
 `Xmax ≤ (m + 1) * ℓ`. The paused time `I i` begins in cell `i`. -/
-theorem disjoint_cellSamples {asked : ℕ → ℝ} (hmono : StrictMono asked) {ℓ δ Xmax : ℝ}
+theorem disjoint_cellSamples {asked : ℕ → ℝ} (hmono : Monotone asked) {ℓ δ Xmax : ℝ}
     (hℓ : 0 < ℓ) {m : ℕ} (hX : Xmax ≤ ((m : ℝ) + 1) * ℓ) {Nbar B : ℕ} (hB : 0 < B)
     (hex : ∀ T, ∃ b, T ≤ asked b) {I : ℕ → ℝ} {j j' : ℕ} (hjj' : j < j')
     (hclear : ∀ i, i < j' → j' ≤ i + m → I i ≤ 0) :
@@ -141,9 +141,9 @@ theorem disjoint_cellSamples {asked : ℕ → ℝ} (hmono : StrictMono asked) {�
   have hnpos : 0 < windowCount asked ℓ δ Xmax Nbar j (I j) := by omega
   have h1 := asked_le_of_windowCount_pos hnpos
   have h2 : asked (k / B) ≤ asked (firstFrom asked (((j : ℝ) + 1) * ℓ + δ)
-      + windowCount asked ℓ δ Xmax Nbar j (I j) - 1) := hmono.monotone (by omega)
+      + windowCount asked ℓ δ Xmax Nbar j (I j) - 1) := hmono (by omega)
   have h3 : asked (firstFrom asked (((j' : ℝ) + 1) * ℓ + δ)) ≤ asked (k / B) :=
-    hmono.monotone hb1'
+    hmono hb1'
   have h4 := le_asked_firstFrom (hex (((j' : ℝ) + 1) * ℓ + δ))
   have hmin : min (I j) Xmax ≤ Xmax := min_le_right _ _
   have hreal : ((j' : ℝ) + 1) * ℓ ≤ ((j : ℝ) + m + 1) * ℓ := by linarith
@@ -165,7 +165,7 @@ within `m` cells of it, with `Xmax ≤ (m + 1) * ℓ`, and such that the window
 of every cell of `J` ends by playback block `N`. Then the sum over the cells
 of `J` of the sum of `g` over the output samples of the window is at most
 the sum of `g` over the output samples before `N * B`. -/
-theorem sum_cellSamples_le {asked : ℕ → ℝ} (hmono : StrictMono asked) {ℓ δ Xmax : ℝ}
+theorem sum_cellSamples_le {asked : ℕ → ℝ} (hmono : Monotone asked) {ℓ δ Xmax : ℝ}
     (hℓ : 0 < ℓ) {m : ℕ} (hX : Xmax ≤ ((m : ℝ) + 1) * ℓ) {Nbar B : ℕ} (hB : 0 < B)
     (hex : ∀ T, ∃ b, T ≤ asked b) {I : ℕ → ℝ} (g : ℕ → ℝ≥0∞) (J : Finset ℕ) {N : ℕ}
     (hclear : ∀ j ∈ J, ∀ i, i < j → j ≤ i + m → I i ≤ 0)
@@ -195,14 +195,14 @@ cells whose windows start at playback block `b` and that begin, shifted by
 `δ`, after the request of block `b - 1`. Their number times the length of a
 cell is at most the time from the request of block `b - 1` to the request of
 block `b`. -/
-theorem card_mul_le_of_firstFrom {asked : ℕ → ℝ} (hmono : StrictMono asked)
+theorem card_mul_le_of_firstFrom {asked : ℕ → ℝ} (hmono : Monotone asked)
     (hex : ∀ T, ∃ b, T ≤ asked b) {ℓ δ : ℝ} (hℓ : 0 < ℓ) {b : ℕ} (J : Finset ℕ)
     (hJ : ∀ j ∈ J, firstFrom asked (((j : ℝ) + 1) * ℓ + δ) = b
       ∧ asked (b - 1) < (j : ℝ) * ℓ + δ) :
     (J.card : ℝ) * ℓ ≤ asked b - asked (b - 1) := by
   rcases J.eq_empty_or_nonempty with hemp | hne
   · rw [hemp, Finset.card_empty, Nat.cast_zero, zero_mul]
-    exact sub_nonneg.mpr (hmono.monotone (Nat.sub_le b 1))
+    exact sub_nonneg.mpr (hmono (Nat.sub_le b 1))
   · have hlo := hJ (J.min' hne) (J.min'_mem hne)
     have hhi := hJ (J.max' hne) (J.max'_mem hne)
     have hhi' := le_asked_firstFrom (hex ((((J.max' hne : ℕ) : ℝ) + 1) * ℓ + δ))

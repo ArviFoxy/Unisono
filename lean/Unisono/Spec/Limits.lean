@@ -188,7 +188,8 @@ theorem exists_asked_of_plays_some (σ : Solution H R Msg) (w : World H R) (look
     have := (w.speaker r).first_strictMono.monotone hle
     omega
   obtain ⟨n, -, hnb, hnearly⟩ := σ.exists_asked_step w lookahead hb_lt
-  have hp := σ.plays_of_asked_step w lookahead hnb hnearly hk_mem
+  have hp := σ.plays_of_asked_step_of_lt w lookahead hnb hnearly hk_mem
+    (σ.asked_lt_out_of_plays w lookahead hk_mem hplay0)
   rw [hplay0] at hp
   unfold playable at hp
   cases hopt : (σ (w.host r) ((σ.states w lookahead n).views (w.host r)
@@ -282,7 +283,7 @@ theorem star_states_eq_of_star_links_eq (σ : Solution H R Msg) (w₁ w₂ : Wor
       st.handle σ w₂ lookahead h t obs = st.handle σ w₁ lookahead h t obs := by
     intro st h t obs
     dsimp only [State.handle]
-    rw [hclock]
+    rw [hclock, hspk]
     have hsat : ∀ s ∈ (σ h (st.views h ++ [⟨(w₁.clock h).read t, obs⟩])).sends,
         h = w₁.sender ∨ s.1 = w₁.sender :=
       fun s hs => hstar h _ s.1 s.2.1 s.2.2 hs
@@ -365,8 +366,7 @@ def shiftStarKeepPeers (w : World H R) (Δ : H → ℝ)
       first_zero := (w.speaker r).first_zero
       first_strictMono := (w.speaker r).first_strictMono
       asked := fun b => (w.speaker r).asked b + Δ (w.host r)
-      asked_strictMono := fun _ _ hlt => by linarith [(w.speaker r).asked_strictMono hlt]
-      asked_before := fun b => by linarith [(w.speaker r).asked_before b]
+      asked_mono := fun _ _ hle => by linarith [(w.speaker r).asked_mono hle]
       reported := (w.speaker r).reported }
   network :=
     { deliver := fun i j t q =>
@@ -519,7 +519,7 @@ def sepBaseWorld : World (Fin 3) 2 where
       first_zero := rfl
       first_strictMono := strictMono_id
       handed := fun b => (b : ℝ)
-      handed_strictMono := Nat.strictMono_cast
+      handed_mono := Nat.mono_cast
       handed_after := fun b => by simp
       reported := fun b => (b : ℝ) }
   speaker := fun r =>
@@ -530,9 +530,8 @@ def sepBaseWorld : World (Fin 3) 2 where
       first_zero := rfl
       first_strictMono := strictMono_id
       asked := fun b => (b : ℝ) + 1 + sepSpeakerOffset r
-      asked_strictMono := fun _ _ hlt => by
+      asked_mono := StrictMono.monotone fun _ _ hlt => by
         have : (_ : ℝ) < _ := Nat.cast_lt.mpr hlt; linarith
-      asked_before := fun b => by dsimp; linarith
       reported := fun b => (b : ℝ) + 2 + sepSpeakerOffset r }
   network :=
     { deliver := fun i j s _ =>
@@ -704,7 +703,11 @@ theorem sync_eq (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker r).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker r).asked k < (w'.speaker r).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset r + Δ (sepBaseWorld.host r)
+        < (k : ℝ) + 2 + sepSpeakerOffset r + Δ (sepBaseWorld.host r)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hact : (solution (w'.host r) ((solution.states w' 1 n).views (w'.host r) ++
         [⟨(w'.clock (w'.host r)).read ((w'.speaker r).asked k),
           .asked r ((w'.speaker r).block k) ((w'.speaker r).reported k)⟩])).plays k
@@ -1567,7 +1570,11 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker 0).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker 0).asked k < (w'.speaker 0).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset 0 + Δ (sepBaseWorld.host 0)
+        < (k : ℝ) + 2 + sepSpeakerOffset 0 + Δ (sepBaseWorld.host 0)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hact : (solution (w'.host 0) ((solution.states w' 1 n).views (w'.host 0) ++
         [⟨(w'.clock (w'.host 0)).read ((w'.speaker 0).asked k),
           .asked 0 ((w'.speaker 0).block k) ((w'.speaker 0).reported k)⟩])).plays k
@@ -1594,7 +1601,11 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker 1).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker 1).asked k < (w'.speaker 1).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset 1 + Δ (sepBaseWorld.host 1)
+        < (k : ℝ) + 2 + sepSpeakerOffset 1 + Δ (sepBaseWorld.host 1)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hoff := hreply_in_view n (by omega)
     have hhost1 : w'.host 1 = 2 := rfl
     have hact : (solution (w'.host 1) ((solution.states w' 1 n).views (w'.host 1) ++

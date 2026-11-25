@@ -61,8 +61,8 @@ theorem CaptureDevice.ext_fields {a b : CaptureDevice}
 theorem PlaybackDevice.ext_fields {a b : PlaybackDevice}
     (ho : ∀ k, a.out k = b.out k) (hf : ∀ k, a.first k = b.first k)
     (ha : ∀ k, a.asked k = b.asked k) (hr : ∀ k, a.reported k = b.reported k) : a = b := by
-  obtain ⟨o₁, _, f₁, _, _, a₁, _, _, r₁⟩ := a
-  obtain ⟨o₂, _, f₂, _, _, a₂, _, _, r₂⟩ := b
+  obtain ⟨o₁, _, f₁, _, _, a₁, _, r₁⟩ := a
+  obtain ⟨o₂, _, f₂, _, _, a₂, _, r₂⟩ := b
   obtain rfl : o₁ = o₂ := funext ho
   obtain rfl : f₁ = f₂ := funext hf
   obtain rfl : a₁ = a₂ := funext ha
@@ -134,7 +134,10 @@ theorem Builds.unique {d : Draw H R} {w w' : World H R} (h : m.Builds f d w)
     have hfirst : ∀ b, w.source.first b = w'.source.first b := fun b =>
       (h.capture_first b).trans (h'.capture_first b).symm
     refine CaptureDevice.ext_fields hcap hfirst (fun b => ?_) (fun b => ?_)
-    · rw [h.capture_handed, h'.capture_handed, hfirst, hcap]
+    · obtain ⟨v, hv, e⟩ := h.capture_handed b
+      obtain ⟨v', hv', e'⟩ := h'.capture_handed b
+      rw [← hsender, ← hfirst, ← hcap] at hv'
+      rw [e, e', hv.unique hv', hfirst, hcap]
     · rw [h.capture_reported, h'.capture_reported, hfirst, hcap, hsender, hclock]
   · funext r
     have hout0 : (w.speaker r).out 0 = (w'.speaker r).out 0 := by
@@ -152,11 +155,15 @@ theorem Builds.unique {d : Draw H R} {w w' : World H R} (h : m.Builds f d w)
     have hfirst : ∀ b, (w.speaker r).first b = (w'.speaker r).first b := fun b =>
       (h.speaker_first r b).trans (h'.speaker_first r b).symm
     refine PlaybackDevice.ext_fields hout hfirst (fun b => ?_) (fun b => ?_)
-    · apply hdinj (some (m.device r))
-      have h1 := h.speaker_asked r b
-      have h2 := h'.speaker_asked r b
-      rw [← hfirst, ← hout] at h2
-      linarith
+    · obtain ⟨ρ, v, hρ, hv, e⟩ := h.speaker_asked r b
+      obtain ⟨ρ', v', hρ', hv', e'⟩ := h'.speaker_asked r b
+      have hρeq : ρ = ρ' := by
+        apply hdinj (some (m.device r))
+        rw [← hfirst, ← hout] at hρ'
+        linarith
+      subst hρeq
+      rw [← hhost] at hv'
+      rw [e, e', hv.unique hv']
     · rw [h.speaker_reported, h'.speaker_reported, hfirst, hout, hhost, hclock]
   · refine Network.ext_deliver fun i j s q => ?_
     obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, hd⟩ := h.network i j s q

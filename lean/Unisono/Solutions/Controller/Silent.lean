@@ -96,9 +96,12 @@ variable {H : Type} {R : ℕ} [DecidableEq H]
 
 /-- The setting of the theorems on the controller with the schedule of the
 knots: a world without loss whose devices hand over and request blocks
-without end, rules with the capture schedule of the knots and the level
-rule `knotLevel`, a share from zero to less than one, and a positive time
-from one frame to the next for the first block. -/
+without end and in which no two handovers are handled at the same true
+time, rules with the capture schedule of the knots and the level rule
+`knotLevel`, a share from zero to less than one, and a positive time from
+one frame to the next for the first block. A world whose sender's host
+pauses is not in the setting: that host handles the handovers of a pause
+together. -/
 structure KnotSetting (p : FixedDelay.Params H) (rules : Rules H R) (w : World H R)
     (A : H → H → Time → Time) (q : LevelSettings) (share nominal : ℝ) : Prop where
   noLoss : NoLoss p w A
@@ -107,6 +110,7 @@ structure KnotSetting (p : FixedDelay.Params H) (rules : Rules H R) (w : World H
   share_nonneg : 0 ≤ share
   share_lt_one : share < 1
   nominal_pos : 0 < nominal
+  handed_strictMono : StrictMono w.source.handed
   handed : ∀ T, ∃ b, T < w.source.handed b
   asked : ∀ r T, ∃ b, T < (w.speaker r).asked b
 
@@ -153,9 +157,9 @@ theorem ruled_mem_held_iff (hN : NoLoss p w A) (lookahead : ℕ+) {r : Fin R}
 /-- **When an output sample plays nothing.** In the setting `KnotSetting`,
 take the controller with playback that follows the position that is due,
 for `0 ≤ u ≤ J`. Let speaker `r` be on a host other than the sender's, let
-step `n` handle the request of block `β`, and let output sample `k` of that
-block play nothing. Then the host has no estimate; or it has an estimate
-`s` and one of these holds:
+step `n` handle the request of block `β` before output sample `k` of that
+block leaves, and let that output sample play nothing. Then the host has no
+estimate; or it has an estimate `s` and one of these holds:
 
 * `s` lies before the edge of block zero;
 * some block whose edge is at or before `s` arrived at or after the request;
@@ -168,6 +172,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
     (hE : earliest (((ruled p rules : Solution H R Payload).states w lookahead n).key w)
         ((ruled p rules : Solution H R Payload).states w lookahead n).due = some (.asked r β))
     (hk : k ∈ (w.speaker r).block β)
+    (hlt : (w.speaker r).asked β < (w.speaker r).out k)
     (hsilent : ((ruled p rules : Solution H R Payload).followed u J).plays w lookahead r k
       = none) :
     rules.reading (w.host r)
@@ -192,7 +197,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
   have hprog := hK.handovers lookahead
   have hreq := hK.requests lookahead r
   have hiff := fun x => ruled_chosen_iff (x := x) hK.capture hlev hK.share_nonneg
-    hK.share_lt_one hK.nominal_pos hK.noLoss lookahead hprog hr hE k
+    hK.share_lt_one hK.nominal_pos hK.handed_strictMono hK.noLoss lookahead hprog hr hE k
   have hfol := (ruled p rules : Solution H R Payload).followed_follows w lookahead u J hreq
   have hX : (ruled p rules : Solution H R Payload).chosen w lookahead r k
       = (ruled p rules : Solution H R Payload).chosenAt w lookahead n r β k :=
@@ -203,7 +208,7 @@ theorem followed_silent (hK : KnotSetting p rules w A q share nominal) (lookahea
     (followStep u J) w lookahead n r β).mpr ⟨hnext, hE⟩).2
   have hplays := Solution.plays_eq_playable_chosen
     ((ruled p rules : Solution H R Payload).followed u J) w lookahead hk hE'
-  rw [hplays] at hsilent
+  rw [hplays, ite_eq_left hlt] at hsilent
   have hheld : (((ruled p rules : Solution H R Payload).followed u J).states w lookahead n).held
       = ((ruled p rules : Solution H R Payload).states w lookahead n).held :=
     Solution.held_eq_of_sends_eq w lookahead

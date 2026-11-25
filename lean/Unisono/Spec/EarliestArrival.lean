@@ -180,7 +180,8 @@ theorem Solution.arrival_lt_asked_of_plays (σ : Solution H R Msg) (w : World H 
       n ∈ w.source.block c →
       A w.sender (w.host r) (w.source.handed c) < (w.speaker r).asked b := by
   obtain ⟨b, i, hkb, hnb, hearly, hact⟩ := exists_asked_of_plays_some σ w lookahead hplay
-  have hp := σ.plays_of_asked_step w lookahead hnb hearly hkb
+  have hp := σ.plays_of_asked_step_of_lt w lookahead hnb hearly hkb
+    (σ.asked_lt_out_of_plays w lookahead hkb hplay)
   rw [hplay, hact] at hp
   simp only [playable] at hp
   split_ifs at hp with hc

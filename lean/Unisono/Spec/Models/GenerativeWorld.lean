@@ -128,9 +128,18 @@ All of the following are independent of one another.
   device starts when the clock of its host reads the member's start, and its
   frame or output sample `n` occurs when its own clock has advanced by `n`
   divided by the nominal rate since then. Speakers that are outputs of one
-  device share its clock. A playback device asks for a block the request
-  lead before the block's first output sample leaves, measured on the
-  device's clock. Blocks have a fixed size.
+  device share its clock. Blocks have a fixed size.
+* A host handles the events of its audio devices after its backlog, like
+  the messages that reach it. The capture device hands a block over when
+  the block's last frame is captured, and the sender's host handles the
+  handover after its backlog at that time. A playback device asks for a
+  block the request lead before the block's first output sample leaves,
+  measured on the device's clock, and its host handles the request after
+  its backlog at that time. Events of a device that occur while its host is
+  paused are handled together when the pause ends. When the backlog is
+  longer than the request lead, output samples of the block leave before
+  the host handles the request; they play nothing of the source
+  (`State.handle`).
 * The timestamp that a device reports for a block is the reading of its
   host's clock at the true time of the block's first frame or output sample,
   plus the error of the device's reports at that time. A constant part of
@@ -163,11 +172,11 @@ variable, and is stated for the solutions in both classes.
 
 Loss; pauses that cluster in time; pauses and asymmetry that some links
 share because they share a switch or a radio channel; least delays and rates
-of pauses that change over time; a paused host that answers its own playback
-device late; time stamps that a kernel takes while the program is paused;
-timestamps of an audio device that are grossly wrong for a while; clocks
-whose rate has more than one time scale. The specification document lists
-these limitations and what each one distorts.
+of pauses that change over time; time stamps that a kernel takes for
+messages while the program is paused; timestamps of an audio device that are
+grossly wrong for a while; clocks whose rate has more than one time scale.
+The specification document lists these limitations and what each one
+distorts.
 -/
 
 @[expose] public noncomputable section
@@ -555,9 +564,12 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
       = (n : ℝ) / m.rate
   /-- Capture blocks hold `m.blockSize` frames. -/
   capture_first : ∀ b : ℕ, w.source.first b = b * m.blockSize
-  /-- A capture block is handed over when its last frame is captured. -/
-  capture_handed : ∀ b : ℕ,
-    w.source.handed b = w.source.capture (w.source.first (b + 1) - 1)
+  /-- The capture device hands a block over when the block's last frame is
+  captured. The sender's host handles the handover after its backlog `v` at
+  that time. -/
+  capture_handed : ∀ b : ℕ, ∃ v,
+    IsBacklog (d.hostPaused w.sender) (w.source.capture (w.source.first (b + 1) - 1)) v ∧
+    w.source.handed b = w.source.capture (w.source.first (b + 1) - 1) + v
   /-- The timestamp of a capture block is the reading of the sender's clock
   when the block's first frame is captured, plus the error of the capture
   device's reports at that time. -/
@@ -578,11 +590,15 @@ structure Builds (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
       = (k : ℝ) / m.rate
   /-- Playback blocks hold `m.blockSize` output samples. -/
   speaker_first : ∀ (r : Fin R) (b : ℕ), (w.speaker r).first b = b * m.blockSize
-  /-- A playback device requests each block `m.lead` seconds, measured on its
-  own clock, before the block's first output sample leaves. -/
-  speaker_asked : ∀ (r : Fin R) (b : ℕ),
+  /-- A playback device requests each block at the true time `ρ` that is
+  `m.lead` seconds, measured on its own clock, before the block's first
+  output sample leaves. The speaker's host handles the request after its
+  backlog `v` at that time. -/
+  speaker_asked : ∀ (r : Fin R) (b : ℕ), ∃ ρ v,
     d.deviceReading (some (m.device r)) ((w.speaker r).out ((w.speaker r).first b))
-      - d.deviceReading (some (m.device r)) ((w.speaker r).asked b) = m.lead
+      - d.deviceReading (some (m.device r)) ρ = m.lead ∧
+    IsBacklog (d.hostPaused (w.host r)) ρ v ∧
+    (w.speaker r).asked b = ρ + v
   /-- The timestamp of a playback block is the reading of the host's clock
   when the block's first output sample leaves, plus the error of the
   device's reports at that time. -/

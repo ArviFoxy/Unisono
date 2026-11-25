@@ -158,18 +158,21 @@ theorem Solution.chosen_eq {n : ℕ} {r : Fin R} {b k : ℕ} (hk : k ∈ (w.spea
   unfold Solution.chosen
   rw [dite_eq_left hex, hu]
 
-/-- **What a speaker plays is what the solution chooses, if the frames are
-held.** At the step that handles the request of the block of output sample
-`k`, the speaker plays the position that the solution chooses for `k` if
-the host holds every frame less than the lookahead away from it, and
-nothing of the source otherwise. -/
+/-- **What a speaker plays is what the solution chooses, if the request is
+handled in time and the frames are held.** At the step that handles the
+request of the block of output sample `k`, the speaker plays the position
+that the solution chooses for `k` if the output sample has not left yet and
+the host holds every frame less than the lookahead away from the position,
+and nothing of the source otherwise. -/
 theorem Solution.plays_eq_playable_chosen {n : ℕ} {r : Fin R} {b k : ℕ}
     (hk : k ∈ (w.speaker r).block b)
     (he : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
       = some (.asked r b)) :
     σ.plays w lookahead r k
-      = playable lookahead ((σ.states w lookahead n).held (w.host r))
-        (σ.chosen w lookahead r k) := by
+      = if (w.speaker r).asked b < (w.speaker r).out k then
+          playable lookahead ((σ.states w lookahead n).held (w.host r))
+            (σ.chosen w lookahead r k)
+        else none := by
   rw [σ.chosen_eq w lookahead hk he]
   exact Solution.plays_of_asked_step w σ lookahead
     (σ.askedNext_of_earliest w lookahead he) he hk

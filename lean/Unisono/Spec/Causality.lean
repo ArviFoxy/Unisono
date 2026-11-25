@@ -215,6 +215,7 @@ theorem State.SameBefore.sendAll {T : Time} {w₁ w₂ : World H R}
       exact State.SameBefore.sendAll hnet i t held rest (h.send hnet i t s.1 s.2.1 _)
 
 theorem State.SameBefore.handle {T : Time} {w₁ w₂ : World H R} (hclock : w₂.clock = w₁.clock)
+    (hspk : w₂.speaker = w₁.speaker)
     (hnet : World.DeliversSameBefore T w₁ w₂) (σ : Solution H R Msg) (lookahead : ℕ+)
     {st₁ st₂ : State H R Msg} (h : st₁.SameBefore T st₂) (i : H) (t : Time)
     (obs : Observation H R Msg) :
@@ -233,7 +234,7 @@ theorem State.SameBefore.handle {T : Time} {w₁ w₂ : World H R} (hclock : w�
   have hv : st₂.views i = st₁.views i := by rw [h.views]
   have hh : st₂.held i = st₁.held i := by rw [h.held]
   dsimp only [State.handle]
-  rw [hclock, hv, hh]
+  rw [hclock, hv, hh, hspk]
   refine ⟨hsends.views, hsends.handedNext, hsends.askedNext, hsends.inFlight, ?_,
     hsends.sentCount, hsends.held, ?_, hsends.sent⟩
   · simp only [hsends.timers]
@@ -293,14 +294,14 @@ theorem State.SameBefore.step {T : Time} {w₁ w₂ : World H R} (hsender : w₂
   | handed b =>
     dsimp only
     rw [hsender, hsrc, htgt]
-    have hh := h.handle hclock hnet σ lookahead w₁.sender (w₁.source.handed b)
+    have hh := h.handle hclock hspk hnet σ lookahead w₁.sender (w₁.source.handed b)
       (.handed ((w₁.source.block b).map fun n => (n, w₁.target n)) (w₁.source.reported b))
     exact ⟨hh.views, rfl, hh.askedNext, hh.inFlight, hh.timers, hh.sentCount, hh.held,
       hh.plays, hh.sent⟩
   | asked r b =>
     dsimp only
     rw [hhost, hspk]
-    have hh := h.handle hclock hnet σ lookahead (w₁.host r) ((w₁.speaker r).asked b)
+    have hh := h.handle hclock hspk hnet σ lookahead (w₁.host r) ((w₁.speaker r).asked b)
       (.asked r ((w₁.speaker r).block b) ((w₁.speaker r).reported b))
     exact ⟨hh.views, hh.handedNext, by simp only [h.askedNext], hh.inFlight, hh.timers,
       hh.sentCount, hh.held, hh.plays, hh.sent⟩
@@ -320,7 +321,7 @@ theorem State.SameBefore.step {T : Time} {w₁ w₂ : World H R} (hsender : w₂
           { st₂ with inFlight := st₂.inFlight.eraseIdx p } :=
         ⟨h.views, h.handedNext, h.askedNext, forall₂_eraseIdx h.inFlight p, h.timers,
           h.sentCount, h.held, h.plays, h.sent⟩
-      exact hrel.handle hclock hnet σ lookahead _ _ _
+      exact hrel.handle hclock hspk hnet σ lookahead _ _ _
   | timer p =>
     dsimp only
     rw [← h.timers]
@@ -333,7 +334,7 @@ theorem State.SameBefore.step {T : Time} {w₁ w₂ : World H R} (hsender : w₂
           { st₂ with timers := st₁.timers.eraseIdx p } :=
         ⟨h.views, h.handedNext, h.askedNext, h.inFlight, rfl, h.sentCount, h.held, h.plays,
           h.sent⟩
-      exact hrel.handle hclock hnet σ lookahead _ _ _
+      exact hrel.handle hclock hspk hnet σ lookahead _ _ _
 
 /-- **The two runs agree up to `T` while their events occur before `T`.**
 Consider two worlds with the same hosts, clocks, audio devices and target
@@ -382,7 +383,7 @@ theorem Solution.plays_eq_of_sameBefore (σ : Solution H R Msg) {T : Time} {w₁
     intro n hn
     have h1 := (σ.eventTime_dueFrom w₁ lookahead n).2.1 r
     have h2 : (w₁.speaker r).asked ((σ.states w₁ lookahead n).askedNext r)
-        ≤ (w₁.speaker r).asked b := (w₁.speaker r).asked_strictMono.monotone hn
+        ≤ (w₁.speaker r).asked b := (w₁.speaker r).asked_mono hn
     linarith
   -- A step before which the output sample is not yet decided.
   have hpending : ∀ n, ¬ k < (w₁.speaker r).first ((σ.states w₁ lookahead n).askedNext r) →

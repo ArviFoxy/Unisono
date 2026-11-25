@@ -783,7 +783,8 @@ variable [DecidableEq H] {Msg : Type}
 theorem Solution.nonneg_of_plays (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
     {r : Fin R} {k : ℕ} {x : ℝ} (h : σ.plays w lookahead r k = some x) : 0 ≤ x := by
   obtain ⟨b, n, hkb, hnb, hearly, hact⟩ := exists_asked_of_plays_some σ w lookahead h
-  have hp := σ.plays_of_asked_step w lookahead hnb hearly hkb
+  have hp := σ.plays_of_asked_step_of_lt w lookahead hnb hearly hkb
+    (σ.asked_lt_out_of_plays w lookahead hkb h)
   rw [h, hact] at hp
   simp only [playable] at hp
   split_ifs at hp with hc
@@ -805,7 +806,9 @@ theorem Solution.plays_eq_none_of_stalled (σ : Solution H R Msg) (w : World H R
     rfl
   have hlt : (w.speaker r).asked b < (w.speaker r).asked b₀ :=
     lt_of_le_of_lt (hev ▸ hT n) hb₀
-  have hbb : b < b₀ := (w.speaker r).asked_strictMono.lt_iff_lt.mp hlt
+  have hbb : b < b₀ := by
+    by_contra hge
+    exact absurd ((w.speaker r).asked_mono (not_lt.mp hge)) (not_le.mpr hlt)
   have hfirst : (w.speaker r).first (b + 1) ≤ (w.speaker r).first b₀ :=
     (w.speaker r).first_strictMono.monotone hbb
   unfold PlaybackDevice.block at hkb

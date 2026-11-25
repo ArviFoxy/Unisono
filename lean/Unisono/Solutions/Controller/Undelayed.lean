@@ -15,7 +15,7 @@ The controller's estimate of the sender's clock is exact once the view of a
 host holds two clock exchanges that no pause delayed
 (`Unisono.Solutions.Controller.Pauses`). That was assumed of the outcome.
 This file proves it in almost every outcome of every random world of a member
-with steady clocks.
+with steady hosts.
 
 * `arrival_of_idle`: a message sent while the sending host, the link and the
   receiving host have no backlog takes the least delay of its direction.
@@ -28,7 +28,7 @@ with steady clocks.
   speakers; a query sent in an idle period reaches the sender, and its answer
   reaches the host, without delay.
 * `ae_twoUndelayed`: this holds in almost every outcome of every random
-  world of a member with steady clocks, because all links and hosts are idle
+  world of a member with steady hosts, because all links and hosts are idle
   together again and again in almost every outcome (`Prior.ae_idle`).
 * `ae_cost_le_heldLevel`: so in almost every outcome the cost of a held level
   is bounded by the costs of the latencies plus a multiple of the late rate
@@ -216,11 +216,11 @@ theorem exists_twoUndelayed (hS : ConstantRates m f d w) (lookahead : ℕ+)
   exact ((w.clock (m.host r)).strictMono hlt).ne
 
 /-- **Two clock exchanges escape every pause, almost surely.** In every
-random world of a member with steady clocks, in almost every outcome, at some
+random world of a member with steady hosts, in almost every outcome, at some
 step the view of every receiving host holds two clock exchanges that no pause
 delayed, whose queries were sent at different readings. -/
 theorem ae_twoUndelayed [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (clockEst : ClockEstimator)
     (deviceEst : DeviceEstimator) (levelRule : LevelRule H R) (hps : p.sender = m.sender)
     (hcopies : 0 < p.copies) (hperiod : 0 ≤ p.period) :
@@ -232,7 +232,7 @@ theorem ae_twoUndelayed [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measur
     hnos hidle
 
 /-- **The cost of a held level in almost every outcome.** In every random
-world of a member with steady clocks in which no speaker is on the sender's
+world of a member with steady hosts in which no speaker is on the sender's
 host, the controller with the least-round-trip estimator holds the level at
 `L`. In almost every outcome in which the clock of the capture device runs
 less than twice as fast as the clock of every playback device, and faster by
@@ -241,7 +241,7 @@ latencies in synchronization, latency and tracking, plus the weight of
 missed samples times `1 + 2 δ`, plus the weight of discontinuities, times
 the late rate of the outcome. -/
 theorem ae_cost_le_heldLevel [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)

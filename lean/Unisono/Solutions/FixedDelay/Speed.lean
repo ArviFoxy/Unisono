@@ -46,6 +46,7 @@ theorem chosen_of_plays (w : World H R) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
         (((solution p : Solution H R Payload).states w lookahead n).views (w.host r))).last r)
       ((w.speaker r).first b) (k - (w.speaker r).first b) = some x := by
   have h := plays_eq_chosen p w lookahead hb he hk
+    (Solution.asked_lt_out_of_plays w (solution p) lookahead hk hx)
   rw [hx] at h
   generalize chosen p _ _ _ _ _ _ = c at h ⊢
   cases c with

@@ -25,7 +25,7 @@ any rule for the level, the controller with a limiter keeps the speed bound
 `u`.
 
 The rest of the file holds the level at `L`, in a world whose clocks run at
-constant rates, with exact timestamps and with pauses of links and of hosts.
+constant rates, with exact timestamps and with pauses of links and none of hosts.
 There the position that is due at output sample `k` of a speaker is a line
 in `k`. The slope of the line is the rate of the capture device's clock
 divided by the rate of the clock of the speaker's playback device
@@ -47,7 +47,7 @@ samples per second in place of the late rate (`cost_limited_le_outputs`).
 that the slope of every speaker is within `u` of one.
 
 **Theorem** (`ae_cost_le_limitedCost`, `expectedCost_le_limitedCost`). In
-every random world of a member with steady clocks in which no speaker is on
+every random world of a member with steady hosts in which no speaker is on
 the sender's host, for a bound `u` below one, the cost of the controller
 with a limiter is at most `limitedCost` of the draw in almost every outcome.
 So its expected cost is at most the mean of `limitedCost`.
@@ -116,7 +116,7 @@ theorem limited_plays_eq_heldLevel (hS : ConstantRates m f d w) (lookahead : ℕ
 
 /-- **The cost of a held level with a limiter, where the clocks of the
 devices agree within the bound.** Consider a world whose clocks run at
-constant rates, with exact timestamps and with pauses of links and of hosts,
+constant rates, with exact timestamps and with pauses of links and none of hosts,
 in which no speaker is on the sender's host. The controller with a limiter
 for the speed bound `u`, below one, uses a device estimator that is exact on
 undisturbed reports and holds the level at `L`, and from some true time on
@@ -216,12 +216,12 @@ def limitedCost [Fintype H] (m : GenerativeWorld H R) (f : Member H R) (lookahea
         then lateRateBound m f lookahead L d else outputRate m d
 
 /-- **The cost of a held level with a limiter in a member with steady
-clocks.** In every random world of a member with steady clocks in which no
+hosts.** In every random world of a member with steady hosts in which no
 speaker is on the sender's host, the cost of the controller with a limiter
 for a speed bound `u` below one, holding the level `L`, is at most
 `limitedCost` of the draw, in almost every outcome. -/
 theorem ae_cost_le_limitedCost [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) {u : ℝ} (hu1 : u < 1) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
@@ -250,13 +250,13 @@ theorem ae_cost_le_limitedCost [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P :
       hpsp hline u hδ c
 
 /-- **The expected cost of a held level with a limiter in a member with
-steady clocks.** In every random world of a member with steady clocks in
+steady hosts.** In every random world of a member with steady hosts in
 which no speaker is on the sender's host, the expected cost of the
 controller with a limiter for a speed bound `u` below one, holding the level
 `L`, is at most the mean of `limitedCost` of the draw. -/
 theorem expectedCost_le_limitedCost [Fintype H] {Ω : Type} [MeasurableSpace Ω]
     {P : Measure Ω} {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D)
-    (hf : f.SteadyClocks) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) {u : ℝ}
+    (hf : f.SteadyHosts) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) {u : ℝ}
     (hu1 : u < 1) (L : ℝ) (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup)
     (hcopies : 0 < p.copies) (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
     (hpsp : ∀ r, m.host r ∈ p.speakers) (c : Weights) :
@@ -282,13 +282,13 @@ theorem lintegral_limitedCost_lt_top [Fintype H] {Ω : Type} [MeasurableSpace Ω
   · exact le_max_right _ _
 
 /-- **The expected cost of a held level with a limiter is finite.** In every
-random world of a member with steady clocks in which no speaker is on the
+random world of a member with steady hosts in which no speaker is on the
 sender's host, the controller with a limiter for a speed bound `u` below
 one, holding the level `L`, has a finite expected cost, for every level and
 all weights. -/
 theorem expectedCost_limited_lt_top [Fintype H] {Ω : Type} [MeasurableSpace Ω]
     {P : Measure Ω} {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D)
-    (hf : f.SteadyClocks) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) {u : ℝ}
+    (hf : f.SteadyHosts) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) {u : ℝ}
     (hu1 : u < 1) (L : ℝ) (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup)
     (hcopies : 0 < p.copies) (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
     (hpsp : ∀ r, m.host r ∈ p.speakers) (c : Weights) :

@@ -4,7 +4,7 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
-public import Unisono.Spec.Models.GenerativeWorld
+public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.Ideal
 public import Mathlib.Probability.Distributions.Gaussian.HasGaussianLaw.Basic
 public import Mathlib.Probability.Distributions.Gaussian.IsGaussianProcess.Basic
@@ -185,16 +185,6 @@ theorem Prior.hostPaused_ae_const (hD : m.Prior f P D) {h : H}
   rw [hf, zero_mul, Real.toNNReal_zero, pauseLaw_zero] at hlaw
   exact hlaw.ae_eq_of_dirac
 
-/-- When no paused time begins, the backlog is zero. -/
-theorem isBacklog_zero_of_const {paused : Time → ℝ} (hc : ∀ s t, paused s = paused t)
-    (t : Time) : IsBacklog paused t 0 := by
-  constructor
-  · rintro x ⟨s, hs, rfl⟩
-    rw [hc t s]
-    linarith
-  · intro u hu
-    exact hu ⟨t, le_rfl, by simp⟩
-
 /-- A clock with mean rate one that does not wander reads true time plus its
 offset. -/
 theorem Draw.reading_of_noiseless {d : Draw H R} {h : H} (h0 : d.logRate h = 0)
@@ -272,7 +262,7 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
         simp only [Prior.idealWorld]
         linarith⟩
       capture_first := (hB ω).capture_first
-      capture_handed := (hB ω).capture_handed
+      capture_handed := (hB ω).handed_of_const (hh _)
       capture_reported := fun b => by
         rw [(hB ω).capture_reported b, herr, add_zero]
         simp
@@ -286,7 +276,7 @@ theorem Prior.ae_idealConstantWorld (hD : m.Prior f P D) (hf : f.Noiseless)
           linarith⟩
       speaker_first := (hB ω).speaker_first
       speaker_asked := fun r b => by
-        have h := (hB ω).speaker_asked r b
+        have h := (hB ω).asked_of_const (r := r) (hh _) b
         rw [hdev, hdev] at h
         simp only [Prior.idealWorld]
         linarith

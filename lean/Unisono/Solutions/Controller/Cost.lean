@@ -8,11 +8,11 @@ public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Spec.OutputRate
 
 /-!
-# The cost of a held level when links and hosts pause
+# The cost of a held level when links pause
 
 The controller (`Unisono.Solutions.Controller`) holds the level at `L` in a
 world whose clocks run at constant rates, with exact timestamps and with
-pauses of links and of hosts. By `Unisono.Solutions.Controller.HeldLevel`,
+pauses of links and none of hosts. By `Unisono.Solutions.Controller.HeldLevel`,
 each output sample plays the position that is due, or nothing of the source
 when the block it needs is late. An output sample is *late* when the message
 of the capture block it needs takes at least the sample's margin (`lateAt`).
@@ -105,7 +105,7 @@ theorem exists_duePosition_nonneg (hS : ConstantRates m f d w) (L : ℝ) (r : Fi
   refine ⟨bK * m.blockSize, fun k hk => ?_⟩
   have hout : (w.speaker r).out ((w.speaker r).first bK) ≤ (w.speaker r).out k :=
     (w.speaker r).out_strictMono.monotone (by rw [hS.builds.speaker_first]; exact hk)
-  have hask := (w.speaker r).asked_before bK
+  have hask := hS.asked_lt_out r bK
   unfold duePosition
   exact mul_nonneg (mul_pos m.rate_pos (Real.exp_pos _)).le (by linarith)
 
@@ -263,7 +263,7 @@ theorem cost_le_of_plays_margin (hS : ConstantRates m f d w) (lookahead : ℕ+) 
   have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
     intro r T
     obtain ⟨b, hb⟩ := hS.asked_unbounded r T
-    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
+    exact ⟨(w.speaker r).first b, (hb.trans (hS.asked_lt_out r b)).le⟩
   have hmissed := w.missed_le_of_line plays hlinepos hc hδ hout
   have hdisc := w.discontinuities_le_of_line plays hlinepos hc hout
   -- An output sample plays nothing exactly when it is late.
@@ -351,7 +351,7 @@ theorem cost_le_outputs_of_plays_due (hS : ConstantRates m f d w) (L : ℝ)
   have hout : ∀ r (T : Time), ∃ k, T ≤ (w.speaker r).out k := by
     intro r T
     obtain ⟨b, hb⟩ := hS.asked_unbounded r T
-    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
+    exact ⟨(w.speaker r).first b, (hb.trans (hS.asked_lt_out r b)).le⟩
   have hrate : longRun (w.accruedOutputs fun _ _ => 1)
       ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal
         (m.rate * Real.exp (d.deviceLogRate (some (m.device r)))) :=
@@ -427,9 +427,9 @@ theorem exists_plays_heldLevel (hS : ConstantRates m f d w) (lookahead : ℕ+)
   exact ⟨Finset.univ.sup K, fun r k hk =>
     (hK r k ((Finset.le_sup (Finset.mem_univ r)).trans hk)).2⟩
 
-/-- **The cost of a held level when links and hosts pause.** Consider a
+/-- **The cost of a held level when links pause.** Consider a
 world whose clocks run at constant rates, with exact timestamps and with
-pauses of links and of hosts, in which no speaker is on the sender's host.
+pauses of links and none of hosts, in which no speaker is on the sender's host.
 The controller uses a device estimator that is exact on undisturbed reports
 and holds the level at `L`, and from some true time on the estimate of the
 sender's clock at every speaker's host is the line of its undelayed

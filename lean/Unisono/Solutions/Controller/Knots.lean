@@ -34,7 +34,11 @@ is a time for the right end of block `b` and for the left end of block
   them (`World.knotStart_succ`, `World.knotStart_add`). This holds in every
   world.
 * The time from one frame to the next is positive in every block
-  (`World.knotPeriod_pos`).
+  (`World.knotPeriod_pos`), in a world in which no two handovers are handled
+  at the same true time. A sender's host that was busy handles several
+  handovers at the same true time; their knots are equal and the schedule
+  stands still between them. So this schedule does not serve a world whose
+  sender's host pauses.
 * `knotCapture` computes the schedule of a block from the sender's view at
   its handover, and in the run of any solution in any world it gives the
   line above (`knotCapture_eq`).
@@ -69,9 +73,12 @@ frame to the next. -/
 def World.knotStart (w : World H R) (nominal : ℝ) (b : ℕ) : ℝ :=
   w.knot b - w.blockLength b * w.knotPeriod nominal b
 
-/-- A later block has a later knot. -/
-theorem World.knot_strictMono (w : World H R) : StrictMono w.knot :=
-  fun _ _ h => (w.clock w.sender).strictMono (w.source.handed_strictMono h)
+/-- A later block has a later knot, when no two handovers are handled at the
+same true time. A sender's host that was busy handles several handovers at
+the same true time; their knots are then equal. -/
+theorem World.knot_strictMono (w : World H R) (hstrict : StrictMono w.source.handed) :
+    StrictMono w.knot :=
+  fun _ _ h => (w.clock w.sender).strictMono (hstrict h)
 
 /-- **Every block ends at its knot.** -/
 theorem World.knotStart_add (w : World H R) (nominal : ℝ) (b : ℕ) :
@@ -92,13 +99,14 @@ theorem World.knotStart_succ (w : World H R) (nominal : ℝ) (b : ℕ) :
 
 /-- **The time from one frame to the next is positive in every block**, when
 the time given to block zero is. -/
-theorem World.knotPeriod_pos (w : World H R) {nominal : ℝ} (hnominal : 0 < nominal) (b : ℕ) :
+theorem World.knotPeriod_pos (w : World H R) {nominal : ℝ} (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed) (b : ℕ) :
     0 < w.knotPeriod nominal b := by
   cases b with
   | zero => exact hnominal
   | succ b =>
     have hpos : (0 : ℝ) < w.blockLength (b + 1) := by exact_mod_cast w.blockLength_pos (b + 1)
-    exact div_pos (sub_pos.mpr (w.knot_strictMono (Nat.lt_succ_self b))) hpos
+    exact div_pos (sub_pos.mpr (w.knot_strictMono hstrict (Nat.lt_succ_self b))) hpos
 
 /-- The value of the schedule of the knots at the coordinate `z`, by the
 line of block `b`. -/

@@ -443,7 +443,7 @@ def idealWorld (m : GenerativeWorld H R) (f : Member H R)
       first_strictMono := fun _ _ hab => Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
       handed := fun b =>
         f.captureStart - offset m.sender + (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate
-      handed_strictMono := fun a b hab => by
+      handed_mono := StrictMono.monotone fun a b hab => by
         have hlt : (a + 1) * m.blockSize - 1 < (b + 1) * m.blockSize - 1 := by
           have h1 : (a + 1) * m.blockSize < (b + 1) * m.blockSize :=
             Nat.mul_lt_mul_of_pos_right (by omega) m.blockSize_pos
@@ -465,13 +465,12 @@ def idealWorld (m : GenerativeWorld H R) (f : Member H R)
       first_strictMono := fun _ _ hab => Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
       asked := fun b =>
         f.speakerStart (m.device r) - offset (m.host r) + ((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead
-      asked_strictMono := fun a b hab => by
+      asked_mono := StrictMono.monotone fun a b hab => by
         have hlt : a * m.blockSize < b * m.blockSize :=
           Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
         have h := mul_lt_mul_of_pos_right (Nat.cast_lt (α := ℝ).mpr hlt) (inv_pos.mpr m.rate_pos)
         simp only [div_eq_mul_inv]
         linarith
-      asked_before := fun _ => by linarith [m.lead_pos]
       reported := fun b => f.speakerStart (m.device r) + ((b * m.blockSize : ℕ) : ℝ) / m.rate }
   network :=
     { deliver := fun i j t _ => some (t + delay i j)
@@ -513,7 +512,8 @@ theorem idealWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     simp only [idealWorld, Nat.cast_zero, zero_div]
     ring
   capture_first := fun _ => rfl
-  capture_handed := fun _ => rfl
+  capture_handed := fun _ =>
+    ⟨0, isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) _, (add_zero _).symm⟩
   capture_reported := fun b => by
     rw [herr]
     simp only [idealWorld]
@@ -528,6 +528,8 @@ theorem idealWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     ring
   speaker_first := fun _ _ => rfl
   speaker_asked := fun r b => by
+    refine ⟨_, 0, ?_, isBacklog_zero_of_const (fun s t => by rw [hhost, hhost]) _,
+      (add_zero _).symm⟩
     rw [Draw.deviceReading_noiseless (hdevlog (some (m.device r))) (hdevwander _),
       Draw.deviceReading_noiseless (hdevlog (some (m.device r))) (hdevwander _)]
     simp only [idealWorld]

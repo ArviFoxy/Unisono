@@ -146,14 +146,16 @@ theorem Solution.plays_none_or_chosen {r : Fin R}
   classical
   obtain ⟨n, hn⟩ := hprog ((w.speaker r).blockOf k)
   rw [σ.plays_eq_playable_chosen w lookahead ((w.speaker r).mem_blockOf k) hn]
-  cases hc : σ.chosen w lookahead r k with
-  | none => exact Or.inl rfl
-  | some x =>
-    unfold playable
-    simp only
-    split_ifs
-    · exact Or.inr rfl
-    · exact Or.inl rfl
+  split_ifs
+  · cases hc : σ.chosen w lookahead r k with
+    | none => exact Or.inl rfl
+    | some x =>
+      unfold playable
+      simp only
+      split_ifs
+      · exact Or.inr rfl
+      · exact Or.inl rfl
+  · exact Or.inl rfl
 
 /-- The run of the solution with the follower handles every request that
 the run of the solution handles. -/

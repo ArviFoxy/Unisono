@@ -208,16 +208,19 @@ theorem arrival_of_sameExceptLinkFrom {i₀ j₀ : H} {θ : Time} {w' : World H 
 
 /-! ## The worlds built from the two draws -/
 
-/-- **The clocks of a draw determine the hosts, clocks, audio devices and
-target latencies of the world built from it.** Two worlds built from draws
-with the same offsets, rates and wander of all clocks and the same errors of
-the reported timestamps have the same sender, hosts, clocks, capture device,
-playback devices and target latencies. They can differ only in when
-messages arrive. -/
+/-- **The clocks and the pauses of the hosts of a draw determine the hosts,
+clocks, audio devices and target latencies of the world built from it.** Two
+worlds built from draws with the same offsets, rates and wander of all
+clocks, the same errors of the reported timestamps and the same paused times
+of the hosts have the same sender, hosts, clocks, capture device, playback
+devices and target latencies. They can differ only in when messages arrive.
+The paused times of the hosts matter because a host handles the events of
+its audio devices after its backlog. -/
 theorem Builds.same_devices {w' : World H R} (h : m.Builds f d w) (h' : m.Builds f d' w')
     (hoffset : d'.offset = d.offset) (hlogRate : d'.logRate = d.logRate)
     (hwander : d'.wander = d.wander) (hdevlog : d'.deviceLogRate = d.deviceLogRate)
-    (hdevwander : d'.deviceWander = d.deviceWander) (herr : d'.reportError = d.reportError) :
+    (hdevwander : d'.deviceWander = d.deviceWander) (herr : d'.reportError = d.reportError)
+    (hhostp : d'.hostPaused = d.hostPaused) :
     w'.sender = w.sender ∧ w'.host = w.host ∧ w'.clock = w.clock ∧ w'.source = w.source
       ∧ w'.speaker = w.speaker ∧ w'.target = w.target := by
   have hread : ∀ x t, d'.reading x t = d.reading x t := by
@@ -255,7 +258,10 @@ theorem Builds.same_devices {w' : World H R} (h : m.Builds f d w) (h' : m.Builds
     have hfirst : ∀ b, w'.source.first b = w.source.first b := fun b =>
       (h'.capture_first b).trans (h.capture_first b).symm
     refine CaptureDevice.ext_fields hcap hfirst (fun b => ?_) (fun b => ?_)
-    · rw [h'.capture_handed, h.capture_handed, hfirst, hcap]
+    · obtain ⟨v, hv, e⟩ := h.capture_handed b
+      obtain ⟨v', hv', e'⟩ := h'.capture_handed b
+      rw [hhostp, hsender, hfirst, hcap] at hv'
+      rw [e', e, hv'.unique hv, hfirst, hcap]
     · rw [h'.capture_reported, h.capture_reported, hfirst, hcap, hsender, hclock, herr]
   · funext r
     have hout0 : (w'.speaker r).out 0 = (w.speaker r).out 0 := by
@@ -273,12 +279,16 @@ theorem Builds.same_devices {w' : World H R} (h : m.Builds f d w) (h' : m.Builds
     have hfirst : ∀ b, (w'.speaker r).first b = (w.speaker r).first b := fun b =>
       (h'.speaker_first r b).trans (h.speaker_first r b).symm
     refine PlaybackDevice.ext_fields hout hfirst (fun b => ?_) (fun b => ?_)
-    · apply hdinj (some (m.device r))
-      have h1 := h.speaker_asked r b
-      have h2 := h'.speaker_asked r b
-      rw [hdev (some (m.device r)) ((w'.speaker r).out ((w'.speaker r).first b)),
-        hdev (some (m.device r)) ((w'.speaker r).asked b), hfirst, hout] at h2
-      linarith
+    · obtain ⟨ρ, v, hρ, hv, e⟩ := h.speaker_asked r b
+      obtain ⟨ρ', v', hρ', hv', e'⟩ := h'.speaker_asked r b
+      have hρeq : ρ' = ρ := by
+        apply hdinj (some (m.device r))
+        rw [hdev (some (m.device r)) ((w'.speaker r).out ((w'.speaker r).first b)),
+          hdev (some (m.device r)) ρ', hfirst, hout] at hρ'
+        linarith
+      subst hρeq
+      rw [hhostp, hhost] at hv'
+      rw [e', e, hv'.unique hv]
     · rw [h'.speaker_reported, h.speaker_reported, hfirst, hout, hhost, hclock, herr]
   · funext n
     rw [h'.target_eq, h.target_eq]
@@ -313,7 +323,7 @@ theorem Builds.plays_eq_of_sameExcept (hB : m.Builds f d w) (hB' : m.Builds f d'
     (hk : k ∈ (w.speaker r).block b) :
     σ.plays w' lookahead r k = σ.plays w lookahead r k := by
   obtain ⟨hsender, hhost, hclock, hsrc, hspk, htgt⟩ := hB.same_devices hB' h.offset
-    h.logRate h.wander h.deviceLogRate h.deviceWander h.reportError
+    h.logRate h.wander h.deviceLogRate h.deviceWander h.reportError h.hostPaused
   exact σ.plays_eq_of_sameBefore (w₁ := w) (w₂ := w') hsender hhost hclock hsrc hspk htgt
     (hB.deliversSameBefore hB' h) lookahead hb hk
 
@@ -378,7 +388,7 @@ theorem Builds.stall_le_of_sameExcept (hB : m.Builds f d w) (hB' : m.Builds f d'
         + s * (∑ k ∈ Finset.Ico (b * m.blockSize) K,
             (discontinuityAt (σ.plays w' lookahead r) k : ℝ) + 1) := by
   obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB.same_devices hB' h.offset h.logRate h.wander
-    h.deviceLogRate h.deviceWander h.reportError
+    h.deviceLogRate h.deviceWander h.reportError h.hostPaused
   have hsplit : d'.split m.sender (m.host r) = d.split m.sender (m.host r) := by rw [h.split]
   have hmain := hB'.stall_le_of_paused hpos hlink hhost σ hstar lookahead hr hs0 hs1 hslow hθ
     hK hKβ (c := c) (by rw [hsrc]; exact hc) (by rw [hspk, hsplit]; exact hβ)

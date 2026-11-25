@@ -4,7 +4,7 @@ License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
-public import Unisono.Spec.Models.GenerativeWorld
+public import Unisono.Spec.Models.GenerativeDelivery
 
 /-!
 # The devices of a built world never stop
@@ -18,7 +18,8 @@ so it shows a finite reading at every true time, while the reading at the
 `n`-th frame grows with `n`.
 
 Clocks may wander and links and hosts may pause; nothing is assumed about
-the draw.
+the draw. A host that pauses handles the events of its devices late, which
+only makes them later.
 -/
 
 @[expose] public noncomputable section
@@ -37,9 +38,9 @@ theorem Builds.handed_unbounded (hB : m.Builds f d w) (T : Time) :
   refine ⟨b, ?_⟩
   by_contra hle
   have hle' : w.source.handed b ≤ T := not_lt.mp hle
-  have hmono := c.strictMono.monotone hle'
+  have hmono := c.strictMono.monotone ((w.source.handed_after b).trans hle')
   have hcap := hB.capture (w.source.first (b + 1) - 1)
-  rw [← hc, ← hc, ← hB.capture_handed] at hcap
+  rw [← hc, ← hc] at hcap
   have hfirst : b ≤ w.source.first (b + 1) - 1 := by
     rw [hB.capture_first]
     have hpos := m.blockSize_pos
@@ -62,9 +63,9 @@ theorem Builds.asked_unbounded (hB : m.Builds f d w) (r : Fin R) (T : Time) :
   refine ⟨b, ?_⟩
   by_contra hle
   have hle' : (w.speaker r).asked b ≤ T := not_lt.mp hle
-  have hmono := c.strictMono.monotone hle'
+  obtain ⟨ρ, hρ, hask⟩ := hB.exists_request_le_asked r b
+  have hmono := c.strictMono.monotone (hρ.trans hle')
   have hout := hB.speaker_out r ((w.speaker r).first b)
-  have hask := hB.speaker_asked r b
   rw [← hc, ← hc] at hout hask
   have hfirst : b ≤ (w.speaker r).first b := by
     rw [hB.speaker_first]

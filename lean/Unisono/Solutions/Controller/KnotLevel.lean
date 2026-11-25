@@ -461,13 +461,14 @@ next on the schedule of the knots, plus the slope that the rule announces,
 is at least `1 - share` times that time, which is positive. This holds in
 every world. -/
 theorem knotPeriod_add_slope_pos (q : LevelSettings) {share nominal : ℝ} (hs0 : 0 ≤ share)
-    (hs1 : share < 1) (hnominal : 0 < nominal) {i b : ℕ}
+    (hs1 : share < 1) (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed) {i b : ℕ}
     (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b,
       .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
     0 < (1 - share) * w.knotPeriod nominal b
       ∧ (1 - share) * w.knotPeriod nominal b
         ≤ w.knotPeriod nominal b + (announcedAt σ w lookahead q share nominal b).2 := by
-  have hp := w.knotPeriod_pos hnominal b
+  have hp := w.knotPeriod_pos hnominal hstrict b
   have habs := abs_announcedAt_slope_le σ w lookahead q share nominal hi
   have hlim : slopeLimit q share (w.knotPeriod nominal b) ≤ share * w.knotPeriod nominal b := by
     unfold slopeLimit

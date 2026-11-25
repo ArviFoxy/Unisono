@@ -27,13 +27,16 @@ when the clocks of the hosts and of the audio devices run at constant rates
 * `ConstantRates.steadyBound_le`: `steadyBound` is at most
   `fixedClockBound`.
 * `lintegral_steadyBound_le`: in every random world of a member whose
-  clocks do not wander and whose audio devices report exact timestamps, the
+  clocks do not wander, whose audio devices report exact timestamps and
+  whose hosts never pause, the
   expected cost of a solution of the compared class with measurable
   playback is at least the mean of `steadyBound`.
 
-Which outcomes: the members with steady clocks (`Member.SteadyClocks`);
-links and hosts pause with any laws, and the rates of the clocks are
-spread. Members whose clocks wander are not covered by the closed form:
+Which outcomes: the members with steady hosts (`Member.SteadyHosts`): their
+clocks do not wander, their audio devices report exact timestamps and their
+hosts never pause; links pause with any laws, and the rates of the clocks
+are spread. Members whose clocks wander or whose hosts pause are not covered
+by the closed form:
 for them only `lintegral_fixedClockBound_le` holds so far. This is a lower
 bound, not a statement that a solution is optimal.
 -/
@@ -522,7 +525,7 @@ theorem ConstantRates.steadyBound_le (hS : ConstantRates m f d w) (lookahead : �
           ≤ ((⌈steadyHorizon w 𝒮 n / ℓ⌉₊ : ℕ) : ℝ) := by
         have h1 : (w.speaker r).asked (blocksBefore m w r (steadyHorizon w 𝒮 n) - Nbar)
             ≤ (w.speaker r).asked (blocksBefore m w r (steadyHorizon w 𝒮 n)) :=
-          (w.speaker r).asked_strictMono.monotone (Nat.sub_le _ _)
+          (w.speaker r).asked_mono (Nat.sub_le _ _)
         have h2 := hS.asked_eq r (blocksBefore m w r (steadyHorizon w 𝒮 n))
         have h3 := leadOf_pos m d r
         have h4 : (w.speaker r).asked (blocksBefore m w r (steadyHorizon w 𝒮 n) - Nbar)
@@ -592,8 +595,9 @@ theorem ConstantRates.steadyBound_le (hS : ConstantRates m f d w) (lookahead : �
     ring
 
 /-- **A lower bound on the expected cost in closed form, for members with
-steady clocks.** Take a member whose clocks do not wander and whose audio
-devices report exact timestamps; its links and hosts may pause and the
+steady hosts.** Take a member whose clocks do not wander, whose audio
+devices report exact timestamps and whose hosts never pause; its links may
+pause and the
 rates of its clocks may be spread. Take a random world of it and a solution
 of the compared class (`StarSolutions`, with the step bound `u`,
 `0 ≤ u < 1`) whose playback is a measurable function of what is drawn
@@ -604,7 +608,7 @@ expected cost of the solution is at least the mean of `steadyBound`, with
 the least advance `1 - u` of a step. -/
 theorem lintegral_steadyBound_le [DecidableEq H] [Countable H] {Ω : Type}
     [MeasurableSpace Ω] {P : Measure Ω} {D : Ω → Draw H R} {Msg : Type}
-    {σ : Solution H R Msg} {lookahead : ℕ+} {c : Weights} {u : ℝ} (hf : f.SteadyClocks)
+    {σ : Solution H R Msg} {lookahead : ℕ+} {c : Weights} {u : ℝ} (hf : f.SteadyHosts)
     (hσ : m.StarSolutions f lookahead c u Msg σ)
     (hplays : m.measurablePlays f lookahead Msg σ) (hu0 : 0 ≤ u) (hu1 : u < 1)
     (hD : m.Prior f P D) {world : Ω → World H R} (hB : ∀ ω, m.Builds f (D ω) (world ω))

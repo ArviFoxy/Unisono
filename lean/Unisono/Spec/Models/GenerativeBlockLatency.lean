@@ -204,13 +204,14 @@ theorem Builds.block_le_latency (hB : m.Builds f d w)
     ⟨c * m.blockSize - 1, Nat.sub_add_cancel (Nat.mul_pos hcpos hBpos)⟩
   have hNR : (N : ℝ) + 1 = (c : ℝ) * m.blockSize := by exact_mod_cast hN
   obtain ⟨c', hcc⟩ : ∃ c', c = c' + 1 := ⟨c - 1, by omega⟩
-  have hhand : w.source.handed c' = w.source.capture N := by
-    rw [hB.capture_handed, hB.capture_first]
-    congr 1
-    rw [← hcc]
-    omega
-  have hNlt := hclt c' (by omega)
-  rw [hhand] at hNlt
+  have hhand : w.source.capture N ≤ w.source.handed c' := by
+    have h := w.source.handed_after c'
+    rw [hB.capture_first] at h
+    have e : (c' + 1) * m.blockSize - 1 = N := by
+      rw [← hcc]
+      omega
+    rwa [e] at h
+  have hNlt := lt_of_le_of_lt hhand (hclt c' (by omega))
   -- The frame is at or before the last frame of that capture block.
   have hnN : n ≤ N := by
     have h4 : ((n : ℕ) : ℝ) ≤ ((N : ℕ) : ℝ) := by linarith

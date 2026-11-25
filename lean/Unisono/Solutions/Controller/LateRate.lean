@@ -38,7 +38,7 @@ The second term is what the count by blocks loses: one output sample for
 each slow block.
 
 **Theorem** (`ae_lateRate_le`). In every random world of a member with
-steady clocks, in which no speaker is on the sender's host, the bound holds
+steady hosts, in which no speaker is on the sender's host, the bound holds
 in almost every outcome with `q r` the probability `lateProbability` of the
 member for the least delay from the sender to the host of `r` and the least
 margin of `r`.
@@ -302,7 +302,7 @@ theorem longRun_slowAt_le (hS : ConstantRates m f d w) (lookahead : ℕ+) (L : �
   have hout : ∀ (T : Time) (r : Fin R), ∃ k, T ≤ (w.speaker r).out k := by
     intro T r
     obtain ⟨b, hb⟩ := hS.asked_unbounded r T
-    exact ⟨(w.speaker r).first b, (hb.trans ((w.speaker r).asked_before b)).le⟩
+    exact ⟨(w.speaker r).first b, (hb.trans (hS.asked_lt_out r b)).le⟩
   have hbound : ∀ T : Time,
       w.accruedOutputs (fun r k => (slowAt m f d w lookahead L r k : ℝ≥0∞)) T
         ≤ (R : ℝ≥0∞)⁻¹ * ∑ r, ENNReal.ofReal (G r T) := by
@@ -428,8 +428,8 @@ theorem lateRate_le_of_slowBlocks (hS : ConstantRates m f d w) (lookahead : ℕ+
           + m.rate * Real.exp (d.deviceLogRate none) / m.blockSize) * q r := by
         field_simp
 
-/-- **The late rate of a held level in a member with steady clocks.** In
-every random world of a member with steady clocks in which no speaker is on
+/-- **The late rate of a held level in a member with steady hosts.** In
+every random world of a member with steady hosts in which no speaker is on
 the sender's host, in almost every outcome, the late rate at the level `L`
 is at most the mean over the speakers of the following product. The first
 factor is the sum of two rates in true time: the output samples per second
@@ -438,7 +438,7 @@ second factor is the probability, in the member, that a message from the
 sender to the speaker's host takes more than the least margin of the
 speaker (`lateProbability`). -/
 theorem ae_lateRate_le [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
     (hnos : ∀ r, m.host r ≠ m.sender) :
     ∀ᵐ ω ∂P, lateRate m f (D ω) (world ω) lookahead L

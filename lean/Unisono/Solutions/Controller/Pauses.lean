@@ -7,7 +7,7 @@ module
 public import Unisono.Solutions.Controller.HeldLevel
 
 /-!
-# The controller's clock estimate when links and hosts pause
+# The controller's clock estimate when links pause
 
 A pause of a link or of a host delays a clock query or its answer, so a
 clock exchange that a pause delayed gives a wrong sample of the sender's
@@ -25,7 +25,7 @@ rates:
   (`clockLineFrom_of_undelayed`), whatever pauses come later.
 
 **Theorem** (`plays_under_pauses`). In a world whose clocks run at constant
-rates, with exact timestamps and with pauses of links and of hosts, the
+rates, with exact timestamps and with pauses of links and none of hosts, the
 controller with the least-round-trip estimator holds the level at `L`. Once
 two clock exchanges of a speaker's host were not delayed, from some output
 sample on each output sample of the speaker plays the position that is due,
@@ -35,7 +35,7 @@ source otherwise.
 
 Whether two clock exchanges of a host escape every pause is a property of
 the outcome. It holds in almost every outcome of every random world of a
-member with steady clocks (`ae_twoUndelayed` in
+member with steady hosts (`ae_twoUndelayed` in
 `Unisono.Solutions.Controller.Undelayed`).
 -/
 
@@ -172,9 +172,9 @@ theorem clockLineFrom_of_undelayed (hS : ConstantRates m f d w) (lookahead : ℕ
     (fun y hy => (exchange_roundTrip p hS lookahead clockEst deviceEst levelRule hps hy).2)
     ⟨x, hsub x hx, x', hsub x' hx', hτ, hτ', hne⟩
 
-/-- **What the controller plays when links and hosts pause.** Consider a
+/-- **What the controller plays when links pause.** Consider a
 world whose clocks run at constant rates, with exact timestamps and with
-pauses of links and of hosts, and a speaker `r` whose host is not the
+pauses of links and none of hosts, and a speaker `r` whose host is not the
 sender's. The controller uses the least-round-trip estimator for the
 sender's clock and the two-report estimator for the devices, and holds the
 level at `L`. Suppose that at some step the view of the speaker's host holds

@@ -45,10 +45,10 @@ theorem Builds.exists_le_asked (hB : m.Builds f d w) (r : Fin R) (T : Time) :
     ((dc.read T - dc.read ((w.speaker r).out 0) + m.lead) * m.rate)
   refine ⟨n, ?_⟩
   by_contra hlt
-  have h1 := dc.strictMono.monotone (not_le.mp hlt).le
-  have h2 := hB.speaker_asked r n
+  obtain ⟨ρ, hρ, h2⟩ := hB.exists_request_le_asked r n
+  have h1 := dc.strictMono.monotone (hρ.trans (not_le.mp hlt).le)
   have h3 := hB.speaker_out r ((w.speaker r).first n)
-  rw [← hdc ((w.speaker r).out ((w.speaker r).first n)), ← hdc ((w.speaker r).asked n)] at h2
+  rw [← hdc ((w.speaker r).out ((w.speaker r).first n)), ← hdc ρ] at h2
   rw [← hdc ((w.speaker r).out ((w.speaker r).first n)), ← hdc ((w.speaker r).out 0)] at h3
   have e : (w.speaker r).first n = n * m.blockSize := hB.speaker_first r n
   have h4 : (n : ℝ) ≤ (((w.speaker r).first n : ℕ) : ℝ) := by

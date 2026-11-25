@@ -25,11 +25,13 @@ does, given its view.
 
 **The run** of a solution in a world is what happens when the events are
 processed in chronological order (`Solution.states`). The world determines
-when each device event occurs and when each message arrives; the solution
-determines what each host does. Every solution has exactly one run in every
-world. Simultaneous events are processed in a fixed order: capture events
-first, then speaker requests in speaker index order, then message arrivals,
-then timers in the order in which they were set. Messages that arrive at the
+when each device event is handled and when each message arrives; the
+solution determines what each host does. Every solution has exactly one run
+in every world. Simultaneous events are processed in a fixed order: capture
+events first, then speaker requests in speaker index order, then message
+arrivals, then timers in the order in which they were set. Handovers at the
+same true time are handled in the order of their blocks, and so are the
+requests of one speaker. Messages that arrive at the
 same true time are handled in the order of a fixed numbering of the hosts
 that sent them (`World.hostIndex`: the sender's host first, then the hosts
 of the speakers in speaker order), and messages from one host in the order
@@ -45,9 +47,10 @@ Two constraints hold for every solution.
   resampler computes the sound at `x` from the frames less than `a` frames
   away from `x`, where `a` is the resampler's lookahead: one frame for
   linear interpolation, about half the filter length for a longer filter.
-  The output sample plays the original sound only if its host holds all of
-  those frames when the device requests the block; otherwise it is a missed
-  sample (`playable`).
+  The output sample plays the original sound only if its host handles the
+  request of the block before the output sample leaves the device, and
+  holds all of those frames when it does; otherwise it is a missed sample
+  (`State.handle`, `playable`).
 
 The lookahead is a parameter of the run. Two more constraints are parameters
 that statements assume: the network's capacity (`Solution.WithinBudget`) and the
@@ -269,7 +272,9 @@ def sendAll (h : H) (t : Time) (held : Finset ℕ) (sends : List (H × Msg × Fi
 it adds the event to its view, holds the frames the event brings, sends the
 messages the solution chooses (each with only the frames that the host
 holds), sets its timers, and, when a speaker's device requests a block,
-decides what each output sample of the block plays. -/
+decides what each output sample of the block plays. An output sample that
+left the device at `t` or earlier plays nothing of the source: the host
+handled the request too late for it. -/
 def handle (h : H) (t : Time) (obs : Observation H R Msg) : State H R Msg :=
   let view := st.views h ++ [⟨(w.clock h).read t, obs⟩]
   let act := σ h view
@@ -282,7 +287,8 @@ def handle (h : H) (t : Time) (obs : Observation H R Msg) : State H R Msg :=
       if (w.clock h).read t < c then ((w.clock h).timeAt c).map fun u => ⟨u, h⟩ else none
     plays := match obs with
       | .asked r outputs _ => fun r' k =>
-          if r' = r ∧ k ∈ outputs then playable lookahead held (act.plays k)
+          if r' = r ∧ k ∈ outputs then
+            if t < (w.speaker r).out k then playable lookahead held (act.plays k) else none
           else afterSends.plays r' k
       | _ => afterSends.plays }
 

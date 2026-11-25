@@ -78,12 +78,13 @@ link to the speaker's host begin in a cell on average, and
 `q = exp (-rate * m₀ * ℓ)`. -/
 theorem Prior.limsup_cells_le_cost {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable D P)
     {d₁ : Draw H R} {w₁ : World H R} (hB₁ : m.Builds f d₁ w₁)
-    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j) (σ : Solution H R Msg)
+    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
+    (hhost₁ : ∀ h, Monotone (d₁.hostPaused h)) (σ : Solution H R Msg)
     (hstar : σ.IsStar m.sender) (lookahead : ℕ+) (c : Weights) (𝒮 : Finset (Fin R))
     (h𝒮 : ∀ r ∈ 𝒮, m.host r ≠ m.sender) {s : ℝ} (hs : 0 < s) (hs1 : s ≤ 1) {ℓ : ℝ}
     (hℓ : 0 < ℓ) {Xmax : ℝ} {Nbar m₀ : ℕ} (hX : Xmax ≤ ((m₀ : ℝ) + 1) * ℓ)
     {w : Ω → World H R} {wOut : Fin R → ℕ → Ω → World H R}
-    (hw : ∀ ω, m.Builds f (d₁.withPaused (D ω)) (w ω))
+    (hw : ∀ ω, m.Builds f (d₁.withLinks (D ω)) (w ω))
     (hOut : ∀ r j ω, m.Builds f (frameOutside m d₁ (D ω) r ℓ j) (wOut r j ω))
     (hslow : ∀ r ∈ 𝒮, ∀ᵐ ω ∂P, ∀ k x y, σ.plays (w ω) lookahead r k = some x →
       σ.plays (w ω) lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
@@ -164,7 +165,7 @@ theorem Prior.limsup_cells_le_cost {Msg : Type} (hD : m.Prior f P D) (hm : AEMea
             (σ.plays (w ω) lookahead r) ∂P := by
       intro r hr
       refine le_trans (Finset.sum_le_sum fun j _ => ?_)
-        (hD.sum_cellValue_le hm hB₁ hpos₁ σ hstar lookahead (h𝒮 r hr) hs.le hs1 hℓ.le m₀ hw
+        (hD.sum_cellValue_le hm hB₁ hpos₁ hhost₁ σ hstar lookahead (h𝒮 r hr) hs.le hs1 hℓ.le m₀ hw
           (hOut r) (hslow r hr) (hS r) (hG r) (hdesc r hr) (hδ r) (hcount r) (pc r) (pr r)
           Gcap (J n r) (fun j hj => (hJ n r hr j hj).2.2) (c.latency : ℝ≥0∞) w')
       refine le_trans (mul_le_mul' le_rfl (hD.lintegral_clear_ge d₁ r hℓ.le m₀ j
@@ -196,7 +197,7 @@ theorem Prior.limsup_cells_le_cost {Msg : Type} (hD : m.Prior f P D) (hm : AEMea
         exact hω
       · exact Eventually.of_forall fun ω h => absurd h hr
     filter_upwards [hslowAll] with ω hω n
-    obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices (hw ω) rfl rfl rfl rfl rfl rfl
+    obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices (hw ω) rfl rfl rfl rfl rfl rfl rfl
     have hdefc : (w ω).captureDeficit p₀ (T n) = w₁.captureDeficit p₀ (T n) := by
       unfold World.captureDeficit
       rw [hsrc]
@@ -207,13 +208,13 @@ theorem Prior.limsup_cells_le_cost {Msg : Type} (hD : m.Prior f P D) (hm : AEMea
         exact hout n r hr)
       (fun r hr k hk => lt_trans
         ((hw ω).capture_lt_out hpos₁ (fun i j' => hD.linkPaused_monotone ω i j')
-          (fun x => hD.hostPaused_monotone ω x) σ hstar lookahead (h𝒮 r hr) hk) (by
+          hhost₁ σ hstar lookahead (h𝒮 r hr) hk) (by
           rw [hspk]
           exact hout n r hr))
       (fun r => cellsCost m f d₁ w₁ lookahead r s ℓ (δ r) (pc r) (pr r) Gcap
         (c.latency : ℝ≥0∞) Xmax Nbar w' m₀ (J n r) (D ω) (w ω) (σ.plays (w ω) lookahead r))
       (fun r hr => hB₁.cellsCost_le (hw ω) hpos₁ (fun i j' => hD.linkPaused_monotone ω i j')
-        (fun x => hD.hostPaused_monotone ω x) σ hstar lookahead (h𝒮 r hr) hs hℓ hX (hω r hr)
+        hhost₁ σ hstar lookahead (h𝒮 r hr) hs hℓ hX (hω r hr)
         (δ r) hcap hp₀ (N n r) (fun b _ => hpc0 r hr b) (fun b _ => hpcle r hr b)
         (fun b _ => hpr r hr b) (fun b _ => hpc r hr b) (J n r)
         (fun j hj => ⟨(hJ n r hr j hj).1, (hJ n r hr j hj).2.1,

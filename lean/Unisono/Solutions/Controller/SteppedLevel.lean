@@ -427,7 +427,7 @@ theorem announced_steppedLevel_succ (q : LevelSettings)
     obtain ⟨j, hij, hji', t, obs, hj, rfl⟩ := hev e he
     dsimp only at hobs
     subst hobs
-    obtain ⟨b', -, rfl, -, -⟩ := Solution.handled_handed w _ lookahead hj
+    obtain ⟨b', -, -, rfl, -⟩ := Solution.handled_handed w _ lookahead hj
     have hEj := Solution.earliest_of_handled_handed _ w lookahead hj
     obtain ⟨hj1, hj2⟩ := Solution.handedNext_of_earliest _ w lookahead hEj
     have h1 := hmono hij

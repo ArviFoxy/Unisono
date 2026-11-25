@@ -440,7 +440,8 @@ theorem Builds.capture_lt_out (hB : m.Builds f d w)
   rw [← hlast] at hlt
   have hnlast : n ≤ last := by omega
   have hhanded : w.source.capture n ≤ w.source.handed (last / m.blockSize) := by
-    rw [hB.capture_handed, hB.capture_first]
+    refine le_trans ?_ (w.source.handed_after (last / m.blockSize))
+    rw [hB.capture_first]
     refine w.source.capture_strictMono.monotone ?_
     have h5 := Nat.lt_div_mul_add m.blockSize_pos (a := last)
     have e : (last / m.blockSize + 1) * m.blockSize
@@ -450,14 +451,20 @@ theorem Builds.capture_lt_out (hB : m.Builds f d w)
     omega
   have harr := hB.le_arrival m.sender (m.host r) (w.source.handed (last / m.blockSize))
   have hδ := hpos m.sender (m.host r)
-  have hask := (w.speaker r).asked_before ((k + 1) / m.blockSize)
-  have hout : (w.speaker r).out ((w.speaker r).first ((k + 1) / m.blockSize))
-      ≤ (w.speaker r).out K := by
-    refine (w.speaker r).out_strictMono.monotone ?_
-    rw [hB.speaker_first]
+  have hmem : k + 1 ∈ (w.speaker r).block ((k + 1) / m.blockSize) := by
+    unfold PlaybackDevice.block
+    rw [List.mem_range'_1, hB.speaker_first, hB.speaker_first]
     have h6 := Nat.div_mul_le_self (k + 1) m.blockSize
-    generalize (k + 1) / m.blockSize * m.blockSize = q at h6 ⊢
+    have h7 := Nat.lt_div_mul_add m.blockSize_pos (a := k + 1)
+    have e : ((k + 1) / m.blockSize + 1) * m.blockSize
+        = (k + 1) / m.blockSize * m.blockSize + m.blockSize := by ring
+    rw [e]
+    generalize (k + 1) / m.blockSize * m.blockSize = q at h6 h7 ⊢
     omega
+  -- The output sample plays the source, so its request was handled before it left.
+  have hask := σ.asked_lt_out_of_plays w lookahead hmem hy
+  have hout : (w.speaker r).out (k + 1) ≤ (w.speaker r).out K :=
+    (w.speaker r).out_strictMono.monotone hkK
   linarith
 
 end Unisono.Spec.GenerativeWorld

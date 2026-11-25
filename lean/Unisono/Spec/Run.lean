@@ -273,7 +273,7 @@ theorem Solution.lt_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) {n b :
     (h : w.source.handed b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).handedNext := by
   by_contra hle
-  have h1 := w.source.handed_strictMono.monotone (not_lt.mp hle)
+  have h1 := w.source.handed_mono (not_lt.mp hle)
   have h2 := (σ.eventTime_dueFrom w lookahead n).1
   linarith
 
@@ -840,18 +840,22 @@ theorem Solution.exists_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {m
         exact ⟨m, Nat.lt_succ_self m, hb, hb ▸ hearly⟩
 
 /-- **A speaker plays what its host decided at the request.** When step `n`
-handles request `b` of speaker `r`, every output sample of the block plays
-what the speaker's host decided then, if the host holds the frames it
-needs. -/
+handles request `b` of speaker `r`, every output sample of the block that
+has not left the device yet plays what the speaker's host decided then, if
+the host holds the frames it needs. An output sample that left before the
+request was handled plays nothing of the source. -/
 theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
     {b : ℕ} (hb : (σ.states w lookahead n).askedNext r = b)
     (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
       = some (.asked r b))
     {k : ℕ} (hk : k ∈ (w.speaker r).block b) :
-    σ.plays w lookahead r k = playable lookahead ((σ.states w lookahead n).held (w.host r))
-      ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
-        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
-          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k) := by
+    σ.plays w lookahead r k
+      = if (w.speaker r).asked b < (w.speaker r).out k then
+          playable lookahead ((σ.states w lookahead n).held (w.host r))
+            ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
+              ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+                .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k)
+        else none := by
   have hkb : (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
     unfold PlaybackDevice.block at hk
     rw [List.mem_range'_1] at hk
@@ -886,6 +890,51 @@ theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) 
   unfold State.step
   rw [hearly]
   simp only [State.handle, Observation.frames, Finset.union_empty, hk, and_self, ite_true]
+
+/-- When step `n` handles request `b` of speaker `r` before output sample
+`k` of the block leaves, the output sample plays what the speaker's host
+decided then, if the host holds the frames it needs. -/
+theorem Solution.plays_of_asked_step_of_lt (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ}
+    {r : Fin R} {b : ℕ} (hb : (σ.states w lookahead n).askedNext r = b)
+    (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r b))
+    {k : ℕ} (hk : k ∈ (w.speaker r).block b)
+    (hlt : (w.speaker r).asked b < (w.speaker r).out k) :
+    σ.plays w lookahead r k = playable lookahead ((σ.states w lookahead n).held (w.host r))
+      ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k) := by
+  rw [σ.plays_of_asked_step w lookahead hb hearly hk, ite_eq_left hlt]
+
+/-- **An output sample that left before its request was handled plays
+nothing of the source.** -/
+theorem Solution.plays_eq_none_of_out_le (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
+    {b k : ℕ} (hk : k ∈ (w.speaker r).block b)
+    (hle : (w.speaker r).out k ≤ (w.speaker r).asked b) :
+    σ.plays w lookahead r k = none := by
+  by_cases hex : ∃ m, b < (σ.states w lookahead m).askedNext r
+  · obtain ⟨m, hm⟩ := hex
+    obtain ⟨n, -, hb, hearly⟩ := σ.exists_asked_step w lookahead hm
+    rw [σ.plays_of_asked_step w lookahead hb hearly hk, ite_eq_right (not_lt.mpr hle)]
+  · unfold Solution.plays
+    rw [dite_eq_right]
+    rintro ⟨n', hn'⟩
+    refine hex ⟨n', ?_⟩
+    unfold PlaybackDevice.block at hk
+    rw [List.mem_range'_1] at hk
+    by_contra hnot
+    have := (w.speaker r).first_strictMono.monotone (not_lt.mp hnot)
+    omega
+
+/-- **A speaker plays the source only at output samples whose request was
+handled before they left.** -/
+theorem Solution.asked_lt_out_of_plays (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
+    {b k : ℕ} {x : ℝ} (hk : k ∈ (w.speaker r).block b)
+    (hp : σ.plays w lookahead r k = some x) :
+    (w.speaker r).asked b < (w.speaker r).out k := by
+  by_contra hnot
+  rw [σ.plays_eq_none_of_out_le w lookahead hk (not_lt.mp hnot)] at hp
+  exact absurd hp (by simp)
 
 /-- The event handled at a step whose earliest pending event is request `b`
 of speaker `r`: that request, at the speaker's host and at the request's
@@ -1114,7 +1163,7 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
     · -- A handoff, which happens by `T`.
       have hb : st.handedNext < NH := by
         by_contra hge
-        have := w.source.handed_strictMono.monotone (not_lt.mp hge)
+        have := w.source.handed_mono (not_lt.mp hge)
         simp only [State.key] at htime
         linarith
       have hw := State.handle_weight w σ lookahead wt T st w.sender (w.source.handed st.handedNext)
@@ -1131,7 +1180,7 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
     · -- A request, which happens by `T`.
       have hb : st.askedNext r < NQ r := by
         by_contra hge
-        have := (w.speaker r).asked_strictMono.monotone (not_lt.mp hge)
+        have := (w.speaker r).asked_mono (not_lt.mp hge)
         have h2 := hNQ r
         simp only [State.key] at htime
         linarith

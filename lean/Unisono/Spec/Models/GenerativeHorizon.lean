@@ -36,7 +36,7 @@ cell `j` that are within `m` cells of it, with `Xmax ≤ (m + 1) * ℓ`. For
 `g ≥ 0`: the sum over the cells of `J` that satisfy `C` of the sum of `g`
 over the output samples of the window is at most the sum of `g` over the
 output samples before `N * B`. -/
-theorem sum_ite_cellSamples_le {asked : ℕ → ℝ} (hmono : StrictMono asked) {ℓ δ Xmax : ℝ}
+theorem sum_ite_cellSamples_le {asked : ℕ → ℝ} (hmono : Monotone asked) {ℓ δ Xmax : ℝ}
     (hℓ : 0 < ℓ) {m : ℕ} (hX : Xmax ≤ ((m : ℝ) + 1) * ℓ) {Nbar B : ℕ} (hB : 0 < B)
     (hex : ∀ T, ∃ b, T ≤ asked b) {I : ℕ → ℝ} (g : ℕ → ℝ) (hg : ∀ k, 0 ≤ g k) (J : Finset ℕ)
     {N : ℕ} (C : ℕ → Prop) [DecidablePred C]
@@ -60,7 +60,7 @@ and that block `b - 1` is requested before `j * ℓ + δ`. Let `X b ≥ 0` be a
 quantity of playback block `b`, for `b < N`. Then the sum over the cells of
 `ℓ / (asked b - asked (b - 1))` times `X (b - 1)` is at most the sum of `X`
 over the first `N` blocks. -/
-theorem sum_share_le {asked : ℕ → ℝ} (hmono : StrictMono asked)
+theorem sum_share_le {asked : ℕ → ℝ} (hmono : Monotone asked)
     (hex : ∀ T, ∃ b, T ≤ asked b) {ℓ δ : ℝ} (hℓ : 0 < ℓ) (X : ℕ → ℝ) {N : ℕ}
     (hX0 : ∀ b < N, 0 ≤ X b) (J : Finset ℕ)
     (hJ : ∀ j ∈ J, 1 ≤ firstFrom asked (((j : ℝ) + 1) * ℓ + δ)
@@ -91,7 +91,6 @@ theorem sum_share_le {asked : ℕ → ℝ} (hmono : StrictMono asked)
       rw [hfib j hj] at h3
       exact ⟨hfib j hj, h3⟩)
   rw [Nat.add_sub_cancel] at hcard
-  have hden : 0 < asked (b + 1) - asked b := sub_pos.mpr (hmono (Nat.lt_succ_self b))
   have hterm : ∀ j ∈ J.filter (fun j : ℕ => firstFrom asked (((j : ℝ) + 1) * ℓ + δ) - 1 = b),
       ENNReal.ofReal
           (ℓ / (asked (firstFrom asked (((j : ℝ) + 1) * ℓ + δ))
@@ -104,8 +103,12 @@ theorem sum_share_le {asked : ℕ → ℝ} (hmono : StrictMono asked)
   refine ENNReal.ofReal_le_ofReal ?_
   have h1 : ((J.filter (fun j : ℕ => firstFrom asked (((j : ℝ) + 1) * ℓ + δ) - 1 = b)).card : ℝ)
       * (ℓ / (asked (b + 1) - asked b)) ≤ 1 := by
-    rw [← mul_div_assoc]
-    exact (div_le_one hden).mpr hcard
+    rcases (hmono (Nat.le_add_right b 1)).lt_or_eq with hlt | heq
+    · rw [← mul_div_assoc]
+      exact (div_le_one (sub_pos.mpr hlt)).mpr hcard
+    · -- Two requests handled at the same true time: no cell lies between them.
+      rw [← heq, sub_self, div_zero, mul_zero]
+      exact zero_le_one
   have h2 := mul_le_mul_of_nonneg_right h1 (hX0 b hbN)
   linarith
 
@@ -193,7 +196,7 @@ def cellsCost (m : GenerativeWorld H R) (f : Member H R) (d₁ : Draw H R) (w₁
     (Xmax : ℝ) (Nbar : ℕ) (w' : ℝ≥0∞) (m₀ : ℕ) (J : Finset ℕ) (e : Draw H R) (w : World H R)
     (plays : ℕ → Option ℝ) : ℝ≥0∞ :=
   ∑ j ∈ J, (cellLatency m f d₁ w₁ lookahead r s ℓ δ pc pr Gcap cl j
-      (max (room m f (d₁.withPaused e) w lookahead plays r (cellBlock w₁ r ℓ δ j)) 0)
+      (max (room m f (d₁.withLinks e) w lookahead plays r (cellBlock w₁ r ℓ δ j)) 0)
     + (if frameOutside m d₁ e r ℓ j ∈ clearSet m r ℓ m₀ j then
         w' * ENNReal.ofReal
           (min (∑ k ∈ cellSamples (w₁.speaker r).asked ℓ δ Xmax Nbar m.blockSize j
@@ -214,11 +217,12 @@ the least latency term (`cellFloor`) elsewhere, is at most the mean of what
 the cells cost at least (`cellsCost`). -/
 theorem Prior.sum_cellValue_le {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable D P)
     {d₁ : Draw H R} {w₁ : World H R} (hB₁ : m.Builds f d₁ w₁)
-    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j) (σ : Solution H R Msg)
+    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
+    (hhost₁ : ∀ h, Monotone (d₁.hostPaused h)) (σ : Solution H R Msg)
     (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R} (hr : m.host r ≠ m.sender)
     {s : ℝ} (hs0 : 0 ≤ s) (hs1 : s ≤ 1) {ℓ : ℝ} (hℓ : 0 ≤ ℓ) {Xmax : ℝ} {Nbar : ℕ} (m₀ : ℕ)
     {w : Ω → World H R} {wOut : ℕ → Ω → World H R}
-    (hw : ∀ ω, m.Builds f (d₁.withPaused (D ω)) (w ω))
+    (hw : ∀ ω, m.Builds f (d₁.withLinks (D ω)) (w ω))
     (hOut : ∀ j ω, m.Builds f (frameOutside m d₁ (D ω) r ℓ j) (wOut j ω))
     (hslow : ∀ᵐ ω ∂P, ∀ k x y, σ.plays (w ω) lookahead r k = some x →
       σ.plays (w ω) lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
@@ -262,7 +266,7 @@ theorem Prior.sum_cellValue_le {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasura
             cellValue m f d₁ w₁ lookahead r s ℓ δ pc pr Gcap cl Xmax Nbar count w' j
           else cellFloor m f d₁ w₁ lookahead r s ℓ δ pc pr Gcap cl j) ∂P
       ≤ ∫⁻ ω, (cellLatency m f d₁ w₁ lookahead r s ℓ δ pc pr Gcap cl j
-            (max (room m f (d₁.withPaused (D ω)) (w ω) lookahead
+            (max (room m f (d₁.withLinks (D ω)) (w ω) lookahead
               (σ.plays (w ω) lookahead r) r (cellBlock w₁ r ℓ δ j)) 0)
           + (if frameOutside m d₁ (D ω) r ℓ j ∈ clearSet m r ℓ m₀ j then
               w' * ENNReal.ofReal
@@ -272,7 +276,7 @@ theorem Prior.sum_cellValue_le {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasura
                     + s * (discontinuityAt (σ.plays (w ω) lookahead r) k : ℝ)))
                   (s * ((Nbar : ℝ) * m.blockSize)))
             else 0)) ∂P := fun j hj =>
-    hD.cell_mean_ge hm hB₁ hpos₁ σ hstar lookahead hr hs0 hs1 hℓ j hw (hOut j) hslow hS hG
+    hD.cell_mean_ge hm hB₁ hpos₁ hhost₁ σ hstar lookahead hr hs0 hs1 hℓ j hw (hOut j) hslow hS hG
       (hdesc j) hδ (β₀ := cellBlock w₁ r ℓ δ j) rfl (hJ j hj) rfl (hcountj j) (hφ j) w' (hSC j)
   exact (Finset.sum_le_sum hcell).trans (sum_lintegral_le J _)
 
@@ -293,9 +297,9 @@ weighted latency of the frames that the steps before output sample
 `Builds.sum_blocks_le_latency`, plus `w'` times the missed samples and `s`
 times the discontinuities of the output samples before `N * blockSize`. -/
 theorem Builds.cellsCost_le {Msg : Type} {d₁ e : Draw H R} {w₁ w : World H R}
-    (hB₁ : m.Builds f d₁ w₁) (hw : m.Builds f (d₁.withPaused e) w)
+    (hB₁ : m.Builds f d₁ w₁) (hw : m.Builds f (d₁.withLinks e) w)
     (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
-    (hlink : ∀ i j, Monotone (e.linkPaused i j)) (hhost : ∀ x, Monotone (e.hostPaused x))
+    (hlink : ∀ i j, Monotone (e.linkPaused i j)) (hhost : ∀ x, Monotone (d₁.hostPaused x))
     (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R}
     (hr : m.host r ≠ m.sender) {s : ℝ} (hs : 0 < s) {ℓ : ℝ} (hℓ : 0 < ℓ) {Xmax : ℝ}
     {Nbar m₀ : ℕ} (hX : Xmax ≤ ((m₀ : ℝ) + 1) * ℓ)
@@ -327,13 +331,13 @@ theorem Builds.cellsCost_le {Msg : Type} {d₁ e : Draw H R} {w₁ w : World H R
             ENNReal.ofReal ((missedAt (σ.plays w lookahead r) k : ℝ)
               + s * (discontinuityAt (σ.plays w lookahead r) k : ℝ)) := by
   classical
-  have hmonoA : StrictMono (w₁.speaker r).asked := (w₁.speaker r).asked_strictMono
+  have hmonoA : Monotone (w₁.speaker r).asked := (w₁.speaker r).asked_mono
   have hexA : ∀ T, ∃ b, T ≤ (w₁.speaker r).asked b := fun T => hB₁.exists_le_asked r T
   have hB1 : (0 : ℝ) ≤ (m.blockSize : ℝ) - 1 := by
     have h1 : 1 ≤ m.blockSize := m.blockSize_pos
     have h2 : (1 : ℝ) ≤ (m.blockSize : ℝ) := by exact_mod_cast h1
     linarith
-  obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices hw rfl rfl rfl rfl rfl rfl
+  obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB₁.same_devices hw rfl rfl rfl rfl rfl rfl rfl
   have hsum := hw.sum_blocks_le_latency hpos₁ hlink hhost σ hstar lookahead hr hs
     (fun k x h => (hw.arrival_lt_of_plays hpos₁ hlink hhost σ hstar lookahead hr h).1) hslow
     hcap hp₀ N hpc0 hpcle (by
@@ -341,7 +345,7 @@ theorem Builds.cellsCost_le {Msg : Type} {d₁ e : Draw H R} {w₁ w : World H R
       exact hpr) (by
       rw [hspk, hsrc]
       exact hpc)
-  have hRL : ∀ (b : ℕ) (ρ : ℝ), roomLatency m f (d₁.withPaused e) w lookahead r s
+  have hRL : ∀ (b : ℕ) (ρ : ℝ), roomLatency m f (d₁.withLinks e) w lookahead r s
       (pc b) (pr b) b ρ = roomLatency m f d₁ w₁ lookahead r s (pc b) (pr b) b ρ :=
     fun b ρ => by
       unfold roomLatency
@@ -354,14 +358,14 @@ theorem Builds.cellsCost_le {Msg : Type} {d₁ e : Draw H R} {w₁ w : World H R
   · -- The latency terms of the cells are shares of the terms of the blocks.
     obtain ⟨X, hXdef⟩ : ∃ X : ℕ → ℝ, X = fun b => pc b * (s * ((m.blockSize : ℝ) - 1)
         * min (max (roomLatency m f d₁ w₁ lookahead r s (pc b) (pr b) b
-          (max (room m f (d₁.withPaused e) w lookahead (σ.plays w lookahead r) r
+          (max (room m f (d₁.withLinks e) w lookahead (σ.plays w lookahead r) r
             (b + 1)) 0)) 0) Gcap) := ⟨_, rfl⟩
     have hX0 : ∀ b < N, 0 ≤ X b := fun b hb => by
       rw [hXdef]
       exact mul_nonneg (hpc0 b hb) (mul_nonneg (mul_nonneg hs.le hB1)
         (le_min (le_max_right _ _) hcap))
     have hterm : ∀ j ∈ J, cellLatency m f d₁ w₁ lookahead r s ℓ δ pc pr Gcap cl j
-          (max (room m f (d₁.withPaused e) w lookahead (σ.plays w lookahead r) r
+          (max (room m f (d₁.withLinks e) w lookahead (σ.plays w lookahead r) r
             (cellBlock w₁ r ℓ δ j)) 0)
         = cl * ENNReal.ofReal
           (ℓ / ((w₁.speaker r).asked (firstFrom (w₁.speaker r).asked (((j : ℝ) + 1) * ℓ + δ))
@@ -466,11 +470,12 @@ weighted latency of the frames that the steps before output sample
 times the discontinuities of the output samples before `N * blockSize`. -/
 theorem Prior.sum_cells_le {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable D P)
     {d₁ : Draw H R} {w₁ : World H R} (hB₁ : m.Builds f d₁ w₁)
-    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j) (σ : Solution H R Msg)
+    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
+    (hhost₁ : ∀ h, Monotone (d₁.hostPaused h)) (σ : Solution H R Msg)
     (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R} (hr : m.host r ≠ m.sender)
     {s : ℝ} (hs : 0 < s) (hs1 : s ≤ 1) {ℓ : ℝ} (hℓ : 0 < ℓ) {Xmax : ℝ} {Nbar m₀ : ℕ}
     (hX : Xmax ≤ ((m₀ : ℝ) + 1) * ℓ) {w : Ω → World H R} {wOut : ℕ → Ω → World H R}
-    (hw : ∀ ω, m.Builds f (d₁.withPaused (D ω)) (w ω))
+    (hw : ∀ ω, m.Builds f (d₁.withLinks (D ω)) (w ω))
     (hOut : ∀ j ω, m.Builds f (frameOutside m d₁ (D ω) r ℓ j) (wOut j ω))
     (hslow : ∀ᵐ ω ∂P, ∀ k x y, σ.plays (w ω) lookahead r k = some x →
       σ.plays (w ω) lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
@@ -509,12 +514,12 @@ theorem Prior.sum_cells_le {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
           + w' * ∑ k ∈ Finset.range (N * m.blockSize),
               ENNReal.ofReal ((missedAt (σ.plays (w ω) lookahead r) k : ℝ)
                 + s * (discontinuityAt (σ.plays (w ω) lookahead r) k : ℝ))) ∂P := by
-  refine (hD.sum_cellValue_le hm hB₁ hpos₁ σ hstar lookahead hr hs.le hs1 hℓ.le m₀ hw hOut
+  refine (hD.sum_cellValue_le hm hB₁ hpos₁ hhost₁ σ hstar lookahead hr hs.le hs1 hℓ.le m₀ hw hOut
     hslow hS hG hdesc hδ hcount pc pr Gcap J (fun j hj => (hJ j hj).2.2) cl w').trans
     (lintegral_mono_ae ?_)
   filter_upwards [hslow] with ω hslowω
   exact (hB₁.cellsCost_le (hw ω) hpos₁ (fun i j' => hD.linkPaused_monotone ω i j')
-    (fun x => hD.hostPaused_monotone ω x) σ hstar lookahead hr hs hℓ hX hslowω δ hcap hp₀ N
+    hhost₁ σ hstar lookahead hr hs hℓ hX hslowω δ hcap hp₀ N
     hpc0 hpcle hpr hpc J (fun j hj => ⟨(hJ j hj).1, (hJ j hj).2.1,
       (hJ j hj).2.2 _ (by
         have := (hJ j hj).1

@@ -12,11 +12,11 @@ public import Unisono.Spec.Limiter
 public import Unisono.Spec.Models.GenerativeRates
 
 /-!
-# What the controller plays when links and hosts pause
+# What the controller plays when links pause
 
 Consider a world in which the clocks of the hosts and of the audio devices
 run at constant rates, each its own, the devices report exact timestamps,
-and links and hosts pause (`GenerativeWorld.ConstantRates`). The delay
+links pause and hosts do not (`GenerativeWorld.ConstantRates`). The delay
 of a message is the least delay of its direction plus the backlogs it waits
 for, and it has no upper bound. The controller
 (`Unisono.Solutions.Controller`) holds the level at `L`.
@@ -196,31 +196,14 @@ theorem exchange_of_built (hB : m.Builds f d w) (lookahead : ℕ+)
 
 /-! ## The lines through the devices' timestamps -/
 
-/-- The step that handles the handover of block `b` is the step at which
-block `b` is the capture device's next block. -/
+/-- The step that handles the handover of the frames of block `b` is the
+step at which block `b` is the capture device's next block. -/
 theorem handedNext_of_handled (σ : Solution H R Payload) (lookahead : ℕ+) {i b : ℕ}
-    {frames : List (ℕ × ℝ)} {stamp : ℝ}
-    (hi : σ.handled w lookahead i = some (w.sender, w.source.handed b, .handed frames stamp)) :
-    (σ.states w lookahead i).handedNext = b := by
-  unfold Solution.handled at hi
-  split at hi
-  · rename_i b' hb'
-    simp only [Option.some.injEq, Prod.mk.injEq, true_and] at hi
-    have hbb : b' = b := w.source.handed_strictMono.injective hi.1
-    subst hbb
-    have hmem := (earliest_spec _ _ _ hb').1
-    rcases (σ.states w lookahead i).mem_due hmem with h | ⟨r'', h⟩ | ⟨q, _, h⟩ | ⟨q, _, h⟩
-    · simp only [Due.handed.injEq] at h
-      exact h.symm
-    · simp at h
-    · simp at h
-    · simp at h
-  · simp at hi
-  · obtain ⟨msg, -, heq⟩ := Option.map_eq_some_iff.mp hi
-    simp at heq
-  · obtain ⟨u, -, heq⟩ := Option.map_eq_some_iff.mp hi
-    simp at heq
-  · simp at hi
+    {t : Time} {stamp : ℝ}
+    (hi : σ.handled w lookahead i = some (w.sender, t,
+      .handed ((w.source.block b).map fun k => (k, w.target k)) stamp)) :
+    (σ.states w lookahead i).handedNext = b :=
+  (σ.handedNext_of_earliest w lookahead (σ.earliest_of_handled_handed w lookahead hi)).1
 
 /-- **The line through the capture device's timestamps is exact from the
 second block on.** When the capture device hands over a block after its
@@ -508,7 +491,7 @@ theorem exists_isDue (hS : ConstantRates m f d w) {ann : ℕ → ℝ × ℝ}
 
 /-- **What a speaker of the controller chooses and plays when the level
 changes.** Consider a world whose clocks run at constant rates, with exact
-timestamps and with pauses of links and of hosts, a speaker `r` whose host
+timestamps and with pauses of links and none of hosts, a speaker `r` whose host
 is not the sender's, and a device estimator that is exact on undisturbed
 reports. The level rule is any rule. Let `ann b` be what it announces with
 capture block `b`, from block one on: the level of the block's first frame
@@ -732,7 +715,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
   have hT : T₀ < (FixedDelay.solution p : Solution H R FixedDelay.Payload).eventTime w
       lookahead (step (k / m.blockSize)) := by
     rw [htime]
-    exact lt_of_lt_of_le hbmin ((w.speaker r).asked_strictMono.monotone hbmin')
+    exact lt_of_lt_of_le hbmin ((w.speaker r).asked_mono hbmin')
   have haskedNext : ((solution p clockEst deviceEst levelRule :
       Solution H R Payload).states w lookahead (step (k / m.blockSize))).askedNext r
         = k / m.blockSize := by
@@ -1025,8 +1008,14 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
         (dueOf (headersOf
           (((solution p clockEst deviceEst levelRule : Solution H R Payload).states w
           lookahead (step (k / m.blockSize))).views (w.host r))) (S k)) := by
-    rw [Solution.plays_of_asked_step w _ lookahead haskedNext he' (hmemblk k), plays_asked,
-      hposition, Solution.held_forget w Payload.plain lookahead hmore (step (k / m.blockSize))]
+    have hlt : (w.speaker r).asked (k / m.blockSize) < (w.speaker r).out k :=
+      lt_of_lt_of_le (hS.asked_lt_out r (k / m.blockSize))
+        ((w.speaker r).out_strictMono.monotone (by
+          rw [hS.builds.speaker_first]
+          exact Nat.div_mul_le_self k m.blockSize))
+    rw [Solution.plays_of_asked_step_of_lt w _ lookahead haskedNext he' (hmemblk k) hlt,
+      plays_asked, hposition,
+      Solution.held_forget w Payload.plain lookahead hmore (step (k / m.blockSize))]
   have ha1 : (1 : ℝ) ≤ ((lookahead : ℕ) : ℝ) := by exact_mod_cast lookahead.pos
   -- The frames that the resampler needs are held exactly when the last of them is.
   have hiff : ∀ x : ℝ, 0 ≤ x →
@@ -1063,7 +1052,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
         have : n < ⌈x + ((lookahead : ℕ) : ℝ)⌉₊ := by exact_mod_cast hnlt
         omega
       have hblk : n / m.blockSize ≤ N / m.blockSize := Nat.div_le_div_right hnN
-      have hhand := w.source.handed_strictMono.monotone hblk
+      have hhand := w.source.handed_mono hblk
       have harr' := hS.arrival_mono w.sender (w.host r) hhand
       exact (FixedDelay.mem_held_iff_arrived p w lookahead hA hsender hnodup hcopies hh hhs
         (hstepb (k / m.blockSize)) (hstepe (k / m.blockSize)) (hcapblk n)).mpr
@@ -1083,7 +1072,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
       unfold neededBlock
       exact Nat.div_le_div_right (by omega)
     exact lt_of_le_of_lt (hS.arrival_mono w.sender (w.host r)
-      (w.source.handed_strictMono.monotone hblk)) harr
+      (w.source.handed_mono hblk)) harr
   refine ⟨fun n b hkb hnb hne => ?_, ?_, ?_⟩
   · -- What the host chooses at the request of the block of `k`.
     have hbk : b = k / m.blockSize := by
@@ -1126,7 +1115,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
 
 /-- **What a speaker of the controller chooses and plays at a held level.**
 Consider a world whose clocks run at constant rates, with exact timestamps
-and with pauses of links and of hosts, a speaker `r` whose host is not the
+and with pauses of links and none of hosts, a speaker `r` whose host is not the
 sender's, a device estimator that is exact on undisturbed reports, and the
 level held at `L`. Suppose that from some true time on the host's estimate
 of the sender's clock is the line of its undelayed exchanges. Then, from
@@ -1180,7 +1169,7 @@ theorem speaker_chooses_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
     intro k hk
     have hout : (w.speaker r).out ((w.speaker r).first bK) ≤ (w.speaker r).out k :=
       (w.speaker r).out_strictMono.monotone (by rw [hfirst]; exact hk)
-    have hask := (w.speaker r).asked_before bK
+    have hask := hS.asked_lt_out r bK
     have hpos' : 0 < m.rate * Real.exp (d.deviceLogRate none) := mul_pos hρ hgc
     have h1 : (m.blockSize : ℝ) / (m.rate * Real.exp (d.deviceLogRate none))
         ≤ (w.speaker r).out k - latencyOf m f d L r - w.source.capture 0 := by linarith
@@ -1232,7 +1221,7 @@ theorem speaker_chooses_plays (hS : ConstantRates m f d w) (lookahead : ℕ+)
 
 /-- **What a speaker of the controller plays at a held level.** Consider a
 world whose clocks run at constant rates, with exact timestamps and with
-pauses of links and of hosts, a speaker `r` whose host is not the sender's,
+pauses of links and none of hosts, a speaker `r` whose host is not the sender's,
 a device estimator that is exact on undisturbed reports, and the level held
 at `L`. Suppose that from some true time on the host's estimate of the
 sender's clock is the line of its undelayed exchanges. Then, from some
@@ -1451,7 +1440,7 @@ theorem plays_eq_of_margin (hS : ConstantRates m f d w) (lookahead : ℕ+)
   · have hkK := le_trans (le_max_right _ _) hk
     have hout : (w.speaker r).out ((w.speaker r).first bK) ≤ (w.speaker r).out k :=
       (w.speaker r).out_strictMono.monotone (by rw [hS.builds.speaker_first]; exact hkK)
-    have hask := (w.speaker r).asked_before bK
+    have hask := hS.asked_lt_out r bK
     unfold duePosition
     exact mul_nonneg (mul_pos m.rate_pos (Real.exp_pos _)).le (by linarith)
   · rw [hK k (le_trans (le_max_left _ _) hk)]

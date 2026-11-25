@@ -178,6 +178,22 @@ def AlmostSurelyWithin {Ω : Type} [MeasurableSpace Ω] (P : MeasureTheory.Measu
     (world : Ω → World H R) (B : Bounds H) : Prop :=
   ∀ᵐ ω ∂P, (world ω).WithinBounds B
 
+/-- In a world that satisfies the bounds, the host of a speaker handles the
+request of every block before the block's first output sample leaves. -/
+theorem World.WithinBounds.asked_lt_out {w : World H R} {B : Bounds H} (hw : w.WithinBounds B)
+    (r : Fin R) (b : ℕ) :
+    (w.speaker r).asked b < (w.speaker r).out ((w.speaker r).first b) := by
+  have h := (hw.2.2.2.2.2.2.1 r b).1
+  have hpos := B.leadLeast_pos
+  linarith
+
+/-- In a world that satisfies the bounds, the host of a speaker handles the
+request of every block before any output sample of the block leaves. -/
+theorem World.WithinBounds.asked_lt_of_le {w : World H R} {B : Bounds H}
+    (hw : w.WithinBounds B) {r : Fin R} {b k : ℕ} (hk : (w.speaker r).first b ≤ k) :
+    (w.speaker r).asked b < (w.speaker r).out k :=
+  lt_of_lt_of_le (hw.asked_lt_out r b) ((w.speaker r).out_strictMono.monotone hk)
+
 /-- A clock whose rate error is at most `ε` advances over an interval by
 between `1 - ε` and `1 + ε` times the interval's length. -/
 theorem Clock.advance_mem {c : Clock} {ε : ℝ} (hc : c.RateWithin ε) {s t : Time} (hst : s ≤ t) :

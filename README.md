@@ -66,8 +66,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     links and its hosts may pause, at any rates and with any laws of the
     lengths, and the mean rates of its clocks may be spread. The pauses come
     from a random process constructed in
-    `lean/Unisono/Spec/Models/PauseProcess.lean`. In every random world of
-    such a member, almost every outcome has clocks at constant rates.
+    `lean/Unisono/Spec/Models/PauseProcess.lean`. A host that pauses
+    handles the events of its audio devices after its backlog. In every
+    random world of such a member whose hosts never pause, almost every
+    outcome has clocks at constant rates and hosts that handle the events
+    of their audio devices when they occur.
   - In every random world of a member of `GenerativeWorld`, the paused times
     of all links and hosts have the same law
     (`lean/Unisono/Spec/Models/GenerativePauseLaw.lean`), and in almost
@@ -118,8 +121,8 @@ simulation and integration tests (see `PRINCIPLES.md`):
     run at constant rates, each its own, with the level held, the position
     that is due at an output sample is the one captured the level divided by
     the rate of the sender's clock, plus the asymmetry of the speaker's
-    host, before the sample leaves. When links and hosts pause, an output
-    sample plays that position if the message of the capture block it needs
+    host, before the sample leaves. When links pause and hosts do not, an
+    output sample plays that position if the message of the capture block it needs
     took less than the sample's margin, and plays nothing of the source
     otherwise (`Unisono.Solutions.Controller.plays_under_pauses` in
     `lean/Unisono/Solutions/Controller/Pauses.lean`, with the margin in
@@ -142,14 +145,17 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `measuredNeed` in `lean/Unisono/Solutions/Controller/Needs.lean`). It
     is not yet proved which needs reach the sender, what the rule does
     with them, or what a level that changes costs. One solution puts the
-    parts together for worlds in which clocks wander and links and hosts
-    pause. Its hosts take their timing from what they observe themselves:
+    parts together for worlds in which clocks wander and links pause. It
+    does not yet allow for a host that pauses and handles the events of
+    its audio devices late. Its hosts take their timing from what they
+    observe themselves:
     the capture schedule from the sender's readings at the handovers, the
     time at which an output sample leaves from the host's readings at the
     requests, and the sender's clock from the arrivals of the blocks. Its
     level changes within a block by at most a share of the block's time
     from one frame to the next, so the schedule on which positions are due
-    is continuous and advances in every block of every world
+    is continuous in every world, and advances in every block of every
+    world in which no two handovers are handled at the same true time
     (`Unisono.Solutions.Controller.dueSlope_pos`, `dueEdge_succ` in
     `lean/Unisono/Solutions/Controller/DueSchedule.lean`). Its
     playback follows the position that is due within the step bound. In
@@ -165,10 +171,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     and the discontinuities are bounded by the number of output samples
     that play nothing and by the irregular steps of what it chooses
     (`Unisono.Spec.Solution.followed_sum_missedAt_le` in
-    `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss, an
-    output sample of the combined solution plays nothing only when the
-    stream has not yet reached the host or a block that the output sample
-    needs arrived after the request
+    `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss in
+    which no two handovers are handled at the same true time, an output
+    sample of the combined solution whose request is handled before it
+    leaves plays nothing only when the stream has not yet reached the host
+    or a block that the output sample needs arrived after the request
     (`Unisono.Solutions.Controller.followed_silent` in
     `lean/Unisono/Solutions/Controller/Silent.lean`). No cost of the
     combined solution is bounded yet. The cost of a held
@@ -178,8 +185,9 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Solutions/Controller/Cost.lean`). These theorems hold in
     one outcome, and they assume of the outcome that two clock exchanges of
     each receiving host escape every pause. In every random world of a
-    member whose clocks do not wander and whose audio devices report exact
-    timestamps, that holds in almost every outcome
+    member whose clocks do not wander, whose audio devices report exact
+    timestamps and whose hosts never pause, that holds in almost every
+    outcome
     (`Unisono.Solutions.Controller.ae_twoUndelayed` in
     `lean/Unisono/Solutions/Controller/Undelayed.lean`). In such a random
     world the long-run fraction of capture blocks whose message is slower
@@ -226,8 +234,9 @@ simulation and integration tests (see `PRINCIPLES.md`):
     (`Unisono.Spec.GenerativeWorld.Prior.indepFun_linkOutside` and
     `Prior.prior_resample` in
     `lean/Unisono/Spec/Models/GenerativeResample.lean`). The same holds
-    for all the pauses together, which leaves the clocks and the audio
-    devices of the first outcome in place (`Prior.prior_resamplePaused`
+    for the pauses of all links together, which leaves the clocks, the
+    pauses of the hosts and the audio devices of the first outcome in
+    place (`Prior.prior_resampleLinks`
     in `lean/Unisono/Spec/Models/GenerativeResamplePauses.lean`). These
     are combined into a lower bound on the expected cost, in every member,
     of every solution through the sender that keeps the step bound and
@@ -236,8 +245,9 @@ simulation and integration tests (see `PRINCIPLES.md`):
     clocks of the outcome
     (`Unisono.Spec.GenerativeWorld.lintegral_fixedClockBound_le` in
     `lean/Unisono/Spec/Models/GenerativeClockMean.lean`). For members
-    whose clocks do not wander and whose audio devices report exact
-    timestamps that bound is evaluated in closed form, as a level program
+    whose clocks do not wander, whose audio devices report exact
+    timestamps and whose hosts never pause that bound is evaluated in
+    closed form, as a level program
     per second that trades the latency of the room that a solution keeps
     against what a pause costs with that room
     (`Unisono.Spec.GenerativeWorld.lintegral_steadyBound_le` in
@@ -365,8 +375,8 @@ individual packet drops.
 | True time | $t \in \mathbb{R}$ (`Time`) | Physical time in seconds; never directly observed by any host. |
 | Nominal rate and topology | $\rho > 0$ (`World.rate`), `sender`, `host` | Common nominal sample rate in frames per second, the sender host, and the host driving each of the $R$ speakers $r \in \{0, \dots, R - 1\}$. |
 | Host clocks | $C_i(t)$ (`World.clock`) | Continuous, strictly increasing clock reading on host $i$ at true time $t$, with clock phase $\phi_i(t) = C_i(t) - t$ subject to rate drift and oscillator frequency noise. |
-| Capture device | $c(n), f(b), h(b), \hat c(b)$ (`World.source`) | True capture time $c(n)$ of frame $n$, first frame $f(b)$ of block $b$, handoff time $h(b)$ to the sender host, and reported host-clock timestamp $\hat c(b)$ (subject to timestamp error). |
-| Playback devices (speakers) | $o_r(k), g_r(b), a_r(b), \hat o_r(b)$ (`World.speaker`) | True output time $o_r(k)$ of sample $k$ on speaker $r$, first sample $g_r(b)$ of block $b$, request time $a_r(b)$ to the host (request lead $o_r(g_r(b)) - a_r(b)$), and reported host-clock timestamp $\hat o_r(b)$. |
+| Capture device | $c(n), f(b), h(b), \hat c(b)$ (`World.source`) | True capture time $c(n)$ of frame $n$, first frame $f(b)$ of block $b$, true time $h(b)$ at which the sender host handles the handover of block $b$, when its last frame is captured or later, and reported host-clock timestamp $\hat c(b)$ (subject to timestamp error). |
+| Playback devices (speakers) | $o_r(k), g_r(b), a_r(b), \hat o_r(b)$ (`World.speaker`) | True output time $o_r(k)$ of sample $k$ on speaker $r$, first sample $g_r(b)$ of block $b$, true time $a_r(b)$ at which the host handles the request of block $b$ (an output sample of the block that has left by then plays nothing of the source), and reported host-clock timestamp $\hat o_r(b)$. |
 | Target latency | $L^*(n)$ (`World.target`) | Application-supplied target latency for frame $n$ in lip-sync mode, delivered to the sender with the frame. |
 | Link delivery | $\mathrm{deliver}_{ij}(s, q)$ (`World.network`) | Arrival time (or drop) of the $q$-th message sent from host $i$ to host $j$ at true time $s$; decomposed by `Link` into the four network disturbances below. |
 | Slow baseline delay | $B_{ij}(u) > 0$ (`Link.baseline`) | Minimum transit time of directed link $(i, j)$ at release time $u$, slowly varying (Lipschitz). |
@@ -387,7 +397,7 @@ models in `lean/Unisono/Spec/Models` (see `PRINCIPLES.md` and
 | `StationaryNetworkDisturbances` | Probabilistic network-only | Per-directed-link $(i, j)$ slow Lipschitz baseline, nonnegative per-packet jitter $(u, q)$ reaching arbitrarily close to zero with exponential upper tails, pause and outage episode arrival rates and finite-mean length distributions, individual drop probabilities $< 1$, and joint stationarity and mixing across all links (no cross-link independence assumed). | Captures tail delays, pauses, outages, and heterogeneous wired/wireless topologies that govern missed samples, discontinuities, and playout latency selection. | [`lean/Unisono/Spec/Models/Delays.lean`](lean/Unisono/Spec/Models/Delays.lean) |
 | `SecondOrderMoments` | Probabilistic moment model (continuous timing noise) | Square-integrable host clocks and audio devices following band-limited IEEE Std 1139-2008 power-law frequency noise (white $h_0$, flicker $h_{-1}/f$, and random-walk $h_{-2}/f^2$ over Fourier frequency $f \in [f_{\mathrm{lo}}, f_{\mathrm{hi}}]$), additive per-packet link jitter ($J^{\mathrm{tx}}_i + J^{\mathrm{rx}}_j + J^{\mathrm{own}}_{ij}$) with unconstrained transmit/receive cross-correlations, and white device timestamp errors. | Captures first- and second-moment structure—including shared host-stack and wireless-medium jitter correlations and co-located oscillators—driving synchronization, tracking, and roughness. | [`lean/Unisono/Spec/Models/SecondOrder.lean`](lean/Unisono/Spec/Models/SecondOrder.lean) |
 | `StochasticWorld` | Probabilistic composite full-world | Combines `StationaryNetworkDisturbances` and `SecondOrderMoments` over a shared per-link decomposition, together with deterministic capture-handoff, playback-request-lead, and block-size bounds across every realization. | Complete probabilistic model class for stating end-to-end expected-cost theorems on `Unisono.Spec.Objectives`. | [`lean/Unisono/Spec/Models/StochasticWorld.lean`](lean/Unisono/Spec/Models/StochasticWorld.lean) |
-| `GenerativeWorld` | Probabilistic full-world with a prior (a family of laws) | A solution is told the hosts, which speakers are outputs of one audio device, the settings of the devices and of the application (nominal rate, block size, request lead, target latency) and one number of the prior, the shape $\alpha$; the weights of the cost are known to it as well. Drawn at random, all independently: each pair's split of its least round-trip time between the two directions (Beta law with both parameters $\alpha$, so both least delays are positive), each clock's offset (uniform), mean rate (log-normal) and wander (stationary Gaussian with exponentially falling covariance), the mean rate and the wander of the clock of each audio device, with the same laws, the error of the timestamps that each audio device reports (stationary Gaussian with mean zero), and the pauses of each directed link and of each host (a pause is a stretch of time in which the link or the host passes nothing; pauses begin at the instants of a Poisson process, and a message waits for the backlog of the sending host, of the link and of the receiving host). Not told, to be estimated by a solution: least round-trip times, the rate of the pauses of each link and of each host and the law of their lengths, which may be any law of positive lengths with a mean, the spread and stability of the rates of the clocks of hosts and of audio devices, the size and the correlation time of the error of each device's timestamps, and the range of offsets. Each audio device runs on a clock of its own; no message is lost. | Gives the world a probability law, so that expected cost is a number and optimality (`OptimalWithin` in `lean/Unisono/Spec/Optimality.lean`) can be stated; estimating everything a solution is not told is part of the problem. Its limitations (pauses that do not cluster, independent pairs, constant least delays, device timestamps that are never grossly wrong, no loss) are listed in `docs/specification.tex`. | [`lean/Unisono/Spec/Models/GenerativeWorld.lean`](lean/Unisono/Spec/Models/GenerativeWorld.lean) |
+| `GenerativeWorld` | Probabilistic full-world with a prior (a family of laws) | A solution is told the hosts, which speakers are outputs of one audio device, the settings of the devices and of the application (nominal rate, block size, request lead, target latency) and one number of the prior, the shape $\alpha$; the weights of the cost are known to it as well. Drawn at random, all independently: each pair's split of its least round-trip time between the two directions (Beta law with both parameters $\alpha$, so both least delays are positive), each clock's offset (uniform), mean rate (log-normal) and wander (stationary Gaussian with exponentially falling covariance), the mean rate and the wander of the clock of each audio device, with the same laws, the error of the timestamps that each audio device reports (stationary Gaussian with mean zero), and the pauses of each directed link and of each host (a pause is a stretch of time in which the link or the host passes nothing; pauses begin at the instants of a Poisson process, a message waits for the backlog of the sending host, of the link and of the receiving host, and a host handles the handovers and the requests of its audio devices after its backlog, so that a request that waits longer than the request lead loses output samples). Not told, to be estimated by a solution: least round-trip times, the rate of the pauses of each link and of each host and the law of their lengths, which may be any law of positive lengths with a mean, the spread and stability of the rates of the clocks of hosts and of audio devices, the size and the correlation time of the error of each device's timestamps, and the range of offsets. Each audio device runs on a clock of its own; no message is lost. | Gives the world a probability law, so that expected cost is a number and optimality (`OptimalWithin` in `lean/Unisono/Spec/Optimality.lean`) can be stated; estimating everything a solution is not told is part of the problem. Its limitations (pauses that do not cluster, independent pairs, constant least delays, device timestamps that are never grossly wrong, no loss) are listed in `docs/specification.tex`. | [`lean/Unisono/Spec/Models/GenerativeWorld.lean`](lean/Unisono/Spec/Models/GenerativeWorld.lean) |
 
 Supplementary component and centralized/oracle analyses live in
 `lean/Unisono/Model/` and `lean/Unisono/Analysis/` (`Estimation.lean`,
@@ -402,8 +412,9 @@ optimal.
 | Sub-case | What it assumes | File |
 |---|---|---|
 | `GenerativeWorld.Member.Noiseless` | A member in which links and hosts never pause, no clock of a host or of an audio device wanders or has a spread of its mean rate, and the audio devices report exact timestamps: every disturbance is switched off. | `lean/Unisono/Spec/Models/GenerativeNoiseless.lean` |
-| `GenerativeWorld.Member.SteadyClocks` | A member in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. Its links and its hosts may pause, with any laws of the lengths, and the mean rates of its clocks may be spread. Almost every outcome of such a member is in `ConstantRates`. | `lean/Unisono/Spec/Models/GenerativePauses.lean` |
-| `GenerativeWorld.ConstantRates` | An outcome in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. The clocks may run at different constant rates, and links and hosts may pause. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
+| `GenerativeWorld.Member.SteadyClocks` | A member in which no clock of a host or of an audio device wanders and the audio devices report exact timestamps. Its links and its hosts may pause, with any laws of the lengths, and the mean rates of its clocks may be spread. | `lean/Unisono/Spec/Models/GenerativePauses.lean` |
+| `GenerativeWorld.Member.SteadyHosts` | A member with steady clocks whose hosts never pause, so that every host handles the events of its audio devices when they occur. Its links may pause, with any laws of the lengths, and the mean rates of its clocks may be spread. Almost every outcome of such a member is in `ConstantRates`. | `lean/Unisono/Spec/Models/GenerativePauses.lean` |
+| `GenerativeWorld.ConstantRates` | An outcome in which no clock of a host or of an audio device wanders, the audio devices report exact timestamps and no host pauses. The clocks may run at different constant rates, and links may pause. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 | `GenerativeWorld.ConstantDelays` | `ConstantRates` with no pauses, so that every message takes the least delay of its direction. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 
 ## Layout

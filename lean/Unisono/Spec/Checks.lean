@@ -611,7 +611,7 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
   · have hm := st.handle_dueFrom w σ lookahead (h := w.sender)
       (obs := .handed ((w.source.block st.handedNext).map fun n => (n, w.target n))
         (w.source.reported st.handedNext)) hst
-    exact ⟨(w.source.handed_strictMono (Nat.lt_succ_self _)).le, hm.2.1, hm.2.2.1, hm.2.2.2⟩
+    exact ⟨w.source.handed_mono (Nat.le_succ _), hm.2.1, hm.2.2.1, hm.2.2.2⟩
   · have hm := st.handle_dueFrom w σ lookahead (h := w.host r)
       (obs := .asked r ((w.speaker r).block (st.askedNext r))
         ((w.speaker r).reported (st.askedNext r))) hst
@@ -619,7 +619,7 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
     by_cases hr : r' = r
     · subst hr
       simp only [Function.update_self]
-      exact ((w.speaker r').asked_strictMono (Nat.lt_succ_self _)).le
+      exact (w.speaker r').asked_mono (Nat.le_succ _)
     · simp only [Function.update_of_ne hr]
       exact hst.2.1 r'
   · simp only [List.getElem?_eq_getElem hp]
@@ -678,7 +678,7 @@ theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead
     {n : ℕ} {r : Fin R} {b : ℕ} (h : (w.speaker r).asked b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).askedNext r := by
   by_contra hle
-  have h1 := (w.speaker r).asked_strictMono.monotone (not_lt.mp hle)
+  have h1 := (w.speaker r).asked_mono (not_lt.mp hle)
   have h2 := σ.eventTime_le_asked w lookahead n r
   linarith
 
@@ -873,7 +873,7 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -883,8 +883,7 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
         simp only [Option.some.injEq] at h; linarith⟩
@@ -960,7 +959,7 @@ theorem IdealConstantWorld.example_holds :
             first_zero := rfl
             first_strictMono := strictMono_id
             handed := fun b => b
-            handed_strictMono := Nat.strictMono_cast
+            handed_mono := Nat.mono_cast
             handed_after := fun b => by simp
             reported := fun b => b }
         speaker := fun _ =>
@@ -970,8 +969,7 @@ theorem IdealConstantWorld.example_holds :
             first_zero := rfl
             first_strictMono := strictMono_id
             asked := fun b => b + 1 / 2
-            asked_strictMono := fun a b h => by simpa using h
-            asked_before := fun b => by norm_num
+            asked_mono := StrictMono.monotone fun a b h => by simpa using h
             reported := fun b => (b + 1 : ℝ) + 1 }
         network := ⟨fun i j s _ => some (s + d i j), fun i j s _ a h => by
           simp only [Option.some.injEq] at h; linarith [hd i j]⟩
@@ -1152,7 +1150,7 @@ theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -1162,8 +1160,7 @@ theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d ω i j).deliver s q,
         fun i j _ _ _ h => Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h⟩
@@ -1319,7 +1316,7 @@ theorem StochasticWorld.example_holds :
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -1329,8 +1326,7 @@ theorem StochasticWorld.example_holds :
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d₀ () i j).deliver s q,
         fun i j _ _ _ h => Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h⟩
@@ -1713,7 +1709,7 @@ private def exampleWorld (ω : Component (Fin 3) 2 → ℝ) : World (Fin 3) 2 wh
       handed := fun b =>
         -ω (.offset 0) * Real.exp (-ω (.logRate 0))
           + (b : ℝ) * Real.exp (-ω (.deviceLogRate none))
-      handed_strictMono := fun a b hab => by
+      handed_mono := StrictMono.monotone fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
         have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate none)))
         linarith
@@ -1734,13 +1730,9 @@ private def exampleWorld (ω : Component (Fin 3) 2 → ℝ) : World (Fin 3) 2 wh
       asked := fun b =>
         (1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
           + ((b : ℝ) - 1 / 2) * Real.exp (-ω (.deviceLogRate (some r)))
-      asked_strictMono := fun a b hab => by
+      asked_mono := StrictMono.monotone fun a b hab => by
         have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
         have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate (some r))))
-        linarith
-      asked_before := fun b => by
-        have := Real.exp_pos (-ω (.deviceLogRate (some r)))
-        simp only [id]
         linarith
       reported := fun b =>
         1 + (b : ℝ) * Real.exp (ω (.logRate (![1, 2] r)))
@@ -1806,7 +1798,8 @@ private theorem exampleWorld_builds (ω : Component (Fin 3) 2 → ℝ) :
     push_cast
     linear_combination (n : ℝ) * hg
   capture_first := fun b => by simp [exampleWorld, exampleModel]
-  capture_handed := fun b => by simp [exampleWorld]
+  capture_handed := fun b =>
+    ⟨0, isBacklog_zero_of_const (fun _ _ => rfl) _, by simp [exampleWorld]⟩
   capture_reported := fun b => by
     have h := exp_mul_exp_neg (ω (.logRate 0))
     change (b : ℝ) * Real.exp (ω (.logRate 0)) * Real.exp (-ω (.deviceLogRate none))
@@ -1835,6 +1828,7 @@ private theorem exampleWorld_builds (ω : Component (Fin 3) 2 → ℝ) :
     linear_combination (k : ℝ) * hg
   speaker_first := fun r b => by simp [exampleWorld, exampleModel]
   speaker_asked := fun r b => by
+    refine ⟨_, 0, ?_, isBacklog_zero_of_const (fun _ _ => rfl) _, (add_zero _).symm⟩
     have hg := exp_mul_exp_neg (ω (.deviceLogRate (some r)))
     change (exampleDraw ω).deviceReading (some r)
           ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))

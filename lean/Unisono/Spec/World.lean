@@ -17,10 +17,16 @@ sees the world only through what its hosts observe (`Unisono.Spec.Solution`).
 
 * **True time** is a real number of seconds. No device can read it.
 * **The capture device** of the sender captures frame `n` of the source at
-  true time `capture n` and hands the frames to its host in blocks.
+  true time `capture n` and hands the frames to its host in blocks. The
+  host handles the handover of block `b` at true time `handed b`, when the
+  block's last frame is captured or later: a host that is busy handles its
+  events late.
 * **Speaker `r`** is a playback device. Its output sample `k` leaves the
   device at true time `out k`. The device requests its output samples from
-  its host in blocks, before they leave.
+  its host in blocks. The host handles the request of block `b` at true
+  time `asked b`. A host that is busy may handle a request after output
+  samples of the block left the device; those output samples play nothing
+  of the source.
 * **Every host** has a clock that runs at its own rate.
 * **The network** carries messages between any two hosts. A message arrives
   some time after it is sent, or is lost.
@@ -60,10 +66,13 @@ structure CaptureDevice where
   first : ℕ → ℕ
   first_zero : first 0 = 0
   first_strictMono : StrictMono first
-  /-- When block `b` is handed to the sender's host. -/
+  /-- When the sender's host handles the handover of block `b`. -/
   handed : ℕ → Time
-  handed_strictMono : StrictMono handed
-  /-- A block is handed over once its last frame is captured. -/
+  /-- The host handles the handovers in the order of the blocks. A host
+  that was busy may handle several of them at the same true time. -/
+  handed_mono : Monotone handed
+  /-- The host handles the handover of a block when the block's last frame
+  is captured, or later. -/
   handed_after : ∀ b, capture (first (b + 1) - 1) ≤ handed b
   /-- The timestamp that the device reports for block `b`, as a reading of
   its host's clock: when the block's first frame was captured. It need not
@@ -82,11 +91,13 @@ structure PlaybackDevice where
   first : ℕ → ℕ
   first_zero : first 0 = 0
   first_strictMono : StrictMono first
-  /-- When the device requests block `b`. -/
+  /-- When the speaker's host handles the device's request of block `b`. It
+  may be after output samples of the block left the device; such an output
+  sample plays nothing of the source (`State.handle`). -/
   asked : ℕ → Time
-  asked_strictMono : StrictMono asked
-  /-- A block is requested before its first output sample leaves. -/
-  asked_before : ∀ b, asked b < out (first b)
+  /-- The host handles the requests in the order of the blocks. A host that
+  was busy may handle several of them at the same true time. -/
+  asked_mono : Monotone asked
   /-- The timestamp that the device reports for block `b`, as a reading of
   its host's clock: when the block's first output sample will leave. It
   need not be exact. -/

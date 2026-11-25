@@ -13,7 +13,7 @@ public import Unisono.Spec.Models.GenerativeLate
 The message of a capture block to the host of a speaker is slow, at a level
 `L`, when it takes longer than the least margin of the speaker
 (`marginLeast`). This file proves that, in every random world of a member
-with steady clocks, the long-run fraction of slow capture blocks is, in
+with steady hosts, the long-run fraction of slow capture blocks is, in
 almost every outcome, the probability `lateProbability` of the member for the
 least delay and the least margin of the outcome.
 
@@ -117,14 +117,14 @@ theorem blockTimes_scalars (lookahead : ℕ+) (L : ℝ) (r : Fin R) {d : Draw H 
   rfl
 
 /-- **The long-run fraction of slow capture blocks is a probability of the
-member.** In every random world of a member with steady clocks, consider a
+member.** In every random world of a member with steady hosts, consider a
 speaker `r` whose host is not the sender's, and the level `L`. In almost
 every outcome, the fraction of the first `n` capture blocks whose message to
 the speaker's host takes longer than the least margin of the speaker
 converges to `lateProbability`, for the least delay from the sender to the
 speaker's host and the least margin of the outcome. -/
 theorem ae_tendsto_slowBlocks [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ) (r : Fin R)
     (hnos : m.host r ≠ m.sender) :
     ∀ᵐ ω ∂P, Tendsto (fun n : ℕ => (n : ℝ)⁻¹ * ∑ c ∈ Finset.range n,

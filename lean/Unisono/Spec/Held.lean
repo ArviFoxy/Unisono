@@ -119,7 +119,7 @@ theorem Solution.received_lt_asked (σ : Solution H R Msg) (w : World H R) (look
     (hi : σ.handled w lookahead i = some (h, t, .received j c F)) (r : Fin R) :
     t < (w.speaker r).asked ((σ.states w lookahead k).askedNext r) := by
   refine lt_of_lt_of_le ?_
-    ((w.speaker r).asked_strictMono.monotone (Solution.askedNext_mono w σ lookahead r hik))
+    ((w.speaker r).asked_mono (Solution.askedNext_mono w σ lookahead r hik))
   unfold Solution.handled at hi
   split at hi
   · simp at hi
@@ -154,18 +154,23 @@ theorem Solution.handedNext_mono (σ : Solution H R Msg) (w : World H R) (lookah
   · rw [h]
     exact Nat.le_succ _
 
-/-- A step whose event is the handover of block `b` had the handover of `b`
-as its earliest pending event. -/
+/-- A step whose event is a handover of the frames of block `b` had the
+handover of `b` as its earliest pending event. The frames identify the
+block; the true time does not, because a host that was busy handles several
+handovers at the same true time. -/
 theorem Solution.earliest_of_handled_handed (σ : Solution H R Msg) (w : World H R)
-    (lookahead : ℕ+) {i b : ℕ} {h : H} {frames : List (ℕ × ℝ)} {stamp : ℝ}
-    (hi : σ.handled w lookahead i = some (h, w.source.handed b, .handed frames stamp)) :
+    (lookahead : ℕ+) {i b : ℕ} {h : H} {t : Time} {stamp : ℝ}
+    (hi : σ.handled w lookahead i
+      = some (h, t, .handed ((w.source.block b).map fun k => (k, w.target k)) stamp)) :
     earliest ((σ.states w lookahead i).key w) (σ.states w lookahead i).due
       = some (.handed b) := by
   unfold Solution.handled at hi
   split at hi
   · rename_i b' hb'
-    simp only [Option.some.injEq, Prod.mk.injEq] at hi
-    have hbb : b' = b := w.source.handed_strictMono.injective hi.2.1
+    simp only [Option.some.injEq, Prod.mk.injEq, Observation.handed.injEq] at hi
+    have hblock : w.source.block b' = w.source.block b := by
+      simpa [List.map_map, Function.comp_def] using congrArg (List.map Prod.fst) hi.2.2.1
+    have hbb : b' = b := w.source.block_injective hblock
     rw [hb', hbb]
   · simp at hi
   · obtain ⟨msg, -, heq⟩ := Option.map_eq_some_iff.mp hi

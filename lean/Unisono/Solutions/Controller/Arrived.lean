@@ -231,7 +231,8 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
     {need : H → List (Event H R Payload) → Option ℝ}
     (hcap : rules.capture = knotCapture nominal)
     (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
-    (hnominal : 0 < nominal) (hN : NoLoss p w A) (lookahead : ℕ+)
+    (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed) (hN : NoLoss p w A) (lookahead : ℕ+)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
@@ -260,14 +261,14 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
     have ht : t = A w.sender (w.host r) (w.source.handed b) := by
       rw [hN.deliver] at hq'
       exact (Option.some.inj hq').symm
-    obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hprog b s).mp hcov
+    obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b s).mp hcov
     refine ⟨s, b, hs, h1, h2, ?_, ?_⟩
     · rw [← hnext, ← ht]
       exact hlt r
     · rw [← runHeader_due hcap hlev hprog b s, ← hdue]
       ring
   · rintro ⟨s, b, hs, h1, h2, harr, hx⟩
-    have hcov := (covers_iff hcap hlev hs0 hs1 hnominal hprog b s).mpr ⟨h1, h2⟩
+    have hcov := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b s).mpr ⟨h1, h2⟩
     have hmem := runHeader_mem_headersOf (rules := rules) hN lookahead hr
       (b := b) (n := n) (by rw [htime]; exact harr)
     have hall : ∀ y ∈ headersOf (((ruled p rules : Solution H R Payload).states w lookahead
@@ -275,7 +276,7 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
       intro y hy
       obtain ⟨c, hc, -⟩ := headersOf_noLoss hN lookahead hy
       exact ⟨c, hc⟩
-    have hdue := dueOf_eq_of_mem hcap hlev hs0 hs1 hnominal hprog hall hmem hcov
+    have hdue := dueOf_eq_of_mem hcap hlev hs0 hs1 hnominal hstrict hprog hall hmem hcov
     have hsched : rules.schedule p (w.host r)
         (((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r)
           ++ [w.askedEvent r β])

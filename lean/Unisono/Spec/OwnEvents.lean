@@ -323,7 +323,7 @@ theorem Solution.handoverView_succ {i i' b : ℕ}
   obtain ⟨j, hij, hji', t, obs, hj, rfl⟩ := hev e he
   dsimp only at hobs
   subst hobs
-  obtain ⟨b', -, rfl, -, -⟩ := Solution.handled_handed w σ lookahead hj
+  obtain ⟨b', -, -, rfl, -⟩ := Solution.handled_handed w σ lookahead hj
   have hEj := σ.earliest_of_handled_handed w lookahead hj
   obtain ⟨hj1, hj2⟩ := σ.handedNext_of_earliest w lookahead hEj
   have h1 := hmono hij

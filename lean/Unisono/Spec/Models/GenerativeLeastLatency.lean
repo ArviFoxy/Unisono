@@ -11,7 +11,7 @@ public import Unisono.Spec.Models.GenerativeRates
 # The least latency of a frame for a solution through the sender
 
 In a world whose clocks run at constant rates, with exact timestamps and
-with pauses of links and of hosts, consider a solution whose hosts exchange
+with pauses of links and none of hosts, consider a solution whose hosts exchange
 messages only with the sender, and a speaker whose host is not the sender's.
 The speaker cannot play a position before three things have happened: the
 capture device has captured the last frame that the resampler needs, the
@@ -55,7 +55,7 @@ def leastLatency (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R) (look
 
 /-- **Every position is played later than the least latency after its
 capture.** Consider a world whose clocks run at constant rates, with exact
-timestamps and with pauses of links and of hosts, a solution whose hosts
+timestamps and with pauses of links and none of hosts, a solution whose hosts
 exchange messages only with the sender, and a speaker whose host is not the
 sender's. If output sample `k` plays the position `x`, it leaves more than
 `leastLatency` after the sound at `x` was captured. -/
@@ -64,7 +64,7 @@ theorem ConstantRates.leastLatency_lt (hS : ConstantRates m f d w)
     (hr : m.host r ≠ m.sender) {k : ℕ} {x : ℝ} (hplay : σ.plays w lookahead r k = some x) :
     leastLatency m f d lookahead r < (w.speaker r).out k - w.captured x := by
   obtain ⟨hx0, hlt⟩ := hS.builds.arrival_lt_of_plays (fun i j => (hS.delay_pos i j).le)
-    hS.linkPaused_monotone hS.hostPaused_monotone σ hstar lookahead hr hplay
+    hS.linkPaused_monotone hS.hostPaused_mono σ hstar lookahead hr hplay
   have hc : 0 < m.rate * Real.exp (d.deviceLogRate none) :=
     mul_pos m.rate_pos (Real.exp_pos _)
   have hla : (1 : ℝ) ≤ ((lookahead : ℕ) : ℝ) := by

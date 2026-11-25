@@ -132,18 +132,27 @@ A world consists of:
   captures frame $n \in \N$ of the source at true time $c(n)$, strictly
   increasing in $n$ (\lean{capture}). A frame holds one sample of each
   channel. The device hands the frames to the sender's host in blocks:
-  block $b$ holds the frames $f(b) \le n < f(b+1)$ (\lean{first}) and is
-  handed over at true time $h(b) \ge c(f(b+1)-1)$ (\lean{handed}). For each
+  block $b$ holds the frames $f(b) \le n < f(b+1)$ (\lean{first}). The
+  sender's host handles the handover of block $b$ at true time
+  $h(b) \ge c(f(b+1)-1)$ (\lean{handed}): when the block's last frame is
+  captured, or later if the host is busy. The times $h(b)$ never decrease
+  with $b$, and a host that was busy may handle several handovers at the
+  same true time. For each
   block the device reports a timestamp $\hat c(b)$, a reading of its host's
   clock that estimates when the block's first frame was captured
   (\lean{reported}); it need not be exact.
 \item \emph{Speaker} $r \in \{0,\dots,R-1\}$, a playback device
   (\lean{PlaybackDevice}). Its output sample $k \in \N$ leaves the device at
   true time $o_r(k)$, strictly increasing in $k$ (\lean{out}). The device
-  requests block $b$, the output samples $g_r(b) \le k < g_r(b+1)$
-  (\lean{first}), at true time $a_r(b) < o_r(g_r(b))$ (\lean{asked}), and
-  reports a timestamp $\hat o_r(b)$ that estimates when the block's first
-  output sample leaves (\lean{reported}); it need not be exact.
+  requests its output samples from its host in blocks: block $b$ holds the
+  output samples $g_r(b) \le k < g_r(b+1)$ (\lean{first}). The speaker's
+  host handles the request of block $b$ at true time $a_r(b)$
+  (\lean{asked}). The times $a_r(b)$ never decrease with $b$. A host that
+  is busy may handle a request after output samples of the block have left
+  the device; such an output sample plays nothing of the source, whatever
+  the host chooses for it (Section~\ref{sec:solutions}). For each block the
+  device reports a timestamp $\hat o_r(b)$ that estimates when the block's
+  first output sample leaves (\lean{reported}); it need not be exact.
 \item \emph{A clock} $C_i$ for every host $i$ (\lean{Clock}), a continuous,
   strictly increasing function from true time to readings.
 \item \emph{The network} (\lean{Network}), which carries messages between
@@ -192,6 +201,9 @@ own clock:
   source whose data it carries;
 \item a timer that the host set fires.
 \end{itemize}
+The reading at a handover or at a request is the reading of the host's
+clock when the host handles the event, which can be later than the true
+time at which the device raised it.
 The \emph{view} of a host at an event is the list of all events it has
 observed so far, each with its clock reading. True time is not in the view,
 and neither is anything that happens at another host unless a message
@@ -225,10 +237,12 @@ Four constraints apply to every solution.
   computes the sound at position $x$ from the frames $n$ with $|n - x| < a$,
   where the integer $a \ge 1$ is the resampler's lookahead: $a = 1$ for
   linear interpolation (position $999.98$ needs frames $999$ and $1000$),
-  about half the filter length for a longer filter. An output sample plays
-  the original sound only if its host holds all of those frames when the
-  device requests the block; otherwise it is a missed sample
-  (\lean{playable}). The lookahead $a$ is a parameter.
+  about half the filter length for a longer filter. An output sample $k$
+  of block $b$ of speaker $r$ plays the original sound only if its host
+  handles the request of the block before the output sample leaves,
+  $a_r(b) < o_r(k)$, and holds all of those frames when it does; otherwise
+  it is a missed sample (\lean{State.handle}, \lean{playable}). The
+  lookahead $a$ is a parameter.
 \item \emph{Capacity.} In any second, each host sends each other host at
   most $M$ messages carrying at most $F$ frames in total; $M$ and $F$ are
   parameters (\lean{Solution.WithinBudget}).
@@ -250,21 +264,24 @@ The \emph{run} of a solution in a world (\lean{Solution.states}) processes
 events in chronological order. At each step the earliest pending event is
 handled: the capture device's next block, a speaker's device's next
 request, the arrival of a message in transit, or a timer that is set. The
-world determines when each occurs: the devices determine when they hand
-over and request blocks, the network determines when a message arrives or
+world determines when each occurs: the devices and their hosts determine
+when handovers and requests are handled, the network determines when a
+message arrives or
 that it is dropped, and a host's clock determines when it reaches the
 reading of a timer. The host adds the event to its view and does what the
 solution chooses for that view. Simultaneous events are processed in a
 fixed order: capture events first, then speaker requests in speaker index
 order, then message arrivals, then timers in the order in which they were
-set. Messages that arrive at the same true time are handled in the order of
+set. Handovers at the same true time are handled in the order of their
+blocks, and so are the requests of one speaker.
+Messages that arrive at the same true time are handled in the order of
 a fixed numbering of the hosts that sent them, the sender's host first and
 then the hosts of the speakers in speaker order (\lean{World.hostIndex}),
 and messages from one host in the order in which that host sent them. The
 order does not depend on which of two hosts sent first in true time, which
 no host can observe. What speaker $r$ plays at output sample $k$ is what
-was decided
-when its device requested the block holding $k$ (\lean{Solution.plays}).
+was decided when its host handled the request of the block holding $k$, if
+the output sample had not left by then (\lean{Solution.plays}).
 \end{definition}
 
 Every solution therefore has exactly one run in every world.
@@ -969,10 +986,16 @@ The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
   that stands for the device, and output sample $k$ when its own clock has
   advanced by $k/\rho$ since then. Speakers that are outputs of one device
   therefore share its clock.
-\item Blocks hold $m$ frames or output samples. A capture block is handed
-  over when its last frame is captured. A playback block is requested
-  $\lambda$ seconds, measured on the device's clock, before its first
-  output sample leaves.
+\item Blocks hold $m$ frames or output samples. The capture device hands a
+  block over at the true time $t$ at which the block's last frame is
+  captured, and the sender's host $i$ handles the handover at
+  $t + Q_i(t)$. A playback device requests a block at the true time $t$
+  that is $\lambda$ seconds, measured on the device's clock, before the
+  block's first output sample leaves, and its host $i$ handles the request
+  at $t + Q_i(t)$. A host therefore handles the events of its audio
+  devices that occur during a pause together, when the pause ends, and a
+  request that waits longer than the request lead loses the output samples
+  that leave in the meantime.
 \item The timestamp that the device $x$ reports for a block is the reading
   of its host's clock at the true time $t$ of the block's first frame or
   output sample, plus the error $E_x(t)$. A constant part of such an error
@@ -1036,10 +1059,12 @@ in \path{lean/Unisono/Spec/Models/GenerativePauses.lean}). In it the paused
 time of each link and of each host comes from the process above, and the
 backlogs are finite in almost every outcome, because the pauses take less
 than all of the time on average
-(\lean{ae\_\allowbreak tame\_\allowbreak pausedPath}). In every random
-world of a member with steady clocks, almost every outcome is a world whose
-clocks run at constant rates
-(\lean{Prior.ae\_\allowbreak constantRates}).
+(\lean{ae\_\allowbreak tame\_\allowbreak pausedPath}). A member has
+\emph{steady hosts} when it has steady clocks and its hosts never pause,
+$\mu_i = 0$ (\lean{Member.SteadyHosts}). In every random world of a member
+with steady hosts, almost every outcome is a world whose clocks run at
+constant rates and whose hosts handle the events of their audio devices
+when they occur (\lean{Prior.ae\_\allowbreak constantRates}).
 
 The three properties that the model asks of a paused time fix the law of its
 path. In every random world of a member, with or without steady clocks, the
@@ -1121,10 +1146,11 @@ simplification distorts.
   come in clusters: one is often followed by another before the first is
   worked off. The model understates how often a pause meets a queue that an
   earlier pause has emptied.
-\item \emph{A paused host still answers its own playback device at once.}
-  On a real host a pause can make the device run out of samples, whatever a
-  solution holds in reserve. That costs every solution the same missed
-  samples, so it does not change which solution is better.
+\item \emph{A capture device keeps every frame until its host handles the
+  handover.} A real device has a buffer of fixed size and loses frames when
+  a pause of its host outlasts it.
+\item \emph{A host that was paused handles everything that waited at one
+  true time.} A real host takes some time for each event.
 \item \emph{A paused host stamps a message when it handles it.} A real
   kernel can stamp a message when it arrives, while the program is paused.
   The model overstates what a pause of a host does to an estimate of a

@@ -13,8 +13,9 @@ With the capture schedule of the knots (`knotCapture`) and the level rule
 `knotLevel`, every block's header gives a line: the reading of the sender's
 clock at which each coordinate of the block is due, its capture time plus
 its level. This file shows that the lines of all blocks form one schedule
-that is continuous and increases, in every world in which the capture
-device hands over blocks without end.
+that is continuous, and that increases in every world in which the capture
+device hands over blocks without end and no two handovers are handled at the
+same true time.
 
 For the run of the controller with such rules:
 
@@ -82,16 +83,18 @@ theorem dueEdge_succ
 
 /-- **The schedule advances within every block.** -/
 theorem dueSlope_pos (hs0 : 0 ≤ share) (hs1 : share < 1) (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
     (b : ℕ) : 0 < dueSlope p rules w lookahead q share nominal b := by
   obtain ⟨i, hi⟩ := hprog b
-  obtain ⟨h1, h2⟩ := knotPeriod_add_slope_pos _ w lookahead q hs0 hs1 hnominal hi
+  obtain ⟨h1, h2⟩ := knotPeriod_add_slope_pos _ w lookahead q hs0 hs1 hnominal hstrict hi
   exact lt_of_lt_of_le h1 h2
 
 /-- **The edges of the blocks increase.** -/
 theorem dueEdge_strictMono (hs0 : 0 ≤ share) (hs1 : share < 1) (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
@@ -99,7 +102,7 @@ theorem dueEdge_strictMono (hs0 : 0 ≤ share) (hs1 : share < 1) (hnominal : 0 <
   refine strictMono_nat_of_lt_succ fun b => ?_
   rw [dueEdge_succ hprog b]
   have hlen : (0 : ℝ) < w.blockLength b := by exact_mod_cast w.blockLength_pos b
-  have := mul_pos hlen (dueSlope_pos (q := q) hs0 hs1 hnominal hprog b)
+  have := mul_pos hlen (dueSlope_pos (q := q) hs0 hs1 hnominal hstrict hprog b)
   linarith
 
 /-- The header of a block, by its edge and its slope. -/
@@ -142,6 +145,7 @@ theorem covers_iff {need : H → List (Event H R Payload) → Option ℝ}
     (hcap : rules.capture = knotCapture nominal)
     (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
     (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
@@ -149,7 +153,7 @@ theorem covers_iff {need : H → List (Event H R Payload) → Option ℝ}
     (rules.runHeader p w lookahead b).Covers (w.blockLength b) s
       ↔ dueEdge p rules w lookahead q share nominal b ≤ s
         ∧ s < dueEdge p rules w lookahead q share nominal (b + 1) := by
-  have hpos := dueSlope_pos (q := q) hs0 hs1 hnominal hprog b
+  have hpos := dueSlope_pos (q := q) hs0 hs1 hnominal hstrict hprog b
   have hdue := runHeader_due hcap hlev hprog b s
   have hslope : (rules.runHeader p w lookahead b).period
       + (rules.runHeader p w lookahead b).slope
@@ -186,16 +190,17 @@ theorem covers_unique {need : H → List (Event H R Payload) → Option ℝ}
     (hcap : rules.capture = knotCapture nominal)
     (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
     (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
     {b b' : ℕ} {s : ℝ}
     (hb : (rules.runHeader p w lookahead b).Covers (w.blockLength b) s)
     (hb' : (rules.runHeader p w lookahead b').Covers (w.blockLength b') s) : b = b' := by
-  obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hprog b s).mp hb
-  obtain ⟨h1', h2'⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hprog b' s).mp hb'
+  obtain ⟨h1, h2⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b s).mp hb
+  obtain ⟨h1', h2'⟩ := (covers_iff hcap hlev hs0 hs1 hnominal hstrict hprog b' s).mp hb'
   have hmono := dueEdge_strictMono (p := p) (rules := rules) (w := w) (lookahead := lookahead)
-    (q := q) hs0 hs1 hnominal hprog
+    (q := q) hs0 hs1 hnominal hstrict hprog
   rcases lt_trichotomy b b' with hlt | heq | hgt
   · have := hmono.monotone (show b + 1 ≤ b' from hlt)
     linarith
@@ -212,6 +217,7 @@ theorem dueOf_eq_of_mem {need : H → List (Event H R Payload) → Option ℝ}
     (hcap : rules.capture = knotCapture nominal)
     (hlev : rules.level = knotLevel q share nominal need) (hs0 : 0 ≤ share) (hs1 : share < 1)
     (hnominal : 0 < nominal)
+    (hstrict : StrictMono w.source.handed)
     (hprog : ∀ b, ∃ i, (ruled p rules : Solution H R Payload).handled w lookahead i
       = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
@@ -234,7 +240,7 @@ theorem dueOf_eq_of_mem {need : H → List (Event H R Payload) → Option ℝ}
       have := List.find?_some hfind
       simpa using this
     obtain ⟨c, rfl⟩ := hall x hx
-    obtain rfl := covers_unique hcap hlev hs0 hs1 hnominal hprog hxc hcov
+    obtain rfl := covers_unique hcap hlev hs0 hs1 hnominal hstrict hprog hxc hcov
     rfl
 
 /-! ## The schedule as a function of the coordinate -/

@@ -12,7 +12,7 @@ public import Unisono.Solutions.Controller.LateRate
 The controller (`Unisono.Solutions.Controller`) holds the level at `L`, uses
 the least-round-trip estimator for the sender's clock and the two-report
 estimator for the devices. This file bounds its cost in almost every outcome
-of a random world of a member with steady clocks, by a function of what is
+of a random world of a member with steady hosts, by a function of what is
 drawn (`heldLevelCost`), and so bounds its expected cost by the mean of that
 function.
 
@@ -38,7 +38,7 @@ function.
   positive probability when the rates of the clocks are spread.
 
 **Theorem** (`ae_cost_le_heldLevelCost`). In every random world of a member
-with steady clocks in which no speaker is on the sender's host, the cost of
+with steady hosts in which no speaker is on the sender's host, the cost of
 the controller is at most `heldLevelCost` of the draw, in almost every
 outcome.
 
@@ -139,12 +139,12 @@ def heldLevelCost [Fintype H] (m : GenerativeWorld H R) (f : Member H R) (lookah
           / Real.exp (d.deviceLogRate (some (m.device r))) < 2
         then lateRateBound m f lookahead L d else outputRate m d
 
-/-- **The cost of a held level in a member with steady clocks.** In every
-random world of a member with steady clocks in which no speaker is on the
+/-- **The cost of a held level in a member with steady hosts.** In every
+random world of a member with steady hosts in which no speaker is on the
 sender's host, the cost of the controller that holds the level `L` is at
 most `heldLevelCost` of the draw, in almost every outcome. -/
 theorem ae_cost_le_heldLevelCost [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
-    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyClocks)
+    {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D) (hf : f.SteadyHosts)
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
@@ -165,13 +165,13 @@ theorem ae_cost_le_heldLevelCost [Fintype H] {Ω : Type} [MeasurableSpace Ω] {P
   · exact cost_le_outputs_under_pauses p hS lookahead L hps hnodup hcopies hnos hpsp
       (fun r => hund r (hnos r)) hδ c
 
-/-- **The expected cost of a held level in a member with steady clocks.** In
-every random world of a member with steady clocks in which no speaker is on
+/-- **The expected cost of a held level in a member with steady hosts.** In
+every random world of a member with steady hosts in which no speaker is on
 the sender's host, the expected cost of the controller that holds the level
 `L` is at most the mean of `heldLevelCost` of the draw. -/
 theorem expectedCost_le_heldLevelCost [Fintype H] {Ω : Type} [MeasurableSpace Ω]
     {P : Measure Ω} {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D)
-    (hf : f.SteadyClocks) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
+    (hf : f.SteadyHosts) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
     (hpsp : ∀ r, m.host r ∈ p.speakers) (c : Weights) :
@@ -612,12 +612,12 @@ theorem lintegral_heldLevelCost_lt_top [Fintype H] {Ω : Type} [MeasurableSpace 
   exact lintegral_lt_top_of_le_exp hD (F := heldLevelCost m f lookahead L c) hK
 
 /-- **The expected cost of a held level is finite.** In every random world
-of a member with steady clocks in which no speaker is on the sender's host,
+of a member with steady hosts in which no speaker is on the sender's host,
 the controller that holds the level `L` has a finite expected cost, for
 every level and all weights. -/
 theorem expectedCost_heldLevel_lt_top [Fintype H] {Ω : Type} [MeasurableSpace Ω]
     {P : Measure Ω} {D : Ω → Draw H R} {world : Ω → World H R} (hD : m.Prior f P D)
-    (hf : f.SteadyClocks) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
+    (hf : f.SteadyHosts) (hB : ∀ ω, m.Builds f (D ω) (world ω)) (lookahead : ℕ+) (L : ℝ)
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (hperiod : 0 ≤ p.period) (hnos : ∀ r, m.host r ≠ m.sender)
     (hpsp : ∀ r, m.host r ∈ p.speakers) (c : Weights) :

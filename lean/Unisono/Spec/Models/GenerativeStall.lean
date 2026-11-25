@@ -59,13 +59,13 @@ theorem Builds.le_of_plays_before (hB : m.Builds f d w)
     x ≤ (c : ℝ) * m.blockSize - ((lookahead : ℕ) : ℝ) := by
   obtain ⟨-, hlt⟩ := hB.arrival_lt_of_plays hpos hlink hhost σ hstar lookahead hr hplay
   have hasked : (w.speaker r).asked (k / m.blockSize) ≤ (w.speaker r).asked β :=
-    (w.speaker r).asked_strictMono.monotone hk
+    (w.speaker r).asked_mono hk
   have hA := hB.arrival_mono (hlink m.sender (m.host r)) (hhost m.sender) (hhost (m.host r))
   have hnb : (⌈x + ((lookahead : ℕ) : ℝ)⌉₊ - 1) / m.blockSize < c := by
     by_contra hge
     have h1 : w.source.handed c
         ≤ w.source.handed ((⌈x + ((lookahead : ℕ) : ℝ)⌉₊ - 1) / m.blockSize) :=
-      w.source.handed_strictMono.monotone (not_lt.mp hge)
+      w.source.handed_mono (not_lt.mp hge)
     have h2 := hA h1
     linarith
   have h3 : ⌈x + ((lookahead : ℕ) : ℝ)⌉₊ - 1 < c * m.blockSize :=

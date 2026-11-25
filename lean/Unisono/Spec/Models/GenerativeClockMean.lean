@@ -245,11 +245,12 @@ and functions of the draw, the value of valid choices is at most the mean
 cost over the pauses. -/
 theorem Prior.value_le_lintegral_cost {Msg : Type} (hD : m.Prior f P D)
     (hm : AEMeasurable D P) {d₁ : Draw H R} {w₁ : World H R} (hB₁ : m.Builds f d₁ w₁)
-    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j) (σ : Solution H R Msg)
+    (hpos₁ : ∀ i j, 0 ≤ d₁.split i j * f.roundTrip i j)
+    (hhost₁ : ∀ h, Monotone (d₁.hostPaused h)) (σ : Solution H R Msg)
     (hstar : σ.IsStar m.sender) (lookahead : ℕ+) (c : Weights) (𝒮 : Finset (Fin R))
     (h𝒮 : ∀ r ∈ 𝒮, m.host r ≠ m.sender) {s : ℝ} (hs : 0 < s) (hs1 : s ≤ 1) {ℓ : ℝ}
     (hℓ : 0 < ℓ) {w : Ω → World H R} {wOut : Fin R → ℕ → Ω → World H R}
-    (hw : ∀ ω, m.Builds f (d₁.withPaused (D ω)) (w ω))
+    (hw : ∀ ω, m.Builds f (d₁.withLinks (D ω)) (w ω))
     (hOut : ∀ r j ω, m.Builds f (frameOutside m d₁ (D ω) r ℓ j) (wOut r j ω))
     (hslow : ∀ r ∈ 𝒮, ∀ᵐ ω ∂P, ∀ k x y, σ.plays (w ω) lookahead r k = some x →
       σ.plays (w ω) lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
@@ -261,7 +262,7 @@ theorem Prior.value_le_lintegral_cost {Msg : Type} (hD : m.Prior f P D)
     {q : CellChoices R} (hq : q.Valid m f d₁ w₁ c 𝒮 s ℓ) :
     q.value m f d₁ w₁ lookahead c 𝒮 s ℓ ≤ ∫⁻ ω, σ.cost (w ω) lookahead c ∂P := by
   obtain ⟨M, hM, hbound⟩ := hq.bounded
-  exact hD.limsup_cells_le_cost hm hB₁ hpos₁ σ hstar lookahead c 𝒮 h𝒮 hs hs1 hℓ
+  exact hD.limsup_cells_le_cost hm hB₁ hpos₁ hhost₁ σ hstar lookahead c 𝒮 h𝒮 hs hs1 hℓ
     hq.longestPause_le hw hOut hslow hS hG hdesc (δ := leastDelayTo m f d₁) (fun _ => rfl)
     (count := pauseCount m f ℓ) (fun _ => rfl) hq.latencyCap_nonneg
     hq.referencePeriod_nonneg hq.capturePeriod_nonneg hq.capturePeriod_le hq.out_sub_le
@@ -299,22 +300,22 @@ theorem lintegral_fixedClockBound_le [Countable H] {Msg : Type} {σ : Solution H
   classical
   have := hD.prob
   have hm := hD.aemeasurable
-  have hD₂ : m.Prior f (P.prod P) (resamplePaused D) := hD.prior_resamplePaused
+  have hD₂ : m.Prior f (P.prod P) (resampleLinks D) := hD.prior_resampleLinks
   -- A world for every pair of outcomes: the clocks of the first, the pauses of the second.
-  choose world₂ hB₂ using fun ω : Ω × Ω => hD.exists_resamplePaused hB ω
+  choose world₂ hB₂ using fun ω : Ω × Ω => hD.exists_resampleLinks hB ω
   -- The worlds without the pauses of each cell.
   have hexOut : ∀ (r : Fin R) (j : ℕ) (ω : Ω × Ω), ∃ w' : World H R,
-      m.Builds f ((resamplePaused D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
+      m.Builds f ((resampleLinks D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
         (((j : ℝ) + 1) * ℓ)) w' := fun r j ω =>
     (hB₂ ω).exists_linkOutside (fun i j' => hD₂.leastDelay_pos ω i j')
       (fun i j' => hD₂.linkPaused_monotone ω i j') _ _ _ _
   choose wOut₂ hOut₂ using hexOut
-  rw [expectedCost_resamplePaused hσ.measurable hD hB hB₂]
+  rw [expectedCost_resampleLinks hσ.measurable hD hB hB₂]
   choose S G hS hG hSG using hplays
   -- The step bound, for almost every pair of outcomes.
   have hstep : ∀ᵐ ω₁ ∂P, ∀ᵐ ω₂ ∂P, σ.WithinStep (world₂ (ω₁, ω₂)) lookahead u :=
     Measure.ae_ae_of_ae_prod
-      (hσ.withinStep (Ω × Ω) (P.prod P) (resamplePaused D) world₂ hD₂ hB₂)
+      (hσ.withinStep (Ω × Ω) (P.prod P) (resampleLinks D) world₂ hD₂ hB₂)
   -- The descriptions of the playback in the worlds without the pauses of each cell.
   have hdesc : ∀ᵐ ω₁ ∂P, ∀ (r : Fin R) (j k : ℕ), ∀ᵐ ω₂ ∂P, ∀ x : ℝ,
       σ.plays (wOut₂ r j (ω₁, ω₂)) lookahead r k = some x ↔
@@ -329,7 +330,8 @@ theorem lintegral_fixedClockBound_le [Countable H] {Msg : Type} {σ : Solution H
   refine lintegral_mono_ae ?_
   filter_upwards [hstep, hdesc] with ω₁ hω₁ hdω₁
   refine iSup₂_le fun q hq => ?_
-  exact hD.value_le_lintegral_cost hm (hB ω₁) (fun i j => (hD.leastDelay_pos ω₁ i j).le) σ
+  exact hD.value_le_lintegral_cost hm (hB ω₁) (fun i j => (hD.leastDelay_pos ω₁ i j).le)
+    (fun h => hD.hostPaused_monotone ω₁ h) σ
     hσ.star lookahead c 𝒮 h𝒮 (by linarith) (by linarith) hℓ
     (w := fun ω => world₂ (ω₁, ω)) (wOut := fun r j ω => wOut₂ r j (ω₁, ω))
     (fun ω => hB₂ (ω₁, ω)) (fun r j ω => hOut₂ r j (ω₁, ω))

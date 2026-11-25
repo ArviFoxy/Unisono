@@ -26,10 +26,15 @@ The world of one draw:
   asks (`isBacklog_backlog`).
 * `Draw.Steady`: a draw without wander and without errors of the reports,
   whose paused times never decrease and are tame.
+* `handledAt`: when a host handles an event that occurs at a true time,
+  which is after its backlog at that time. It is no earlier than the event
+  (`le_handledAt`) and never decreases (`handledAt_mono`).
 * `drawWorld`: the world of a steady draw, which is the world built from the
-  draw (`drawWorld_builds`). Each clock runs at its own constant rate, and a
+  draw (`drawWorld_builds`). Each clock runs at its own constant rate, a
   message waits for the backlogs of the sending host, of the link and of the
-  receiving host.
+  receiving host, and a host handles the events of its audio devices after
+  its backlog. When no host pauses, the world has clocks at constant rates
+  in the sense of `ConstantRates` (`drawWorld_constantRates`).
 
 The paused time of the process of pauses (`pausedPath`) is tame in almost
 every outcome:
@@ -46,17 +51,18 @@ every outcome:
 
 The random world:
 
-* `Member.SteadyClocks`: the members that the construction covers. In every
-  random world of such a member, almost every outcome is a world with clocks
-  at constant rates (`Prior.ae_constantRates`).
+* `Member.SteadyClocks`: the members that the construction covers.
+* `Member.SteadyHosts`: the members with steady clocks whose hosts never
+  pause. In every random world of such a member, almost every outcome is a
+  world with clocks at constant rates (`Prior.ae_constantRates`).
 * `Component.Coordinate`, `steadyLaw`, `steadyDraw`: the probability space.
   An outcome has one coordinate for each component of a draw, and the
   coordinates are independent. The coordinate of a paused time is what is
   drawn for the cells of the process of pauses, and every other coordinate is
   one number. The draw of an outcome has the law of the member
   (`steadyDraw_prior`).
-* `steadyWorld`: the world of an outcome. Its clocks run at constant rates
-  (`steadyWorld_constantRates`).
+* `steadyWorld`: the world of an outcome, built from the draw of the outcome
+  (`steadyWorld_builds`).
 * `exists_holds_with_pauses`: an example of a member in which every link and
   every host pauses, with its random world.
 -/
@@ -108,6 +114,24 @@ theorem Tame.bddAbove {X : Time → ℝ} (h : Tame X) (hmono : Monotone X) (t : 
 theorem isBacklog_backlog {X : Time → ℝ} (h : Tame X) (hmono : Monotone X) (t : Time) :
     IsBacklog X t (backlog X t) :=
   isLUB_csSup ⟨0, t, le_rfl, by simp⟩ (h.bddAbove hmono t)
+
+/-- When a host whose paused time is recorded by `X` handles an event that
+occurs at true time `t`: after its backlog at `t`. -/
+def handledAt (X : Time → ℝ) (t : Time) : Time :=
+  t + backlog X t
+
+/-- A host handles an event when it occurs, or later. -/
+theorem le_handledAt {X : Time → ℝ} (h : Tame X) (hmono : Monotone X) (t : Time) :
+    t ≤ handledAt X t :=
+  le_add_of_nonneg_right (isBacklog_backlog h hmono t).nonneg
+
+/-- A host handles its events in the order in which they occur: the true
+time at which it handles an event never decreases with the true time of the
+event. Events that occur during one pause are handled together when the
+pause ends. -/
+theorem handledAt_mono {X : Time → ℝ} (h : Tame X) (hmono : Monotone X) :
+    Monotone (handledAt X) := fun _ _ hst =>
+  (isBacklog_backlog h hmono _).add_le_add hmono (isBacklog_backlog h hmono _) hst
 
 /-! ## The world of a draw with steady clocks -/
 
@@ -165,7 +189,8 @@ its offset plus its rate times true time. A device starts when the clock of
 its host reads the member's start, and then runs at the rate of its own
 clock. A message waits for the backlog of the sending host, then takes the
 least delay of its direction and waits for the backlog of the link, and then
-waits for the backlog of the receiving host. -/
+waits for the backlog of the receiving host. A host handles the handovers
+and the requests of its audio devices after its backlog. -/
 def drawWorld (m : GenerativeWorld H R) (f : Member H R)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (d : Draw H R) (hd : d.Steady) :
     World H R where
@@ -192,21 +217,19 @@ def drawWorld (m : GenerativeWorld H R) (f : Member H R)
       first := fun b => b * m.blockSize
       first_zero := Nat.zero_mul _
       first_strictMono := fun _ _ hab => Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
-      handed := fun b =>
-        (f.captureStart - d.offset m.sender) * Real.exp (-d.logRate m.sender)
-          + (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate * Real.exp (-d.deviceLogRate none)
-      handed_strictMono := fun a b hab => by
-        have hlt : (a + 1) * m.blockSize - 1 < (b + 1) * m.blockSize - 1 := by
-          have h1 : (a + 1) * m.blockSize < (b + 1) * m.blockSize :=
-            Nat.mul_lt_mul_of_pos_right (by omega) m.blockSize_pos
-          have h2 : 0 < (a + 1) * m.blockSize := Nat.mul_pos (by omega) m.blockSize_pos
-          omega
+      handed := fun b => handledAt (d.hostPaused m.sender)
+        ((f.captureStart - d.offset m.sender) * Real.exp (-d.logRate m.sender)
+          + (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate * Real.exp (-d.deviceLogRate none))
+      handed_mono := fun a b hab => by
+        refine handledAt_mono (hd.hostPaused_tame _) (hd.hostPaused_monotone _) ?_
+        have hle : (a + 1) * m.blockSize - 1 ≤ (b + 1) * m.blockSize - 1 :=
+          Nat.sub_le_sub_right (Nat.mul_le_mul_right _ (Nat.succ_le_succ hab)) 1
         have h1 : (((a + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate
-            < (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate :=
-          div_lt_div_of_pos_right (Nat.cast_lt.mpr hlt) m.rate_pos
-        have := mul_lt_mul_of_pos_right h1 (Real.exp_pos (-d.deviceLogRate none))
+            ≤ (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) / m.rate :=
+          div_le_div_of_nonneg_right (Nat.cast_le.mpr hle) m.rate_pos.le
+        have := mul_le_mul_of_nonneg_right h1 (Real.exp_pos (-d.deviceLogRate none)).le
         linarith
-      handed_after := fun _ => le_rfl
+      handed_after := fun _ => le_handledAt (hd.hostPaused_tame _) (hd.hostPaused_monotone _) _
       reported := fun b =>
         f.captureStart + Real.exp (d.logRate m.sender)
           * (((b * m.blockSize : ℕ) : ℝ) / m.rate * Real.exp (-d.deviceLogRate none)) }
@@ -223,22 +246,19 @@ def drawWorld (m : GenerativeWorld H R) (f : Member H R)
       first := fun b => b * m.blockSize
       first_zero := Nat.zero_mul _
       first_strictMono := fun _ _ hab => Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
-      asked := fun b =>
-        (f.speakerStart (m.device r) - d.offset (m.host r)) * Real.exp (-d.logRate (m.host r))
+      asked := fun b => handledAt (d.hostPaused (m.host r))
+        ((f.speakerStart (m.device r) - d.offset (m.host r)) * Real.exp (-d.logRate (m.host r))
           + (((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead)
-            * Real.exp (-d.deviceLogRate (some (m.device r)))
-      asked_strictMono := fun a b hab => by
-        have hlt : a * m.blockSize < b * m.blockSize :=
-          Nat.mul_lt_mul_of_pos_right hab m.blockSize_pos
-        have h1 : ((a * m.blockSize : ℕ) : ℝ) / m.rate < ((b * m.blockSize : ℕ) : ℝ) / m.rate :=
-          div_lt_div_of_pos_right (Nat.cast_lt.mpr hlt) m.rate_pos
-        have := mul_lt_mul_of_pos_right (show ((a * m.blockSize : ℕ) : ℝ) / m.rate - m.lead
-            < ((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead by linarith)
-          (Real.exp_pos (-d.deviceLogRate (some (m.device r))))
+            * Real.exp (-d.deviceLogRate (some (m.device r))))
+      asked_mono := fun a b hab => by
+        refine handledAt_mono (hd.hostPaused_tame _) (hd.hostPaused_monotone _) ?_
+        have hle : a * m.blockSize ≤ b * m.blockSize := Nat.mul_le_mul_right _ hab
+        have h1 : ((a * m.blockSize : ℕ) : ℝ) / m.rate ≤ ((b * m.blockSize : ℕ) : ℝ) / m.rate :=
+          div_le_div_of_nonneg_right (Nat.cast_le.mpr hle) m.rate_pos.le
+        have := mul_le_mul_of_nonneg_right (show ((a * m.blockSize : ℕ) : ℝ) / m.rate - m.lead
+            ≤ ((b * m.blockSize : ℕ) : ℝ) / m.rate - m.lead by linarith)
+          (Real.exp_pos (-d.deviceLogRate (some (m.device r)))).le
         linarith
-      asked_before := fun b => by
-        have := mul_pos m.lead_pos (Real.exp_pos (-d.deviceLogRate (some (m.device r))))
-        nlinarith
       reported := fun b =>
         f.speakerStart (m.device r) + Real.exp (d.logRate (m.host r))
           * (((b * m.blockSize : ℕ) : ℝ) / m.rate
@@ -291,7 +311,8 @@ theorem drawWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     push_cast
     linear_combination ((n : ℝ) / m.rate) * hg
   capture_first := fun _ => rfl
-  capture_handed := fun _ => rfl
+  capture_handed := fun _ =>
+    ⟨_, isBacklog_backlog (hd.hostPaused_tame _) (hd.hostPaused_monotone _) _, rfl⟩
   capture_reported := fun b => by
     have h := exp_mul_exp_neg (d.logRate m.sender)
     rw [hd.no_reportError]
@@ -326,6 +347,8 @@ theorem drawWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     linear_combination ((k : ℝ) / m.rate) * hg
   speaker_first := fun _ _ => rfl
   speaker_asked := fun r b => by
+    refine ⟨_, _, ?_,
+      isBacklog_backlog (hd.hostPaused_tame _) (hd.hostPaused_monotone _) _, rfl⟩
     have hg := exp_mul_exp_neg (d.deviceLogRate (some (m.device r)))
     rw [hd.deviceReading, hd.deviceReading]
     show Real.exp (d.deviceLogRate (some (m.device r)))
@@ -354,10 +377,11 @@ theorem drawWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     linear_combination (-(f.speakerStart (m.device r) - d.offset (m.host r))) * h
   target_eq := fun _ => rfl
 
-/-- The world of a draw with steady clocks has clocks at constant rates, in
-the sense of `ConstantRates`. -/
+/-- The world of a draw with steady clocks in which no host pauses has
+clocks at constant rates, in the sense of `ConstantRates`. -/
 theorem drawWorld_constantRates (m : GenerativeWorld H R) (f : Member H R)
-    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (d : Draw H R) (hd : d.Steady) :
+    (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (d : Draw H R) (hd : d.Steady)
+    (hhost : ∀ h s t, d.hostPaused h s = d.hostPaused h t) :
     ConstantRates m f d (drawWorld m f hex d hd) where
   builds := drawWorld_builds m f hex d hd
   no_wander := hd.no_wander
@@ -365,7 +389,7 @@ theorem drawWorld_constantRates (m : GenerativeWorld H R) (f : Member H R)
   no_reportError := hd.no_reportError
   delay_pos := fun i j => mul_pos (hd.split_mem i j).1 (f.roundTrip_pos i j)
   linkPaused_monotone := hd.linkPaused_monotone
-  hostPaused_monotone := hd.hostPaused_monotone
+  no_hostPauses := hhost
 
 /-! ## Almost surely the paused time is tame -/
 
@@ -736,13 +760,24 @@ structure Member.SteadyClocks (f : Member H R) : Prop where
 theorem Member.Noiseless.steadyClocks {f : Member H R} (hf : f.Noiseless) : f.SteadyClocks :=
   ⟨hf.no_wander, hf.no_deviceWander, hf.no_reportError⟩
 
-/-- **A member with steady clocks draws worlds with clocks at constant
+/-- A member has steady hosts: it has steady clocks, and its hosts never
+pause, so that every host handles the events of its audio devices when they
+occur. Its links may pause, and the mean rates of its clocks may be
+spread. -/
+structure Member.SteadyHosts (f : Member H R) : Prop extends f.SteadyClocks where
+  no_hostPauses : ∀ h, f.hostPauseRate h = 0
+
+/-- A noiseless member has steady hosts. -/
+theorem Member.Noiseless.steadyHosts {f : Member H R} (hf : f.Noiseless) : f.SteadyHosts :=
+  ⟨hf.steadyClocks, hf.no_hostPauses⟩
+
+/-- **A member with steady hosts draws worlds with clocks at constant
 rates.** In every random world of such a member, almost every outcome is a
-world in which no clock wanders and the audio devices report exact
-timestamps (`ConstantRates`). -/
+world in which no clock wanders, the audio devices report exact timestamps
+and no host pauses (`ConstantRates`). -/
 theorem Prior.ae_constantRates {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
     {D : Ω → Draw H R} {m : GenerativeWorld H R} {f : Member H R} (hD : m.Prior f P D)
-    (hf : f.SteadyClocks) {world : Ω → World H R} (hB : ∀ ω, m.Builds f (D ω) (world ω)) :
+    (hf : f.SteadyHosts) {world : Ω → World H R} (hB : ∀ ω, m.Builds f (D ω) (world ω)) :
     ∀ᵐ ω ∂P, ConstantRates m f (D ω) (world ω) := by
   have := hD.prob
   obtain ⟨ω₀⟩ : Nonempty Ω := nonempty_of_isProbabilityMeasure P
@@ -753,7 +788,9 @@ theorem Prior.ae_constantRates {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
     ae_all_iff.mpr fun x => hD.deviceWander_ae_eq_zero (hf.no_deviceWander x)
   have h3 : ∀ᵐ ω ∂P, ∀ x t, (D ω).reportError x t = 0 :=
     ae_all_iff.mpr fun x => hD.reportError_ae_eq_zero (hf.no_reportError x)
-  filter_upwards [h1, h2, h3] with ω hw hdw herr
+  have h4 : ∀ᵐ ω ∂P, ∀ h s t, (D ω).hostPaused h s = (D ω).hostPaused h t :=
+    ae_all_iff.mpr fun h => hD.hostPaused_ae_const (hf.no_hostPauses h)
+  filter_upwards [h1, h2, h3, h4] with ω hw hdw herr hhost
   exact
     { builds := hB ω
       no_wander := hw
@@ -761,7 +798,7 @@ theorem Prior.ae_constantRates {Ω : Type} [MeasurableSpace Ω] {P : Measure Ω}
       no_reportError := herr
       delay_pos := fun i j => hD.leastDelay_pos ω i j
       linkPaused_monotone := hD.linkPaused_monotone ω
-      hostPaused_monotone := hD.hostPaused_monotone ω }
+      no_hostPauses := hhost }
 
 /-- The coordinate of an outcome that belongs to each component of a draw:
 what is drawn for the cells of the pauses, for the paused time of a link or
@@ -993,12 +1030,11 @@ def steadyWorld (m : GenerativeWorld H R) (f : Member H R)
     World H R :=
   drawWorld m f hex (steadyDraw y) (steadyDraw_steady y)
 
-/-- The world of every outcome is built from the draw of the outcome, and
-its clocks run at constant rates. -/
-theorem steadyWorld_constantRates (m : GenerativeWorld H R) (f : Member H R)
+/-- The world of every outcome is built from the draw of the outcome. -/
+theorem steadyWorld_builds (m : GenerativeWorld H R) (f : Member H R)
     (hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h) (y : ∀ p : Component H R, p.Coordinate) :
-    ConstantRates m f (steadyDraw y) (steadyWorld m f hex y) :=
-  drawWorld_constantRates m f hex (steadyDraw y) (steadyDraw_steady y)
+    m.Builds f (steadyDraw y) (steadyWorld m f hex y) :=
+  drawWorld_builds m f hex (steadyDraw y) (steadyDraw_steady y)
 
 /-- **Every member with steady clocks has a random world**, with any number
 of hosts and speakers. Its links and its hosts may pause, at any rates and
@@ -1011,7 +1047,7 @@ theorem exists_holds_of_steadyClocks [Fintype H] (m : GenerativeWorld H R) (f : 
       m.Holds f P world :=
   ⟨∀ p : Component H R, p.Coordinate, inferInstance, Measure.pi (steadyLaw m f),
     steadyWorld m f hex, steadyDraw, steadyDraw_prior m f hf,
-    fun y => (steadyWorld_constantRates m f hex y).builds⟩
+    fun y => steadyWorld_builds m f hex y⟩
 
 /-- A member in which every link and every host pauses once per second on
 average, each time for a hundredth of a second, and in which the logarithms

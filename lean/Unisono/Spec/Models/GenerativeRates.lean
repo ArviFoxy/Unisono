@@ -12,10 +12,11 @@ public import Unisono.Spec.Models.GenerativeNoiseless
 # Worlds whose clocks run at constant rates
 
 A world built from a draw of the generative model in which no clock wanders,
-of a host or of an audio device, and the audio devices report exact
-timestamps (`ConstantRates`). The clocks of the hosts and of the audio
-devices may all run at different rates, and links and hosts may pause. In
-such a world
+of a host or of an audio device, the audio devices report exact timestamps,
+and no host pauses (`ConstantRates`). The clocks of the hosts and of the
+audio devices may all run at different rates, and links may pause. A host
+that pauses handles the events of its audio devices late; such worlds are
+not covered here. In such a world
 
 * the clock of host `h` reads its offset plus its rate times true time
   (`ConstantRates.clock`), where the rate is the exponential of the
@@ -51,9 +52,11 @@ variable {H : Type} {R : ℕ} {m : GenerativeWorld H R} {f : Member H R} {d : Dr
   {w : World H R}
 
 /-- The world `w` is built from the draw `d`, and in the draw no clock
-wanders and the audio devices report exact timestamps: the clocks of the
-hosts and of the audio devices run at constant rates, each its own. Links
-and hosts may pause, and the paused time that has begun never decreases. -/
+wanders, the audio devices report exact timestamps and no host pauses: the
+clocks of the hosts and of the audio devices run at constant rates, each its
+own, and every host handles the events of its audio devices when they
+occur. Links may pause, and the paused time of a link that has begun never
+decreases. -/
 structure ConstantRates (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R)
     (w : World H R) : Prop where
   builds : m.Builds f d w
@@ -62,7 +65,7 @@ structure ConstantRates (m : GenerativeWorld H R) (f : Member H R) (d : Draw H R
   no_reportError : ∀ x t, d.reportError x t = 0
   delay_pos : ∀ i j, 0 < d.split i j * f.roundTrip i j
   linkPaused_monotone : ∀ i j, Monotone (d.linkPaused i j)
-  hostPaused_monotone : ∀ h, Monotone (d.hostPaused h)
+  no_hostPauses : ∀ h s t, d.hostPaused h s = d.hostPaused h t
 
 /-- The world `w` is built from the draw `d`, and in the draw no clock
 wanders, nothing pauses and the audio devices report exact timestamps: the
@@ -79,6 +82,11 @@ structure ConstantDelays (m : GenerativeWorld H R) (f : Member H R) (d : Draw H 
   delay_pos : ∀ i j, 0 < d.split i j * f.roundTrip i j
 
 namespace ConstantRates
+
+/-- The paused time of a host that has begun never decreases: there is
+none. -/
+theorem hostPaused_mono (hS : ConstantRates m f d w) (h : H) : Monotone (d.hostPaused h) :=
+  fun s t _ => (hS.no_hostPauses h s t).le
 
 /-- Each clock reads its offset plus its rate times true time. -/
 theorem clock (hS : ConstantRates m f d w) (h : H) (t : Time) :
@@ -180,10 +188,24 @@ theorem asked (hS : ConstantRates m f d w) (r : Fin R) (b : ℕ) :
     (w.speaker r).out ((w.speaker r).first b) - (w.speaker r).asked b
       = m.lead / Real.exp (d.deviceLogRate (some (m.device r))) := by
   have hg := Real.exp_pos (d.deviceLogRate (some (m.device r)))
-  have h := hS.builds.speaker_asked r b
+  have h := hS.builds.asked_of_const (r := r) (hS.no_hostPauses _) b
   rw [hS.deviceReading, hS.deviceReading] at h
   rw [eq_div_iff hg.ne']
   linarith
+
+/-- The host of a speaker handles the request of every block before the
+block's first output sample leaves. -/
+theorem asked_lt_out (hS : ConstantRates m f d w) (r : Fin R) (b : ℕ) :
+    (w.speaker r).asked b < (w.speaker r).out ((w.speaker r).first b) := by
+  have h := hS.asked r b
+  have hpos := div_pos m.lead_pos (Real.exp_pos (d.deviceLogRate (some (m.device r))))
+  linarith
+
+/-- The host of a speaker handles the request of every block before any
+output sample of the block leaves. -/
+theorem asked_lt_of_le (hS : ConstantRates m f d w) {r : Fin R} {b k : ℕ}
+    (hk : (w.speaker r).first b ≤ k) : (w.speaker r).asked b < (w.speaker r).out k :=
+  lt_of_lt_of_le (hS.asked_lt_out r b) ((w.speaker r).out_strictMono.monotone hk)
 
 /-- The capture time of a position is linear in the position. -/
 theorem captured (hS : ConstantRates m f d w) (x : ℝ) :
@@ -210,7 +232,7 @@ theorem handed (hS : ConstantRates m f d w) (b : ℕ) :
   have e : (((b + 1) * m.blockSize - 1 : ℕ) : ℝ) = ((b : ℝ) + 1) * m.blockSize - 1 := by
     rw [Nat.cast_sub hB]
     simp
-  rw [hS.builds.capture_handed, hS.builds.capture_first, hS.capture, e]
+  rw [hS.builds.handed_of_const (hS.no_hostPauses _), hS.builds.capture_first, hS.capture, e]
 
 /-- **The capture device hands over blocks without end.** -/
 theorem handed_unbounded (hS : ConstantRates m f d w) (T : Time) :
@@ -261,8 +283,8 @@ theorem asked_unbounded (hS : ConstantRates m f d w) (r : Fin R) (T : Time) :
 to `j` arrives no earlier. -/
 theorem arrival_mono (hS : ConstantRates m f d w) (i j : H) :
     Monotone (d.arrival f i j) :=
-  hS.builds.arrival_mono (hS.linkPaused_monotone i j) (hS.hostPaused_monotone i)
-    (hS.hostPaused_monotone j)
+  hS.builds.arrival_mono (hS.linkPaused_monotone i j) (hS.hostPaused_mono i)
+    (hS.hostPaused_mono j)
 
 end ConstantRates
 
@@ -277,7 +299,7 @@ theorem toConstantRates (hS : ConstantDelays m f d w) : ConstantRates m f d w wh
   no_reportError := hS.no_reportError
   delay_pos := hS.delay_pos
   linkPaused_monotone := fun i j s t _ => (hS.no_linkPauses i j s t).le
-  hostPaused_monotone := fun h s t _ => (hS.no_hostPauses h s t).le
+  no_hostPauses := hS.no_hostPauses
 
 /-- Every message takes the least delay of its direction. -/
 theorem deliver (hS : ConstantDelays m f d w) (i j : H) (s : Time) (q : ℕ) :
@@ -404,7 +426,7 @@ theorem ConstantDelays.withinBounds (hS : ConstantDelays m f d w) {ε : ℝ} (h�
     rw [hS.builds.speaker_reported r b, hS.no_reportError, add_zero, sub_self, abs_zero]
     exact le_rfl
   · intro b
-    rw [hS.builds.capture_handed b, sub_self]
+    rw [hS.builds.handed_of_const (hS.no_hostPauses _) b, sub_self]
     exact le_rfl
   · intro r b
     have hg0 := Real.exp_pos (d.deviceLogRate (some (m.device r)))

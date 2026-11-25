@@ -126,8 +126,8 @@ theorem Builds.exists_le_handed (hB : m.Builds f d w) (T : Time) :
     rw [hB.capture_first]
     have h5 : n + 1 ≤ (n + 1) * m.blockSize := Nat.le_mul_of_pos_right _ m.blockSize_pos
     omega
-  rw [hB.capture_handed]
-  exact hcap.le.trans (w.source.capture_strictMono.monotone hidx)
+  exact (hcap.le.trans (w.source.capture_strictMono.monotone hidx)).trans
+    (w.source.handed_after n)
 
 /-- **The frames of a playback block are played late by the room before the
 next block.** `Builds.block_le_latency` with the capture block of the room:

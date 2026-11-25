@@ -11,9 +11,11 @@ public import Unisono.Solutions.Controller.SteppedLevel
 # The controller's timing from what its hosts observe
 
 The rules of the controller (`Rules`) for worlds in which clocks wander and
-links and hosts pause. Every estimate is a function of a bounded stretch of
-what a host has observed, so that an estimate recovers after any
-disturbance.
+links pause. Every estimate is a function of a bounded stretch of what a
+host has observed, so that an estimate recovers after any disturbance. A
+host that pauses handles the events of its audio devices late; the rules
+take the readings at those events as the times of the events and do not yet
+allow for that.
 
 * **The capture schedule** comes from the readings of the sender's clock at
   the handovers (`knotCapture`).

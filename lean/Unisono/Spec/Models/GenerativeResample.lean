@@ -314,24 +314,25 @@ theorem Builds.bddAbove_host (hB : m.Builds f d w) (h : H) (t : Time) :
   exact ⟨v₁, hv₁.1⟩
 
 omit [DecidableEq H] in
-/-- **A draw that differs from the draw of a built world only in its paused
-times builds a world.** Let `w` be the world built from the draw `d`, with
-positive least delays. A draw `d'` with the same splits, clocks, audio
-devices and errors of reports, whose paused times satisfy the bound that a
-backlog needs at every true time, builds a world: the world `w` with the
-deliveries that `d'` gives. -/
+/-- **A draw that differs from the draw of a built world only in the paused
+times of its links builds a world.** Let `w` be the world built from the
+draw `d`, with positive least delays. A draw `d'` with the same splits,
+clocks, audio devices, errors of reports and paused times of the hosts,
+whose links' paused times satisfy the bound that a backlog needs at every
+true time, builds a world: the world `w` with the deliveries that `d'`
+gives. The paused times of the hosts have to be the same because a host
+handles the events of its audio devices after its backlog. -/
 theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.split)
     (hoffset : d'.offset = d.offset) (hlogRate : d'.logRate = d.logRate)
     (hwander : d'.wander = d.wander) (hdevlog : d'.deviceLogRate = d.deviceLogRate)
     (hdevwander : d'.deviceWander = d.deviceWander) (herr : d'.reportError = d.reportError)
     (hpos : ∀ i j, 0 < d.split i j * f.roundTrip i j)
-    (hhost : ∀ h t,
-      BddAbove {x | ∃ s ≤ t, x = d'.hostPaused h t - d'.hostPaused h s - (t - s)})
+    (hhostp : d'.hostPaused = d.hostPaused)
     (hlink : ∀ i j t,
       BddAbove {x | ∃ s ≤ t, x = d'.linkPaused i j t - d'.linkPaused i j s - (t - s)}) :
     ∃ w' : World H R, m.Builds f d' w' := by
   have hbh : ∀ h t, IsBacklog (d'.hostPaused h) t (backlog (d'.hostPaused h) t) := fun h t =>
-    isBacklog_of_bddAbove (hhost h t)
+    isBacklog_of_bddAbove (by rw [hhostp]; exact hB.bddAbove_host h t)
   have hbl : ∀ i j t, IsBacklog (d'.linkPaused i j) t (backlog (d'.linkPaused i j) t) :=
     fun i j t => isBacklog_of_bddAbove (hlink i j t)
   have hread : ∀ x t, d'.reading x t = d.reading x t := by
@@ -372,7 +373,9 @@ theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.spl
         simp only [hdev]
         exact hB.capture n
       capture_first := hB.capture_first
-      capture_handed := hB.capture_handed
+      capture_handed := fun b => by
+        rw [hhostp]
+        exact hB.capture_handed b
       capture_reported := fun b => by
         rw [herr]
         exact hB.capture_reported b
@@ -382,7 +385,7 @@ theorem Builds.exists_of_paused (hB : m.Builds f d w) (hsplit : d'.split = d.spl
         exact hB.speaker_out r k
       speaker_first := hB.speaker_first
       speaker_asked := fun r b => by
-        simp only [hdev]
+        simp only [hdev, hhostp]
         exact hB.speaker_asked r b
       speaker_reported := fun r b => by
         rw [herr]
@@ -394,8 +397,7 @@ theorem Builds.exists_linkOutside (hB : m.Builds f d w)
     (hpos : ∀ i j, 0 < d.split i j * f.roundTrip i j)
     (hmono : ∀ i j, Monotone (d.linkPaused i j)) (i₀ j₀ : H) (a b : ℝ) :
     ∃ w' : World H R, m.Builds f (d.linkOutside i₀ j₀ a b) w' := by
-  refine hB.exists_of_paused rfl rfl rfl rfl rfl rfl rfl hpos
-    (fun h t => hB.bddAbove_host h t) fun i j t => ?_
+  refine hB.exists_of_paused rfl rfl rfl rfl rfl rfl rfl hpos rfl fun i j t => ?_
   by_cases hij : i = i₀ ∧ j = j₀
   · obtain ⟨rfl, rfl⟩ := hij
     obtain ⟨B, hBnd⟩ := hB.bddAbove_link (hmono i j) t
@@ -414,8 +416,7 @@ theorem Prior.exists_resample (hD : m.Prior f P D) {world : Ω → World H R}
     (hB : ∀ ω, m.Builds f (D ω) (world ω)) (i₀ j₀ : H) {a b : ℝ} (hab : a ≤ b) (ω : Ω × Ω) :
     ∃ w' : World H R, m.Builds f (resample D i₀ j₀ a b ω) w' := by
   refine (hB ω.1).exists_of_paused rfl rfl rfl rfl rfl rfl rfl
-    (fun i j => hD.leastDelay_pos ω.1 i j) (fun h t => (hB ω.1).bddAbove_host h t)
-    fun i j t => ?_
+    (fun i j => hD.leastDelay_pos ω.1 i j) rfl fun i j t => ?_
   by_cases hij : i = i₀ ∧ j = j₀
   · obtain ⟨rfl, rfl⟩ := hij
     obtain ⟨B, hBnd⟩ := (hB ω.1).bddAbove_link (hD.linkPaused_monotone ω.1 i j) t
