@@ -54,6 +54,7 @@ public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Solutions.FixedDelay.NoLoss
 public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
+public import Unisono.Spec.AccruedLower
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Causality
 public import Unisono.Spec.Checks
@@ -2298,6 +2299,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.sum_blocks_newFrames_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.sum_blocks_newFrames_le
+
+/-- info: 'Unisono.Spec.World.sum_le_accruedFrames_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.sum_le_accruedFrames_latency
+
+/-- info: 'Unisono.Spec.World.sum_le_accruedOutputs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.sum_le_accruedOutputs
+
+/-- info: 'Unisono.Spec.World.longRun_le_cost_of_latency_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.longRun_le_cost_of_latency_missed
 
 /-- info: 'Unisono.Spec.continuousBefore_le_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

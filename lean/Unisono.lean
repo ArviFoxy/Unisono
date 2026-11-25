@@ -52,6 +52,7 @@ public import Unisono.Solutions.FixedDelay.Memory
 public import Unisono.Solutions.FixedDelay.NoLoss
 public import Unisono.Solutions.FixedDelay.Speed
 public import Unisono.Solutions.FixedDelay.StarMargin
+public import Unisono.Spec.AccruedLower
 public import Unisono.Spec.AtLatency
 public import Unisono.Spec.Causality
 public import Unisono.Spec.Checks
