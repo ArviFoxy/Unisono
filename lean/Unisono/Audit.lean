@@ -67,6 +67,7 @@ public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
+public import Unisono.Spec.Models.GenerativeBlockLatency
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeEarliest
@@ -1765,6 +1766,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ConstantRates.lt_latency
 
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.block_lt_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.block_lt_latency
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
@@ -2232,6 +2237,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.le_card_newFrames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.le_card_newFrames
+
+/-- info: 'Unisono.Spec.continuousBefore_le_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuousBefore_le_add
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -66,6 +66,7 @@ public import Unisono.Spec.OutputRate
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
+public import Unisono.Spec.Models.GenerativeBlockLatency
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
 public import Unisono.Spec.Models.GenerativeEarliest
