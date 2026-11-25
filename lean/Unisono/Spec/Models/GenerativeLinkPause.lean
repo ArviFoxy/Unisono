@@ -5,43 +5,46 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 -/
 module
 public import Unisono.Spec.Models.GenerativeStall
-public import Unisono.Spec.Models.GenerativePauses
+public import Unisono.Spec.Models.GenerativeTransfer
 public import Unisono.Spec.Causality
 
 /-!
-# One pause of the link from the sender
+# Paused time of the link from the sender that begins in a short interval
 
-A pause of length `X` of the link from host `i` to host `j` begins at true
-time `θ` when the paused time of the link at `θ` exceeds its value at every
-earlier time by at least `X`. This file proves two things about such a
-pause, in one outcome. Neither needs the link or a host to be idle when the
-pause begins.
+Take two true times `θ₁ ≤ θ₂` and the paused time of the link from host `i`
+to host `j` that begins between them: the paused time at `θ₂` minus the
+paused time at `θ₁`. This file proves two things about it, in one outcome,
+for every member of the generative model: the clocks may wander, the
+timestamps may have errors, and the link and the hosts may have backlogs
+when the interval begins.
 
-**After the pause begins, nothing sent arrives before it ends.** Every
-message that host `i` sends to host `j` at or after `θ` arrives at or after
-`θ + X` plus the least delay of the direction (`Builds.arrival_ge_of_pause`).
-For a solution whose hosts exchange messages only with the sender, the
-output samples of a speaker that are requested until then can play only
-positions that need capture blocks handed over before `θ`, so they cost
-missed samples and discontinuities as `Builds.stall_le` says
-(`Builds.stall_le_of_pause`).
+**Nothing sent after the interval arrives before the paused time is worked
+off.** Every message that host `i` sends to host `j` at or after `θ₂`
+arrives at or after `θ₁`, plus the paused time that began in the interval,
+plus the least delay of the direction (`Builds.arrival_ge_of_paused`). For a
+solution whose hosts exchange messages only with the sender, the output
+samples of a speaker that are requested until then can play only positions
+that need capture blocks handed over before `θ₂`, so they cost missed
+samples and discontinuities as `Builds.stall_le` says
+(`Builds.stall_le_of_paused`).
 
-**Before the pause can be noticed, every solution plays the same with and
-without it.** Take two draws with steady clocks that differ only in the
-paused time of the link from `i` to `j`, and only from true time `θ` on
-(`Draw.SameExceptLinkFrom`). Their worlds deliver every message at the same
+**Before the difference can arrive, every solution plays the same with and
+without it.** Take two draws that differ only in the paused time of the link
+from `i` to `j`, and only from true time `θ` on (`Draw.SameExceptLinkFrom`).
+Worlds built from them have the same hosts, clocks, audio devices and target
+latencies (`Builds.same_devices`), and deliver every message at the same
 time, or both at or after `θ` plus the least delay of the direction
-(`drawWorld_deliversSameBefore`). So every solution plays the same in both
-at every output sample of every playback block that is requested before
-that time (`drawWorld_plays_eq`), and the position that it played last
-before such a block is the same (`drawWorld_lastPlayed_eq`).
+(`Builds.deliversSameBefore`). So every solution plays the same in both at
+every output sample of every playback block that is requested before that
+time (`Builds.plays_eq_of_sameExcept`), and the position that it played last
+before such a block is the same (`Builds.lastPlayed_eq`).
 
-Together (`drawWorld_stall_le_of_pause`): what the output samples of the
-window cost in the world with the pause is bounded from below with the room
-that the solution had in the world without it. The world without the pause
-does not depend on whether the pause occurs. This is what lets a bound on
-expected cost use that a pause begins independently of what was played
-before. No such bound is proved here.
+Together (`Builds.stall_le_of_sameExcept`): what the output samples of the
+window cost in the world with the paused time is bounded from below with the
+room that the solution had in the world without it. The world without it
+does not depend on whether a pause begins in the interval. This is what lets
+a bound on expected cost use that pauses begin independently of what was
+played before. No such bound is proved here.
 -/
 
 @[expose] public noncomputable section
@@ -64,37 +67,34 @@ namespace GenerativeWorld
 variable {H : Type} {R : ℕ} {Msg : Type} {m : GenerativeWorld H R} {f : Member H R}
   {d d' : Draw H R} {w : World H R}
 
-/-! ## Arrivals after a pause begins -/
+/-! ## Arrivals after paused time has begun -/
 
-/-- **A pause adds its length to the backlog.** Suppose that the paused time
-never decreases and that a pause of length at least `X` begins at `θ`. Then
-the backlog `v` at a true time `e` at or after `θ` is worked off at or after
-`θ + X`. -/
-theorem IsBacklog.pause_le {paused : Time → ℝ} (hmono : Monotone paused) {θ X e v : ℝ}
-    (hjump : ∀ s < θ, X ≤ paused θ - paused s) (he : θ ≤ e) (h : IsBacklog paused e v) :
-    θ + X ≤ e + v := by
-  have hv : ∀ ε : ℝ, 0 < ε → X - (e - θ) ≤ v + ε := by
-    intro ε hε
-    have h1 := h.1 ⟨θ - ε, by linarith, rfl⟩
-    have h2 := hjump (θ - ε) (by linarith)
-    have h3 := hmono he
-    linarith
-  have h4 := le_of_forall_pos_le_add hv
+/-- **Paused time that has begun is in the backlog until it is worked off.**
+Suppose that the paused time never decreases. The backlog `v` at a true time
+`e` at or after `θ₂` is worked off at or after `θ₁` plus the paused time that
+began between `θ₁` and `θ₂`. -/
+theorem IsBacklog.increment_le {paused : Time → ℝ} (hmono : Monotone paused) {θ₁ θ₂ e v : ℝ}
+    (hθ : θ₁ ≤ θ₂) (he : θ₂ ≤ e) (h : IsBacklog paused e v) :
+    θ₁ + (paused θ₂ - paused θ₁) ≤ e + v := by
+  have h1 := h.1 ⟨θ₁, hθ.trans he, rfl⟩
+  have h2 := hmono he
   linarith
 
-/-- **After a pause of a link begins, nothing sent arrives before it ends.**
-In a world built from a draw, suppose that the paused time of the link from
-`i` to `j` never decreases and that a pause of length at least `X` of that
-link begins at `θ`. Then every message that `i` sends to `j` at or after `θ`
-arrives at or after `θ + X` plus the least delay of the direction. -/
-theorem Builds.arrival_ge_of_pause (hB : m.Builds f d w) {i j : H}
-    (hlink : Monotone (d.linkPaused i j)) {θ X : ℝ}
-    (hjump : ∀ s < θ, X ≤ d.linkPaused i j θ - d.linkPaused i j s) {s : Time} (hs : θ ≤ s) :
-    θ + X + d.split i j * f.roundTrip i j ≤ d.arrival f i j s := by
+/-- **Nothing sent after paused time of a link has begun arrives before it
+is worked off.** In a world built from a draw, suppose that the paused time
+of the link from `i` to `j` never decreases. Then every message that `i`
+sends to `j` at or after `θ₂` arrives at or after `θ₁`, plus the paused time
+of the link that began between `θ₁` and `θ₂`, plus the least delay of the
+direction. -/
+theorem Builds.arrival_ge_of_paused (hB : m.Builds f d w) {i j : H}
+    (hlink : Monotone (d.linkPaused i j)) {θ₁ θ₂ : ℝ} (hθ : θ₁ ≤ θ₂) {s : Time}
+    (hs : θ₂ ≤ s) :
+    θ₁ + (d.linkPaused i j θ₂ - d.linkPaused i j θ₁) + d.split i j * f.roundTrip i j
+      ≤ d.arrival f i j s := by
   obtain ⟨v₁, v₂, v₃, hv₁, hv₂, hv₃, he⟩ := hB.arrival_eq i j s
   have h1 := hv₁.nonneg
   have h3 := hv₃.nonneg
-  have h2 := hv₂.pause_le hlink hjump (by linarith)
+  have h2 := hv₂.increment_le hlink hθ (by linarith)
   rw [he]
   linarith
 
@@ -102,34 +102,33 @@ section Stall
 
 variable [DecidableEq H]
 
-/-- **What every solution through the sender pays during a pause of the link
-to a speaker's host.** Consider a world built from a draw whose least delays
-are not negative and whose paused times never decrease, a solution whose
-hosts exchange messages only with the sender, and a speaker whose host is
-not the sender's, whose position advances by at least `s` in every step of
-continuous playback, with `0 ≤ s ≤ 1`. Suppose that a pause of length at
-least `X` of the link from the sender to the speaker's host begins at `θ`,
-that capture block `c` is handed over at or after `θ`, and that playback
-block `β` is requested no later than `θ + X` plus the least delay. Then for
-output samples `k₀ ≤ K` with `K` in a playback block up to `β`: `s` for each
-output sample from `k₀` to `K` is at most the room from the position played
-last before `k₀` to `c * blockSize - lookahead`, plus the missed samples
-counted from `k₀` to `K`, plus `s` times the discontinuities counted from
-`k₀` to `K - 1` and one more. -/
-theorem Builds.stall_le_of_pause (hB : m.Builds f d w)
+/-- **What every solution through the sender pays while paused time of the
+link to a speaker's host is worked off.** Consider a world built from a draw
+whose least delays are not negative and whose paused times never decrease, a
+solution whose hosts exchange messages only with the sender, and a speaker
+whose host is not the sender's, whose position advances by at least `s` in
+every step of continuous playback, with `0 ≤ s ≤ 1`. Let `X` be the paused
+time of the link from the sender to the speaker's host that begins between
+`θ₁` and `θ₂`. Suppose that capture block `c` is handed over at or after
+`θ₂`, and that playback block `β` is requested no later than `θ₁ + X` plus
+the least delay. Then for output samples `k₀ ≤ K` with `K` in a playback
+block up to `β`: `s` for each output sample from `k₀` to `K` is at most the
+room from the position played last before `k₀` to
+`c * blockSize - lookahead`, plus the missed samples counted from `k₀` to
+`K`, plus `s` times the discontinuities counted from `k₀` to `K - 1` and one
+more. -/
+theorem Builds.stall_le_of_paused (hB : m.Builds f d w)
     (hpos : ∀ i j, 0 ≤ d.split i j * f.roundTrip i j)
     (hlink : ∀ i j, Monotone (d.linkPaused i j)) (hhost : ∀ h, Monotone (d.hostPaused h))
     (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R}
     (hr : m.host r ≠ m.sender) {s : ℝ} (hs0 : 0 ≤ s) (hs1 : s ≤ 1)
     (hslow : ∀ k x y, σ.plays w lookahead r k = some x →
       σ.plays w lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
-    {θ X : ℝ}
-    (hjump : ∀ t < θ, X ≤ d.linkPaused m.sender (m.host r) θ
-      - d.linkPaused m.sender (m.host r) t)
-    {c β k₀ K : ℕ} (hK : k₀ ≤ K) (hKβ : K / m.blockSize ≤ β)
-    (hc : θ ≤ w.source.handed c)
+    {θ₁ θ₂ : ℝ} (hθ : θ₁ ≤ θ₂) {c β k₀ K : ℕ} (hK : k₀ ≤ K) (hKβ : K / m.blockSize ≤ β)
+    (hc : θ₂ ≤ w.source.handed c)
     (hβ : (w.speaker r).asked β
-      ≤ θ + X + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)) :
+      ≤ θ₁ + (d.linkPaused m.sender (m.host r) θ₂ - d.linkPaused m.sender (m.host r) θ₁)
+        + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)) :
     s * ((K : ℝ) + 1 - k₀)
       ≤ max ((c : ℝ) * m.blockSize - ((lookahead : ℕ) : ℝ)
           - (lastPlayed (σ.plays w lookahead r) k₀).getD 0) 0
@@ -137,21 +136,25 @@ theorem Builds.stall_le_of_pause (hB : m.Builds f d w)
         + s * (∑ k ∈ Finset.Ico k₀ K, (discontinuityAt (σ.plays w lookahead r) k : ℝ)
           + 1) :=
   hB.stall_le hpos hlink hhost σ hstar lookahead hr hs0 hs1 hslow hK hKβ
-    (hβ.trans (hB.arrival_ge_of_pause (hlink m.sender (m.host r)) hjump hc))
+    (hβ.trans (hB.arrival_ge_of_paused (hlink m.sender (m.host r)) hθ hc))
 
 end Stall
 
 /-! ## Two draws that differ by pauses of one link from a true time on -/
 
 /-- The draws `d` and `d'` differ only in the paused time of the link from
-`i₀` to `j₀`, and only from true time `θ` on: the splits, the offsets and
-rates of all clocks, the paused times of all hosts and of all other links
-are the same, and the paused time of that link is the same before `θ`. -/
+`i₀` to `j₀`, and only from true time `θ` on: the splits, the clocks of the
+hosts and of the audio devices, the errors of the reported timestamps, the
+paused times of all hosts and of all other links are the same, and the
+paused time of that link is the same before `θ`. -/
 structure Draw.SameExceptLinkFrom (d d' : Draw H R) (i₀ j₀ : H) (θ : Time) : Prop where
   split : d'.split = d.split
   offset : d'.offset = d.offset
   logRate : d'.logRate = d.logRate
+  wander : d'.wander = d.wander
   deviceLogRate : d'.deviceLogRate = d.deviceLogRate
+  deviceWander : d'.deviceWander = d.deviceWander
+  reportError : d'.reportError = d.reportError
   hostPaused : d'.hostPaused = d.hostPaused
   linkPaused : ∀ i j, (i, j) ≠ (i₀, j₀) → d'.linkPaused i j = d.linkPaused i j
   before : ∀ t < θ, d'.linkPaused i₀ j₀ t = d.linkPaused i₀ j₀ t
@@ -203,68 +206,132 @@ theorem arrival_of_sameExceptLinkFrom {i₀ j₀ : H} {θ : Time} {w' : World H 
     unfold Draw.arrival
     rw [h.split, h.hostPaused, h.linkPaused i j hij]
 
-/-! ## The worlds of the two draws -/
+/-! ## The worlds built from the two draws -/
+
+/-- **The clocks of a draw determine the hosts, clocks, audio devices and
+target latencies of the world built from it.** Two worlds built from draws
+with the same offsets, rates and wander of all clocks and the same errors of
+the reported timestamps have the same sender, hosts, clocks, capture device,
+playback devices and target latencies. They can differ only in when
+messages arrive. -/
+theorem Builds.same_devices {w' : World H R} (h : m.Builds f d w) (h' : m.Builds f d' w')
+    (hoffset : d'.offset = d.offset) (hlogRate : d'.logRate = d.logRate)
+    (hwander : d'.wander = d.wander) (hdevlog : d'.deviceLogRate = d.deviceLogRate)
+    (hdevwander : d'.deviceWander = d.deviceWander) (herr : d'.reportError = d.reportError) :
+    w'.sender = w.sender ∧ w'.host = w.host ∧ w'.clock = w.clock ∧ w'.source = w.source
+      ∧ w'.speaker = w.speaker ∧ w'.target = w.target := by
+  have hread : ∀ x t, d'.reading x t = d.reading x t := by
+    intro x t
+    unfold Draw.reading
+    rw [hoffset, hlogRate, hwander]
+  have hdev : ∀ x t, d'.deviceReading x t = d.deviceReading x t := by
+    intro x t
+    unfold Draw.deviceReading
+    rw [hdevlog, hdevwander]
+  have hsender : w'.sender = w.sender := h'.sender_eq.trans h.sender_eq.symm
+  have hhost : w'.host = w.host := h'.host_eq.trans h.host_eq.symm
+  have hclock : w'.clock = w.clock :=
+    funext fun x => Clock.ext_read fun t =>
+      (h'.clock x t).trans ((hread x t).trans (h.clock x t).symm)
+  have hinj : ∀ x, Function.Injective (w.clock x).read := fun x =>
+    (w.clock x).strictMono.injective
+  have hdinj : ∀ x, Function.Injective (d.deviceReading x) := fun x => by
+    obtain ⟨c, hc⟩ := h.deviceClock x
+    have heq : d.deviceReading x = c.read := funext fun t => (hc t).symm
+    rw [heq]
+    exact c.strictMono.injective
+  refine ⟨hsender, hhost, hclock, ?_, ?_, ?_⟩
+  · have hcap0 : w'.source.capture 0 = w.source.capture 0 := by
+      apply hinj w.sender
+      have h2 := h'.capture_start
+      rw [hsender, hclock] at h2
+      rw [h2, h.capture_start]
+    have hcap : ∀ n, w'.source.capture n = w.source.capture n := fun n => by
+      apply hdinj none
+      have h1 := h.capture n
+      have h2 := h'.capture n
+      rw [hdev none (w'.source.capture n), hdev none (w'.source.capture 0), hcap0] at h2
+      linarith
+    have hfirst : ∀ b, w'.source.first b = w.source.first b := fun b =>
+      (h'.capture_first b).trans (h.capture_first b).symm
+    refine CaptureDevice.ext_fields hcap hfirst (fun b => ?_) (fun b => ?_)
+    · rw [h'.capture_handed, h.capture_handed, hfirst, hcap]
+    · rw [h'.capture_reported, h.capture_reported, hfirst, hcap, hsender, hclock, herr]
+  · funext r
+    have hout0 : (w'.speaker r).out 0 = (w.speaker r).out 0 := by
+      apply hinj (w.host r)
+      have h2 := h'.speaker_start r
+      rw [hhost, hclock] at h2
+      rw [h2, h.speaker_start r]
+    have hout : ∀ k, (w'.speaker r).out k = (w.speaker r).out k := fun k => by
+      apply hdinj (some (m.device r))
+      have h1 := h.speaker_out r k
+      have h2 := h'.speaker_out r k
+      rw [hdev (some (m.device r)) ((w'.speaker r).out k),
+        hdev (some (m.device r)) ((w'.speaker r).out 0), hout0] at h2
+      linarith
+    have hfirst : ∀ b, (w'.speaker r).first b = (w.speaker r).first b := fun b =>
+      (h'.speaker_first r b).trans (h.speaker_first r b).symm
+    refine PlaybackDevice.ext_fields hout hfirst (fun b => ?_) (fun b => ?_)
+    · apply hdinj (some (m.device r))
+      have h1 := h.speaker_asked r b
+      have h2 := h'.speaker_asked r b
+      rw [hdev (some (m.device r)) ((w'.speaker r).out ((w'.speaker r).first b)),
+        hdev (some (m.device r)) ((w'.speaker r).asked b), hfirst, hout] at h2
+      linarith
+    · rw [h'.speaker_reported, h.speaker_reported, hfirst, hout, hhost, hclock, herr]
+  · funext n
+    rw [h'.target_eq, h.target_eq]
 
 section Worlds
 
-variable [DecidableEq H] {hex : ∀ h, h = m.sender ∨ ∃ r, m.host r = h} {i₀ j₀ : H} {θ : Time}
+variable [DecidableEq H] {i₀ j₀ : H} {θ : Time} {w' : World H R}
 
 omit [DecidableEq H] in
-/-- The worlds of two draws with steady clocks that differ by pauses of one
-link from `θ` on deliver every message at the same time, or both at or after
-`θ` plus the least delay of the direction of that link. -/
-theorem drawWorld_deliversSameBefore (hd : d.Steady) (hd' : d'.Steady)
+/-- Worlds built from two draws that differ by pauses of one link from `θ`
+on deliver every message at the same time, or both at or after `θ` plus the
+least delay of the direction of that link. -/
+theorem Builds.deliversSameBefore (hB : m.Builds f d w) (hB' : m.Builds f d' w')
     (h : d.SameExceptLinkFrom d' i₀ j₀ θ) :
-    World.DeliversSameBefore (θ + d.split i₀ j₀ * f.roundTrip i₀ j₀)
-      (drawWorld m f hex d hd) (drawWorld m f hex d' hd') := by
+    World.DeliversSameBefore (θ + d.split i₀ j₀ * f.roundTrip i₀ j₀) w w' := by
   intro i j t q
-  rcases arrival_of_sameExceptLinkFrom h (drawWorld_builds m f hex d hd)
-    (drawWorld_builds m f hex d' hd') i j t with he | ⟨h1, h2⟩
+  rw [hB.deliver i j t q, hB'.deliver i j t q]
+  rcases arrival_of_sameExceptLinkFrom h hB hB' i j t with he | ⟨h1, h2⟩
   · left
-    show some (d.arrival f i j t) = some (d'.arrival f i j t)
     rw [he]
   · right
     exact ⟨_, _, rfl, rfl, h1, h2⟩
 
-/-- **Before a pause can be noticed, every solution plays the same with and
-without it.** In the worlds of two draws with steady clocks that differ by
-pauses of one link from `θ` on, every solution plays the same at every
-output sample of every playback block that is requested before `θ` plus the
-least delay of the direction of that link. -/
-theorem drawWorld_plays_eq (hd : d.Steady) (hd' : d'.Steady)
+/-- **Before the difference can arrive, every solution plays the same in
+both worlds.** In worlds built from two draws that differ by pauses of one
+link from `θ` on, every solution plays the same at every output sample of
+every playback block that is requested before `θ` plus the least delay of
+the direction of that link. -/
+theorem Builds.plays_eq_of_sameExcept (hB : m.Builds f d w) (hB' : m.Builds f d' w')
     (h : d.SameExceptLinkFrom d' i₀ j₀ θ) (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
-    {b k : ℕ}
-    (hb : ((drawWorld m f hex d hd).speaker r).asked b
-      < θ + d.split i₀ j₀ * f.roundTrip i₀ j₀)
-    (hk : k ∈ ((drawWorld m f hex d hd).speaker r).block b) :
-    σ.plays (drawWorld m f hex d' hd') lookahead r k
-      = σ.plays (drawWorld m f hex d hd) lookahead r k := by
-  refine σ.plays_eq_of_sameBefore (w₁ := drawWorld m f hex d hd)
-    (w₂ := drawWorld m f hex d' hd') rfl rfl ?_ ?_ ?_ rfl
-    (drawWorld_deliversSameBefore hd hd' h) lookahead hb hk
-  · unfold drawWorld
-    simp only [h.offset, h.logRate]
-  · unfold drawWorld
-    simp only [h.offset, h.logRate, h.deviceLogRate]
-  · unfold drawWorld
-    simp only [h.offset, h.logRate, h.deviceLogRate]
+    {b k : ℕ} (hb : (w.speaker r).asked b < θ + d.split i₀ j₀ * f.roundTrip i₀ j₀)
+    (hk : k ∈ (w.speaker r).block b) :
+    σ.plays w' lookahead r k = σ.plays w lookahead r k := by
+  obtain ⟨hsender, hhost, hclock, hsrc, hspk, htgt⟩ := hB.same_devices hB' h.offset
+    h.logRate h.wander h.deviceLogRate h.deviceWander h.reportError
+  exact σ.plays_eq_of_sameBefore (w₁ := w) (w₂ := w') hsender hhost hclock hsrc hspk htgt
+    (hB.deliversSameBefore hB' h) lookahead hb hk
 
-/-- The position that a solution played last before a playback block that is
-requested before `θ` plus the least delay is the same in the worlds of two
-draws that differ by pauses of one link from `θ` on. -/
-theorem drawWorld_lastPlayed_eq (hd : d.Steady) (hd' : d'.Steady)
+/-- The position that a solution played last before a playback block whose
+earlier blocks are all requested before `θ` plus the least delay is the same
+in worlds built from two draws that differ by pauses of one link from `θ`
+on. -/
+theorem Builds.lastPlayed_eq (hB : m.Builds f d w) (hB' : m.Builds f d' w')
     (h : d.SameExceptLinkFrom d' i₀ j₀ θ) (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
     {b : ℕ}
-    (hb : ∀ b' < b, ((drawWorld m f hex d hd).speaker r).asked b'
-      < θ + d.split i₀ j₀ * f.roundTrip i₀ j₀) :
-    lastPlayed (σ.plays (drawWorld m f hex d' hd') lookahead r) (b * m.blockSize)
-      = lastPlayed (σ.plays (drawWorld m f hex d hd) lookahead r) (b * m.blockSize) := by
+    (hb : ∀ b' < b, (w.speaker r).asked b' < θ + d.split i₀ j₀ * f.roundTrip i₀ j₀) :
+    lastPlayed (σ.plays w' lookahead r) (b * m.blockSize)
+      = lastPlayed (σ.plays w lookahead r) (b * m.blockSize) := by
   refine lastPlayed_congr fun k hk => ?_
   have hlt : k / m.blockSize < b := (Nat.div_lt_iff_lt_mul m.blockSize_pos).mpr hk
-  refine drawWorld_plays_eq hd hd' h σ lookahead (hb _ hlt) ?_
-  show k ∈ List.range' ((k / m.blockSize) * m.blockSize)
-    ((k / m.blockSize + 1) * m.blockSize - (k / m.blockSize) * m.blockSize)
-  rw [List.mem_range'_1]
+  refine hB.plays_eq_of_sameExcept hB' h σ lookahead (hb _ hlt) ?_
+  unfold PlaybackDevice.block
+  rw [hB.speaker_first, hB.speaker_first, List.mem_range'_1]
   have h1 := Nat.div_mul_le_self k m.blockSize
   have h2 := Nat.lt_div_mul_add (a := k) m.blockSize_pos
   have e : (k / m.blockSize + 1) * m.blockSize = k / m.blockSize * m.blockSize + m.blockSize := by
@@ -272,57 +339,50 @@ theorem drawWorld_lastPlayed_eq (hd : d.Steady) (hd' : d'.Steady)
   rw [e]
   omega
 
-/-- **What a pause costs, with the room of the world without it.** Take two
-draws with steady clocks that differ by pauses of the link from the sender to
-the host of speaker `r` from `θ` on: `d` without and `d'` with a pause of
-length at least `X` that begins at `θ`. Consider a solution whose hosts
-exchange messages only with the sender, whose position at speaker `r`, in
-the world with the pause, advances by at least `s` in every step of
-continuous playback, with `0 ≤ s ≤ 1`. Let playback block `b` be one whose
-earlier blocks are all requested before `θ` plus the least delay `δ`, let
-capture block `c` be handed over at or after `θ`, and let playback block `β`
-be requested no later than `θ + X + δ`. Then, in the world with the pause,
-`s` for each output sample from the first of block `b` to `K`, in a playback
-block up to `β`, is at most the room from the position played last before
-block `b` in the world without the pause to `c * blockSize - lookahead`,
-plus the missed samples counted at those output samples, plus `s` times the
-discontinuities counted there and one more. -/
-theorem drawWorld_stall_le_of_pause (hd : d.Steady) (hd' : d'.Steady) {r : Fin R}
-    (h : d.SameExceptLinkFrom d' m.sender (m.host r) θ) (σ : Solution H R Msg)
-    (hstar : σ.IsStar m.sender) (lookahead : ℕ+) (hr : m.host r ≠ m.sender) {s : ℝ}
-    (hs0 : 0 ≤ s) (hs1 : s ≤ 1)
-    (hslow : ∀ k x y, σ.plays (drawWorld m f hex d' hd') lookahead r k = some x →
-      σ.plays (drawWorld m f hex d' hd') lookahead r (k + 1) = some y → x < y → y < x + 2 →
-      x + s ≤ y)
-    {X : ℝ}
-    (hjump : ∀ t < θ, X ≤ d'.linkPaused m.sender (m.host r) θ
-      - d'.linkPaused m.sender (m.host r) t)
-    {c β b K : ℕ} (hK : b * m.blockSize ≤ K) (hKβ : K / m.blockSize ≤ β)
-    (hb : ∀ b' < b, ((drawWorld m f hex d hd).speaker r).asked b'
-      < θ + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r))
-    (hc : θ ≤ (drawWorld m f hex d hd).source.handed c)
-    (hβ : ((drawWorld m f hex d hd).speaker r).asked β
-      ≤ θ + X + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)) :
+/-- **What paused time of the link costs, with the room of the world
+without it.** Take two draws that differ by pauses of the link from the
+sender to the host of speaker `r` from `θ₁` on: `d` without and `d'` with
+paused time `X` that begins between `θ₁` and `θ₂`. Let the least delays of
+`d'` be not negative and its paused times never decrease. Consider a
+solution whose hosts exchange messages only with the sender, whose position
+at speaker `r`, in the world with the paused time, advances by at least `s`
+in every step of continuous playback, with `0 ≤ s ≤ 1`. Let playback block
+`b` be one whose earlier blocks are all requested before `θ₁` plus the least
+delay `δ`, let capture block `c` be handed over at or after `θ₂`, and let
+playback block `β` be requested no later than `θ₁ + X + δ`. Then, in the
+world with the paused time, `s` for each output sample from the first of
+block `b` to `K`, in a playback block up to `β`, is at most the room from the
+position played last before block `b` in the world without it to
+`c * blockSize - lookahead`, plus the missed samples counted at those output
+samples, plus `s` times the discontinuities counted there and one more. -/
+theorem Builds.stall_le_of_sameExcept (hB : m.Builds f d w) (hB' : m.Builds f d' w')
+    {θ₁ θ₂ : ℝ} {r : Fin R} (h : d.SameExceptLinkFrom d' m.sender (m.host r) θ₁)
+    (hpos : ∀ i j, 0 ≤ d'.split i j * f.roundTrip i j)
+    (hlink : ∀ i j, Monotone (d'.linkPaused i j)) (hhost : ∀ x, Monotone (d'.hostPaused x))
+    (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+)
+    (hr : m.host r ≠ m.sender) {s : ℝ} (hs0 : 0 ≤ s) (hs1 : s ≤ 1)
+    (hslow : ∀ k x y, σ.plays w' lookahead r k = some x →
+      σ.plays w' lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
+    (hθ : θ₁ ≤ θ₂) {c β b K : ℕ} (hK : b * m.blockSize ≤ K) (hKβ : K / m.blockSize ≤ β)
+    (hb : ∀ b' < b, (w.speaker r).asked b'
+      < θ₁ + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r))
+    (hc : θ₂ ≤ w.source.handed c)
+    (hβ : (w.speaker r).asked β
+      ≤ θ₁ + (d'.linkPaused m.sender (m.host r) θ₂ - d'.linkPaused m.sender (m.host r) θ₁)
+        + d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)) :
     s * ((K : ℝ) + 1 - (b * m.blockSize : ℕ))
       ≤ max ((c : ℝ) * m.blockSize - ((lookahead : ℕ) : ℝ)
-          - (lastPlayed (σ.plays (drawWorld m f hex d hd) lookahead r)
-              (b * m.blockSize)).getD 0) 0
+          - (lastPlayed (σ.plays w lookahead r) (b * m.blockSize)).getD 0) 0
         + ∑ k ∈ Finset.Ico (b * m.blockSize) (K + 1),
-            (missedAt (σ.plays (drawWorld m f hex d' hd') lookahead r) k : ℝ)
+            (missedAt (σ.plays w' lookahead r) k : ℝ)
         + s * (∑ k ∈ Finset.Ico (b * m.blockSize) K,
-            (discontinuityAt (σ.plays (drawWorld m f hex d' hd') lookahead r) k : ℝ) + 1) := by
+            (discontinuityAt (σ.plays w' lookahead r) k : ℝ) + 1) := by
+  obtain ⟨-, -, -, hsrc, hspk, -⟩ := hB.same_devices hB' h.offset h.logRate h.wander
+    h.deviceLogRate h.deviceWander h.reportError
   have hsplit : d'.split m.sender (m.host r) = d.split m.sender (m.host r) := by rw [h.split]
-  have hsrc : (drawWorld m f hex d' hd').source = (drawWorld m f hex d hd).source := by
-    unfold drawWorld
-    simp only [h.offset, h.logRate, h.deviceLogRate]
-  have hspk : (drawWorld m f hex d' hd').speaker = (drawWorld m f hex d hd).speaker := by
-    unfold drawWorld
-    simp only [h.offset, h.logRate, h.deviceLogRate]
-  have hmain := (drawWorld_builds m f hex d' hd').stall_le_of_pause
-    (fun i j => mul_nonneg (hd'.split_mem i j).1.le (f.roundTrip_pos i j).le)
-    hd'.linkPaused_monotone hd'.hostPaused_monotone σ hstar lookahead hr hs0 hs1 hslow hjump
+  have hmain := hB'.stall_le_of_paused hpos hlink hhost σ hstar lookahead hr hs0 hs1 hslow hθ
     hK hKβ (c := c) (by rw [hsrc]; exact hc) (by rw [hspk, hsplit]; exact hβ)
-  rw [drawWorld_lastPlayed_eq hd hd' h σ lookahead hb] at hmain
+  rw [hB.lastPlayed_eq hB' h σ lookahead hb] at hmain
   exact hmain
 
 end Worlds
