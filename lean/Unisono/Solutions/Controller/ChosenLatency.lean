@@ -185,7 +185,7 @@ theorem timed_chosen_parts (p : FixedDelay.Params H) (w : World H R) (t : Timing
                   Solution H R Payload).states w lookahead n).views (w.host r)
                 ++ [w.askedEvent r β])
               * ((w.clock (w.host r)).read o - outputAt t w r β k) := by
-  obtain ⟨s, b, tb, b', tb', -, -, hlo, hhi, -, heq, hq', hlt', herr⟩ :=
+  obtain ⟨s, b, tb, b', tb', -, -, -, hlo, hhi, -, heq, hq', hlt', herr, -, -⟩ :=
     timed_chosen p w t level hsender lookahead hr hE hx
   refine ⟨b, b', tb', hlo, hhi, hq', hlt', fun o G => ?_⟩
   have h := herr o

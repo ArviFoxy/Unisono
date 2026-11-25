@@ -22,10 +22,12 @@ block the estimate is therefore a line in the number of the output sample.
   host's ratio of its own clock to the device's clock, divided by the
   nominal rate.
 * `timed_estimate_succ`: **the step of the estimate.** For two consecutive
-  output samples of one playback block, the estimate for the second is the
-  estimate for the first plus the host's slope times that ratio, divided by
-  the nominal rate (`estimateStep`). This holds in the run of the
-  controller in every world.
+  output samples of one playback block for which the host has an estimate,
+  the estimate for the second is the estimate for the first plus the host's
+  slope times that ratio, divided by the nominal rate (`estimateStep`).
+  This holds in the run of the controller in every world. The host has an
+  estimate only where its two checks hold (`checkedReading`), so it may
+  have one for one of the two output samples and none for the other.
 * `abs_chosen_succ_sub_le`: so, in the setting `KnotSetting`, if the step
   of the estimate divided by the slope of every block of the schedule is
   within `v` of one, the position that the host chooses advances by one
@@ -83,19 +85,17 @@ theorem requestOutput_succ (t : TimingSettings) {view : List (Event H R Payload)
 
 variable [DecidableEq H]
 
-/-- **The estimate of a host is a line in the number of the output
+/-- **The estimate from the arrivals is a line in the number of the output
 sample.** For a host other than the sender's, in a view that holds a request
 of the speaker's device: the estimate for output sample `k + 1` is the
 estimate for `k` plus the host's slope times its ratio of its own clock to
 the device's clock, divided by the nominal rate. -/
-theorem timed_reading_succ (sender : H) (t : TimingSettings) (level : LevelRule H R) {h : H}
+theorem envelopeReading_succ (sender : H) (t : TimingSettings) {h : H}
     (hne : h ≠ sender) {view : List (Event H R Payload)} {r : Fin R}
     (hreq : requestsOf r view ≠ []) (k : ℕ) :
-    (timedRules sender t level).reading h view r (k + 1)
-      = ((timedRules sender t level).reading h view r k).map
+    envelopeReading sender (timingParts t) h view r (k + 1)
+      = (envelopeReading sender (timingParts t) h view r k).map
         (· + arrivalSlope t view * (deviceRatio t r view / t.rate)) := by
-  show envelopeReading sender (timingParts t) h view r (k + 1)
-    = (envelopeReading sender (timingParts t) h view r k).map _
   unfold envelopeReading
   rw [ite_eq_right hne, ite_eq_right hne]
   show (envelope (arrivalSlope t view) (requestOutput t view r (k + 1))
@@ -108,6 +108,23 @@ theorem timed_reading_succ (sender : H) (t : TimingSettings) (level : LevelRule 
   funext v
   simp only [Function.comp_apply]
   ring
+
+/-- **The estimate by which a host plays advances by the same step.** For a
+host other than the sender's, in a view that holds a request of the
+speaker's device: if the host has the estimate `s` for output sample `k`
+and the estimate `s'` for `k + 1`, then `s'` is `s` plus the host's slope
+times its ratio of its own clock to the device's clock, divided by the
+nominal rate. -/
+theorem timed_reading_succ (sender : H) (t : TimingSettings) (level : LevelRule H R) {h : H}
+    (hne : h ≠ sender) {view : List (Event H R Payload)} {r : Fin R}
+    (hreq : requestsOf r view ≠ []) {k : ℕ} {s s' : ℝ}
+    (hs : (timedRules sender t level).reading h view r k = some s)
+    (hs' : (timedRules sender t level).reading h view r (k + 1) = some s') :
+    s' = s + arrivalSlope t view * (deviceRatio t r view / t.rate) := by
+  have h1 := (checkedReading_eq_some.mp hs).1
+  have h2 := (checkedReading_eq_some.mp hs').1
+  rw [envelopeReading_succ sender t hne hreq k, h1, Option.map_some] at h2
+  exact (Option.some.inj h2).symm
 
 /-- By how much the estimate of the host of speaker `r` advances from one
 output sample of playback block `β` to the next, in the run of the
@@ -126,17 +143,18 @@ def estimateStep (p : FixedDelay.Params H) (w : World H R) (t : TimingSettings)
 /-- **The step of the estimate within a playback block.** In the run of the
 controller with the timing rules in any world, for a speaker on a host other
 than the sender's: if output samples `k` and `k + 1` belong to the same
-playback block, the estimate for `k + 1` is the estimate for `k` plus
-`estimateStep` of the block. -/
+playback block and the host has the estimates `s` and `s'` for them, then
+`s'` is `s` plus `estimateStep` of the block. -/
 theorem timed_estimate_succ (p : FixedDelay.Params H) (w : World H R) (t : TimingSettings)
     (level : LevelRule H R) (lookahead : ℕ+) {r : Fin R} (hr : w.host r ≠ w.sender) {k : ℕ}
-    (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k) :
-    (timedRules w.sender t level).estimate p w lookahead r (k + 1)
-      = ((timedRules w.sender t level).estimate p w lookahead r k).map
-        (· + estimateStep p w t level lookahead r ((w.speaker r).blockOf k)) := by
+    (hblock : (w.speaker r).blockOf (k + 1) = (w.speaker r).blockOf k) {s s' : ℝ}
+    (hs : (timedRules w.sender t level).estimate p w lookahead r k = some s)
+    (hs' : (timedRules w.sender t level).estimate p w lookahead r (k + 1) = some s') :
+    s' = s + estimateStep p w t level lookahead r ((w.speaker r).blockOf k) := by
   classical
-  unfold Rules.estimate estimateStep
-  rw [hblock]
+  unfold Rules.estimate at hs hs'
+  rw [hblock] at hs'
+  unfold estimateStep
   by_cases hreq : requestsOf r
       ((ruled p (timedRules w.sender t level) : Solution H R Payload).requestView w lookahead r
         ((w.speaker r).blockOf k)) = []
@@ -151,13 +169,13 @@ theorem timed_estimate_succ (p : FixedDelay.Params H) (w : World H R) (t : Timin
           simp [requestsOf, World.askedEvent]
         exact absurd (List.append_eq_nil_iff.mp hreq).2 h1
       · rfl
-    rw [hview]
-    show envelopeReading w.sender (timingParts t) (w.host r) [] r (k + 1)
-      = (envelopeReading w.sender (timingParts t) (w.host r) [] r k).map _
-    unfold envelopeReading
-    rw [ite_eq_right hr, ite_eq_right hr]
-    rfl
-  · exact timed_reading_succ w.sender t level hr hreq k
+    rw [hview] at hs
+    have h1 := (checkedReading_eq_some.mp hs).1
+    unfold envelopeReading at h1
+    rw [ite_eq_right hr] at h1
+    have h2 : (none : Option ℝ) = some s := h1
+    exact absurd h2 (by simp)
+  · exact timed_reading_succ w.sender t level hr hreq hs hs'
 
 variable {p : FixedDelay.Params H} {w : World H R} {t : TimingSettings}
   {level : LevelRule H R} {A : H → H → Time → Time} {q : LevelSettings} {share : ℝ}
@@ -187,10 +205,10 @@ theorem abs_chosen_succ_sub_le
           ≤ estimateStep p w t level lookahead r ((w.speaker r).blockOf k) / (1 - v)) :
     |x' - x - 1| ≤ v := by
   obtain ⟨s, b, hs, -⟩ := (chosen_eq_some_iff hK lookahead hr k x).mp hx
-  have hs' := timed_estimate_succ p w t level lookahead hr hblock
-  rw [hs, Option.map_some] at hs'
+  obtain ⟨s', b', hs', -⟩ := (chosen_eq_some_iff hK lookahead hr (k + 1) x').mp hx'
+  have e := timed_estimate_succ p w t level lookahead hr hblock hs hs'
   have h := abs_chosen_sub_le hK lookahead hr hx hx' hs hs' (g := 1) zero_le_one hstep hv0 hv1
-    (by ring) hslope
+    (by rw [e]; ring) hslope
   rw [one_mul] at h
   exact h
 

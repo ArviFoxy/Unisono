@@ -356,6 +356,24 @@ theorem ruled_received_block (hsender : p.sender = w.sender) (lookahead : ℕ+) 
     rw [Solution.handoverView_eq _ w lookahead hhi]
     exact hhd
 
+/-- **A block that arrived carries the timestamp of its block.** A block in
+a host's view whose first frame is the first frame of block `b` carries the
+timestamp that the capture device reported for `b`. -/
+theorem ruled_received_stamp (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {h : H}
+    {e : Event H R Payload}
+    (he : e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views h)
+    {j : H} {fr : ℕ} {stamp c pd lv sl : ℝ} {F : Finset ℕ}
+    (ho : e.observation = .received j (.block fr stamp c pd lv sl) F) {b : ℕ}
+    (hb : fr = w.source.first b) : stamp = w.source.reported b := by
+  obtain ⟨i₁, hi₁, t, obs, hh, rfl⟩ := Solution.handled_of_mem_views w _ lookahead he
+  dsimp only at ho
+  subst ho
+  obtain ⟨m, hm, -, -, -, hcon, -⟩ := Solution.handled_received w _ lookahead hh
+  obtain ⟨b', -, hfr, hstamp, -⟩ := ruled_block_origin p rules w hsender lookahead i₁ hm hcon
+  have hbb : b = b' := w.source.first_strictMono.injective (hb.symm.trans hfr)
+  rw [hbb]
+  exact hstamp
+
 /-- **What a host of the controller chooses.** Let speaker `r` be on a host
 other than the sender's. If, at step `n` of the run, the host chooses the
 position `x` for output sample `k` at a request of block `β`, then:
@@ -366,7 +384,9 @@ position `x` for output sample `k` at a request of block `β`, then:
   a true time `t` before every request that the run has not yet handled;
 * the run handled the handover of block `b`;
 * the header of block `b` covers the position that it says is due at `s`,
-  and `x` is that position moved back by `rules.back`.
+  and `x` is that position moved back by `rules.back`;
+* the host's view holds the arrival of block `b`: a block with the first
+  frame, the timestamp, the header and the number of frames of `b`.
 
 This holds in every world, for any rules. -/
 theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
@@ -383,7 +403,15 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
           = some (w.sender, w.source.handed b,
             .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
       ∧ (rules.runHeader p w lookahead b).Covers (w.blockLength b) s
-      ∧ x + rules.back = (rules.runHeader p w lookahead b).due s := by
+      ∧ x + rules.back = (rules.runHeader p w lookahead b).due s
+      ∧ ∃ e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r),
+          ∃ i F, e.observation
+              = .received i (.block (w.source.first b) (w.source.reported b)
+                  (rules.runHeader p w lookahead b).capture
+                  (rules.runHeader p w lookahead b).period
+                  (rules.runHeader p w lookahead b).level
+                  (rules.runHeader p w lookahead b).slope) F
+            ∧ F.card = w.blockLength b := by
   classical
   unfold Solution.chosenAt at hx
   have hplays := ruled_plays_asked p rules (w.host r)
@@ -424,11 +452,15 @@ theorem ruled_chosen (hsender : p.sender = w.sender) (lookahead : ℕ+) {n : ℕ
     rw [List.toFinset_card_of_nodup List.nodup_range', List.length_range']
     rfl
   have hheader : hc.1 = rules.runHeader p w lookahead b := hhd
-  refine ⟨s, b, t, hs, hq, hlt, hhandled, ?_, ?_⟩
+  have hstamp := ruled_received_stamp p rules w hsender lookahead he hobs hfr
+  refine ⟨s, b, t, hs, hq, hlt, hhandled, ?_, ?_, e, he, i₀, F, ?_, ?_⟩
   · rw [← hheader, ← hcard]
     exact hcov
   · rw [← hheader, hzc, ← hzx]
     ring
+  · rw [hobs, hfr, hstamp, hheader]
+  · rw [← hcount]
+    exact hcard
 
 /-- **Every request is handled**, in a world whose capture device hands over
 blocks without end and whose playback devices request blocks without end:

@@ -149,7 +149,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     pause. Its hosts take their timing from what they observe themselves:
     the capture schedule from the sender's readings at the handovers, the
     time at which an output sample leaves from the host's readings at the
-    requests, and the sender's clock from the arrivals of the blocks. Its
+    requests, and the sender's clock from the arrivals of the blocks. A
+    host plays only where a clock exchange confirms its estimate of the
+    sender's clock and the block that is due was handed over on time by
+    its timestamp (`Unisono.Solutions.Controller.checkedReading` in
+    `lean/Unisono/Solutions/Controller/Timing.lean`). Its
     level changes within a block by at most a share of the block's time
     from one frame to the next, so the schedule on which positions are due
     is continuous and advances in every block of every world, also when

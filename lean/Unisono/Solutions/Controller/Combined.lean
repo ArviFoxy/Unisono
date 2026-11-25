@@ -28,6 +28,9 @@ the block size of the playback devices, and its own settings.
 * **The sender's clock.** Each receiving host estimates the sender's clock
   from the arrivals of the blocks of the stream, and takes half of the least
   round trip from its clock exchanges (`envelopeReading`, `timingParts`).
+* **Two checks.** A host plays an output sample only where a clock exchange
+  confirms its estimate of the sender's clock and the block that is due was
+  handed over on time by its timestamp (`checkedReading`).
 * **Needs.** Each host reports, in its clock queries, the largest need of
   the blocks that arrived since its last answered query (`timedNeed`).
 * **The level.** The sender steps the level against the reported needs and

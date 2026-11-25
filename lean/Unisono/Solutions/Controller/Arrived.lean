@@ -257,7 +257,7 @@ theorem ruled_chosen_iff {q : LevelSettings} {share nominal : ℝ}
     Solution.handled_time w _ lookahead (Solution.handled_of_asked w _ lookahead hE)
   constructor
   · intro hx
-    obtain ⟨s, b, t, hs, ⟨q', hq'⟩, hlt, -, hcov, hdue⟩ :=
+    obtain ⟨s, b, t, hs, ⟨q', hq'⟩, hlt, -, hcov, hdue, -⟩ :=
       ruled_chosen p rules w hN.sender lookahead hr hx
     have ht : t = A w.sender (w.host r) (w.source.handed b) := by
       rw [hN.deliver] at hq'

@@ -440,13 +440,27 @@ theorem ruled_chosen_knots (p : FixedDelay.Params H) (rules : Rules H R) (w : Wo
       ∧ 0 < w.knotPeriod nominal b + (rules.announced p w lookahead b).2
       ∧ w.knotTime nominal b (x + rules.back)
           + ((rules.announced p w lookahead b).1
-            + (x + rules.back - w.source.first b) * (rules.announced p w lookahead b).2) = s := by
-  obtain ⟨s, b, t, hs, hq, hlt, ⟨i, hi⟩, hcov, hdue⟩ :=
+            + (x + rules.back - w.source.first b) * (rules.announced p w lookahead b).2) = s
+      ∧ ∃ e ∈ ((ruled p rules : Solution H R Payload).states w lookahead n).views (w.host r),
+          ∃ i F, e.observation
+              = .received i (.block (w.source.first b) (w.source.reported b)
+                  (w.handedReading b - w.blockLength b * w.knotPeriod nominal b)
+                  (w.knotPeriod nominal b)
+                  ((rules.announced p w lookahead b).1 + (w.knot nominal b - w.handedReading b))
+                  (rules.announced p w lookahead b).2) F
+            ∧ F.card = w.blockLength b
+            ∧ (⟨w.source.first b, w.handedReading b - w.blockLength b * w.knotPeriod nominal b,
+                w.knotPeriod nominal b,
+                (rules.announced p w lookahead b).1 + (w.knot nominal b - w.handedReading b),
+                (rules.announced p w lookahead b).2⟩ : Header).Covers F.card s := by
+  obtain ⟨s, b, t, hs, hq, hlt, ⟨i, hi⟩, hcov, hdue, e, he, j, F, hobs, hcard⟩ :=
     ruled_chosen p rules w hsender lookahead hr hx
-  rw [runHeader_knots p rules w lookahead hcap hi] at hcov hdue
+  rw [runHeader_knots p rules w lookahead hcap hi] at hcov hdue hobs
+  have hcov' := hcov
   obtain ⟨hpos, hlo, hhi⟩ := hcov
   rw [← hdue] at hlo hhi
-  refine ⟨s, b, t, hs, hq, hlt, hlo, hhi, hpos, ?_⟩
+  refine ⟨s, b, t, hs, hq, hlt, hlo, hhi, hpos, ?_, e, he, j, F, hobs, hcard,
+    by rw [hcard]; exact hcov'⟩
   have := Header.eq_of_due hpos hdue.symm
   unfold World.knotTime World.knotStart
   linarith

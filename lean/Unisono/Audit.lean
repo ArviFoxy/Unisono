@@ -59,6 +59,7 @@ public import Unisono.Solutions.Controller.Silent
 public import Unisono.Solutions.Controller.Targets
 public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.EstimateStep
+public import Unisono.Solutions.Controller.Checked
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -4701,6 +4702,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ruled_received_block
 
+/-- info: 'Unisono.Solutions.Controller.ruled_received_stamp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_received_stamp
+
 /-- info: 'Unisono.Solutions.Controller.ruled_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ruled_chosen
@@ -4780,6 +4785,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.timed_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_chosen
+
+/-- info: 'Unisono.Solutions.Controller.checkedReading_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.checkedReading_eq_some
 
 /-- info: 'Unisono.Solutions.Controller.ruled_request_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -4997,6 +5006,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.requestOutput_succ
 
+/-- info: 'Unisono.Solutions.Controller.envelopeReading_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.envelopeReading_succ
+
 /-- info: 'Unisono.Solutions.Controller.timed_reading_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_reading_succ
@@ -5012,6 +5025,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.stepOver_chosen_eq_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.stepOver_chosen_eq_zero
+
+/-- info: 'Unisono.Solutions.Controller.ruled_exchange' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_exchange
+
+/-- info: 'Unisono.Solutions.Controller.exchangesOf_append_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exchangesOf_append_asked
+
+/-- info: 'Unisono.Solutions.Controller.timed_reading_upper' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_reading_upper
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
