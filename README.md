@@ -166,9 +166,14 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Spec/Models/GenerativeEarliest.lean`), and a stretch of
     output samples in which no newer position can be played costs missed
     samples or discontinuities (`Unisono.Spec.stall_le_of_le` in
-    `lean/Unisono/Spec/Stall.lean`). These are not yet combined into a
-    lower bound on the expected cost of other solutions under pauses. The
-    controller does not yet change its pace smoothly or choose the level.
+    `lean/Unisono/Spec/Stall.lean`). A pause of the link from the sender is
+    such a stretch, whatever backlogs exist when it begins, and until the
+    pause can be noticed a solution plays as in the world without it
+    (`Unisono.Spec.GenerativeWorld.drawWorld_stall_le_of_pause` in
+    `lean/Unisono/Spec/Models/GenerativeLinkPause.lean`). These are not yet
+    combined into a lower bound on the expected cost of other solutions
+    under pauses. The controller does not yet change its pace smoothly or
+    choose the level.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on

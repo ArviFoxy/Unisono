@@ -73,6 +73,7 @@ public import Unisono.Spec.Models.GenerativeEarliest
 public import Unisono.Spec.Models.GenerativeIdle
 public import Unisono.Spec.Models.GenerativeLate
 public import Unisono.Spec.Models.GenerativeLawOfDraw
+public import Unisono.Spec.Models.GenerativeLinkPause
 public import Unisono.Spec.Models.GenerativeNoiseless
 public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
@@ -1766,6 +1767,42 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.stall_le
 
+/-- info: 'Unisono.Spec.GenerativeWorld.IsBacklog.pause_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.IsBacklog.pause_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_ge_of_pause' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_ge_of_pause
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.stall_le_of_pause' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.stall_le_of_pause
+
+/-- info: 'Unisono.Spec.GenerativeWorld.backlog_eq_of_agree' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.backlog_eq_of_agree
+
+/-- info: 'Unisono.Spec.GenerativeWorld.arrival_of_sameExceptLinkFrom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.arrival_of_sameExceptLinkFrom
+
+/-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_deliversSameBefore' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.drawWorld_deliversSameBefore
+
+/-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_plays_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.drawWorld_plays_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_lastPlayed_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.drawWorld_lastPlayed_eq
+
+/-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_stall_le_of_pause' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.drawWorld_stall_le_of_pause
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Draw.ofParts_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Draw.ofParts_eq
@@ -2085,6 +2122,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.stall_le_of_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.stall_le_of_le
+
+/-- info: 'Unisono.Spec.lastPlayed_congr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lastPlayed_congr
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
