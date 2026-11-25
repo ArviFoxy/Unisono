@@ -48,6 +48,10 @@ public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Schedule
 public import Unisono.Solutions.Controller.SteppedLevel
 public import Unisono.Solutions.Controller.Needs
+public import Unisono.Solutions.Controller.Ruled
+public import Unisono.Solutions.Controller.Knots
+public import Unisono.Solutions.Controller.Envelope
+public import Unisono.Solutions.Controller.Timing
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -72,6 +76,7 @@ public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
 public import Unisono.Spec.Limiter
 public import Unisono.Spec.Follower
+public import Unisono.Spec.OwnEvents
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -4124,6 +4129,70 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.followed_plays_eq
 
+/-- info: 'Unisono.Spec.handoversOf_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.handoversOf_append
+
+/-- info: 'Unisono.Spec.requestsOf_append' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.requestsOf_append
+
+/-- info: 'Unisono.Spec.World.blockLength_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.blockLength_pos
+
+/-- info: 'Unisono.Spec.Solution.handoversOf_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handoversOf_views
+
+/-- info: 'Unisono.Spec.Solution.requestsOf_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.requestsOf_views
+
+/-- info: 'Unisono.Spec.Solution.handoverView_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handoverView_eq
+
+/-- info: 'Unisono.Spec.Solution.handoverView_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handoverView_succ
+
+/-- info: 'Unisono.Spec.Solution.askedNext_of_earliest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.askedNext_of_earliest
+
+/-- info: 'Unisono.Spec.Solution.requestsOf_request' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.requestsOf_request
+
+/-- info: 'Unisono.Spec.Solution.handoversOf_handoverView' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.handoversOf_handoverView
+
+/-- info: 'Unisono.Spec.World.knot_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knot_strictMono
+
+/-- info: 'Unisono.Spec.World.knotStart_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotStart_add
+
+/-- info: 'Unisono.Spec.World.knotStart_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotStart_succ
+
+/-- info: 'Unisono.Spec.World.knotPeriod_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotPeriod_pos
+
+/-- info: 'Unisono.Spec.World.knotTime_right' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotTime_right
+
+/-- info: 'Unisono.Spec.World.knotTime_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.knotTime_left
+
 /-- info: 'Unisono.Spec.Solution.stepped_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.stepped_isStar
@@ -4339,6 +4408,106 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.combined_withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.combined_withinStep
+
+/-- info: 'Unisono.Solutions.Controller.Rules.plain_enrich' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.Rules.plain_enrich
+
+/-- info: 'Unisono.Solutions.Controller.ruled_sendsMore' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_sendsMore
+
+/-- info: 'Unisono.Solutions.Controller.ruled_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_isStar
+
+/-- info: 'Unisono.Solutions.Controller.ruled_plays_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_plays_asked
+
+/-- info: 'Unisono.Solutions.Controller.ruled_sends_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_sends_block
+
+/-- info: 'Unisono.Solutions.Controller.ruled_block_header' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_block_header
+
+/-- info: 'Unisono.Solutions.Controller.ruled_block_origin' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_block_origin
+
+/-- info: 'Unisono.Solutions.Controller.ruled_received_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_received_block
+
+/-- info: 'Unisono.Solutions.Controller.ruled_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_chosen
+
+/-- info: 'Unisono.Solutions.Controller.knotCapture_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.knotCapture_eq
+
+/-- info: 'Unisono.Solutions.Controller.runHeader_knots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.runHeader_knots
+
+/-- info: 'Unisono.Solutions.Controller.ruled_chosen_knots' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_chosen_knots
+
+/-- info: 'Unisono.Solutions.Controller.envelope_isSome' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.envelope_isSome
+
+/-- info: 'Unisono.Solutions.Controller.le_of_envelope' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.le_of_envelope
+
+/-- info: 'Unisono.Solutions.Controller.exists_of_envelope' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_of_envelope
+
+/-- info: 'Unisono.Solutions.Controller.le_envelopeReading' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.le_envelopeReading
+
+/-- info: 'Unisono.Solutions.Controller.exists_envelopeReading_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_envelopeReading_eq
+
+/-- info: 'Unisono.Solutions.Controller.mem_arrivalsOf_run' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_arrivalsOf_run
+
+/-- info: 'Unisono.Solutions.Controller.reading_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.reading_le
+
+/-- info: 'Unisono.Solutions.Controller.exists_reading_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_reading_eq
+
+/-- info: 'Unisono.Solutions.Controller.mem_arrivalsOf_of_window' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_arrivalsOf_of_window
+
+/-- info: 'Unisono.Solutions.Controller.arrivalsOf_append_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalsOf_append_asked
+
+/-- info: 'Unisono.Solutions.Controller.firstOutput_askedEvent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.firstOutput_askedEvent
+
+/-- info: 'Unisono.Solutions.Controller.requestOutput_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.requestOutput_eq
+
+/-- info: 'Unisono.Solutions.Controller.timed_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_chosen
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

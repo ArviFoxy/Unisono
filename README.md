@@ -141,12 +141,21 @@ simulation and integration tests (see `PRINCIPLES.md`):
     (`Unisono.Solutions.Controller.arrival_lt_asked_of_needOf_le` and
     `measuredNeed` in `lean/Unisono/Solutions/Controller/Needs.lean`). It
     is not yet proved which needs reach the sender, what the rule does
-    with them, or what a level that changes costs. These parts are put
-    together in one solution, whose playback follows the position that is
-    due within the step bound; in every world its hosts exchange messages
-    only with the sender and it keeps the step bound
+    with them, or what a level that changes costs. One solution puts the
+    parts together for worlds in which clocks wander and links and hosts
+    pause. Its hosts take their timing from what they observe themselves:
+    the capture schedule from the sender's readings at the handovers, the
+    time at which an output sample leaves from the host's readings at the
+    requests, and the sender's clock from the arrivals of the blocks. Its
+    playback follows the position that is due within the step bound. In
+    every world its hosts exchange messages only with the sender, it keeps
+    the step bound, and the position that a host chooses satisfies an
+    exact equation between the schedule, the announced level and the
+    host's estimate of the sender's clock, with an exact expression for
+    the error of that estimate
     (`Unisono.Solutions.Controller.combined`, `combined_withinStep` in
-    `lean/Unisono/Solutions/Controller/Combined.lean`). No cost of that
+    `lean/Unisono/Solutions/Controller/Combined.lean`, `timed_chosen` in
+    `lean/Unisono/Solutions/Controller/Timing.lean`). No cost of that
     solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
