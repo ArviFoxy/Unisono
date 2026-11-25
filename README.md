@@ -135,9 +135,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     such levels, which steps the level against the needs that clock
     queries report, is defined and shown to be continuous from block to
     block (`Unisono.Solutions.Controller.steppedLevel` in
-    `lean/Unisono/Solutions/Controller/SteppedLevel.lean`); the hosts that
-    play do not measure needs yet, and no cost of a level that changes is
-    bounded. The cost of a held
+    `lean/Unisono/Solutions/Controller/SteppedLevel.lean`). The need of a
+    capture block at a speaker is a level at which the block is in time,
+    and a host can compute it from its own estimates
+    (`Unisono.Solutions.Controller.arrival_lt_asked_of_needOf_le` and
+    `measuredNeed` in `lean/Unisono/Solutions/Controller/Needs.lean`). It
+    is not yet proved which needs reach the sender, what the rule does
+    with them, or what a level that changes costs. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in

@@ -47,6 +47,7 @@ public import Unisono.Solutions.Controller.Pauses
 public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Schedule
 public import Unisono.Solutions.Controller.SteppedLevel
+public import Unisono.Solutions.Controller.Needs
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
@@ -3825,6 +3826,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.IsDue.unique
 
+/-- info: 'Unisono.Solutions.Controller.isDue_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.isDue_iff
+
+/-- info: 'Unisono.Solutions.Controller.exists_isDue' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_isDue
+
 /-- info: 'Unisono.Solutions.Controller.speaker_plays_of_levels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.speaker_plays_of_levels
@@ -4189,6 +4198,18 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.abs_announced_slope_le
 
+/-- info: 'Unisono.Solutions.Controller.levelStep_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.levelStep_mem
+
+/-- info: 'Unisono.Solutions.Controller.levelState_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.levelState_mem
+
+/-- info: 'Unisono.Solutions.Controller.announced_fst_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.announced_fst_mem
+
 /-- info: 'Unisono.Solutions.Controller.exists_handover_step' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.exists_handover_step
@@ -4196,6 +4217,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.speaker_plays_of_steppedLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.speaker_plays_of_steppedLevel
+
+/-- info: 'Unisono.Solutions.Controller.arrival_lt_asked_of_needOf_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrival_lt_asked_of_needOf_le
+
+/-- info: 'Unisono.Solutions.Controller.level_lt_needOf_of_silent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.level_lt_needOf_of_silent
+
+/-- info: 'Unisono.Solutions.Controller.needOfBlock_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.needOfBlock_eq
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

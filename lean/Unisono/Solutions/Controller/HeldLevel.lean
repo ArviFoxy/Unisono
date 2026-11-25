@@ -359,6 +359,151 @@ theorem IsDue.unique (hS : ConstantRates m f d w) {ann : ℕ → ℝ × ℝ}
   · exact h
   · exact absurd hsame.symm (lt_of_levelAt m.blockSize_pos hcont hslope hyB h).ne
 
+omit [DecidableEq H] in
+/-- **When a position is due, on the sender's clock.** In a world whose
+clocks run at constant rates, the position `x` is due at output sample `k`
+of speaker `r` exactly when it lies past the first capture block and the
+time from one frame to the next on the sender's clock times `x`, plus the
+level of `x`, is the rate of the sender's clock times the true time from
+the capture of frame zero to the output sample, minus the asymmetry of the
+speaker's host. -/
+theorem isDue_iff (hS : ConstantRates m f d w) (ann : ℕ → ℝ × ℝ) (r : Fin R) (k : ℕ)
+    (x : ℝ) :
+    IsDue m f d w ann r k x ↔ (m.blockSize : ℝ) ≤ x
+      ∧ Real.exp (d.logRate m.sender) / (m.rate * Real.exp (d.deviceLogRate none)) * x
+          + levelAt ann m.blockSize x
+        = Real.exp (d.logRate m.sender)
+          * ((w.speaker r).out k - w.source.capture 0
+            - (d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
+              - d.split (m.host r) m.sender * f.roundTrip (m.host r) m.sender) / 2) := by
+  have hrs := Real.exp_pos (d.logRate m.sender)
+  have hgc := Real.exp_pos (d.deviceLogRate none)
+  have hρ := m.rate_pos
+  have hid : Real.exp (d.logRate m.sender)
+        * (w.captured x
+          - ((w.speaker r).out k - latencyOf m f d (levelAt ann m.blockSize x) r))
+      = Real.exp (d.logRate m.sender) / (m.rate * Real.exp (d.deviceLogRate none)) * x
+          + levelAt ann m.blockSize x
+        - Real.exp (d.logRate m.sender)
+          * ((w.speaker r).out k - w.source.capture 0
+            - (d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
+              - d.split (m.host r) m.sender * f.roundTrip (m.host r) m.sender) / 2) := by
+    rw [hS.captured, hS.capture 0]
+    simp only [latencyOf, Nat.cast_zero, zero_div, add_zero]
+    field_simp
+    ring
+  unfold IsDue
+  refine and_congr_right fun _ => ?_
+  constructor
+  · intro h
+    rw [sub_eq_zero.mpr h, mul_zero] at hid
+    linarith
+  · intro h
+    have h0 : Real.exp (d.logRate m.sender)
+        * (w.captured x
+          - ((w.speaker r).out k - latencyOf m f d (levelAt ann m.blockSize x) r)) = 0 := by
+      rw [hid]
+      linarith
+    rcases mul_eq_zero.mp h0 with h1 | h1
+    · exact absurd h1 hrs.ne'
+    · exact sub_eq_zero.mp h1
+
+omit [DecidableEq H] in
+/-- **A position is due at every late output sample when the levels are
+bounded below.** In a world whose clocks run at constant rates, let every
+block from block one on start at the level at which the block before it
+ended, let the time from one frame to the next on the sender's clock plus
+the slope be positive, and let every announced level be at least `Llo`.
+Then a position is due at output sample `k` of speaker `r` as soon as the
+first frame of capture block one is due at or before that sample. -/
+theorem exists_isDue (hS : ConstantRates m f d w) {ann : ℕ → ℝ × ℝ}
+    (hcont : ∀ b, 1 ≤ b → (ann (b + 1)).1 = (ann b).1 + (m.blockSize : ℝ) * (ann b).2)
+    (hslope : ∀ b, 1 ≤ b → 0 < Real.exp (d.logRate m.sender)
+      / (m.rate * Real.exp (d.deviceLogRate none)) + (ann b).2)
+    {Llo : ℝ} (hlo : ∀ b, 1 ≤ b → Llo ≤ (ann b).1) (r : Fin R) {k : ℕ}
+    (hk : Real.exp (d.logRate m.sender) / (m.rate * Real.exp (d.deviceLogRate none))
+          * (m.blockSize : ℝ) + (ann 1).1
+        ≤ Real.exp (d.logRate m.sender)
+          * ((w.speaker r).out k - w.source.capture 0
+            - (d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
+              - d.split (m.host r) m.sender * f.roundTrip (m.host r) m.sender) / 2)) :
+    ∃ x, IsDue m f d w ann r k x := by
+  classical
+  have hBpos : (0 : ℝ) < (m.blockSize : ℝ) := by exact_mod_cast m.blockSize_pos
+  obtain ⟨π, hπ⟩ : ∃ π : ℝ, π = Real.exp (d.logRate m.sender)
+      / (m.rate * Real.exp (d.deviceLogRate none)) := ⟨_, rfl⟩
+  have hπpos : 0 < π := by
+    rw [hπ]
+    exact div_pos (Real.exp_pos _) (mul_pos m.rate_pos (Real.exp_pos _))
+  obtain ⟨v, hv⟩ : ∃ v : ℝ, v = Real.exp (d.logRate m.sender)
+      * ((w.speaker r).out k - w.source.capture 0
+        - (d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
+          - d.split (m.host r) m.sender * f.roundTrip (m.host r) m.sender) / 2) := ⟨_, rfl⟩
+  rw [← hπ] at hslope hk
+  rw [← hv] at hk
+  -- The time at which the first frame of each block is due.
+  obtain ⟨G, hG⟩ : ∃ G : ℕ → ℝ, ∀ b, G b = π * ((b * m.blockSize : ℕ) : ℝ) + (ann b).1 :=
+    ⟨_, fun _ => rfl⟩
+  have hstep : ∀ b, 1 ≤ b → G (b + 1) = G b + (m.blockSize : ℝ) * (π + (ann b).2) := by
+    intro b hb
+    rw [hG, hG, hcont b hb]
+    push_cast
+    ring
+  have hG1 : G 1 ≤ v := by
+    rw [hG, Nat.one_mul]
+    exact hk
+  -- The first block whose end is due after the output sample.
+  have hex : ∃ c, v < G (c + 1) := by
+    obtain ⟨n, hn⟩ := exists_nat_gt ((v - Llo) / (π * (m.blockSize : ℝ)))
+    refine ⟨n, ?_⟩
+    have h1 := (div_lt_iff₀ (mul_pos hπpos hBpos)).mp hn
+    have h2 := hlo (n + 1) (by omega)
+    have h3 := mul_pos hπpos hBpos
+    rw [hG]
+    push_cast
+    nlinarith
+  obtain ⟨c, hc⟩ : ∃ c, c = Nat.find hex := ⟨_, rfl⟩
+  have hspec : v < G (c + 1) := by
+    rw [hc]
+    exact Nat.find_spec hex
+  have hc1 : 1 ≤ c := by
+    by_contra h0
+    have h00 : c = 0 := by omega
+    rw [h00] at hspec
+    linarith
+  have hmin : G c ≤ v := by
+    have h1 : c - 1 < Nat.find hex := by
+      rw [← hc]
+      omega
+    have h2 := Nat.find_min hex h1
+    rw [show c - 1 + 1 = c from by omega] at h2
+    exact not_lt.mp h2
+  have hpos := hslope c hc1
+  have hquot0 : 0 ≤ (v - G c) / (π + (ann c).2) := div_nonneg (sub_nonneg.mpr hmin) hpos.le
+  have hquotB : (v - G c) / (π + (ann c).2) < (m.blockSize : ℝ) := by
+    rw [div_lt_iff₀ hpos]
+    have h1 := hstep c hc1
+    linarith
+  obtain ⟨x, hx⟩ : ∃ x : ℝ, x = ((c * m.blockSize : ℕ) : ℝ) + (v - G c) / (π + (ann c).2) :=
+    ⟨_, rfl⟩
+  have hxlo : ((c * m.blockSize : ℕ) : ℝ) ≤ x := by
+    rw [hx]
+    linarith
+  have hxhi : x < ((c * m.blockSize : ℕ) : ℝ) + m.blockSize := by
+    rw [hx]
+    linarith
+  obtain ⟨-, hlev⟩ := levelAt_of_mem ann hxlo hxhi
+  refine ⟨x, (isDue_iff hS ann r k x).mpr ⟨?_, ?_⟩⟩
+  · have h1 : ((1 * m.blockSize : ℕ) : ℝ) ≤ ((c * m.blockSize : ℕ) : ℝ) := by
+      exact_mod_cast Nat.mul_le_mul_right m.blockSize hc1
+    rw [Nat.one_mul] at h1
+    exact h1.trans hxlo
+  · rw [← hπ, ← hv, hlev]
+    have hmul : (x - ((c * m.blockSize : ℕ) : ℝ)) * (π + (ann c).2) = v - G c := by
+      rw [hx, add_sub_cancel_left, div_mul_cancel₀ _ hpos.ne']
+    rw [hG] at hmul
+    linarith
+
 /-! ## What plays -/
 
 /-- **What a speaker of the controller chooses and plays when the level
@@ -390,7 +535,7 @@ theorem speaker_plays_of_levels (hS : ConstantRates m f d w) (lookahead : ℕ+)
       (solution p clockEst deviceEst levelRule : Solution H R Payload).handled w lookahead i
         = some (w.sender, w.source.handed b,
           .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)) →
-      levelRule
+      levelRule.announce
           (((solution p clockEst deviceEst levelRule : Solution H R Payload).states w
               lookahead i).views w.sender
             ++ [⟨(w.clock w.sender).read (w.source.handed b),

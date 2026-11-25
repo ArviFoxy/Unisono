@@ -19,7 +19,8 @@ baseline's messages with further fields, and plays differently.
   *level* of the block's first frame and the slope of the level: the latency
   that every speaker is to hold for that frame, and by how much the level
   changes from one frame to the next. How the sender chooses the level is a
-  parameter of the solution (`LevelRule`).
+  parameter of the solution (`LevelRule`), and so is the need that a host
+  reports in each clock query.
 * **The capture line.** The capture device has a clock of its own, and its
   timestamps need not be exact. The sender estimates, from the timestamps of
   the blocks handed over so far, the reading of its clock at which each frame
@@ -366,13 +367,19 @@ def dueOf (hs : List (Header × ℕ)) (s : ℝ) : Option ℝ := by
   classical
   exact (hs.find? fun e => decide (e.1.Covers e.2 s)).map fun e => e.1.due s
 
-/-- A rule by which the sender chooses the level: from its view when the
-capture device hands over a block, and the block's first frame, the level of
-that frame and the change of the level from one frame to the next. -/
-abbrev LevelRule (H : Type) (R : ℕ) : Type := List (Event H R Payload) → ℕ → ℝ × ℝ
+/-- The level rule of the controller: how the sender chooses the level, and
+what a host reports about what the stream needed at it. -/
+structure LevelRule (H : Type) (R : ℕ) where
+  /-- From the sender's view when the capture device hands over a block, and
+  the block's first frame: the level of that frame and the change of the
+  level from one frame to the next. -/
+  announce : List (Event H R Payload) → ℕ → ℝ × ℝ
+  /-- From a host's view when it sends a clock query: the need that the
+  query carries, if any. -/
+  need : H → List (Event H R Payload) → Option ℝ
 
-/-- The rule that holds the level at `L`. -/
-def constantLevel (L : ℝ) : LevelRule H R := fun _ _ => (L, 0)
+/-- The rule that holds the level at `L`, and reports no need. -/
+def constantLevel (L : ℝ) : LevelRule H R := ⟨fun _ _ => (L, 0), fun _ _ => none⟩
 
 variable [DecidableEq H] (p : FixedDelay.Params H) (clockEst : ClockEstimator)
   (deviceEst : DeviceEstimator) (levelRule : LevelRule H R)
@@ -386,7 +393,7 @@ slope come from the level rule. -/
 def blockHeader (view : List (Event H R Payload)) (f : ℕ) (stamp : ℝ) : Header :=
   ⟨f, ((deviceEst (captureReports view)).map fun ln => ln.eval f).getD stamp,
     ((deviceEst (captureReports view)).map Line.slope).getD (1 / p.rate),
-    (levelRule view f).1, (levelRule view f).2⟩
+    (levelRule.announce view f).1, (levelRule.announce view f).2⟩
 
 /-- The headers of the blocks that the sender's own capture device has
 handed over in a view, oldest first: the headers that the sender put in
@@ -407,20 +414,20 @@ def ownHeadersOf (l : List (Event H R Payload)) : List (Header × ℕ) :=
 
 /-- A message of the baseline with the controller's further fields, as host
 `h` fills them in at the view `view`. -/
-def enrich (view : List (Event H R Payload)) : FixedDelay.Payload → Payload
+def enrich (h : H) (view : List (Event H R Payload)) : FixedDelay.Payload → Payload
   | .block f stamp =>
       .block f stamp (blockHeader p deviceEst levelRule view f stamp).capture
         (blockHeader p deviceEst levelRule view f stamp).period
         (blockHeader p deviceEst levelRule view f stamp).level
         (blockHeader p deviceEst levelRule view f stamp).slope
-  | .ask sent => .ask sent none
+  | .ask sent => .ask sent (levelRule.need h view)
   | .answer sent received => .answer sent received
 
 omit [DecidableEq H] in
 /-- Forgetting the further fields of an enriched message gives the message
 back. -/
-theorem plain_enrich (view : List (Event H R Payload)) (x : FixedDelay.Payload) :
-    (enrich p deviceEst levelRule view x).plain = x := by
+theorem plain_enrich (h : H) (view : List (Event H R Payload)) (x : FixedDelay.Payload) :
+    (enrich p deviceEst levelRule h view x).plain = x := by
   cases x <;> rfl
 
 /-- A host's estimate of the sender's clock after the events `l`: its own
@@ -456,7 +463,7 @@ when the sample leaves. -/
 def solution : Solution H R Payload := fun h view =>
   { sends := ((FixedDelay.solution p : Solution H R FixedDelay.Payload) h
         (view.map (Event.mapMsg Payload.plain))).sends.map
-      fun s => (s.1, enrich p deviceEst levelRule view s.2.1, s.2.2)
+      fun s => (s.1, enrich p deviceEst levelRule h view s.2.1, s.2.2)
     timers := ((FixedDelay.solution p : Solution H R FixedDelay.Payload) h
         (view.map (Event.mapMsg Payload.plain))).timers
     plays :=
@@ -479,7 +486,7 @@ theorem sendsMore :
   show mapSends Payload.plain
       (((FixedDelay.solution p : Solution H R FixedDelay.Payload) h
           (v.map (Event.mapMsg Payload.plain))).sends.map
-        fun s => (s.1, enrich p deviceEst levelRule v s.2.1, s.2.2)) = _
+        fun s => (s.1, enrich p deviceEst levelRule h v s.2.1, s.2.2)) = _
   rw [mapSends, List.map_map]
   conv_rhs => rw [← List.map_id ((FixedDelay.solution p : Solution H R FixedDelay.Payload) h
     (v.map (Event.mapMsg Payload.plain))).sends]

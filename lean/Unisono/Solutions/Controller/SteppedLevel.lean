@@ -35,9 +35,10 @@ which `speaker_plays_of_levels` says what every speaker plays.
   `slopeMax` is less than the time from one frame to the next on the
   sender's clock.
 
-The hosts that play do not measure needs yet: the clock queries of the
-controller carry none, so in its runs the aim never moves. What the rule
-achieves is not stated here; no cost is bounded.
+What a host reports in its clock queries is a parameter of the rule
+(`need`); `Unisono.Solutions.Controller.measuredNeed` is a measurement
+meant for it. What the rule achieves is not stated here; no cost is
+bounded.
 -/
 
 @[expose] public noncomputable section
@@ -98,9 +99,12 @@ def levelState (q : LevelSettings) (l : List (Event H R Payload)) : LevelState :
 
 /-- **The level rule that steps against the reported needs.** At a
 handover, from the sender's view up to the handover: the level of the
-block's first frame, and the slope that moves the level toward the aim. -/
-def steppedLevel (q : LevelSettings) : LevelRule H R := fun view _ =>
-  ((levelState q view.dropLast).level, slopeTo q (levelState q view.dropLast))
+block's first frame, and the slope that moves the level toward the aim.
+What a host reports in a clock query is the parameter `need`. -/
+def steppedLevel (q : LevelSettings) (need : H → List (Event H R Payload) → Option ℝ) :
+    LevelRule H R :=
+  ⟨fun view _ =>
+    ((levelState q view.dropLast).level, slopeTo q (levelState q view.dropLast)), need⟩
 
 /-- The announced slope is at most `slopeMax` in absolute value. -/
 theorem abs_slopeTo_le (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (st : LevelState) :
@@ -139,6 +143,86 @@ theorem foldl_levelStep_level (q : LevelSettings) (l : List (Event H R Payload))
     rw [List.foldl_cons, ih _ fun e' he' => hl e' (List.mem_cons_of_mem e he'),
       levelStep_level q st (hl e List.mem_cons_self)]
 
+/-- **The aim and the level stay within the bounds.** If both lie between
+`q.lo` and `q.hi`, they do after any event, for `q.lo ≤ q.hi` and
+`q.slopeMax ≥ 0`: a clock query moves the aim within the bounds, and a
+handover moves the level toward the aim and not past it. -/
+theorem levelStep_mem (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (hlohi : q.lo ≤ q.hi)
+    {st : LevelState} (ha : st.aim ∈ Set.Icc q.lo q.hi) (hl : st.level ∈ Set.Icc q.lo q.hi)
+    (e : Event H R Payload) :
+    (levelStep q st e).aim ∈ Set.Icc q.lo q.hi
+      ∧ (levelStep q st e).level ∈ Set.Icc q.lo q.hi := by
+  unfold levelStep
+  cases hobs : e.observation with
+  | asked r outputs stamp => exact ⟨ha, hl⟩
+  | timer => exact ⟨ha, hl⟩
+  | received i c F =>
+    cases c with
+    | block first stamp capture period level slope => exact ⟨ha, hl⟩
+    | answer sent received => exact ⟨ha, hl⟩
+    | ask sent need =>
+      cases need with
+      | none => exact ⟨ha, hl⟩
+      | some y => exact ⟨clampTo_mem hlohi _, hl⟩
+  | handed frames stamp =>
+    refine ⟨ha, ?_⟩
+    show st.level + (q.blockSize : ℝ) * slopeTo q st ∈ Set.Icc q.lo q.hi
+    obtain ⟨ha1, ha2⟩ := ha
+    obtain ⟨hl1, hl2⟩ := hl
+    have hB0 : (0 : ℝ) ≤ (q.blockSize : ℝ) := Nat.cast_nonneg _
+    unfold slopeTo clampTo
+    rcases Nat.eq_zero_or_pos q.blockSize with hB | hB
+    · rw [hB, Nat.cast_zero, zero_mul, add_zero]
+      exact ⟨hl1, hl2⟩
+    · have hBpos : (0 : ℝ) < (q.blockSize : ℝ) := by exact_mod_cast hB
+      rcases le_total 0 (st.aim - st.level) with h0 | h0
+      · -- The aim is above: the level rises, and not past the aim.
+        have hv : 0 ≤ (st.aim - st.level) / q.blockSize := div_nonneg h0 hB0
+        have h1 : 0 ≤ min q.slopeMax ((st.aim - st.level) / q.blockSize) := le_min hq hv
+        rw [max_eq_right (by linarith)]
+        have h2 : (q.blockSize : ℝ) * min q.slopeMax ((st.aim - st.level) / q.blockSize)
+            ≤ st.aim - st.level := by
+          calc (q.blockSize : ℝ) * min q.slopeMax ((st.aim - st.level) / q.blockSize)
+              ≤ (q.blockSize : ℝ) * ((st.aim - st.level) / q.blockSize) :=
+                mul_le_mul_of_nonneg_left (min_le_right _ _) hB0
+            _ = st.aim - st.level := mul_div_cancel₀ _ hBpos.ne'
+        have h3 := mul_nonneg hB0 h1
+        constructor <;> linarith
+      · -- The aim is below: the level falls, and not past the aim.
+        have hv : (st.aim - st.level) / q.blockSize ≤ 0 :=
+          div_nonpos_of_nonpos_of_nonneg h0 hB0
+        rw [min_eq_right (by linarith)]
+        have h1 : (st.aim - st.level) / q.blockSize
+            ≤ max (-q.slopeMax) ((st.aim - st.level) / q.blockSize) := le_max_right _ _
+        have h2 : max (-q.slopeMax) ((st.aim - st.level) / q.blockSize) ≤ 0 :=
+          max_le (by linarith) hv
+        have h3 : st.aim - st.level
+            ≤ (q.blockSize : ℝ) * max (-q.slopeMax) ((st.aim - st.level) / q.blockSize) := by
+          calc st.aim - st.level
+              = (q.blockSize : ℝ) * ((st.aim - st.level) / q.blockSize) :=
+                (mul_div_cancel₀ _ hBpos.ne').symm
+            _ ≤ _ := mul_le_mul_of_nonneg_left h1 hB0
+        have h4 := mul_nonpos_of_nonneg_of_nonpos hB0 h2
+        constructor <;> linarith
+
+/-- After any events, the aim and the level of the rule lie between `q.lo`
+and `q.hi`, when the start does, `q.lo ≤ q.hi` and `q.slopeMax ≥ 0`. -/
+theorem levelState_mem (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (hlohi : q.lo ≤ q.hi)
+    (hstart : q.start ∈ Set.Icc q.lo q.hi) (l : List (Event H R Payload)) :
+    (levelState q l).aim ∈ Set.Icc q.lo q.hi ∧ (levelState q l).level ∈ Set.Icc q.lo q.hi := by
+  have hgen : ∀ (l : List (Event H R Payload)) (st : LevelState),
+      st.aim ∈ Set.Icc q.lo q.hi → st.level ∈ Set.Icc q.lo q.hi →
+      (l.foldl (levelStep q) st).aim ∈ Set.Icc q.lo q.hi
+        ∧ (l.foldl (levelStep q) st).level ∈ Set.Icc q.lo q.hi := by
+    intro l
+    induction l with
+    | nil => exact fun st ha hl => ⟨ha, hl⟩
+    | cons e l ih =>
+      intro st ha hl
+      obtain ⟨h1, h2⟩ := levelStep_mem q hq hlohi ha hl e
+      exact ih _ h1 h2
+  exact hgen l _ hstart hstart
+
 variable [DecidableEq H] (p : FixedDelay.Params H) (clockEst : ClockEstimator)
   (deviceEst : DeviceEstimator) (levelRule : LevelRule H R) (w : World H R) (lookahead : ℕ+)
 
@@ -151,7 +235,7 @@ def announced (b : ℕ) : ℝ × ℝ :=
   if h : ∃ i, (solution p clockEst deviceEst levelRule : Solution H R Payload).handled w
       lookahead i = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))
-  then levelRule
+  then levelRule.announce
     (((solution p clockEst deviceEst levelRule : Solution H R Payload).states w lookahead
         (Classical.choose h)).views w.sender
       ++ [⟨(w.clock w.sender).read (w.source.handed b),
@@ -165,7 +249,7 @@ theorem announced_eq {i b : ℕ}
     (hi : (solution p clockEst deviceEst levelRule : Solution H R Payload).handled w
       lookahead i = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
-    levelRule
+    levelRule.announce
         (((solution p clockEst deviceEst levelRule : Solution H R Payload).states w lookahead
             i).views w.sender
           ++ [⟨(w.clock w.sender).read (w.source.handed b),
@@ -189,36 +273,40 @@ to block**, in every world: when the handovers of blocks `b` and `b + 1`
 are both handled, the level announced with block `b + 1` is the level
 announced with block `b` plus `blockSize` times the slope announced with
 block `b`. -/
-theorem announced_steppedLevel_succ (q : LevelSettings) {i i' b : ℕ}
-    (hi : (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).handled w
+theorem announced_steppedLevel_succ (q : LevelSettings)
+    (need : H → List (Event H R Payload) → Option ℝ) {i i' b : ℕ}
+    (hi : (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).handled w
       lookahead i = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b)))
-    (hi' : (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).handled w
+    (hi' : (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).handled w
       lookahead i' = some (w.sender, w.source.handed (b + 1),
         .handed ((w.source.block (b + 1)).map fun k => (k, w.target k))
           (w.source.reported (b + 1)))) :
-    (announced p clockEst deviceEst (steppedLevel q) w lookahead (b + 1)).1
-      = (announced p clockEst deviceEst (steppedLevel q) w lookahead b).1
+    (announced p clockEst deviceEst (steppedLevel q need) w lookahead (b + 1)).1
+      = (announced p clockEst deviceEst (steppedLevel q need) w lookahead b).1
         + (q.blockSize : ℝ)
-          * (announced p clockEst deviceEst (steppedLevel q) w lookahead b).2 := by
-  rw [← announced_eq p clockEst deviceEst (steppedLevel q) w lookahead hi,
-    ← announced_eq p clockEst deviceEst (steppedLevel q) w lookahead hi']
-  simp only [steppedLevel, List.dropLast_concat]
+          * (announced p clockEst deviceEst (steppedLevel q need) w lookahead b).2 := by
+  rw [← announced_eq p clockEst deviceEst (steppedLevel q need) w lookahead hi,
+    ← announced_eq p clockEst deviceEst (steppedLevel q need) w lookahead hi']
+  show (levelState q (_ ++ [_]).dropLast).level
+    = (levelState q (_ ++ [_]).dropLast).level
+      + (q.blockSize : ℝ) * slopeTo q (levelState q (_ ++ [_]).dropLast)
+  simp only [List.dropLast_concat]
   have hE := Solution.earliest_of_handled_handed _ w lookahead hi
   have hE' := Solution.earliest_of_handled_handed _ w lookahead hi'
   obtain ⟨hn1, hn2⟩ := Solution.handedNext_of_earliest _ w lookahead hE
   obtain ⟨hn1', -⟩ := Solution.handedNext_of_earliest _ w lookahead hE'
   have hmono := Solution.handedNext_mono
-    (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload) w lookahead
+    (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload) w lookahead
   have hlt : i < i' := by
     by_contra hcon
     have h1 := hmono (not_lt.mp hcon)
     simp only at h1
     omega
   -- The sender's view at the later handover.
-  have hV1 : ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).states w
+  have hV1 : ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).states w
         lookahead (i + 1)).views w.sender
-      = ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).states w
+      = ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).states w
           lookahead i).views w.sender
         ++ [⟨(w.clock w.sender).read (w.source.handed b),
           .handed ((w.source.block b).map fun k => (k, w.target k))
@@ -226,7 +314,7 @@ theorem announced_steppedLevel_succ (q : LevelSettings) {i i' b : ℕ}
     rw [Solution.views_succ _ w lookahead i w.sender, hi]
     simp
   obtain ⟨mid, hmid, hev⟩ := Solution.views_append w
-    (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload) lookahead
+    (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload) lookahead
     (show i + 1 ≤ i' from hlt) w.sender
   -- No handover is handled between the two.
   have hno : ∀ e ∈ mid, ∀ frames stamp, e.observation ≠ .handed frames stamp := by
@@ -249,18 +337,32 @@ theorem announced_steppedLevel_succ (q : LevelSettings) {i i' b : ℕ}
 
 /-- **Every slope that the rule announces is at most `slopeMax` in absolute
 value**, for `slopeMax ≥ 0`. -/
-theorem abs_announced_slope_le (q : LevelSettings) (hq : 0 ≤ q.slopeMax) (b : ℕ) :
-    |(announced p clockEst deviceEst (steppedLevel q) w lookahead b).2| ≤ q.slopeMax := by
+theorem abs_announced_slope_le (q : LevelSettings)
+    (need : H → List (Event H R Payload) → Option ℝ) (hq : 0 ≤ q.slopeMax) (b : ℕ) :
+    |(announced p clockEst deviceEst (steppedLevel q need) w lookahead b).2| ≤ q.slopeMax := by
   classical
-  by_cases hex : ∃ i, (solution p clockEst deviceEst (steppedLevel q) :
+  by_cases hex : ∃ i, (solution p clockEst deviceEst (steppedLevel q need) :
       Solution H R Payload).handled w lookahead i = some (w.sender, w.source.handed b,
         .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))
   · obtain ⟨i, hi⟩ := hex
-    rw [← announced_eq p clockEst deviceEst (steppedLevel q) w lookahead hi]
+    rw [← announced_eq p clockEst deviceEst (steppedLevel q need) w lookahead hi]
     exact abs_slopeTo_le q hq _
   · unfold announced
     rw [dite_eq_right hex, abs_zero]
     exact hq
+
+/-- **Every level that the rule announces at a handover lies between `q.lo`
+and `q.hi`**, when the start does, `q.lo ≤ q.hi` and `q.slopeMax ≥ 0`. -/
+theorem announced_fst_mem (q : LevelSettings)
+    (need : H → List (Event H R Payload) → Option ℝ) (hq : 0 ≤ q.slopeMax)
+    (hlohi : q.lo ≤ q.hi) (hstart : q.start ∈ Set.Icc q.lo q.hi) {i b : ℕ}
+    (hi : (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).handled
+      w lookahead i = some (w.sender, w.source.handed b,
+        .handed ((w.source.block b).map fun k => (k, w.target k)) (w.source.reported b))) :
+    (announced p clockEst deviceEst (steppedLevel q need) w lookahead b).1
+      ∈ Set.Icc q.lo q.hi := by
+  rw [← announced_eq p clockEst deviceEst (steppedLevel q need) w lookahead hi]
+  exact (levelState_mem q hq hlohi hstart _).2
 
 variable {w} {m : GenerativeWorld H R} {f : Member H R} {d : Draw H R}
 
@@ -286,51 +388,52 @@ clock, the three statements of that theorem hold with what the rule
 announces (`announced`). -/
 theorem speaker_plays_of_steppedLevel (hS : ConstantRates m f d w) (lookahead : ℕ+)
     {clockEst : ClockEstimator} {deviceEst : DeviceEstimator} (hdev : deviceEst.Exact)
-    (q : LevelSettings) (hqB : q.blockSize = m.blockSize) (hq0 : 0 ≤ q.slopeMax)
+    (q : LevelSettings) (need : H → List (Event H R Payload) → Option ℝ)
+    (hqB : q.blockSize = m.blockSize) (hq0 : 0 ≤ q.slopeMax)
     (hq : q.slopeMax < Real.exp (d.logRate m.sender)
       / (m.rate * Real.exp (d.deviceLogRate none)))
     (hps : p.sender = m.sender) (hnodup : p.speakers.Nodup) (hcopies : 0 < p.copies)
     (r : Fin R) (hnos : m.host r ≠ m.sender) (hpsp : m.host r ∈ p.speakers) {T₀ : Time}
-    (hline : ClockLineFrom (solution p clockEst deviceEst (steppedLevel q)) w lookahead
+    (hline : ClockLineFrom (solution p clockEst deviceEst (steppedLevel q need)) w lookahead
       clockEst (m.host r) (exchangeLine m f d (m.host r)) T₀) :
     ∃ K, ∀ k, K ≤ k →
       (∀ n b, k ∈ (w.speaker r).block b →
-        ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).states w
+        ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).states w
           lookahead n).askedNext r = b →
-        earliest (((solution p clockEst deviceEst (steppedLevel q) :
+        earliest (((solution p clockEst deviceEst (steppedLevel q need) :
               Solution H R Payload).states w lookahead n).key w)
-            ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).states w
+            ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).states w
               lookahead n).due = some (.asked r b) →
-        ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).chosenAt w
+        ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).chosenAt w
             lookahead n r b k = none
-          ∨ ∃ x, (solution p clockEst deviceEst (steppedLevel q) :
+          ∨ ∃ x, (solution p clockEst deviceEst (steppedLevel q need) :
               Solution H R Payload).chosenAt w lookahead n r b k = some x
-            ∧ IsDue m f d w (announced p clockEst deviceEst (steppedLevel q) w lookahead)
+            ∧ IsDue m f d w (announced p clockEst deviceEst (steppedLevel q need) w lookahead)
               r k x))
-      ∧ ((solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).plays w
+      ∧ ((solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).plays w
           lookahead r k = none
-        ∨ ∃ x, (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).plays w
+        ∨ ∃ x, (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).plays w
             lookahead r k = some x
-          ∧ IsDue m f d w (announced p clockEst deviceEst (steppedLevel q) w lookahead) r k x
+          ∧ IsDue m f d w (announced p clockEst deviceEst (steppedLevel q need) w lookahead) r k x
           ∧ d.arrival f m.sender (m.host r) (w.source.handed (neededBlock m lookahead x))
             < (w.speaker r).asked (k / m.blockSize))
-      ∧ ∀ x, IsDue m f d w (announced p clockEst deviceEst (steppedLevel q) w lookahead)
+      ∧ ∀ x, IsDue m f d w (announced p clockEst deviceEst (steppedLevel q need) w lookahead)
           r k x →
         d.arrival f m.sender (m.host r) (w.source.handed (neededBlock m lookahead x))
           < (w.speaker r).asked (k / m.blockSize) →
-        (solution p clockEst deviceEst (steppedLevel q) : Solution H R Payload).plays w
+        (solution p clockEst deviceEst (steppedLevel q need) : Solution H R Payload).plays w
           lookahead r k = some x := by
-  refine speaker_plays_of_levels p hS lookahead hdev (steppedLevel q)
-    (announced p clockEst deviceEst (steppedLevel q) w lookahead)
-    (fun i b _ hi => announced_eq p clockEst deviceEst (steppedLevel q) w lookahead hi)
+  refine speaker_plays_of_levels p hS lookahead hdev (steppedLevel q need)
+    (announced p clockEst deviceEst (steppedLevel q need) w lookahead)
+    (fun i b _ hi => announced_eq p clockEst deviceEst (steppedLevel q need) w lookahead hi)
     (fun b _ => ?_) (fun b _ => ?_) hps hnodup hcopies r hnos hpsp hline
-  · obtain ⟨i, hi⟩ := exists_handover_step p clockEst deviceEst (steppedLevel q) lookahead hS b
+  · obtain ⟨i, hi⟩ := exists_handover_step p clockEst deviceEst (steppedLevel q need) lookahead hS b
     obtain ⟨i', hi'⟩ :=
-      exists_handover_step p clockEst deviceEst (steppedLevel q) lookahead hS (b + 1)
+      exists_handover_step p clockEst deviceEst (steppedLevel q need) lookahead hS (b + 1)
     rw [← hqB]
-    exact announced_steppedLevel_succ p clockEst deviceEst w lookahead q hi hi'
+    exact announced_steppedLevel_succ p clockEst deviceEst w lookahead q need hi hi'
   · have h1 := abs_le.mp
-      (abs_announced_slope_le p clockEst deviceEst w lookahead q hq0 b)
+      (abs_announced_slope_le p clockEst deviceEst w lookahead q need hq0 b)
     linarith [h1.1]
 
 end Unisono.Solutions.Controller

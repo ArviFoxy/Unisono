@@ -263,7 +263,7 @@ theorem sends_block (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
         = blockHeader p deviceEst levelRule (l ++ [e]) fr stamp := by
   change s ∈ ((FixedDelay.solution p : Solution H R FixedDelay.Payload) h
       ((l ++ [e]).map (Event.mapMsg Payload.plain))).sends.map
-    (fun s => (s.1, enrich p deviceEst levelRule (l ++ [e]) s.2.1, s.2.2)) at hs
+    (fun s => (s.1, enrich p deviceEst levelRule h (l ++ [e]) s.2.1, s.2.2)) at hs
   obtain ⟨s₀, hs₀, rfl⟩ := List.mem_map.mp hs
   dsimp only at hb
   rw [List.map_append, List.map_cons, List.map_nil, FixedDelay.solution_append] at hs₀
