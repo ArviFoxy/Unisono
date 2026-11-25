@@ -55,6 +55,7 @@ public import Unisono.Solutions.Controller.Timing
 public import Unisono.Solutions.Controller.KnotLevel
 public import Unisono.Solutions.Controller.DueSchedule
 public import Unisono.Solutions.Controller.Arrived
+public import Unisono.Solutions.Controller.Silent
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -4800,6 +4801,34 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.ruled_chosen_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.ruled_chosen_iff
+
+/-- info: 'Unisono.Spec.CaptureDevice.exists_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.exists_block
+
+/-- info: 'Unisono.Spec.CaptureDevice.first_le_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.CaptureDevice.first_le_of_mem
+
+/-- info: 'Unisono.Spec.Follows.none_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.none_iff
+
+/-- info: 'Unisono.Solutions.Controller.KnotSetting.handovers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.KnotSetting.handovers
+
+/-- info: 'Unisono.Solutions.Controller.KnotSetting.requests' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.KnotSetting.requests
+
+/-- info: 'Unisono.Solutions.Controller.ruled_mem_held_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ruled_mem_held_iff
+
+/-- info: 'Unisono.Solutions.Controller.followed_silent' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.followed_silent
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

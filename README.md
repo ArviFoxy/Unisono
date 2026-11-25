@@ -165,8 +165,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     and the discontinuities are bounded by the number of output samples
     that play nothing and by the irregular steps of what it chooses
     (`Unisono.Spec.Solution.followed_sum_missedAt_le` in
-    `lean/Unisono/Spec/FollowerRun.lean`). No cost of the combined
-    solution is bounded yet. The cost of a held
+    `lean/Unisono/Spec/FollowerRun.lean`). In a world without loss, an
+    output sample of the combined solution plays nothing only when the
+    stream has not yet reached the host or a block that the output sample
+    needs arrived after the request
+    (`Unisono.Solutions.Controller.followed_silent` in
+    `lean/Unisono/Solutions/Controller/Silent.lean`). No cost of the
+    combined solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in
