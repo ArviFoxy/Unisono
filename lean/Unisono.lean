@@ -45,6 +45,7 @@ public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Schedule
 public import Unisono.Solutions.Controller.SteppedLevel
 public import Unisono.Solutions.Controller.Needs
+public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
@@ -68,6 +69,7 @@ public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
 public import Unisono.Spec.Limiter
+public import Unisono.Spec.Follower
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate

@@ -141,7 +141,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     (`Unisono.Solutions.Controller.arrival_lt_asked_of_needOf_le` and
     `measuredNeed` in `lean/Unisono/Solutions/Controller/Needs.lean`). It
     is not yet proved which needs reach the sender, what the rule does
-    with them, or what a level that changes costs. The cost of a held
+    with them, or what a level that changes costs. These parts are put
+    together in one solution, whose playback follows the position that is
+    due within the step bound; in every world its hosts exchange messages
+    only with the sender and it keeps the step bound
+    (`Unisono.Solutions.Controller.combined`, `combined_withinStep` in
+    `lean/Unisono/Solutions/Controller/Combined.lean`). No cost of that
+    solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in

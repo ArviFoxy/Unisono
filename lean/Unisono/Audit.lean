@@ -48,6 +48,7 @@ public import Unisono.Solutions.Controller.Queries
 public import Unisono.Solutions.Controller.Schedule
 public import Unisono.Solutions.Controller.SteppedLevel
 public import Unisono.Solutions.Controller.Needs
+public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
 public import Unisono.Solutions.Core
@@ -70,6 +71,7 @@ public import Unisono.Spec.ExactCost
 public import Unisono.Spec.ExactLatency
 public import Unisono.Spec.Held
 public import Unisono.Spec.Limiter
+public import Unisono.Spec.Follower
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -4038,6 +4040,74 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.limited_plays_eq
 
+/-- info: 'Unisono.Spec.stepAt_range'_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepAt_range'_first
+
+/-- info: 'Unisono.Spec.stepAt_range'_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepAt_range'_succ
+
+/-- info: 'Unisono.Spec.stepLast_range'' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepLast_range'
+
+/-- info: 'Unisono.Spec.foldl_carryStep_fst' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.foldl_carryStep_fst
+
+/-- info: 'Unisono.Spec.carried_concat_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.carried_concat_asked
+
+/-- info: 'Unisono.Spec.carried_concat_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.carried_concat_of_ne
+
+/-- info: 'Unisono.Spec.carried_append_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.carried_append_of_ne
+
+/-- info: 'Unisono.Spec.Solution.stepped_plays_asked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_plays_asked
+
+/-- info: 'Unisono.Spec.Solution.carried_at_next' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.carried_at_next
+
+/-- info: 'Unisono.Spec.Solution.stepped_views' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_views
+
+/-- info: 'Unisono.Spec.Solution.stepped_asked_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_asked_iff
+
+/-- info: 'Unisono.Spec.Solution.stepped_chosenAt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_chosenAt
+
+/-- info: 'Unisono.Spec.Solution.stepped_chosenAt_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_chosenAt_succ
+
+/-- info: 'Unisono.Spec.followStep_of_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_of_within
+
+/-- info: 'Unisono.Spec.followStep_within' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_within
+
+/-- info: 'Unisono.Spec.Solution.followed_withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_withinStep
+
+/-- info: 'Unisono.Spec.Solution.stepped_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_isStar
+
 /-- info: 'Unisono.Spec.earliest_spec_first' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.earliest_spec_first
@@ -4237,6 +4307,18 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.needOfBlock_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.needOfBlock_eq
+
+/-- info: 'Unisono.Solutions.Controller.isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.isStar
+
+/-- info: 'Unisono.Solutions.Controller.combined_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.combined_isStar
+
+/-- info: 'Unisono.Solutions.Controller.combined_withinStep' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.combined_withinStep
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
