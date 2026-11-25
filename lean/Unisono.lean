@@ -82,6 +82,8 @@ public import Unisono.Spec.Models.GenerativePauseLaw
 public import Unisono.Spec.Models.GenerativePauses
 public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
+public import Unisono.Spec.Models.GenerativeDrawLaw
+public import Unisono.Spec.Models.GenerativeResample
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
@@ -90,6 +92,7 @@ public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.PauseProcess
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.IncrementLaw
+public import Unisono.Spec.Models.IncrementParts
 public import Unisono.Spec.Models.MeasurableDelay
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld

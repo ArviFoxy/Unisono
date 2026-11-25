@@ -174,7 +174,13 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Spec/Models/GenerativeLinkPause.lean`). The frames that a
     speaker holds beyond the position it plays are paid for with latency
     (`Unisono.Spec.GenerativeWorld.Builds.le_sum_add_loss` in
-    `lean/Unisono/Spec/Models/GenerativeRoom.lean`). These are not yet
+    `lean/Unisono/Spec/Models/GenerativeRoom.lean`). In every random world
+    of every member, what a link pauses within a period is independent of
+    the rest of the draw, and drawing it again from an independent copy of
+    the probability space gives a random world of the same member
+    (`Unisono.Spec.GenerativeWorld.Prior.indepFun_linkOutside` and
+    `Prior.prior_resample` in
+    `lean/Unisono/Spec/Models/GenerativeResample.lean`). These are not yet
     combined into a lower bound on the expected cost of other solutions
     under pauses. The controller does not yet change its pace smoothly or
     choose the level.
