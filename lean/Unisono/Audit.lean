@@ -89,6 +89,7 @@ public import Unisono.Spec.Models.GenerativeResample
 public import Unisono.Spec.Models.GenerativeBlockSum
 public import Unisono.Spec.Models.GenerativeCellStall
 public import Unisono.Spec.Models.GenerativeCellMean
+public import Unisono.Spec.Models.GenerativeCellPause
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2220,6 +2221,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.measurable_getD_lastPlayed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.measurable_getD_lastPlayed
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_cell_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_cell_ge
+
+/-- info: 'Unisono.Spec.GenerativeWorld.blockFrom_congr' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.blockFrom_congr
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.linkOutside_eq_self' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.linkOutside_eq_self
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.cell_mean_ge' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.cell_mean_ge
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
