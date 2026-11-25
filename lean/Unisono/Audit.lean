@@ -97,6 +97,7 @@ public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
+public import Unisono.Spec.Models.ErgodicMean
 public import Unisono.Spec.Models.GenerativeBlockLatency
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
@@ -126,6 +127,8 @@ public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
+public import Unisono.Spec.Models.GaussianLaw
+public import Unisono.Spec.Models.GenerativeShift
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -1478,6 +1481,38 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.measure_inter_of_disjoint_cells
 
+/-- info: 'Unisono.Spec.succ_mul_birkhoffAverage_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.succ_mul_birkhoffAverage_succ
+
+/-- info: 'Unisono.Spec.birkhoffAverage_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.birkhoffAverage_nonneg
+
+/-- info: 'Unisono.Spec.preimage_frequentlyAbove_of_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.preimage_frequentlyAbove_of_nonneg
+
+/-- info: 'Unisono.Spec.frequentlyAbove_antitone' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.frequentlyAbove_antitone
+
+/-- info: 'Unisono.Spec.mul_measureReal_le_setIntegral_of_subset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mul_measureReal_le_setIntegral_of_subset
+
+/-- info: 'Unisono.Spec.limsup_le_of_notMem_frequentlyAbove' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.limsup_le_of_notMem_frequentlyAbove
+
+/-- info: 'Unisono.Spec.lintegral_limsup_birkhoffAverage_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_limsup_birkhoffAverage_le
+
+/-- info: 'Unisono.Spec.lintegral_limsup_average_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_limsup_average_le
+
 /-- info: 'Unisono.Spec.exists_rat_seq_gt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.exists_rat_seq_gt
@@ -2549,6 +2584,50 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.out_succ_sub_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.out_succ_sub_mem
+
+/-- info: 'Unisono.Spec.integral_variance_linear_of_isGaussianProcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.integral_variance_linear_of_isGaussianProcess
+
+/-- info: 'Unisono.Spec.map_eq_of_isGaussianProcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.map_eq_of_isGaussianProcess
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_path_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_path_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_path_shift_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_path_shift_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_component_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_component_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.map_shift_of_isGaussianProcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.map_shift_of_isGaussianProcess
+
+/-- info: 'Unisono.Spec.GenerativeWorld.map_shift_of_hasIncrementLaws' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.map_shift_of_hasIncrementLaws
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_component_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_component_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_components_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_components_shift
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_shiftComponents' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_shiftComponents
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_limsup_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_limsup_shift
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

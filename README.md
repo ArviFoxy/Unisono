@@ -189,8 +189,23 @@ simulation and integration tests (see `PRINCIPLES.md`):
     the delay of the block that the host's estimate rests on, of the host's
     slope, and of the time at which the host expects the output sample to
     leave (`Unisono.Solutions.Controller.timed_chosen_parts` in
-    `lean/Unisono/Solutions/Controller/ChosenLatency.lean`). No cost of the
-    combined solution is bounded yet. The cost of a held
+    `lean/Unisono/Solutions/Controller/ChosenLatency.lean`). In a world
+    built from a draw of the generative model, an output sample whose
+    request is handled before it leaves plays nothing only when the host
+    has no confirmed estimate, or the stream has not started for it, or a
+    block that was finished a stated time before the request reaches the
+    host at or after the request
+    (`Unisono.Spec.GenerativeWorld.Builds.silent_late` in
+    `lean/Unisono/Solutions/Controller/BuiltRoom.lean`). In every random
+    world of a member whose hosts can be counted, everything that is drawn
+    except the offsets of the clocks has the same law when it is read from
+    a later true time
+    (`Unisono.Spec.GenerativeWorld.Prior.map_components_shift` in
+    `lean/Unisono/Spec/Models/GenerativeShift.lean`), and the mean of the
+    long-run average of a quantity of what is drawn, read from equally
+    spaced true times, is at most the mean of the quantity
+    (`Prior.lintegral_limsup_shift`). No cost of the combined solution is
+    bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in

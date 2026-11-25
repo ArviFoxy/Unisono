@@ -96,6 +96,7 @@ public import Unisono.Spec.OutputRate
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
 public import Unisono.Spec.Models.ErgodicCells
+public import Unisono.Spec.Models.ErgodicMean
 public import Unisono.Spec.Models.GenerativeBlockLatency
 public import Unisono.Spec.Models.GenerativeCanonical
 public import Unisono.Spec.Models.GenerativeDelivery
@@ -125,6 +126,8 @@ public import Unisono.Spec.Models.GenerativeLevelProgram
 public import Unisono.Spec.Models.GenerativeSteadyBound
 public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
+public import Unisono.Spec.Models.GaussianLaw
+public import Unisono.Spec.Models.GenerativeShift
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
