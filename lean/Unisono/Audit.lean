@@ -1784,6 +1784,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ConstantRates.le_sum_latencyAt
 
+/-- info: 'Unisono.Spec.GenerativeWorld.ConstantRates.le_sum_add_loss' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ConstantRates.le_sum_add_loss
+
 /-- info: 'Unisono.Spec.GenerativeWorld.drawWorld_stall_le_room' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.drawWorld_stall_le_room
@@ -2323,6 +2327,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.World.handed_lt_of_lt_blockFrom' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.handed_lt_of_lt_blockFrom
+
+/-- info: 'Unisono.Spec.newGroundCount_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newGroundCount_of_none
 
 /-- info: 'Unisono.Spec.unplayedAt_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
