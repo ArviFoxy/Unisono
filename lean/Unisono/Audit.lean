@@ -63,6 +63,11 @@ public import Unisono.Solutions.Controller.Checked
 public import Unisono.Solutions.Controller.Late
 public import Unisono.Solutions.Controller.BuiltLate
 public import Unisono.Solutions.Controller.BuiltRoom
+public import Unisono.Solutions.Controller.OrderedView
+public import Unisono.Solutions.Controller.IdleView
+public import Unisono.Solutions.Controller.IdleExchanges
+public import Unisono.Solutions.Controller.IdleRequests
+public import Unisono.Solutions.Controller.IdleEstimate
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -92,6 +97,8 @@ public import Unisono.Spec.PlayedSteps
 public import Unisono.Spec.FollowerSteps
 public import Unisono.Spec.FollowerCost
 public import Unisono.Spec.FollowerRun
+public import Unisono.Spec.FollowerNear
+public import Unisono.Spec.ViewOrder
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -129,6 +136,8 @@ public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GaussianLaw
 public import Unisono.Spec.Models.GenerativeShift
+public import Unisono.Spec.Models.GenerativeIdlePath
+public import Unisono.Spec.Models.GenerativeUndisturbed
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
@@ -2629,6 +2638,86 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_limsup_shift
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_le_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_le_of_pathIdle
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_lt_arrival' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_lt_arrival
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.handed_of_idleOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.handed_of_idleOn
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.asked_of_idleOn' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.asked_of_idleOn
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_of_captured' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.arrival_of_captured
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.block_of_lt_arrival' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.block_of_lt_arrival
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.regular' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.regular
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Regular.leastDelay_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Regular.leastDelay_pos
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Regular.leastDelay_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Regular.leastDelay_add
+
+/-- info: 'Unisono.Spec.GenerativeWorld.RateBands.driftDown_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.RateBands.driftDown_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.RateBands.driftUp_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.RateBands.driftUp_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.RateBands.ratioWidth_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.RateBands.ratioWidth_nonneg
+
+/-- info: 'Unisono.Spec.GenerativeWorld.IdleOn.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.IdleOn.mono
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.PathIdle.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.PathIdle.mono
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Undisturbed.mono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Undisturbed.mono
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Undisturbed.sender_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Undisturbed.sender_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Undisturbed.host_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Undisturbed.host_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Undisturbed.capture_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Undisturbed.capture_sub
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Draw.Undisturbed.output_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Draw.Undisturbed.output_sub
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before
@@ -4585,6 +4674,34 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.followed_sum_discontinuityAt_le
 
+/-- info: 'Unisono.Spec.exists_followStep_eq_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_followStep_eq_some
+
+/-- info: 'Unisono.Spec.followStep_near' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_near
+
+/-- info: 'Unisono.Spec.followStep_near_of_dist_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_near_of_dist_le
+
+/-- info: 'Unisono.Spec.followed_near_dist_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followed_near_dist_le
+
+/-- info: 'Unisono.Spec.followed_near_settles' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followed_near_settles
+
+/-- info: 'Unisono.Spec.Solution.views_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.views_pairwise
+
+/-- info: 'Unisono.Spec.Solution.requestView_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.requestView_pairwise
+
 /-- info: 'Unisono.Spec.Solution.stepped_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.stepped_isStar
@@ -5265,6 +5382,94 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.silent_late
 
+/-- info: 'Unisono.Solutions.Controller.arrivalsOf_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalsOf_pairwise
+
+/-- info: 'Unisono.Solutions.Controller.arrivalSlope_eq_of_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalSlope_eq_of_pairwise
+
+/-- info: 'Unisono.Solutions.Controller.windowArrivals_eq_filter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.windowArrivals_eq_filter
+
+/-- info: 'Unisono.Solutions.Controller.mem_windowArrivals_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_windowArrivals_iff
+
+/-- info: 'Unisono.Solutions.Controller.streamDelay_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.streamDelay_pos
+
+/-- info: 'Unisono.Solutions.Controller.queryDelay_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.queryDelay_pos
+
+/-- info: 'Unisono.Solutions.Controller.queryDelay_add_streamDelay' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.queryDelay_add_streamDelay
+
+/-- info: 'Unisono.Solutions.Controller.mem_arrivalsOf_of_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.mem_arrivalsOf_of_idle
+
+/-- info: 'Unisono.Solutions.Controller.arrival_mem_arrivalsOf_of_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrival_mem_arrivalsOf_of_idle
+
+/-- info: 'Unisono.Solutions.Controller.arrivalsOf_request_pairwise' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalsOf_request_pairwise
+
+/-- info: 'Unisono.Solutions.Controller.arrivalSlope_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.arrivalSlope_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.recentExchange_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.recentExchange_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.exists_exchange_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.exists_exchange_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.halfTrip_mem_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.halfTrip_mem_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.out_sub_asked_of_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.out_sub_asked_of_idle
+
+/-- info: 'Unisono.Solutions.Controller.out_sub_asked_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.out_sub_asked_mem
+
+/-- info: 'Unisono.Solutions.Controller.hostReading_out_sub_asked_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.hostReading_out_sub_asked_mem
+
+/-- info: 'Unisono.Solutions.Controller.ratioAt_mem_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.ratioAt_mem_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.abs_out_sub_outputAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.abs_out_sub_outputAt_le
+
+/-- info: 'Unisono.Solutions.Controller.drift_mem_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.drift_mem_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.windowArrival_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.windowArrival_of_undisturbed
+
+/-- info: 'Unisono.Solutions.Controller.envelopeReading_of_undisturbed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.envelopeReading_of_undisturbed
+
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.margin_mem
@@ -5488,6 +5693,10 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.FixedDelay.exchange_of_query' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.FixedDelay.exchange_of_query
+
+/-- info: 'Unisono.Solutions.FixedDelay.exchange_of_query_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.FixedDelay.exchange_of_query_before
 
 /-- info: 'Unisono.Solutions.Controller.arrival_of_idle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

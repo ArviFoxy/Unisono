@@ -60,6 +60,11 @@ public import Unisono.Solutions.Controller.Checked
 public import Unisono.Solutions.Controller.Late
 public import Unisono.Solutions.Controller.BuiltLate
 public import Unisono.Solutions.Controller.BuiltRoom
+public import Unisono.Solutions.Controller.OrderedView
+public import Unisono.Solutions.Controller.IdleView
+public import Unisono.Solutions.Controller.IdleExchanges
+public import Unisono.Solutions.Controller.IdleRequests
+public import Unisono.Solutions.Controller.IdleEstimate
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -90,6 +95,8 @@ public import Unisono.Spec.PlayedSteps
 public import Unisono.Spec.FollowerSteps
 public import Unisono.Spec.FollowerCost
 public import Unisono.Spec.FollowerRun
+public import Unisono.Spec.FollowerNear
+public import Unisono.Spec.ViewOrder
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -128,6 +135,8 @@ public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GaussianLaw
 public import Unisono.Spec.Models.GenerativeShift
+public import Unisono.Spec.Models.GenerativeIdlePath
+public import Unisono.Spec.Models.GenerativeUndisturbed
 public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall

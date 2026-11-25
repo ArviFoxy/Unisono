@@ -25,7 +25,9 @@ delays are.
   later than this one, then the sender answers this query, and from some
   step on the host's view holds the exchange: the host's reading when it
   sent the query, the sender's reading when the query arrived, and the
-  host's reading when the answer arrived.
+  host's reading when the answer arrived. `exchange_of_query_before` says
+  from which steps: every step whose event is later than the arrival of
+  the answer.
 
 The condition on later queries holds for a query that no pause delays on its
 way to the sender, because a pause can only add to a delay.
@@ -91,29 +93,30 @@ theorem exists_query (w : World H R) (lookahead : ℕ+)
       linarith
     exact ((w.clock (w.host r)).strictMono.lt_iff_lt.mp h1).le
 
-/-- **A clock query that no later query overtakes yields an exchange.**
-Consider a world in which no message is lost and a message from `i` to `j`
-sent at `s` arrives at `A i j s`, and whose run advances past every true
-time. A host `h` sends a clock query at true time `s`, and every later query
-of `h` reaches the sender later than this one. Then, from some step on, the
-view of `h` holds the exchange of this query: the reading of `h` at `s`, the
-sender's reading when the query arrived, and the reading of `h` when the
-answer arrived. -/
-theorem exchange_of_query (w : World H R) (lookahead : ℕ+) {A : H → H → Time → Time}
+/-- **The exchange of a clock query is in the host's view once its answer
+has arrived.** Consider a world in which no message is lost and a message
+from `i` to `j` sent at `s` arrives at `A i j s`. A host `h` sends a clock
+query at true time `s`, and every later query of `h` reaches the sender
+later than this one. Then at every step of the run whose event is later
+than the arrival of the answer, the view of `h` holds the exchange of this
+query: the reading of `h` at `s`, the sender's reading when the query
+arrived, and the reading of `h` when the answer arrived. -/
+theorem exchange_of_query_before (w : World H R) (lookahead : ℕ+) {A : H → H → Time → Time}
     (hA : ∀ i j s q, w.network.deliver i j s q = some (A i j s))
     (hsender : p.sender = w.sender) (hcopies : 0 < p.copies)
-    (hprog : ∀ T, ∃ n, T < (solution p : Solution H R Payload).eventTime w lookahead n)
     {n : ℕ} {h : H} {s : Time} {r : Fin R} {outs : List ℕ} {st : ℝ}
     (hn : (solution p : Solution H R Payload).handled w lookahead n
       = some (h, s, .asked r outs st))
     (hask : asks p h (memoryOf p h
       (((solution p : Solution H R Payload).states w lookahead n).views h))
       ((w.clock h).read s) = true)
-    (hstrict : ∀ s', s < s' → A h w.sender s < A h w.sender s') :
-    ∃ k, ∀ k', k ≤ k' →
-      (⟨(w.clock h).read s, (w.clock w.sender).read (A h w.sender s),
-          (w.clock h).read (A w.sender h (A h w.sender s))⟩ : Controller.Exchange)
-        ∈ Controller.plainExchangesOf (((solution p : Solution H R Payload).states w lookahead k').views h) := by
+    (hstrict : ∀ s', s < s' → A h w.sender s < A h w.sender s') {k' : ℕ}
+    (hk' : A w.sender h (A h w.sender s)
+      < (solution p : Solution H R Payload).eventTime w lookahead k') :
+    (⟨(w.clock h).read s, (w.clock w.sender).read (A h w.sender s),
+        (w.clock h).read (A w.sender h (A h w.sender s))⟩ : Controller.Exchange)
+      ∈ Controller.plainExchangesOf
+        (((solution p : Solution H R Payload).states w lookahead k').views h) := by
   set σ : Solution H R Payload := solution p with hσ
   -- The query is in transit after step `n`.
   have hS : (σ h ((σ.states w lookahead n).views h
@@ -130,10 +133,12 @@ theorem exchange_of_query (w : World H R) (lookahead : ℕ+) {A : H → H → Ti
     (by rw [List.getElem_replicate]; exact hA _ _ _ _)
   simp only [List.getElem_replicate, Finset.filter_empty] at hin₁
   -- It is handled by the sender.
-  obtain ⟨k₁, hk₁⟩ := hprog (A h w.sender s)
   have hsn : σ.eventTime w lookahead n = s := Solution.handled_time w σ lookahead hn
   have hafter₁ : s < A h w.sender s := w.network.after _ _ _ _ _ (hA h w.sender s 0)
-  have hnk₁ : n + 1 ≤ k₁ := by
+  have hafter₁' : A h w.sender s < A w.sender h (A h w.sender s) :=
+    w.network.after _ _ _ _ _ (hA w.sender h (A h w.sender s) 0)
+  have hk₁ : A h w.sender s < σ.eventTime w lookahead k' := hafter₁'.trans hk'
+  have hnk₁ : n + 1 ≤ k' := by
     by_contra hcon
     have hmono := Solution.eventTime_mono w σ lookahead (Nat.lt_succ_iff.mp (not_le.mp hcon))
     rw [hsn] at hmono
@@ -173,21 +178,49 @@ theorem exchange_of_query (w : World H R) (lookahead : ℕ+) {A : H → H → Ti
     (by rw [List.getElem_replicate]; exact hA _ _ _ _)
   simp only [List.getElem_replicate, Finset.filter_empty] at hin₂
   -- It is handled by the querying host.
-  obtain ⟨k₂, hk₂⟩ := hprog (A w.sender h s₀)
+  have hk₂ : A w.sender h s₀ < σ.eventTime w lookahead k' := by
+    rw [← hdel]
+    exact hk'
   have hs₀n : σ.eventTime w lookahead n₀ = s₀ := Solution.handled_time w σ lookahead hh₀
   have hafter₂ : s₀ < A w.sender h s₀ := w.network.after _ _ _ _ _ (hA w.sender h s₀ 0)
-  have hnk₂ : n₀ + 1 ≤ k₂ := by
+  have hnk₂ : n₀ + 1 ≤ k' := by
     by_contra hcon
     have hmono := Solution.eventTime_mono w σ lookahead (Nat.lt_succ_iff.mp (not_le.mp hcon))
     rw [hs₀n] at hmono
     linarith
   obtain ⟨i₂, -, hi₂, hh₂⟩ := Solution.handled_before w σ lookahead hin₂ hnk₂ hk₂
   simp only at hh₂
-  refine ⟨k₂, fun k' hk' => ?_⟩
-  have hmem := Solution.mem_views_of_handled w σ lookahead hh₂ (lt_of_lt_of_le hi₂ hk')
+  have hmem := Solution.mem_views_of_handled w σ lookahead hh₂ hi₂
   have hex := Controller.plainExchangesOf_mem hmem (i := w.sender) (sent := sent₀)
     (received := (w.clock w.sender).read s₀) (F := ∅) rfl
   rw [hsent, ← hdel] at hex
   exact hex
+
+/-- **A clock query that no later query overtakes yields an exchange.**
+Consider a world in which no message is lost and a message from `i` to `j`
+sent at `s` arrives at `A i j s`, and whose run advances past every true
+time. A host `h` sends a clock query at true time `s`, and every later query
+of `h` reaches the sender later than this one. Then, from some step on, the
+view of `h` holds the exchange of this query: the reading of `h` at `s`, the
+sender's reading when the query arrived, and the reading of `h` when the
+answer arrived. -/
+theorem exchange_of_query (w : World H R) (lookahead : ℕ+) {A : H → H → Time → Time}
+    (hA : ∀ i j s q, w.network.deliver i j s q = some (A i j s))
+    (hsender : p.sender = w.sender) (hcopies : 0 < p.copies)
+    (hprog : ∀ T, ∃ n, T < (solution p : Solution H R Payload).eventTime w lookahead n)
+    {n : ℕ} {h : H} {s : Time} {r : Fin R} {outs : List ℕ} {st : ℝ}
+    (hn : (solution p : Solution H R Payload).handled w lookahead n
+      = some (h, s, .asked r outs st))
+    (hask : asks p h (memoryOf p h
+      (((solution p : Solution H R Payload).states w lookahead n).views h))
+      ((w.clock h).read s) = true)
+    (hstrict : ∀ s', s < s' → A h w.sender s < A h w.sender s') :
+    ∃ k, ∀ k', k ≤ k' →
+      (⟨(w.clock h).read s, (w.clock w.sender).read (A h w.sender s),
+          (w.clock h).read (A w.sender h (A h w.sender s))⟩ : Controller.Exchange)
+        ∈ Controller.plainExchangesOf (((solution p : Solution H R Payload).states w lookahead k').views h) := by
+  obtain ⟨k₂, hk₂⟩ := hprog (A w.sender h (A h w.sender s))
+  exact ⟨k₂, fun k' hk' => exchange_of_query_before p w lookahead hA hsender hcopies hn hask
+    hstrict (lt_of_lt_of_le hk₂ (Solution.eventTime_mono w _ lookahead hk'))⟩
 
 end Unisono.Solutions.FixedDelay

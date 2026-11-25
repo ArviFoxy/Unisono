@@ -204,8 +204,21 @@ simulation and integration tests (see `PRINCIPLES.md`):
     `lean/Unisono/Spec/Models/GenerativeShift.lean`), and the mean of the
     long-run average of a quantity of what is drawn, read from equally
     spaced true times, is at most the mean of the quantity
-    (`Prior.lintegral_limsup_shift`). No cost of the combined solution is
-    bounded yet. The cost of a held
+    (`Prior.lintegral_limsup_shift`). While nothing disturbs the stream to a
+    speaker (no pause of the two hosts or of the links between them is in
+    effect, and the rates of the four clocks stay within bands), a host has
+    an estimate of the sender's clock from the arrivals, the interval check
+    holds, and the estimate is below the sender's clock by the least delay
+    of the stream minus half of the least round trip, within bounds that
+    close with the width of the bands
+    (`Unisono.Solutions.Controller.envelopeReading_of_undisturbed` in
+    `lean/Unisono/Solutions/Controller/IdleEstimate.lean`). Playback that
+    follows a chosen position within the step bound does not break once
+    the chosen position stays near a sequence that advances by one frame
+    per output sample within a smaller bound
+    (`Unisono.Spec.followed_near_settles` in
+    `lean/Unisono/Spec/FollowerNear.lean`). No cost of the combined
+    solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose
     block is late (`Unisono.Solutions.Controller.cost_le_of_heldLevel` in
