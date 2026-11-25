@@ -57,6 +57,7 @@ public import Unisono.Solutions.Controller.Targets
 public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.EstimateStep
 public import Unisono.Solutions.Controller.Checked
+public import Unisono.Solutions.Controller.Late
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views

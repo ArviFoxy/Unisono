@@ -60,6 +60,7 @@ public import Unisono.Solutions.Controller.Targets
 public import Unisono.Solutions.Controller.ChosenLatency
 public import Unisono.Solutions.Controller.EstimateStep
 public import Unisono.Solutions.Controller.Checked
+public import Unisono.Solutions.Controller.Late
 public import Unisono.Solutions.Controller.Combined
 public import Unisono.Solutions.Controller.Undelayed
 public import Unisono.Solutions.Controller.Views
@@ -5061,6 +5062,22 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Solutions.Controller.timed_reading_upper' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Solutions.Controller.timed_reading_upper
+
+/-- info: 'Unisono.Solutions.Controller.timed_reading_lower' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_reading_lower
+
+/-- info: 'Unisono.Solutions.Controller.timed_chosen_bounds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_chosen_bounds
+
+/-- info: 'Unisono.Solutions.Controller.followed_silent_knot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.followed_silent_knot
+
+/-- info: 'Unisono.Solutions.Controller.timed_silent_room' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Solutions.Controller.timed_silent_room
 
 /-- info: 'Unisono.Solutions.Controller.margin_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
