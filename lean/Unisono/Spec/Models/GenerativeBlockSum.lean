@@ -84,6 +84,39 @@ theorem ofReal_mul_min_le {pc p₀ per cap : ℝ} (hpc : pc ≤ p₀) (hper : 0 
         · rw [mul_comm]
           exact mul_le_mul' (min_le_right _ _) le_rfl
 
+/-- **The room is not negative once the speaker has played.** In one outcome
+of any member, for a solution whose hosts exchange messages only with the
+sender and a speaker whose host is not the sender's: if the speaker has
+played the source before playback block `b`, the room before block `b` is
+not negative. The position played last needs frames of capture blocks whose
+messages arrived before the request of an earlier block. -/
+theorem Builds.room_nonneg (hB : m.Builds f d w)
+    (hpos : ∀ i j, 0 ≤ d.split i j * f.roundTrip i j)
+    (hlink : ∀ i j, Monotone (d.linkPaused i j)) (hhost : ∀ h, Monotone (d.hostPaused h))
+    (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R}
+    (hr : m.host r ≠ m.sender) {b : ℕ} {xLast : ℝ}
+    (hlast : lastPlayed (σ.plays w lookahead r) (b * m.blockSize) = some xLast) :
+    0 ≤ room m f d w lookahead (σ.plays w lookahead r) r b := by
+  obtain ⟨htr, hplay⟩ := lastPlayed_some hlast
+  have hex := hB.exists_le_handed ((w.speaker r).asked b
+    - d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r))
+  have hc := w.le_handed_blockFrom hex
+  have harr := hB.le_arrival m.sender (m.host r) (w.source.handed (w.blockFrom
+    ((w.speaker r).asked b - d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r))))
+  have hk : (b * m.blockSize - 1 - trailing (σ.plays w lookahead r) (b * m.blockSize))
+      / m.blockSize ≤ b := by
+    have h1 : b * m.blockSize - 1 - trailing (σ.plays w lookahead r) (b * m.blockSize)
+        < b * m.blockSize := by omega
+    exact ((Nat.div_lt_iff_lt_mul m.blockSize_pos).mpr h1).le
+  have hle := hB.le_of_plays_before hpos hlink hhost σ hstar lookahead hr
+    (c := w.blockFrom ((w.speaker r).asked b
+      - d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)))
+    (β := b) (by linarith) hk hplay
+  unfold room
+  rw [hlast]
+  simp only [Option.getD_some]
+  linarith
+
 /-- **The latency of the first playback blocks of a speaker, weighted as the
 cost weights it.** In one outcome of any member, for a solution whose hosts
 exchange messages only with the sender and a speaker whose host is not the
@@ -93,8 +126,9 @@ blocks `b` let `pr b` be at least the time between two output samples of the
 block, and `pc b`, with `0 ≤ pc b ≤ p₀`, at most the time between two frames
 captured from `Gcap` before the block to the request of the next block. Then
 the sum over the blocks of `pc b * s * (blockSize - 1)` times the smaller of
-`roomLatency` (at the room before block `b + 1`; zero if negative) and
-`Gcap` is at most the sum of three terms. The first is the sum, over the
+`roomLatency` and `Gcap` is at most the sum of three terms; `roomLatency` is
+taken at the room before block `b + 1`, or at zero if that room is
+negative, and counts as zero if it is negative. The first is the sum, over the
 frames that the steps before output sample `N * blockSize` pass on new
 ground, of the latency of the frame times the time until the next frame is
 captured, plus `Gcap` times the amount by which that time is shorter than
@@ -118,7 +152,7 @@ theorem Builds.sum_blocks_le_latency (hB : m.Builds f d w)
       pc b ≤ w.source.capture (i + 1) - w.source.capture i) :
     ∑ b ∈ Finset.range N, ENNReal.ofReal (pc b * (s * ((m.blockSize : ℝ) - 1)
         * min (max (roomLatency m f d w lookahead r s (pc b) (pr b) b
-          (room m f d w lookahead (σ.plays w lookahead r) r (b + 1))) 0) Gcap))
+          (max (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0)) 0) Gcap))
       ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) 0 (N * m.blockSize),
           (w.latencyAt (σ.plays w lookahead) r n
               * ENNReal.ofReal (w.source.capture (n + 1) - w.source.capture n)
@@ -201,7 +235,7 @@ theorem Builds.sum_blocks_le_latency (hB : m.Builds f d w)
   have hblock : ∀ b ∈ Finset.range N,
       ENNReal.ofReal (pc b * (s * ((m.blockSize : ℝ) - 1)
           * min (max (roomLatency m f d w lookahead r s (pc b) (pr b) b
-            (room m f d w lookahead (σ.plays w lookahead r) r (b + 1))) 0) Gcap))
+            (max (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0)) 0) Gcap))
         ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
               ((b + 1) * m.blockSize - 1),
             (w.latencyAt (σ.plays w lookahead) r n
@@ -211,6 +245,49 @@ theorem Builds.sum_blocks_le_latency (hB : m.Builds f d w)
           + ENNReal.ofReal (p₀ * err b) := by
     intro b hb
     have hbN := Finset.mem_range.mp hb
+    rcases lt_or_ge (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0
+      with hroom | hroom
+    · -- Nothing was played before block `b + 1`: the loss of the block covers the bound.
+      have hnone : lastPlayed (σ.plays w lookahead r) ((b + 1) * m.blockSize) = none := by
+        cases hl : lastPlayed (σ.plays w lookahead r) ((b + 1) * m.blockSize) with
+        | none => rfl
+        | some x =>
+          exact absurd (hB.room_nonneg hpos hlink hhost σ hstar lookahead hr hl)
+            (not_le.mpr hroom)
+      have hall := eq_none_of_lastPlayed_none hnone
+      have hcount : newGroundCount (σ.plays w lookahead r) (b * m.blockSize)
+          ((b + 1) * m.blockSize - 1) = 0 :=
+        newGroundCount_of_none _ _ fun k hk => hall k (by omega)
+      have hAb : cntA b = (m.blockSize : ℝ) - 1 := by
+        rw [hcntA]
+        simp only
+        rw [hcount]
+        simp
+      have hmin : min (max (roomLatency m f d w lookahead r s (pc b) (pr b) b
+          (max (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0)) 0) Gcap
+          ≤ Gcap := min_le_right _ _
+      have hmin0 : 0 ≤ min (max (roomLatency m f d w lookahead r s (pc b) (pr b) b
+          (max (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0)) 0) Gcap :=
+        le_min (le_max_right _ _) hcap
+      have hsB : (0 : ℝ) ≤ s * ((m.blockSize : ℝ) - 1) := mul_nonneg hs0 hB1
+      have hT : 0 ≤ s * ((m.blockSize : ℝ) - 1) * (p₀ * (s * cntC b + cntM b)) :=
+        mul_nonneg hsB (mul_nonneg hp₀ (add_nonneg (mul_nonneg hs0 (hC0 b)) (hM0 b)))
+      have herrge : s * ((m.blockSize : ℝ) - 1) * Gcap ≤ err b := by
+        rw [herr]
+        simp only
+        rw [hAb]
+        have h1 : (0 : ℝ) ≤ ((m.blockSize : ℝ) - 1) * Gcap := mul_nonneg hB1 hcap
+        have h2 : (0 : ℝ) ≤ s * (((m.blockSize : ℝ) - 1) * Gcap) := mul_nonneg hs0 h1
+        have h3 : (0 : ℝ) ≤ (1 + s) * Gcap := mul_nonneg (by linarith) hcap
+        have e : ((1 + 2 * s) * ((m.blockSize : ℝ) - 1) + (1 + s)) * Gcap
+            = s * ((m.blockSize : ℝ) - 1) * Gcap + (s * (((m.blockSize : ℝ) - 1) * Gcap)
+              + ((m.blockSize : ℝ) - 1) * Gcap + (1 + s) * Gcap) := by ring
+        rw [e]
+        linarith
+      refine le_trans (ENNReal.ofReal_le_ofReal ?_) le_add_self
+      exact (mul_le_mul (hpcle b hbN) (mul_le_mul_of_nonneg_left hmin hsB)
+        (mul_nonneg hsB hmin0) hp₀).trans (mul_le_mul_of_nonneg_left herrge hp₀)
+    rw [max_eq_left hroom]
     have h := hB.le_sum_min_add_loss hpos hlink hhost σ hstar lookahead hr hs0 hslow b
       (hpc0 b hbN) hcap (hpr b hbN) (hpc b hbN)
     have hloc0 : 0 ≤ ((1 + 2 * s) * cntA b + (1 + s)) * Gcap
@@ -310,7 +387,7 @@ theorem Builds.sum_blocks_le_latency (hB : m.Builds f d w)
     linarith
   calc ∑ b ∈ Finset.range N, ENNReal.ofReal (pc b * (s * ((m.blockSize : ℝ) - 1)
           * min (max (roomLatency m f d w lookahead r s (pc b) (pr b) b
-            (room m f d w lookahead (σ.plays w lookahead r) r (b + 1))) 0) Gcap))
+            (max (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)) 0)) 0) Gcap))
       ≤ ∑ b ∈ Finset.range N,
           (∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
                 ((b + 1) * m.blockSize - 1),
