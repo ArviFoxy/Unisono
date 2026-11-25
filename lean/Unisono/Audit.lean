@@ -21,6 +21,7 @@ public import Unisono.Answers
 public import Unisono.Model.Exchange
 public import Unisono.Model.Gains
 public import Unisono.Model.Level
+public import Unisono.Model.Descent
 public import Unisono.Model.LineFit
 public import Unisono.Model.Regulation
 public import Unisono.Model.RegulationRandom
@@ -823,6 +824,38 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Model.Level.move_pays_iff' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Model.Level.move_pays_iff
+
+/-- info: 'Unisono.Model.Descent.clampTo_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.clampTo_mem
+
+/-- info: 'Unisono.Model.Descent.abs_clampTo_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.abs_clampTo_sub_le
+
+/-- info: 'Unisono.Model.Descent.mem_of_rule' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.mem_of_rule
+
+/-- info: 'Unisono.Model.Descent.abs_succ_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.abs_succ_sub_le
+
+/-- info: 'Unisono.Model.Descent.sum_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.sum_sub_le
+
+/-- info: 'Unisono.Model.Descent.abs_needSlope_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.abs_needSlope_le
+
+/-- info: 'Unisono.Model.Descent.needCost_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.needCost_sub_le
+
+/-- info: 'Unisono.Model.Descent.sum_needCost_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Model.Descent.sum_needCost_sub_le
 
 /-- info: 'Unisono.Model.SupportLine.estimate_isGreatest' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

@@ -1,6 +1,6 @@
 # The theorems
 
-All 1323 theorems indexed below live in `lean/Unisono` and are checked in
+All 1331 theorems indexed below live in `lean/Unisono` and are checked in
 `lean/Unisono/Audit.lean`, which pins the axioms each proof depends on via
 `#guard_msgs` and `#print axioms`. Every theorem depends solely on Lean's three
 standard classical axioms (`propext`, `Classical.choice`, `Quot.sound`). The
@@ -280,6 +280,7 @@ directly on `Unisono.Spec.Solution` and `Unisono.Spec.Objectives`.
 | `Model.RegulationRandom.mean_cost_sum`, `mean_cost_law_le`, `mean_value_law_le`, `mean_cost_rate`, `mean_square_split`, `unforeseen_revision`, `distance_step`, `unforeseen_pace` | `Model.RegulationRandom` | Stochastic separation and long-run cost minimization of the linear regulation law in the single-mode quadratic model under arbitrary martingale (unforeseen) schedule revisions. |
 | `Model.Gains.gains_close`, `gains_of_integers`, `law_close`, `planned`, `cost_of_distance` | `Model.Gains` | Exact closeness bounds between integer floor-rounded gains/planned cycle reads and the real-valued regulation law, plus quadratic cost of deviation from the law. |
 | `Model.Level.measure_largest`, `measure_largest_le`, `integral_predictive`, `volume_missed`, `missed_le`, `missed_ge`, `volume_lasts`, `move_pays_iff` | `Model.Level` | After `N` observed stretches, exchangeable next-stretch exceedance probability is at most `1 / (N + 1)`; predictive cost integral, pause-duration missed-time bounds, and break-even criterion for changing playout level. |
+| `Model.Descent.clampTo_mem`, `abs_clampTo_sub_le`, `mem_of_rule`, `abs_succ_sub_le`, `sum_sub_le`, `abs_needSlope_le`, `needCost_sub_le`, `sum_needCost_sub_le` | `Model.Descent` | **Choosing a value step by step without a model of what comes** (`sum_sub_le`). No world model: the statements hold for every sequence of costs. A value `x t` is chosen for each `t`; afterwards a cost `f t` of the choice is known. The rule starts at `x₀` and sets value `t + d + 1` to value `t + d` minus the step `η > 0` times a slope `g t` of the cost of choice `t`, moved into the interval from `lo` to `hi` (`clampTo`); the slope of a choice is used `d` choices later. If each slope bounds its cost from above against a fixed value `z` of the interval, `f t (x t) - f t z ≤ g t * (x t - z)`, as a slope of a convex cost does, and every slope is at most `G` in absolute value, then over the first `T` choices the rule costs at most what `z` costs, plus `(x₀ - z) ^ 2 / (2 * η)`, plus `η * G ^ 2 * (1 / 2 + d)` for each choice; and two values in a row differ by at most `η * G` (`abs_succ_sub_le`). The case meant for the level of a playback: a stretch with the need `y` costs `a * l + c * max (y - l) 0` at the level `l` (`needCost`), which lies above its slope line (`needCost_sub_le`), so the rule applied to the needs is within `η * (max a c) ^ 2 * (1 / 2 + d)` per stretch of every fixed level in the long run, whatever the needs are (`sum_needCost_sub_le`). Nothing here is about a solution of the specification yet: the controller does not use this rule. |
 
 ### 2.2 Multi-speaker modal control (`Analysis.ModalControl`)
 
