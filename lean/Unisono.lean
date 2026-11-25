@@ -137,6 +137,13 @@ public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GaussianLaw
 public import Unisono.Spec.Models.GenerativeShift
+public import Unisono.Spec.Models.DyadicLimit
+public import Unisono.Spec.Models.ContinuousModification
+public import Unisono.Spec.Models.StationaryGaussian
+public import Unisono.Spec.Models.ClockAdvance
+public import Unisono.Spec.Models.ProposedWorld
+public import Unisono.Spec.Models.ProposedBuild
+public import Unisono.Spec.Models.ProposedExists
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
 public import Unisono.Spec.Models.GenerativeResamplePauses

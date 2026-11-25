@@ -138,6 +138,13 @@ public import Unisono.Spec.Models.GenerativeProgress
 public import Unisono.Spec.Models.GenerativeClocks
 public import Unisono.Spec.Models.GaussianLaw
 public import Unisono.Spec.Models.GenerativeShift
+public import Unisono.Spec.Models.DyadicLimit
+public import Unisono.Spec.Models.ContinuousModification
+public import Unisono.Spec.Models.StationaryGaussian
+public import Unisono.Spec.Models.ClockAdvance
+public import Unisono.Spec.Models.ProposedWorld
+public import Unisono.Spec.Models.ProposedBuild
+public import Unisono.Spec.Models.ProposedExists
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
 public import Unisono.Spec.Models.GenerativeResamplePauses
@@ -2639,6 +2646,382 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.lintegral_limsup_shift' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.lintegral_limsup_shift
+
+/-- info: 'Unisono.Spec.dyadicFloor_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.dyadicFloor_le
+
+/-- info: 'Unisono.Spec.lt_dyadicFloor_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lt_dyadicFloor_add
+
+/-- info: 'Unisono.Spec.abs_dyadicFloor_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.abs_dyadicFloor_sub_le
+
+/-- info: 'Unisono.Spec.floor_succ_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.floor_succ_eq
+
+/-- info: 'Unisono.Spec.floor_mem_range' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.floor_mem_range
+
+/-- info: 'Unisono.Spec.StepsWithin.abs_succ_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.abs_succ_sub_le
+
+/-- info: 'Unisono.Spec.StepsWithin.abs_sub_le_of_near' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.abs_sub_le_of_near
+
+/-- info: 'Unisono.Spec.StepsWithin.tendsto_dyadicLimit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.tendsto_dyadicLimit
+
+/-- info: 'Unisono.Spec.StepsWithin.abs_sub_dyadicLimit_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.abs_sub_dyadicLimit_le
+
+/-- info: 'Unisono.Spec.StepsWithin.abs_dyadicLimit_sub_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.abs_dyadicLimit_sub_le
+
+/-- info: 'Unisono.Spec.StepsWithin.continuousOn_dyadicLimit' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.StepsWithin.continuousOn_dyadicLimit
+
+/-- info: 'Unisono.Spec.abs_le_add_pow_four_div' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.abs_le_add_pow_four_div
+
+/-- info: 'Unisono.Spec.stepPowers_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepPowers_nonneg
+
+/-- info: 'Unisono.Spec.stepBound_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepBound_nonneg
+
+/-- info: 'Unisono.Spec.stepsWithin_stepBound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepsWithin_stepBound
+
+/-- info: 'Unisono.Spec.measurable_stepPowers' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_stepPowers
+
+/-- info: 'Unisono.Spec.measurable_stepBound' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_stepBound
+
+/-- info: 'Unisono.Spec.summable_iff_tsum_ofReal_ne_top' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.summable_iff_tsum_ofReal_ne_top
+
+/-- info: 'Unisono.Spec.measurableSet_summableSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurableSet_summableSteps
+
+/-- info: 'Unisono.Spec.exists_nat_abs_lt' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_nat_abs_lt
+
+/-- info: 'Unisono.Spec.continuous_continuousModification' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuous_continuousModification
+
+/-- info: 'Unisono.Spec.tendsto_continuousModification' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.tendsto_continuousModification
+
+/-- info: 'Unisono.Spec.measurable_continuousModification' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_continuousModification
+
+/-- info: 'Unisono.Spec.ae_mem_summableSteps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_mem_summableSteps
+
+/-- info: 'Unisono.Spec.continuousModification_ae_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuousModification_ae_eq
+
+/-- info: 'Unisono.Spec.pow_four_le_exp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.pow_four_le_exp
+
+/-- info: 'Unisono.Spec.exp_half_le_two' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exp_half_le_two
+
+/-- info: 'Unisono.Spec.lintegral_pow_four_gaussianReal_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_pow_four_gaussianReal_le
+
+/-- info: 'Unisono.Spec.lintegral_pow_four_le_of_hasGaussianLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_pow_four_le_of_hasGaussianLaw
+
+/-- info: 'Unisono.Spec.covariance_congr_ae' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.covariance_congr_ae
+
+/-- info: 'Unisono.Spec.exists_continuous_of_isGaussianProcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_continuous_of_isGaussianProcess
+
+/-- info: 'Unisono.Spec.exists_isPreBrownianReal' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_isPreBrownianReal
+
+/-- info: 'Unisono.Spec.exp_mul_exp_mul_min' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exp_mul_exp_mul_min
+
+/-- info: 'Unisono.Spec.scaledBrownian_isGaussianProcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.scaledBrownian_isGaussianProcess
+
+/-- info: 'Unisono.Spec.integral_scaledBrownian' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.integral_scaledBrownian
+
+/-- info: 'Unisono.Spec.covariance_scaledBrownian' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.covariance_scaledBrownian
+
+/-- info: 'Unisono.Spec.exists_stationary_gaussian' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.exists_stationary_gaussian
+
+/-- info: 'Unisono.Spec.stationaryLaw_of_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stationaryLaw_of_pos
+
+/-- info: 'Unisono.Spec.stationaryPath_of_pos' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stationaryPath_of_pos
+
+/-- info: 'Unisono.Spec.measurable_stationaryPath_apply' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_stationaryPath_apply
+
+/-- info: 'Unisono.Spec.measurable_stationaryPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_stationaryPath
+
+/-- info: 'Unisono.Spec.continuous_stationaryPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuous_stationaryPath
+
+/-- info: 'Unisono.Spec.stationaryPath_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stationaryPath_eq
+
+/-- info: 'Unisono.Spec.isGaussianProcess_stationaryPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.isGaussianProcess_stationaryPath
+
+/-- info: 'Unisono.Spec.integral_stationaryPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.integral_stationaryPath
+
+/-- info: 'Unisono.Spec.covariance_stationaryPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.covariance_stationaryPath
+
+/-- info: 'Unisono.Spec.lintegral_abs_stationaryPath_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_abs_stationaryPath_le
+
+/-- info: 'Unisono.Spec.isGaussianProcess_comp_hasLaw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.isGaussianProcess_comp_hasLaw
+
+/-- info: 'Unisono.Spec.isGaussianProcess_stationaryPath_comp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.isGaussianProcess_stationaryPath_comp
+
+/-- info: 'Unisono.Spec.integral_stationaryPath_comp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.integral_stationaryPath_comp
+
+/-- info: 'Unisono.Spec.covariance_stationaryPath_comp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.covariance_stationaryPath_comp
+
+/-- info: 'Unisono.Spec.lintegral_abs_stationaryPath_comp_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_abs_stationaryPath_comp_le
+
+/-- info: 'Unisono.Spec.clockAdvance_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_zero
+
+/-- info: 'Unisono.Spec.clockAdvance_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_sub
+
+/-- info: 'Unisono.Spec.clockAdvance_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_strictMono
+
+/-- info: 'Unisono.Spec.continuous_clockAdvance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.continuous_clockAdvance
+
+/-- info: 'Unisono.Spec.clockAdvance_surjective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_surjective
+
+/-- info: 'Unisono.Spec.clockAdvance_clockAdvanceTime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_clockAdvanceTime
+
+/-- info: 'Unisono.Spec.clockAdvanceTime_clockAdvance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvanceTime_clockAdvance
+
+/-- info: 'Unisono.Spec.clockAdvanceTime_strictMono' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvanceTime_strictMono
+
+/-- info: 'Unisono.Spec.le_integral_exp' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.le_integral_exp
+
+/-- info: 'Unisono.Spec.measure_integral_exp_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measure_integral_exp_le
+
+/-- info: 'Unisono.Spec.ae_tendsto_integral_exp_atTop' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_tendsto_integral_exp_atTop
+
+/-- info: 'Unisono.Spec.ae_tendsto_integral_exp_atBot' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_tendsto_integral_exp_atBot
+
+/-- info: 'Unisono.Spec.clockAdvance_const_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.clockAdvance_const_add
+
+/-- info: 'Unisono.Spec.ae_tendsto_clockAdvance' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ae_tendsto_clockAdvance
+
+/-- info: 'Unisono.Spec.lintegral_abs_sum_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.lintegral_abs_sum_le
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.reading_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.reading_eq
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.deviceReading_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.deviceReading_eq
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.clock_continuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.clock_continuous
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.device_continuous' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.device_continuous
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.clock_surjective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.clock_surjective
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.device_surjective' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.device_surjective
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.reading_timeOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.reading_timeOf
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.reading_deviceTime' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.reading_deviceTime
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.deviceTime_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.deviceTime_zero
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.deviceTime_strict' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.deviceTime_strict
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.hostBacklog_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.hostBacklog_nonneg
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.linkBacklog_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.linkBacklog_nonneg
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.lt_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.lt_reaches
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.reaches_le_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.reaches_le_observed
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.reach_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.reach_mem
+
+/-- info: 'Unisono.Spec.ProposedWorld.drawWorld_builds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.drawWorld_builds
+
+/-- info: 'Unisono.Spec.ProposedWorld.IsEpisodePath.comp_ae_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.IsEpisodePath.comp_ae_eq
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.comp_ae_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.comp_ae_eq
+
+/-- info: 'Unisono.Spec.ProposedWorld.dropLaw_true' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.dropLaw_true
+
+/-- info: 'Unisono.Spec.ProposedWorld.dropLaw_prob' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.dropLaw_prob
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_partMap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_partMap
+
+/-- info: 'Unisono.Spec.ProposedWorld.canonicalDraw_part' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.canonicalDraw_part
+
+/-- info: 'Unisono.Spec.ProposedWorld.isEpisodePath_tamePath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.isEpisodePath_tamePath
+
+/-- info: 'Unisono.Spec.ProposedWorld.isEpisodePath_pausedPath' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.isEpisodePath_pausedPath
+
+/-- info: 'Unisono.Spec.ProposedWorld.canonicalDraw_prior' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.canonicalDraw_prior
+
+/-- info: 'Unisono.Spec.ProposedWorld.ae_regular' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.ae_regular
+
+/-- info: 'Unisono.Spec.ProposedWorld.exists_holds' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.exists_holds
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

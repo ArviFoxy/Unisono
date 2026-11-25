@@ -297,6 +297,22 @@ simulation and integration tests (see `PRINCIPLES.md`):
     comes from the unknown split of each round trip is proved only for
     noiseless members. The controller does not yet change its pace
     smoothly or choose the level.
+  - A generative model with jitter, loss and kernel stamps, proposed and
+    under review (`Unisono.Spec.ProposedWorld` in
+    `lean/Unisono/Spec/Models/ProposedWorld.lean`). It replaces nothing in
+    the specification until it is reviewed. Every link has a jitter that is
+    redrawn at the instants of a Poisson process, outages, and single losses
+    of messages; the wander of a clock has several parts; the compared
+    solutions stay within a limit of the bandwidth. Every member of it has
+    a random world (`Unisono.Spec.ProposedWorld.exists_holds` in
+    `lean/Unisono/Spec/Models/ProposedExists.lean`). The proof needs a
+    stationary Gaussian process with exponential covariance and continuous
+    paths (`Unisono.Spec.exists_stationary_gaussian` in
+    `lean/Unisono/Spec/Models/StationaryGaussian.lean`) and that a clock
+    whose rate wanders advances without bound almost surely
+    (`Unisono.Spec.ae_tendsto_clockAdvance` in
+    `lean/Unisono/Spec/Models/ClockAdvance.lean`). No statement about the
+    cost of a solution is proved under this model.
 - **Supplementary analytical theorems (side models outside `Unisono.Spec`):**
   - Component and centralized/oracle analyses in `lean/Unisono/Model/*` and
     `lean/Unisono/Analysis/*` (per-cycle quadratic modal control on
@@ -456,6 +472,13 @@ optimal.
 | `GenerativeWorld.Member.SteadyHosts` | A member with steady clocks whose hosts never pause, so that every host handles the events of its audio devices when they occur. Its links may pause, with any laws of the lengths, and the mean rates of its clocks may be spread. Almost every outcome of such a member is in `ConstantRates`. | `lean/Unisono/Spec/Models/GenerativePauses.lean` |
 | `GenerativeWorld.ConstantRates` | An outcome in which no clock of a host or of an audio device wanders, the audio devices report exact timestamps and no host pauses. The clocks may run at different constant rates, and links may pause. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
 | `GenerativeWorld.ConstantDelays` | `ConstantRates` with no pauses, so that every message takes the least delay of its direction. | `lean/Unisono/Spec/Models/GenerativeRates.lean` |
+
+One more model is proposed and under review: `ProposedWorld`
+(`lean/Unisono/Spec/Models/ProposedWorld.lean`), the generative model with a
+jitter of every link, outages and single losses of messages, the kernel's
+stamp of an arrival, clocks whose wander has several parts, and a limit of
+the bandwidth for the compared solutions. It is not an approved model. The
+only result under it is that each of its members has a random world.
 
 ## Layout
 
