@@ -2251,6 +2251,14 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.sum_lintegral_le
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.sum_cellValue_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.sum_cellValue_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.cellsCost_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.cellsCost_le
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Prior.sum_cells_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Prior.sum_cells_le

@@ -130,8 +130,9 @@ and `(j + 1) * ℓ + δ`, where `δ` is the least delay of the link, and let
 Let `φ` be a measurable function of the room, `w'` a weight, and `SC` a
 measurable set of draws. Then the mean of `φ` of the room before block `β₀`
 in the world `w ω` (zero if negative), plus `w'` times the missed samples
-and `s` times the discontinuities of the window of the cell where the draw
-without the pauses of the cell is in `SC`, is at least `exp (-count)` times
+and `s` times the discontinuities of the window of the cell, counted up to
+`s * Nbar * blockSize`, where the draw without the pauses of the cell is in
+`SC`, is at least `exp (-count)` times
 the mean of: where that draw is in `SC`, the least over the rooms `ρ ≥ 0`
 of `φ ρ` plus `count` times the mean over the length `x` of one pause of
 `w'` times what such a pause costs at least with the room `ρ`; elsewhere,
@@ -171,10 +172,11 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
             (σ.plays (w ω) lookahead r) r β₀) 0)
           + (if frameOutside m d₁ (D ω) r ℓ j ∈ SC then
               w' * ENNReal.ofReal
-                (∑ k ∈ cellSamples (w₁.speaker r).asked ℓ δ Xmax Nbar m.blockSize j
+                (min (∑ k ∈ cellSamples (w₁.speaker r).asked ℓ δ Xmax Nbar m.blockSize j
                     (cellIncrement m (D ω) r ℓ j),
                   ((missedAt (σ.plays (w ω) lookahead r) k : ℝ)
                     + s * (discontinuityAt (σ.plays (w ω) lookahead r) k : ℝ)))
+                  (s * ((Nbar : ℝ) * m.blockSize)))
             else 0)) ∂P := by
   have := hD.prob
   have := f.linkPauseLength_prob m.sender (m.host r)
@@ -269,7 +271,7 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
     · by_cases hC : d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
           (((j : ℝ) + 1) * ℓ)) ∈ SC
       · rw [ite_eq_left hC, ite_eq_left hC]
-        refine mul_le_mul' le_rfl (ENNReal.ofReal_le_ofReal ?_)
+        refine mul_le_mul' le_rfl (ENNReal.ofReal_le_ofReal (le_min ?_ ?_))
         have hsame : (d₁.withPaused ((D ω).linkOutside m.sender (m.host r) ((j : ℝ) * ℓ)
             (((j : ℝ) + 1) * ℓ))).SameExceptLinkFrom (d₁.withPaused (D ω)) m.sender
             (m.host r) ((j : ℝ) * ℓ) :=
@@ -284,6 +286,16 @@ theorem Prior.cell_mean_ge {Msg : Type} (hD : m.Prior f P D) (hm : AEMeasurable 
             exact husable)
         rw [hspk, ← hβ₀, hRout] at hstall
         exact hstall
+        have h1 : ((windowCount (w₁.speaker r).asked ℓ δ Xmax Nbar j
+            ((D ω).linkPaused m.sender (m.host r) (((j : ℝ) + 1) * ℓ)
+              - (D ω).linkPaused m.sender (m.host r) ((j : ℝ) * ℓ)) : ℕ) : ℝ)
+            ≤ (Nbar : ℝ) := by
+          exact_mod_cast windowCount_le _ ℓ δ Xmax Nbar j _
+        have h2 := hρ0 (d₁.withPaused ((D ω).linkOutside m.sender (m.host r)
+          ((j : ℝ) * ℓ) (((j : ℝ) + 1) * ℓ)))
+        have h3 : (0 : ℝ) ≤ (m.blockSize : ℝ) := Nat.cast_nonneg _
+        have h4 := mul_le_mul_of_nonneg_left (mul_le_mul_of_nonneg_right h1 h3) hs0
+        linarith
       · rw [ite_eq_right hC, ite_eq_right hC]
 
 end Unisono.Spec.GenerativeWorld
