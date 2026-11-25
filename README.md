@@ -155,7 +155,12 @@ simulation and integration tests (see `PRINCIPLES.md`):
     the error of that estimate
     (`Unisono.Solutions.Controller.combined`, `combined_withinStep` in
     `lean/Unisono/Solutions/Controller/Combined.lean`, `timed_chosen` in
-    `lean/Unisono/Solutions/Controller/Timing.lean`). No cost of that
+    `lean/Unisono/Solutions/Controller/Timing.lean`). For any solution
+    whose playback follows what it chooses in this way, the missed samples
+    and the discontinuities are bounded by the number of output samples
+    that play nothing and by the irregular steps of what it chooses
+    (`Unisono.Spec.Solution.followed_sum_missedAt_le` in
+    `lean/Unisono/Spec/FollowerRun.lean`). No cost of the combined
     solution is bounded yet. The cost of a held
     level is at most the cost of the speakers' latencies plus a multiple of
     the late rate, the long-run number of output samples per second whose

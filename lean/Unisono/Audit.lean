@@ -77,6 +77,10 @@ public import Unisono.Spec.Held
 public import Unisono.Spec.Limiter
 public import Unisono.Spec.Follower
 public import Unisono.Spec.OwnEvents
+public import Unisono.Spec.PlayedSteps
+public import Unisono.Spec.FollowerSteps
+public import Unisono.Spec.FollowerCost
+public import Unisono.Spec.FollowerRun
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
@@ -4192,6 +4196,146 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.World.knotTime_left' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.World.knotTime_left
+
+/-- info: 'Unisono.Spec.missedAt_le_abs' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_le_abs
+
+/-- info: 'Unisono.Spec.World.captured_of_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_of_mem
+
+/-- info: 'Unisono.Spec.World.mul_le_captured_sub' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.mul_le_captured_sub
+
+/-- info: 'Unisono.Spec.World.captured_sub_le_mul' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.captured_sub_le_mul
+
+/-- info: 'Unisono.Spec.World.latency_eq_of_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.latency_eq_of_some
+
+/-- info: 'Unisono.Spec.World.latency_between' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.World.latency_between
+
+/-- info: 'Unisono.Spec.PlaybackDevice.block_unique' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.block_unique
+
+/-- info: 'Unisono.Spec.PlaybackDevice.exists_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.exists_block
+
+/-- info: 'Unisono.Spec.PlaybackDevice.mem_blockOf' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.mem_blockOf
+
+/-- info: 'Unisono.Spec.PlaybackDevice.blockOf_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.blockOf_eq
+
+/-- info: 'Unisono.Spec.followStep_gap' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.followStep_gap
+
+/-- info: 'Unisono.Spec.Solution.chosen_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.chosen_eq
+
+/-- info: 'Unisono.Spec.Solution.plays_eq_playable_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_eq_playable_chosen
+
+/-- info: 'Unisono.Spec.Solution.stepped_chosen_succ' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_chosen_succ
+
+/-- info: 'Unisono.Spec.stepExcess_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepExcess_nonneg
+
+/-- info: 'Unisono.Spec.stepExcess_eq_zero_or' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepExcess_eq_zero_or
+
+/-- info: 'Unisono.Spec.abs_le_add_stepExcess' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.abs_le_add_stepExcess
+
+/-- info: 'Unisono.Spec.abs_sub_le_sum_steps' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.abs_sub_le_sum_steps
+
+/-- info: 'Unisono.Spec.Follows.target_of_some' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.target_of_some
+
+/-- info: 'Unisono.Spec.Follows.dist_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.dist_le
+
+/-- info: 'Unisono.Spec.Follows.step_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.step_le
+
+/-- info: 'Unisono.Spec.missedAt_of_lastPlayed_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.missedAt_of_lastPlayed_none
+
+/-- info: 'Unisono.Spec.Follows.missedAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.missedAt_le
+
+/-- info: 'Unisono.Spec.Follows.sum_missedAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.sum_missedAt_le
+
+/-- info: 'Unisono.Spec.Follows.discontinuityAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.discontinuityAt_le
+
+/-- info: 'Unisono.Spec.Follows.sum_discontinuityAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Follows.sum_discontinuityAt_le
+
+/-- info: 'Unisono.Spec.heldTarget_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.heldTarget_eq
+
+/-- info: 'Unisono.Spec.stepExcess_heldTarget_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.stepExcess_heldTarget_of_none
+
+/-- info: 'Unisono.Spec.PlaybackDevice.zero_mem_block' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.PlaybackDevice.zero_mem_block
+
+/-- info: 'Unisono.Spec.Solution.stepped_chosen_zero' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.stepped_chosen_zero
+
+/-- info: 'Unisono.Spec.Solution.followed_follows' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_follows
+
+/-- info: 'Unisono.Spec.Solution.plays_none_or_chosen' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.plays_none_or_chosen
+
+/-- info: 'Unisono.Spec.Solution.followed_progress' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_progress
+
+/-- info: 'Unisono.Spec.Solution.followed_sum_missedAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_sum_missedAt_le
+
+/-- info: 'Unisono.Spec.Solution.followed_sum_discontinuityAt_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.Solution.followed_sum_discontinuityAt_le
 
 /-- info: 'Unisono.Spec.Solution.stepped_isStar' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

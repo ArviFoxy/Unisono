@@ -75,6 +75,10 @@ public import Unisono.Spec.Held
 public import Unisono.Spec.Limiter
 public import Unisono.Spec.Follower
 public import Unisono.Spec.OwnEvents
+public import Unisono.Spec.PlayedSteps
+public import Unisono.Spec.FollowerSteps
+public import Unisono.Spec.FollowerCost
+public import Unisono.Spec.FollowerRun
 public import Unisono.Spec.Limits
 public import Unisono.Spec.MissingSamples
 public import Unisono.Spec.OutputRate
