@@ -682,4 +682,77 @@ theorem le_card_newFrames_mul {s : ℝ} (hs0 : 0 ≤ s)
     have h4 : 0 ≤ A * g' := mul_nonneg hA0 hg'
     linarith
 
+/-! ## The frames on new ground of different stretches -/
+
+/-- A frame on new ground of a step of a stretch is one of the frames of the
+stretch. -/
+theorem mem_newFrames_of {a k n : ℕ} (hak : a ≤ k) (hng : NewGround plays k)
+    (hlo : maxPlayed plays (k + 1) < n) (hhi : (n : ℝ) ≤ maxPlayed plays (k + 1 + 1)) :
+    ∀ c, k < c → n ∈ newFrames plays a c
+  | 0, h => absurd h (Nat.not_lt_zero k)
+  | j + 1, h => by
+    rcases Nat.lt_succ_iff_lt_or_eq.mp h with hlt | rfl
+    · have ih := mem_newFrames_of hak hng hlo hhi j hlt
+      by_cases hc : a ≤ j ∧ NewGround plays j
+      · rw [newFrames_succ_of hc]
+        exact Finset.mem_union_left _ ih
+      · rw [newFrames_succ_of_not hc]
+        exact ih
+    · rw [newFrames_succ_of ⟨hak, hng⟩]
+      refine Finset.mem_union_right _ (Finset.mem_Ioc.mpr ⟨?_, ?_⟩)
+      · exact (Nat.floor_lt (maxPlayed_nonneg plays (k + 1))).mpr hlo
+      · exact (Nat.le_floor_iff (maxPlayed_nonneg plays (k + 1 + 1))).mpr hhi
+
+/-- A longer stretch has the frames on new ground of a shorter one inside
+it. -/
+theorem newFrames_subset {a a' c c' : ℕ} (ha : a' ≤ a) (hc : c ≤ c') :
+    newFrames plays a c ⊆ newFrames plays a' c' := by
+  intro n hn
+  obtain ⟨k, hak, hkc, hng, hlo, hhi⟩ := exists_of_mem_newFrames a c n hn
+  exact mem_newFrames_of (ha.trans hak) hng hlo hhi c' (lt_of_lt_of_le hkc hc)
+
+/-- Two stretches of which the second starts where the first ends, or later,
+have no frame on new ground in common. -/
+theorem disjoint_newFrames {a b c e : ℕ} (hbc : b ≤ c) :
+    Disjoint (newFrames plays a b) (newFrames plays c e) := by
+  rw [Finset.disjoint_left]
+  intro n h1 h2
+  have hle := le_floor_of_mem_newFrames a b n h1
+  obtain ⟨k, hck, -, -, hlo, -⟩ := exists_of_mem_newFrames c e n h2
+  have hmono := maxPlayed_mono plays (show b + 1 ≤ k + 1 by omega)
+  have hfl : ((⌊maxPlayed plays (b + 1)⌋₊ : ℕ) : ℝ) ≤ maxPlayed plays (b + 1) :=
+    Nat.floor_le (maxPlayed_nonneg plays (b + 1))
+  have hn : (n : ℝ) ≤ ((⌊maxPlayed plays (b + 1)⌋₊ : ℕ) : ℝ) := by exact_mod_cast hle
+  linarith
+
+/-- **The frames on new ground of the blocks, summed block by block.** For
+blocks of `B` output samples and any cost of a frame that is not negative,
+the costs of the frames that the steps inside each of the first `N` blocks
+pass on new ground, summed over the blocks, are at most the costs of the
+frames that the steps before output sample `N * B` pass on new ground. The
+steps from the last output sample of a block to the first of the next are
+left out on the left. -/
+theorem sum_blocks_newFrames_le (g : ℕ → ENNReal) (B : ℕ) :
+    ∀ N, ∑ b ∈ Finset.range N, ∑ n ∈ newFrames plays (b * B) ((b + 1) * B - 1), g n
+      ≤ ∑ n ∈ newFrames plays 0 (N * B), g n
+  | 0 => by simp
+  | N + 1 => by
+    have ih := sum_blocks_newFrames_le g B N
+    have hsub₁ : newFrames plays 0 (N * B) ⊆ newFrames plays 0 ((N + 1) * B) :=
+      newFrames_subset le_rfl (Nat.mul_le_mul_right B (Nat.le_succ N))
+    have hsub₂ : newFrames plays (N * B) ((N + 1) * B - 1)
+        ⊆ newFrames plays 0 ((N + 1) * B) :=
+      newFrames_subset (Nat.zero_le _) (Nat.sub_le _ _)
+    have hdisj : Disjoint (newFrames plays 0 (N * B))
+        (newFrames plays (N * B) ((N + 1) * B - 1)) := disjoint_newFrames le_rfl
+    rw [Finset.sum_range_succ]
+    calc ∑ b ∈ Finset.range N, ∑ n ∈ newFrames plays (b * B) ((b + 1) * B - 1), g n
+          + ∑ n ∈ newFrames plays (N * B) ((N + 1) * B - 1), g n
+        ≤ ∑ n ∈ newFrames plays 0 (N * B), g n
+          + ∑ n ∈ newFrames plays (N * B) ((N + 1) * B - 1), g n := add_le_add ih le_rfl
+      _ = ∑ n ∈ newFrames plays 0 (N * B) ∪ newFrames plays (N * B) ((N + 1) * B - 1), g n :=
+          (Finset.sum_union hdisj).symm
+      _ ≤ ∑ n ∈ newFrames plays 0 ((N + 1) * B), g n :=
+          Finset.sum_le_sum_of_subset (Finset.union_subset hsub₁ hsub₂)
+
 end Unisono.Spec

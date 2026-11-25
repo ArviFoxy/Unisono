@@ -2283,6 +2283,22 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.le_card_newFrames_mul
 
+/-- info: 'Unisono.Spec.mem_newFrames_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.mem_newFrames_of
+
+/-- info: 'Unisono.Spec.newFrames_subset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newFrames_subset
+
+/-- info: 'Unisono.Spec.disjoint_newFrames' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.disjoint_newFrames
+
+/-- info: 'Unisono.Spec.sum_blocks_newFrames_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.sum_blocks_newFrames_le
+
 /-- info: 'Unisono.Spec.continuousBefore_le_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.continuousBefore_le_add
