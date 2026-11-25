@@ -194,7 +194,7 @@ theorem Builds.room_le_latency (hB : m.Builds f d w)
   exact h
 
 /-- **The latency of one playback block against the room, with its losses
-on the other side.** In the setting of `Builds.room_le_latency`, for every
+on the other side, and each latency counted up to the cap.** In the setting of `Builds.room_le_latency`, for every
 playback block `b`, whether or not the speaker has played the source by
 then. Let `G` be the least delay, plus the time from the request of block
 `b + 1` to its first output sample, plus `pc` times the room before block
@@ -202,11 +202,12 @@ then. Let `G` be the least delay, plus the time from the request of block
 positive part of `pr - s * pc`. Let `Gcap ≥ 0` be the cap. Then
 `s * (blockSize - 1)` times the smaller of `G` and `Gcap` (zero if `G` is
 negative) is at most the latencies of the frames that the steps inside block
-`b` pass on new ground, plus the losses of the block: `(1 + 2 s) * Gcap` for
+`b` pass on new ground, each counted up to `Gcap`, plus the losses of the
+block: `(1 + 2 s) * Gcap` for
 each of those steps that does not break new ground, `(1 + s) * Gcap`, and
 `s * (blockSize - 1) * pc` times: `s` for each step that is not continuous
 and one for each missed sample of the block. -/
-theorem Builds.le_sum_add_loss (hB : m.Builds f d w)
+theorem Builds.le_sum_min_add_loss (hB : m.Builds f d w)
     (hpos : ∀ i j, 0 ≤ d.split i j * f.roundTrip i j)
     (hlink : ∀ i j, Monotone (d.linkPaused i j)) (hhost : ∀ h, Monotone (d.hostPaused h))
     (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R}
@@ -228,7 +229,7 @@ theorem Builds.le_sum_add_loss (hB : m.Builds f d w)
               - 2 * pr
               - (m.blockSize : ℝ) * max (pr - s * pc) 0) 0) Gcap)
       ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize) ((b + 1) * m.blockSize - 1),
-          w.latencyAt (σ.plays w lookahead) r n
+          min (w.latencyAt (σ.plays w lookahead) r n) (ENNReal.ofReal Gcap)
         + ENNReal.ofReal
           (((1 + 2 * s) * ((m.blockSize : ℝ) - 1
                 - newGroundCount (σ.plays w lookahead r) (b * m.blockSize)
@@ -316,8 +317,9 @@ theorem Builds.le_sum_add_loss (hB : m.Builds f d w)
     have hframe : ∀ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize)
         ((b + 1) * m.blockSize - 1),
         ENNReal.ofReal (max (min Gcap (G - pen)) 0)
-          ≤ w.latencyAt (σ.plays w lookahead) r n := by
+          ≤ min (w.latencyAt (σ.plays w lookahead) r n) (ENNReal.ofReal Gcap) := by
       intro n hn
+      refine le_min ?_ (ENNReal.ofReal_le_ofReal (max_le (min_le_left _ _) hcap))
       obtain ⟨l, hl, hlt⟩ := hB.room_le_latency hpos hlink hhost σ hstar lookahead hr hs0
         hslow hlast hpc0 hpr hpc hn
       rw [← hG, ← hpen] at hlt
@@ -366,6 +368,57 @@ theorem Builds.le_sum_add_loss (hB : m.Builds f d w)
       push_cast
       nlinarith
     exact (ENNReal.ofReal_le_ofReal hbound).trans le_add_self
+
+/-- **The latency of one playback block against the room, with its losses
+on the other side.** In the setting of `Builds.room_le_latency`, for every
+playback block `b`, whether or not the speaker has played the source by
+then. Let `G` be the least delay, plus the time from the request of block
+`b + 1` to its first output sample, plus `pc` times the room before block
+`b + 1` and `lookahead - 1` frames, minus `2 * pr` and `blockSize` times the
+positive part of `pr - s * pc`. Let `Gcap ≥ 0` be the cap. Then
+`s * (blockSize - 1)` times the smaller of `G` and `Gcap` (zero if `G` is
+negative) is at most the latencies of the frames that the steps inside block
+`b` pass on new ground, plus the losses of the block: `(1 + 2 s) * Gcap` for
+each of those steps that does not break new ground, `(1 + s) * Gcap`, and
+`s * (blockSize - 1) * pc` times: `s` for each step that is not continuous
+and one for each missed sample of the block. -/
+theorem Builds.le_sum_add_loss (hB : m.Builds f d w)
+    (hpos : ∀ i j, 0 ≤ d.split i j * f.roundTrip i j)
+    (hlink : ∀ i j, Monotone (d.linkPaused i j)) (hhost : ∀ h, Monotone (d.hostPaused h))
+    (σ : Solution H R Msg) (hstar : σ.IsStar m.sender) (lookahead : ℕ+) {r : Fin R}
+    (hr : m.host r ≠ m.sender) {s : ℝ} (hs0 : 0 ≤ s)
+    (hslow : ∀ k x y, σ.plays w lookahead r k = some x →
+      σ.plays w lookahead r (k + 1) = some y → x < y → y < x + 2 → x + s ≤ y)
+    (b : ℕ) {pc pr Gcap : ℝ} (hpc0 : 0 ≤ pc) (hcap : 0 ≤ Gcap)
+    (hpr : ∀ k, b * m.blockSize ≤ k → k < (b + 1) * m.blockSize →
+      (w.speaker r).out (k + 1) - (w.speaker r).out k ≤ pr)
+    (hpc : ∀ i, (w.speaker r).out (b * m.blockSize) - Gcap < w.source.capture i →
+      w.source.capture (i + 1) ≤ (w.speaker r).asked (b + 1) →
+      pc ≤ w.source.capture (i + 1) - w.source.capture i) :
+    ENNReal.ofReal
+        (s * ((m.blockSize : ℝ) - 1)
+          * min (max (d.split m.sender (m.host r) * f.roundTrip m.sender (m.host r)
+              + ((w.speaker r).out ((b + 1) * m.blockSize) - (w.speaker r).asked (b + 1))
+              + pc * (room m f d w lookahead (σ.plays w lookahead r) r (b + 1)
+                + ((lookahead : ℕ) : ℝ) - 1)
+              - 2 * pr
+              - (m.blockSize : ℝ) * max (pr - s * pc) 0) 0) Gcap)
+      ≤ ∑ n ∈ newFrames (σ.plays w lookahead r) (b * m.blockSize) ((b + 1) * m.blockSize - 1),
+          w.latencyAt (σ.plays w lookahead) r n
+        + ENNReal.ofReal
+          (((1 + 2 * s) * ((m.blockSize : ℝ) - 1
+                - newGroundCount (σ.plays w lookahead r) (b * m.blockSize)
+                    ((b + 1) * m.blockSize - 1))
+              + (1 + s)) * Gcap
+            + s * ((m.blockSize : ℝ) - 1)
+              * (pc * (s * (((m.blockSize : ℝ) - 1)
+                    - ((continuousBefore (σ.plays w lookahead r)
+                          ((b + 1) * m.blockSize - 1) : ℝ)
+                      - continuousBefore (σ.plays w lookahead r) (b * m.blockSize)))
+                  + ((missedBefore (σ.plays w lookahead r) ((b + 1) * m.blockSize) : ℝ)
+                    - missedBefore (σ.plays w lookahead r) (b * m.blockSize))))) :=
+  (hB.le_sum_min_add_loss hpos hlink hhost σ hstar lookahead hr hs0 hslow b hpc0 hcap hpr
+    hpc).trans (add_le_add (Finset.sum_le_sum fun _ _ => min_le_left _ _) le_rfl)
 
 /-- **What paused time of the link costs, against the room of the world
 without it.** Take two draws that differ by pauses of the link from the

@@ -85,6 +85,8 @@ public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeDrawLaw
 public import Unisono.Spec.Models.GenerativeResample
+public import Unisono.Spec.Models.GenerativeBlockSum
+public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
@@ -1784,6 +1786,10 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.room_le_latency
 
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_sum_min_add_loss' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.le_sum_min_add_loss
+
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_sum_add_loss' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.Builds.le_sum_add_loss
@@ -2099,6 +2105,46 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.GenerativeWorld.ae_plays_linkOutside' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.GenerativeWorld.ae_plays_linkOutside
+
+/-- info: 'Unisono.Spec.GenerativeWorld.ofReal_mul_min_le' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.ofReal_mul_min_le
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.sum_blocks_le_latency' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.sum_blocks_le_latency
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Builds.capture_lt_out' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Builds.capture_lt_out
+
+/-- info: 'Unisono.Spec.GenerativeWorld.measurable_withPaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.measurable_withPaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.indepFun_withPaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.indepFun_withPaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.aemeasurable_resamplePaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.aemeasurable_resamplePaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.map_resamplePaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.map_resamplePaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.prior_resamplePaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.prior_resamplePaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.Prior.exists_resamplePaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.Prior.exists_resamplePaused
+
+/-- info: 'Unisono.Spec.GenerativeWorld.expectedCost_resamplePaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.GenerativeWorld.expectedCost_resamplePaused
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.le_of_plays_before' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

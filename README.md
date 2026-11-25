@@ -180,7 +180,11 @@ simulation and integration tests (see `PRINCIPLES.md`):
     the probability space gives a random world of the same member
     (`Unisono.Spec.GenerativeWorld.Prior.indepFun_linkOutside` and
     `Prior.prior_resample` in
-    `lean/Unisono/Spec/Models/GenerativeResample.lean`). These are not yet
+    `lean/Unisono/Spec/Models/GenerativeResample.lean`). The same holds
+    for all the pauses together, which leaves the clocks and the audio
+    devices of the first outcome in place (`Prior.prior_resamplePaused`
+    in `lean/Unisono/Spec/Models/GenerativeResamplePauses.lean`). These
+    are not yet
     combined into a lower bound on the expected cost of other solutions
     under pauses. The controller does not yet change its pace smoothly or
     choose the level.

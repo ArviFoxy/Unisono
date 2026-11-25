@@ -84,6 +84,8 @@ public import Unisono.Spec.Models.GenerativeRates
 public import Unisono.Spec.Models.GenerativeReflection
 public import Unisono.Spec.Models.GenerativeDrawLaw
 public import Unisono.Spec.Models.GenerativeResample
+public import Unisono.Spec.Models.GenerativeBlockSum
+public import Unisono.Spec.Models.GenerativeResamplePauses
 public import Unisono.Spec.Models.GenerativeRoom
 public import Unisono.Spec.Models.GenerativeStall
 public import Unisono.Spec.Models.GenerativeStar
