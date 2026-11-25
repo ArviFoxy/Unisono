@@ -2238,6 +2238,26 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.le_card_newFrames
 
+/-- info: 'Unisono.Spec.replayBefore_succ_of' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.replayBefore_succ_of
+
+/-- info: 'Unisono.Spec.replayBefore_succ_of_not' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.replayBefore_succ_of_not
+
+/-- info: 'Unisono.Spec.maxPlayed_of_none' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.maxPlayed_of_none
+
+/-- info: 'Unisono.Spec.replay_le_missed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.replay_le_missed
+
+/-- info: 'Unisono.Spec.newGroundCount_add_replay' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.newGroundCount_add_replay
+
 /-- info: 'Unisono.Spec.continuousBefore_le_add' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.continuousBefore_le_add

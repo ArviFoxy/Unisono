@@ -450,4 +450,163 @@ theorem le_card_newFrames {s : ℝ} (hs0 : 0 ≤ s)
     · exact hs0
   linarith
 
+/-! ## Steps over ground already played -/
+
+/-- The number of steps of continuous playback, among the steps that start at
+an output sample before `K`, that do not break new ground: they end at or
+below a position that was played before. -/
+def replayBefore (plays : ℕ → Option ℝ) : ℕ → ℕ
+  | 0 => 0
+  | K + 1 => by
+      classical
+      exact if PlaysContinuously plays K ∧ ¬ NewGround plays K then replayBefore plays K + 1
+        else replayBefore plays K
+
+theorem replayBefore_succ_of {K : ℕ} (h : PlaysContinuously plays K ∧ ¬ NewGround plays K) :
+    replayBefore plays (K + 1) = replayBefore plays K + 1 := by
+  simp [replayBefore, h]
+
+theorem replayBefore_succ_of_not {K : ℕ}
+    (h : ¬ (PlaysContinuously plays K ∧ ¬ NewGround plays K)) :
+    replayBefore plays (K + 1) = replayBefore plays K := by
+  simp [replayBefore, h]
+
+/-- If no output sample before `K` plays the source, the largest position
+played is zero. -/
+theorem maxPlayed_of_none : ∀ {K : ℕ}, (∀ k < K, plays k = none) → maxPlayed plays K = 0
+  | 0, _ => rfl
+  | K + 1, h => by
+    rw [maxPlayed_succ_none (h K (Nat.lt_succ_self K))]
+    exact maxPlayed_of_none fun k hk => h k (Nat.lt_succ_of_lt hk)
+
+/-- **Steps over ground already played are paid for by missed samples.** Let
+every position be at least zero, and let the position advance by at least
+`s` in every step of continuous playback. Up to output sample `K`, the
+distance from the position played last to the largest position played, plus
+`s` for every step of continuous playback that did not break new ground, is
+at most the missed samples counted so far: a step back counts the frames
+that it plays again, and every step of continuous playback after it recovers
+at least `s` of the distance. -/
+theorem replay_le_missed {s : ℝ} (hpos : ∀ k x, plays k = some x → 0 ≤ x)
+    (hslow : ∀ k x y, plays k = some x → plays (k + 1) = some y → x < y → y < x + 2 →
+      x + s ≤ y) :
+    ∀ K, maxPlayed plays (K + 1) - (lastPlayed plays (K + 1)).getD 0
+        + s * replayBefore plays K ≤ missedBefore plays (K + 1)
+  | 0 => by
+    have hr : replayBefore plays 0 = 0 := rfl
+    have hM0 : maxPlayed plays 0 = 0 := rfl
+    cases h0 : plays 0 with
+    | none =>
+      have hl : lastPlayed plays (0 + 1) = none := by
+        rw [lastPlayed_succ_none h0]
+        rfl
+      rw [maxPlayed_succ_none h0, hl, hr, hM0]
+      simp
+    | some y =>
+      have hy0 := hpos 0 y h0
+      rw [maxPlayed_succ_some h0, lastPlayed_succ_some h0, hr, hM0, max_eq_left hy0]
+      simp
+  | K + 1 => by
+    have ih := replay_le_missed hpos hslow K
+    have e2 := missedBefore_succ plays (K + 1)
+    have hm : (0 : ℝ) ≤ missedAt plays (K + 1) := Nat.cast_nonneg _
+    cases hK1 : plays (K + 1) with
+    | none =>
+      have hc : ¬ (PlaysContinuously plays K ∧ ¬ NewGround plays K) := by
+        rintro ⟨⟨_, y', _, hy', _, _⟩, -⟩
+        rw [hK1] at hy'
+        exact absurd hy' (by simp)
+      rw [maxPlayed_succ_none hK1, lastPlayed_succ_none hK1, replayBefore_succ_of_not hc, e2]
+      push_cast
+      linarith
+    | some y =>
+      rw [maxPlayed_succ_some hK1, lastPlayed_succ_some hK1, e2]
+      simp only [Option.getD_some]
+      push_cast
+      cases hl : lastPlayed plays (K + 1) with
+      | none =>
+        have hnone := eq_none_of_lastPlayed_none hl
+        have hM : maxPlayed plays (K + 1) = 0 := maxPlayed_of_none hnone
+        have hc : ¬ (PlaysContinuously plays K ∧ ¬ NewGround plays K) := by
+          rintro ⟨⟨x', _, hx', _, _, _⟩, -⟩
+          rw [hnone K (Nat.lt_succ_self K)] at hx'
+          exact absurd hx' (by simp)
+        rw [hl, hM] at ih
+        simp only [Option.getD_none] at ih
+        have hy0 := hpos (K + 1) y hK1
+        rw [replayBefore_succ_of_not hc, hM, max_eq_left hy0]
+        linarith
+      | some x =>
+        rw [hl] at ih
+        simp only [Option.getD_some] at ih
+        obtain ⟨-, hxplayed⟩ := lastPlayed_some hl
+        have hxM : x ≤ maxPlayed plays (K + 1) := le_maxPlayed hxplayed (by omega)
+        by_cases hcont : PlaysContinuously plays K
+        · obtain ⟨x', y', hx', hy', h1, h2⟩ := hcont
+          have hxx : x = x' := by
+            have := lastPlayed_succ_some hx'
+            rw [hl, Option.some.injEq] at this
+            exact this
+          have hyy : y' = y := by
+            rw [hK1, Option.some.injEq] at hy'
+            exact hy'.symm
+          subst hxx hyy
+          by_cases hng : NewGround plays K
+          · have hc : ¬ (PlaysContinuously plays K ∧ ¬ NewGround plays K) := fun h => h.2 hng
+            obtain ⟨_, y₂, _, hy₂, _, _, h3⟩ := hng
+            rw [hK1, Option.some.injEq] at hy₂
+            subst hy₂
+            rw [replayBefore_succ_of_not hc, max_eq_left h3.le]
+            linarith
+          · have hle : y' ≤ maxPlayed plays (K + 1) := by
+              by_contra hgt
+              exact hng ⟨x, y', hx', hK1, h1, h2, not_le.mp hgt⟩
+            have hadv := hslow K x y' hx' hK1 h1 h2
+            rw [replayBefore_succ_of ⟨⟨x, y', hx', hK1, h1, h2⟩, hng⟩, max_eq_right hle]
+            push_cast
+            linarith
+        · have hc : ¬ (PlaysContinuously plays K ∧ ¬ NewGround plays K) := fun h => hcont h.1
+          have hmiss : x - y ≤ missedAt plays (K + 1) := by
+            rw [missedAt_of_lastPlayed hK1 hl]
+            push_cast
+            have h1 : (0 : ℝ) ≤ ((⌊y - x - 1⌋ - (trailing plays (K + 1) : ℤ)).toNat : ℝ) :=
+              Nat.cast_nonneg _
+            have h2 : ((⌊1 - (y - x)⌋ : ℤ) : ℝ) ≤ ((⌊1 - (y - x)⌋.toNat : ℕ) : ℝ) := by
+              exact_mod_cast Int.self_le_toNat _
+            have h3 := Int.lt_floor_add_one (1 - (y - x))
+            linarith
+          rw [replayBefore_succ_of_not hc]
+          rcases le_total y (maxPlayed plays (K + 1)) with hyM | hyM
+          · rw [max_eq_right hyM]
+            linarith
+          · rw [max_eq_left hyM]
+            linarith
+
+/-- **Every step of continuous playback breaks new ground or goes over
+ground already played.** Among the steps from output sample `a` to output
+sample `b - 1`, those that break new ground and those of continuous playback
+that do not are together the steps of continuous playback. -/
+theorem newGroundCount_add_replay {a : ℕ} :
+    ∀ b, a ≤ b →
+      newGroundCount plays a b + replayBefore plays b + continuousBefore plays a
+        = continuousBefore plays b + replayBefore plays a := by
+  intro b hab
+  induction b, hab using Nat.le_induction with
+  | base =>
+    rw [(newGroundCount_of_le (plays := plays) a a le_rfl).1]
+    omega
+  | succ b hab ih =>
+    by_cases hng : NewGround plays b
+    · have hcont := hng.playsContinuously
+      rw [newGroundCount_succ_of ⟨hab, hng⟩, continuousBefore_succ_of hcont,
+        replayBefore_succ_of_not fun h => h.2 hng]
+      omega
+    · by_cases hcont : PlaysContinuously plays b
+      · rw [newGroundCount_succ_of_not fun h => hng h.2, continuousBefore_succ_of hcont,
+          replayBefore_succ_of ⟨hcont, hng⟩]
+        omega
+      · rw [newGroundCount_succ_of_not fun h => hng h.2, continuousBefore_succ_of_not hcont,
+          replayBefore_succ_of_not fun h => hcont h.1]
+        omega
+
 end Unisono.Spec
