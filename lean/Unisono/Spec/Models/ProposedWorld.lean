@@ -394,6 +394,19 @@ structure IsEpisodePath (rate : ℝ) (F : Measure ℝ) (X : Time → Ω → ℝ)
     HasLaw (fun ω => X t ω - X s ω)
       (GenerativeWorld.pauseLaw (Real.toNNReal (rate * (t - s))) F) P
 
+/-- The law of a value that is `true` with probability `p`. -/
+def dropLaw (p : ℝ) : Measure Bool :=
+  ENNReal.ofReal p • Measure.dirac true + ENNReal.ofReal (1 - p) • Measure.dirac false
+
+theorem dropLaw_true (p : ℝ) : dropLaw p {b | b = true} = ENNReal.ofReal p := by
+  simp [dropLaw]
+
+theorem dropLaw_prob {p : ℝ} (h0 : 0 ≤ p) (h1 : p ≤ 1) : IsProbabilityMeasure (dropLaw p) := by
+  refine ⟨?_⟩
+  simp only [dropLaw, add_apply, smul_apply, measure_univ, smul_eq_mul, mul_one]
+  rw [← ENNReal.ofReal_add h0 (by linarith)]
+  simp
+
 instance (f : Member H R) (i j : H) : IsProbabilityMeasure (f.jitterLaw i j) :=
   f.jitterLaw_prob i j
 
@@ -520,7 +533,7 @@ structure Prior (m : Told H R) (f : Member H R) (P : Measure Ω) (D : Ω → Dra
   /-- Each directed link drops each message on its own with the link's
   probability. -/
   dropped_law : ∀ i j q,
-    P {ω | (D ω).dropped i j q = true} = ENNReal.ofReal (f.lossProbability i j)
+    HasLaw (fun ω => (D ω).dropped i j q) (dropLaw (f.lossProbability i j)) P
   /-- The pauses of each host. -/
   hostPaused_law : ∀ h,
     IsEpisodePath (f.hostPauseRate h) (f.hostPauseLength h)

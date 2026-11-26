@@ -139,11 +139,9 @@ theorem Prior.comp_ae_eq {D : Ω → Draw H R} (hD : Prior m f P D) {φ : Ω →
   jitterLevel_nonneg := fun ω => hD.jitterLevel_nonneg (φ ω)
   linkPaused_law := fun i j => (hD.linkPaused_law i j).comp_ae_eq hφ
   outage_law := fun i j => (hD.outage_law i j).comp_ae_eq hφ
-  dropped_law := fun i j q => by
-    rw [← hD.dropped_law i j q]
-    refine measure_congr ?_
+  dropped_law := fun i j q => (hD.dropped_law i j q).congr (by
     filter_upwards [hφ] with ω hω
-    rw [hω]
+    simp only [hω])
   hostPaused_law := fun h => (hD.hostPaused_law h).comp_ae_eq hφ
   independent := fun o => (hD.independent o).congr fun p => by
     filter_upwards [hφ] with ω hω
@@ -184,19 +182,6 @@ instance (p : Part H R) : MeasurableSpace p.Coordinate := by
   · exact inferInstanceAs (MeasurableSpace Cells)
   · exact inferInstanceAs (MeasurableSpace Bool)
   · exact inferInstanceAs (MeasurableSpace Cells)
-
-/-- The law of a value that is `true` with probability `p`. -/
-def dropLaw (p : ℝ) : Measure Bool :=
-  ENNReal.ofReal p • Measure.dirac true + ENNReal.ofReal (1 - p) • Measure.dirac false
-
-theorem dropLaw_true (p : ℝ) : dropLaw p {b | b = true} = ENNReal.ofReal p := by
-  simp [dropLaw]
-
-theorem dropLaw_prob {p : ℝ} (h0 : 0 ≤ p) (h1 : p ≤ 1) : IsProbabilityMeasure (dropLaw p) := by
-  refine ⟨?_⟩
-  simp only [dropLaw, add_apply, smul_apply, measure_univ, smul_eq_mul, mul_one]
-  rw [← ENNReal.ofReal_add h0 (by linarith)]
-  simp
 
 /-- The law of each coordinate. -/
 def partLaw (m : Told H R) (f : Member H R) : (p : Part H R) → Measure p.Coordinate
@@ -458,10 +443,8 @@ theorem canonicalDraw_prior (m : Told H R) (f : Member H R) :
     isEpisodePath_tamePath (f.outageRate_nonneg i j) (f.outageLength_pos i j)
       (f.outageLength_mean i j) (f.outageLoad_lt_one i j)
       (measurePreserving_eval_infinitePi (partLaw m f) (.outage i j))
-  dropped_law := fun i j q => by
-    have h := (measurePreserving_eval_infinitePi (partLaw m f) (.dropped i j q)).measure_preimage
-      (s := {b : Bool | b = true}) (measurableSet_singleton true).nullMeasurableSet
-    exact h.trans (dropLaw_true _)
+  dropped_law := fun i j q =>
+    (measurePreserving_eval_infinitePi (partLaw m f) (.dropped i j q)).hasLaw
   hostPaused_law := fun h =>
     have := f.hostPauseLength_prob h
     isEpisodePath_tamePath (f.hostPauseRate_nonneg h) (f.hostPauseLength_pos h)

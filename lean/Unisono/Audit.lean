@@ -146,6 +146,8 @@ public import Unisono.Spec.Models.ProposedWorld
 public import Unisono.Spec.Models.ProposedBuild
 public import Unisono.Spec.Models.ProposedExists
 public import Unisono.Spec.Models.ProposedQuiet
+public import Unisono.Spec.Models.ProposedDrawLaw
+public import Unisono.Spec.Models.ProposedResample
 public import Unisono.Spec.FrameArrival
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
@@ -3088,6 +3090,114 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.ProposedWorld.Builds.quiet_of_jitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.ProposedWorld.Builds.quiet_of_jitter
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_tuple' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_tuple
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_split' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_split
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_offset' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_offset
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_logRate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_logRate
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_wander' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_wander
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_deviceLogRate' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_deviceLogRate
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_deviceWander' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_deviceWander
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_reportError' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_reportError
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_jitterCount' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_jitterCount
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_jitterLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_jitterLevel
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_linkPaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_linkPaused
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_outage' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_outage
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_dropped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_dropped
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw_hostPaused' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw_hostPaused
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_draw' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_draw
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_part' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_part
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.shaped' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.shaped
+
+/-- info: 'Unisono.Spec.ProposedWorld.IsEpisodePath.aemeasurable_apply' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.IsEpisodePath.aemeasurable_apply
+
+/-- info: 'Unisono.Spec.ProposedWorld.IsEpisodePath.aemeasurable_path' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.IsEpisodePath.aemeasurable_path
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.aemeasurable' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.aemeasurable
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.of_map_eq' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.of_map_eq
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_withLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_withLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Shaped.withLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Shaped.withLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.indepFun_withLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.indepFun_withLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.aemeasurable_resampleLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.aemeasurable_resampleLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.map_resampleLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.map_resampleLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.prior_resampleLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.prior_resampleLinks
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
