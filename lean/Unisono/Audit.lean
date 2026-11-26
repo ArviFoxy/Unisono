@@ -150,6 +150,8 @@ public import Unisono.Spec.Models.ProposedDrawLaw
 public import Unisono.Spec.Models.ProposedResample
 public import Unisono.Spec.Models.ProposedRelink
 public import Unisono.Spec.Models.ProposedJitterFrom
+public import Unisono.Spec.Models.RandomIndex
+public import Unisono.Spec.Models.ProposedNextLevel
 public import Unisono.Spec.FrameArrival
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
@@ -3248,6 +3250,58 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.ProposedWorld.stall_le_of_sameJitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.ProposedWorld.stall_le_of_sameJitter
+
+/-- info: 'Unisono.Spec.indepFun_apply_update' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.indepFun_apply_update
+
+/-- info: 'Unisono.Spec.measurable_afterIndex' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_afterIndex
+
+/-- info: 'Unisono.Spec.measurable_withoutAfterIndex' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.measurable_withoutAfterIndex
+
+/-- info: 'Unisono.Spec.prod_afterIndex_inter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.prod_afterIndex_inter
+
+/-- info: 'Unisono.Spec.hasLaw_afterIndex' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.hasLaw_afterIndex
+
+/-- info: 'Unisono.Spec.indepFun_afterIndex' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.indepFun_afterIndex
+
+/-- info: 'Unisono.Spec.indepFun_randomIndex' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.indepFun_randomIndex
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.withLevels_self' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.withLevels_self
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.withLevels_of_ne' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.withLevels_of_ne
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.withLevels_withLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.withLevels_withLevels
+
+/-- info: 'Unisono.Spec.ProposedWorld.measurable_withLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.measurable_withLevels
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.indepFun_withLevels' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.indepFun_withLevels
+
+/-- info: 'Unisono.Spec.ProposedWorld.Prior.nextLevel' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Prior.nextLevel
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
