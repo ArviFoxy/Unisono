@@ -314,6 +314,13 @@ def delivery (i j : H) (s : Time) (q : ℕ) : Option Time := by
 
 end Draw
 
+/-- **A backlog is never negative**, whatever the path. -/
+theorem backlog_nonneg (X : Time → ℝ) (t : Time) : 0 ≤ GenerativeWorld.backlog X t := by
+  unfold GenerativeWorld.backlog
+  by_cases hb : BddAbove {x | ∃ s ≤ t, x = X t - X s - (t - s)}
+  · exact le_csSup hb ⟨t, le_rfl, by simp⟩
+  · rw [Real.sSup_of_not_bddAbove hb]
+
 /-- **The devices and the clocks of the world `w` are those of the draw
 `d`**, in the member `f`: as in `GenerativeWorld.Builds`, with the clocks of
 this model. This is the part of the world that needs no change of the

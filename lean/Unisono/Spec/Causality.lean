@@ -179,11 +179,13 @@ theorem State.SameBefore.due_eq {T : Time} {st₁ st₂ : State H R Msg}
 
 variable [DecidableEq H]
 
-/-- The two worlds deliver each message at the same time, after it reaches
-its host at the same time in both, or both deliver it at or after `T`. -/
+/-- The two worlds deliver each message at the same time or both drop it,
+and a message that they deliver reaches its host at the same time in both;
+or both deliver it at or after `T`. -/
 def World.DeliversSameBefore (T : Time) (w₁ w₂ : World H R) : Prop :=
   ∀ i j t q, (w₁.network.deliver i j t q = w₂.network.deliver i j t q
-      ∧ w₁.network.reach i j t q = w₂.network.reach i j t q) ∨
+      ∧ ∀ a, w₁.network.deliver i j t q = some a →
+        w₁.network.reach i j t q = w₂.network.reach i j t q) ∨
     ∃ a₁ a₂, w₁.network.deliver i j t q = some a₁ ∧ w₂.network.deliver i j t q = some a₂
       ∧ T ≤ a₁ ∧ T ≤ a₂
 
@@ -196,10 +198,11 @@ theorem State.SameBefore.send {T : Time} {w₁ w₂ : World H R}
   · simp only [State.send]
     rw [hcount]
     rcases hnet i j t (st₁.sentCount i j) with ⟨heq, hreach⟩ | ⟨a₁, a₂, h1, h2, hT1, hT2⟩
-    · rw [← heq, ← hreach]
-      cases w₁.network.deliver i j t (st₁.sentCount i j) with
+    · rw [← heq]
+      cases hdel : w₁.network.deliver i j t (st₁.sentCount i j) with
       | none => exact h.inFlight
       | some a =>
+        rw [← hreach a hdel]
         exact List.rel_append h.inFlight
           (List.Forall₂.cons (InFlight.SameBefore.refl T _) List.Forall₂.nil)
     · rw [h1, h2]

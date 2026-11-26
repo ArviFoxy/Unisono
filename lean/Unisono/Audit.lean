@@ -148,6 +148,8 @@ public import Unisono.Spec.Models.ProposedExists
 public import Unisono.Spec.Models.ProposedQuiet
 public import Unisono.Spec.Models.ProposedDrawLaw
 public import Unisono.Spec.Models.ProposedResample
+public import Unisono.Spec.Models.ProposedRelink
+public import Unisono.Spec.Models.ProposedJitterFrom
 public import Unisono.Spec.FrameArrival
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
@@ -3067,13 +3069,13 @@ through the translation, or through an unfinished proof, is noticed.
 #guard_msgs in
 #print axioms Unisono.Spec.Solution.stall_le_of_quiet
 
-/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.le_released' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.le_released' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.le_released
+#print axioms Unisono.Spec.ProposedWorld.Draw.le_released
 
-/-- info: 'Unisono.Spec.ProposedWorld.Draw.Regular.least_le_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.least_le_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
-#print axioms Unisono.Spec.ProposedWorld.Draw.Regular.least_le_observed
+#print axioms Unisono.Spec.ProposedWorld.Draw.least_le_observed
 
 /-- info: 'Unisono.Spec.ProposedWorld.Builds.observed_of_deliver' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
@@ -3198,6 +3200,54 @@ through the translation, or through an unfinished proof, is noticed.
 /-- info: 'Unisono.Spec.ProposedWorld.Prior.prior_resampleLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in
 #print axioms Unisono.Spec.ProposedWorld.Prior.prior_resampleLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.backlog_nonneg' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.backlog_nonneg
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Shaped.lt_reaches' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Shaped.lt_reaches
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Shaped.reaches_le_observed' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Shaped.reaches_le_observed
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.Shaped.reach_mem' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.Shaped.reach_mem
+
+/-- info: 'Unisono.Spec.ProposedWorld.Builds.relinked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Builds.relinked
+
+/-- info: 'Unisono.Spec.ProposedWorld.expectedCost_resampleLinks' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.expectedCost_resampleLinks
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.delivery_of_lost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.delivery_of_lost
+
+/-- info: 'Unisono.Spec.ProposedWorld.Draw.delivery_of_not_lost' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.Draw.delivery_of_not_lost
+
+/-- info: 'Unisono.Spec.ProposedWorld.deliversSameBefore_relinked' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.deliversSameBefore_relinked
+
+/-- info: 'Unisono.Spec.ProposedWorld.plays_eq_of_sameJitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.plays_eq_of_sameJitter
+
+/-- info: 'Unisono.Spec.ProposedWorld.lastPlayed_eq_of_sameJitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.lastPlayed_eq_of_sameJitter
+
+/-- info: 'Unisono.Spec.ProposedWorld.stall_le_of_sameJitter' depends on axioms: [propext, Classical.choice, Quot.sound] -/
+#guard_msgs in
+#print axioms Unisono.Spec.ProposedWorld.stall_le_of_sameJitter
 
 /-- info: 'Unisono.Spec.GenerativeWorld.Builds.arrival_eq_of_pathIdle' depends on axioms: [propext, Classical.choice, Quot.sound] -/
 #guard_msgs in

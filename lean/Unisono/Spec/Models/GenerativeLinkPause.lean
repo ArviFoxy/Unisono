@@ -319,7 +319,8 @@ theorem Builds.deliversSameBefore (hB : m.Builds f d w) (hB' : m.Builds f d' w')
   -- If the backlog of the link is the same as well, so is everything else.
   have hsame : u₂ = v₂ →
       w.network.deliver i j t q = w'.network.deliver i j t q
-        ∧ w.network.reach i j t q = w'.network.reach i j t q := by
+        ∧ ∀ a, w.network.deliver i j t q = some a →
+          w.network.reach i j t q = w'.network.reach i j t q := by
     intro e₂
     subst e₂
     have e₃ : u₃ = v₃ := by
@@ -327,7 +328,7 @@ theorem Builds.deliversSameBefore (hB : m.Builds f d w) (hB' : m.Builds f d' w')
       rw [h.hostPaused] at hu
       exact hu.unique hv₃
     subst e₃
-    exact ⟨by rw [hdel, hdel'], by rw [hr, hr']⟩
+    exact ⟨by rw [hdel, hdel'], fun _ _ => by rw [hr, hr']⟩
   by_cases hij : (i, j) = (i₀, j₀)
   · obtain ⟨rfl, rfl⟩ := Prod.ext_iff.mp hij
     by_cases he : t + u₁ < θ

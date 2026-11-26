@@ -147,6 +147,8 @@ public import Unisono.Spec.Models.ProposedExists
 public import Unisono.Spec.Models.ProposedQuiet
 public import Unisono.Spec.Models.ProposedDrawLaw
 public import Unisono.Spec.Models.ProposedResample
+public import Unisono.Spec.Models.ProposedRelink
+public import Unisono.Spec.Models.ProposedJitterFrom
 public import Unisono.Spec.FrameArrival
 public import Unisono.Spec.Models.GenerativeIdlePath
 public import Unisono.Spec.Models.GenerativeUndisturbed
