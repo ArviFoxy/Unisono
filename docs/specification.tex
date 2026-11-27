@@ -132,24 +132,38 @@ A world consists of:
   captures frame $n \in \N$ of the source at true time $c(n)$, strictly
   increasing in $n$ (\lean{capture}). A frame holds one sample of each
   channel. The device hands the frames to the sender's host in blocks:
-  block $b$ holds the frames $f(b) \le n < f(b+1)$ (\lean{first}) and is
-  handed over at true time $h(b) \ge c(f(b+1)-1)$ (\lean{handed}). For each
+  block $b$ holds the frames $f(b) \le n < f(b+1)$ (\lean{first}). The
+  sender's host handles the handover of block $b$ at true time
+  $h(b) \ge c(f(b+1)-1)$ (\lean{handed}): when the block's last frame is
+  captured, or later if the host is busy. The times $h(b)$ never decrease
+  with $b$, and a host that was busy may handle several handovers at the
+  same true time. For each
   block the device reports a timestamp $\hat c(b)$, a reading of its host's
   clock that estimates when the block's first frame was captured
   (\lean{reported}); it need not be exact.
 \item \emph{Speaker} $r \in \{0,\dots,R-1\}$, a playback device
   (\lean{PlaybackDevice}). Its output sample $k \in \N$ leaves the device at
   true time $o_r(k)$, strictly increasing in $k$ (\lean{out}). The device
-  requests block $b$, the output samples $g_r(b) \le k < g_r(b+1)$
-  (\lean{first}), at true time $a_r(b) < o_r(g_r(b))$ (\lean{asked}), and
-  reports a timestamp $\hat o_r(b)$ that estimates when the block's first
-  output sample leaves (\lean{reported}); it need not be exact.
+  requests its output samples from its host in blocks: block $b$ holds the
+  output samples $g_r(b) \le k < g_r(b+1)$ (\lean{first}). The speaker's
+  host handles the request of block $b$ at true time $a_r(b)$
+  (\lean{asked}). The times $a_r(b)$ never decrease with $b$. A host that
+  is busy may handle a request after output samples of the block have left
+  the device; such an output sample plays nothing of the source, whatever
+  the host chooses for it (Section~\ref{sec:solutions}). For each block the
+  device reports a timestamp $\hat o_r(b)$ that estimates when the block's
+  first output sample leaves (\lean{reported}); it need not be exact.
 \item \emph{A clock} $C_i$ for every host $i$ (\lean{Clock}), a continuous,
   strictly increasing function from true time to readings.
 \item \emph{The network} (\lean{Network}), which carries messages between
   any two hosts. When host $i$ sends its $q$-th message to host $j$ at true
-  time $s$, the network either delivers it at a true time
-  $\mathrm{deliver}_{ij}(s,q) > s$ or drops it (\lean{deliver}). Delivery
+  time $s$, the network either drops it, or the message reaches host $j$ at
+  a true time $\mathrm{reach}_{ij}(s,q) > s$ (\lean{reach}) and the program
+  of host $j$ handles it at a true time
+  $\mathrm{deliver}_{ij}(s,q) \ge \mathrm{reach}_{ij}(s,q)$
+  (\lean{deliver}). The kernel of host $j$ stamps the message with the
+  reading of the host's clock when the message reaches the host; a host
+  that is busy handles the message later. Delivery
   and loss may depend on $s$ and $q$, but not on the payload. Throughout
   this specification, a directed \emph{link} $(i, j)$ represents the entire
   end-to-end path between the application's send call on host $i$ and
@@ -188,10 +202,16 @@ own clock:
   target latency, and the block's timestamp (at the sender's host only);
 \item a speaker's device requests a block: its output samples and the
   block's timestamp;
-\item a message arrives: its sender, its payload, and the frames of the
-  source whose data it carries;
+\item a message arrives: its sender, its payload, the frames of the
+  source whose data it carries, and the kernel's stamp, which is the
+  reading of the host's clock when the message reached the host;
 \item a timer that the host set fires.
 \end{itemize}
+The reading at a handover or at a request is the reading of the host's
+clock when the host handles the event, which can be later than the true
+time at which the device raised it. In the same way, the reading at an
+arrival is the reading when the host's program handles the message, and
+the kernel's stamp is the reading of the same moment or of an earlier one.
 The \emph{view} of a host at an event is the list of all events it has
 observed so far, each with its clock reading. True time is not in the view,
 and neither is anything that happens at another host unless a message
@@ -225,17 +245,26 @@ Four constraints apply to every solution.
   computes the sound at position $x$ from the frames $n$ with $|n - x| < a$,
   where the integer $a \ge 1$ is the resampler's lookahead: $a = 1$ for
   linear interpolation (position $999.98$ needs frames $999$ and $1000$),
-  about half the filter length for a longer filter. An output sample plays
-  the original sound only if its host holds all of those frames when the
-  device requests the block; otherwise it is a missed sample
-  (\lean{playable}). The lookahead $a$ is a parameter.
+  about half the filter length for a longer filter. An output sample $k$
+  of block $b$ of speaker $r$ plays the original sound only if its host
+  handles the request of the block before the output sample leaves,
+  $a_r(b) < o_r(k)$, and holds all of those frames when it does; otherwise
+  it is a missed sample (\lean{State.handle}, \lean{playable}). The
+  lookahead $a$ is a parameter.
 \item \emph{Capacity.} In any second, each host sends each other host at
   most $M$ messages carrying at most $F$ frames in total; $M$ and $F$ are
   parameters (\lean{Solution.WithinBudget}).
-\item \emph{Speed bound.} At every step of continuous playback, every
-  speaker's speed $v$ (Section~\ref{sec:objectives}) satisfies
-  $|v - 1| \le u_{\max}$, where the parameter $u_{\max}$ is the
-  resampler's limit (\lean{Solution.WithinSpeed}).
+\item \emph{Speed bound.} At every step of continuous playback, from the
+  position $x$ that one output sample plays to the position $y$ that the
+  next one plays, every speaker's position advances by one frame within
+  $u_{\max}$: $|y - x - 1| \le u_{\max}$, where the parameter
+  $u_{\max}$ is the resampler's limit (\lean{Solution.WithinStep}). This
+  is the ratio at which the resampler plays against its own device, and the
+  solution chooses it. The speed $v$ of Section~\ref{sec:objectives} is
+  measured in true time: it is this advance divided by the rate of the
+  capture device's clock relative to the playback device's. No solution
+  chooses those rates, so a bound on $v$ itself
+  (\lean{Solution.WithinSpeed}) is not among the limits.
 \end{enumerate}
 
 \begin{definition}[Run]
@@ -243,15 +272,24 @@ The \emph{run} of a solution in a world (\lean{Solution.states}) processes
 events in chronological order. At each step the earliest pending event is
 handled: the capture device's next block, a speaker's device's next
 request, the arrival of a message in transit, or a timer that is set. The
-world determines when each occurs: the devices determine when they hand
-over and request blocks, the network determines when a message arrives or
+world determines when each occurs: the devices and their hosts determine
+when handovers and requests are handled, the network determines when a
+message arrives or
 that it is dropped, and a host's clock determines when it reaches the
 reading of a timer. The host adds the event to its view and does what the
 solution chooses for that view. Simultaneous events are processed in a
 fixed order: capture events first, then speaker requests in speaker index
-order, then message arrivals and timers in the order in which they were
-sent or set. What speaker $r$ plays at output sample $k$ is what was decided
-when its device requested the block holding $k$ (\lean{Solution.plays}).
+order, then message arrivals, then timers in the order in which they were
+set. Handovers at the same true time are handled in the order of their
+blocks, and so are the requests of one speaker.
+Messages that arrive at the same true time are handled in the order of
+a fixed numbering of the hosts that sent them, the sender's host first and
+then the hosts of the speakers in speaker order (\lean{World.hostIndex}),
+and messages from one host in the order in which that host sent them. The
+order does not depend on which of two hosts sent first in true time, which
+no host can observe. What speaker $r$ plays at output sample $k$ is what
+was decided when its host handled the request of the block holding $k$, if
+the output sample had not left by then (\lean{Solution.plays}).
 \end{definition}
 
 Every solution therefore has exactly one run in every world.
@@ -460,13 +498,13 @@ $\int \dot v(t)^2\,dt$ of the squared derivative of the speed, the
 $\dot H^1$ seminorm. It charges how fast the speed changes, not how far it
 is from one: fast changes of pitch are heard, while a slowly varying small
 offset is not. The offset is limited instead by the speed bound $u_{\max}$
-of Section~\ref{sec:solutions}, the resampler's limit. The design document
-\lean{docs/model.md} (its section on the objective) uses the same cost and
-the same bound on the rate at which a receiver's resampler plays fast,
-against its own device, whose steady value is the clocks' drift. The speed
-here is that of the source as heard, against its capture in true time,
-whose steady value is one. The two derivatives differ only by how fast the
-clocks' own rates change.
+of Section~\ref{sec:solutions}, the resampler's limit: a bound on the rate
+at which a receiver's resampler plays against its own device, whose steady
+value is the clocks' drift. The design document \lean{docs/model.md} (its
+section on the objective) uses the same cost and the same bound. The speed
+in the roughness is that of the source as heard, against its capture in
+true time, whose steady value is one. The two derivatives differ only by
+how fast the clocks' own rates change.
 
 Without the speed bound, the best recovery from an excess latency
 $\Delta L$ under latency and roughness costs alone deviates in speed, and
@@ -483,10 +521,11 @@ a weighting by modulation rate should replace it, is open.
 
 A model of the world says which worlds can happen and, when the world is
 random, with which probabilities. Statements hold under a model, and the
-same solution can perform differently under different models. Five approved
-model classes live in \path{lean/Unisono/Spec/Models}, each in its own file
-and each accompanied by a non-emptiness witness in
-\path{lean/Unisono/Spec/Checks.lean}.
+same solution can perform differently under different models. Six approved
+models live in \path{lean/Unisono/Spec/Models}, each in its own file and
+each accompanied by a non-emptiness witness in
+\path{lean/Unisono/Spec/Checks.lean}. Five are model classes; the sixth
+gives the world a probability law (Section~\ref{sec:generative}).
 
 \subsection{Ideal constant worlds}
 
@@ -513,8 +552,9 @@ model (\lean{IdealConstantWorld.Holds}) when:
   ($o_r(g_r(b)) - a_r(b) = \lambda$), and timestamps are exact
   (\lean{ReportsWithin 0});
 \item network: every directed link $(i, j)$ delivers every message without
-  loss at constant delay $d_{ij}$,
-  $\mathrm{deliver}_{ij}(s, q) = s + d_{ij}$;
+  loss at constant delay $d_{ij}$, and the program of the receiving host
+  handles each message at the moment at which it reaches the host,
+  $\mathrm{deliver}_{ij}(s, q) = \mathrm{reach}_{ij}(s, q) = s + d_{ij}$;
 \item target latency: $L^*(n) = L^*$ for every frame $n$.
 \end{itemize}
 Two subclasses distinguish link symmetry:
@@ -800,6 +840,612 @@ distributional constraints satisfied by many probability laws over
 \lean{World}---rather than a single generative law. The class is not empty
 (\lean{StochasticWorld.\allowbreak example\_\allowbreak holds}).
 
+\subsection{A generative world}\label{sec:generative}
+
+The models above are classes: many probability laws satisfy each of them,
+and none says how the two directions of a link differ. Under a class a
+solution can be judged only by its worst case. The generative model
+\lean{GenerativeWorld}
+(\path{lean/Unisono/Spec/Models/GenerativeWorld.lean}) gives the world a
+probability law, so that the expected cost of a solution is a number and
+solutions can be compared by it (Section~\ref{sec:optimality}). It is a
+family of laws. A solution is told a few things, the same for every member
+of the family; everything else it has to estimate from what it observes.
+
+\begin{definition}[What a solution is told]
+A solution is told the following (\lean{GenerativeWorld}).
+\begin{itemize}
+\item The hosts, which one is the sender, which host drives each speaker,
+  and which speakers are outputs of one audio device (\lean{device}). The
+  \emph{audio devices} are the capture device and the playback devices; a
+  playback device can have several speakers as its outputs.
+\item The settings of the devices and of the application: the nominal rate
+  $\rho$, the number $m \ge 1$ of frames or output samples in a block
+  (\lean{blockSize}), the request lead $\lambda > 0$ (\lean{lead}) and the
+  target latency $L^* \ge 0$ (\lean{targetLatency}). The \emph{request
+  lead} is how long before a block's first output sample leaves, measured on
+  the playback device's own clock, the device asks its host for the block.
+\item One number of the prior: the \emph{shape} $\alpha > 0$
+  (\lean{shape}).
+\end{itemize}
+The weights of the cost (Section~\ref{sec:objectives}) are known to a
+solution as well: optimality is stated for given weights
+(Section~\ref{sec:optimality}).
+\end{definition}
+
+\begin{definition}[What a solution has to estimate]
+A member of the family is a choice of the following numbers
+(\lean{GenerativeWorld.\allowbreak Member}). A solution is not told them.
+\begin{itemize}
+\item For each pair of hosts $i$ and $j$, their least round-trip time
+  $\tau_{ij} = \tau_{ji} > 0$, in seconds (\lean{roundTrip}).
+\item For each direction from $i$ to $j$, the rate $\mu_{ij} \ge 0$ at
+  which pauses of the link begin, in pauses per second
+  (\lean{linkPauseRate}), and the law $F_{ij}$ of the length of a pause,
+  in seconds (\lean{linkPauseLength}). A \emph{pause} is a stretch of time
+  in which the link passes nothing: it carries a packet of other traffic,
+  repeats a transmission, or is out. $F_{ij}$ may be any probability law on
+  the positive numbers that has a mean $\beta_{ij}$, so one member can have
+  pauses of a fraction of a millisecond and pauses of a second. The link is
+  paused less than all of the time: $\mu_{ij}\beta_{ij} < 1$.
+\item For each host $i$, the rate $\mu_i \ge 0$ at which pauses of the
+  host begin (\lean{hostPauseRate}) and the law $F_i$ of their lengths
+  (\lean{hostPauseLength}), of the same kind, with mean $\beta_i$ and
+  $\mu_i\beta_i < 1$. While a host pauses, it sends nothing and handles
+  nothing that arrives.
+\item The spread $\sigma \ge 0$ of the mean rates of the clocks
+  (\lean{rateSpread}).
+\item For each host $i$, the size $\nu_i \ge 0$ and the time scale
+  $\vartheta_i > 0$ of the wander of its clock (\lean{wanderSize},
+  \lean{wanderTime}).
+\item For each audio device $x$, the size $\nu_x \ge 0$ and the time scale
+  $\vartheta_x > 0$ of the wander of its clock (\lean{deviceWanderSize},
+  \lean{deviceWanderTime}).
+\item For each audio device $x$, the standard deviation $\varsigma_x \ge 0$
+  of the error of the timestamps that it reports, in seconds, and the time
+  scale $\chi_x > 0$ of that error (\lean{reportSize}, \lean{reportTime}).
+\item The range $\theta_{\max} > 0$ of the clock offsets
+  (\lean{offsetRange}).
+\end{itemize}
+A member also fixes the readings $\xi$ and $\xi_r$ of their hosts' clocks
+at which the capture device and the playback device of speaker $r$ start
+(\lean{captureStart}, \lean{speakerStart}). They are not known before the
+devices start; each host learns the start of its own device from the
+timestamps that the device reports.
+\end{definition}
+
+\begin{definition}[The prior]
+The following are drawn at random, all independently of one another
+(\lean{GenerativeWorld.\allowbreak Draw},
+\lean{GenerativeWorld.\allowbreak Prior}).
+\begin{itemize}
+\item For each pair of distinct hosts $i$ and $j$, the \emph{split}
+  $u_{ij} \in (0, 1)$, with $u_{ji} = 1 - u_{ij}$ (\lean{split}). It has the
+  Beta law with both parameters equal to $\alpha$, whose density at
+  $x \in (0, 1)$ is proportional to $x^{\alpha - 1}(1 - x)^{\alpha - 1}$.
+\item For each host $i$, the offset $\theta_i$ of its clock, uniform on
+  $[-\theta_{\max}, \theta_{\max}]$ (\lean{offset}).
+\item For each host $i$, the logarithm $\gamma_i$ of the mean rate of its
+  clock, Gaussian with mean $0$ and standard deviation $\sigma$
+  (\lean{logRate}).
+\item For each host $i$, the wander $Z_i(t)$ of its clock: a stationary
+  Gaussian process with mean $0$, continuous in $t$, whose covariance
+  between true times $s$ and $t$ is $\nu_i^2\,e^{-|s - t|/\vartheta_i}$
+  (\lean{wander}).
+\item For each audio device $x$, the logarithm $\gamma_x$ of the mean rate
+  of its clock, with the law of a host's, and the wander $Z_x(t)$ of its
+  clock, a process of the same kind with the size $\nu_x$ and the time
+  scale $\vartheta_x$ (\lean{deviceLogRate}, \lean{deviceWander}).
+\item For each audio device $x$, the error $E_x(t)$ of its reports: a
+  stationary Gaussian process with mean $0$, continuous in $t$, whose
+  covariance between true times $s$ and $t$ is
+  $\varsigma_x^2\,e^{-|s - t|/\chi_x}$ (\lean{reportError}).
+\item For each direction from $i$ to $j$, the pauses of the link. Pauses
+  begin at the instants of a Poisson process of rate $\mu_{ij}$. Their
+  lengths are independent of one another and of those instants, and each
+  has the law $F_{ij}$. Write $W_{ij}(t)$ for the paused time that has
+  begun between true time zero and true time $t$: the sum of the lengths of
+  the pauses that began in between (\lean{linkPaused}, \lean{pauseLaw}).
+\item For each host $i$, the pauses of the host, in the same way with the
+  rate $\mu_i$ and the law $F_i$. Write $W_i(t)$ for the paused time of
+  the host that has begun by true time $t$ (\lean{hostPaused}).
+\end{itemize}
+\end{definition}
+
+\begin{definition}[The world built from a draw]
+The world has the following parts (\lean{GenerativeWorld.\allowbreak Builds}).
+\begin{itemize}
+\item The clock of host $i$ reads
+  \[
+    C_i(t) = \theta_i + \int_0^t e^{\gamma_i + Z_i(x)}\,dx
+  \]
+  at true time $t$ (\lean{Draw.reading}). Its rate
+  $e^{\gamma_i + Z_i(t)}$ is positive for every draw.
+\item The least delay from $i$ to $j$ is $u_{ij}\tau_{ij}$, and from $j$ to
+  $i$ it is $(1 - u_{ij})\tau_{ij}$. Both are positive for every draw
+  (\lean{Prior.leastDelay\_pos}) and they add up to $\tau_{ij}$
+  (\lean{Prior.leastDelay\_add}).
+\item The backlog of the link from $i$ to $j$ at true time $t$ is its
+  paused time that has begun and is not yet over. It rises by the length of
+  a pause when the pause begins and falls by one second per second while
+  any is left, so it is
+  \[
+    Q_{ij}(t) = \sup_{s \le t}\,\bigl(W_{ij}(t) - W_{ij}(s) - (t - s)\bigr)
+  \]
+  (\lean{IsBacklog}). The backlog $Q_i(t)$ of host $i$ is defined in the
+  same way from $W_i$.
+\item A message that host $i$ sends to host $j$ at true time $s$ leaves
+  $i$ at $s_1 = s + Q_i(s)$, reaches $j$ at
+  $s_2 = s_1 + u_{ij}\tau_{ij} + Q_{ij}(s_1)$, where the kernel of $j$
+  stamps it, and is handled by the program of $j$ at
+  $s_2 + Q_j(s_2)$. No message is lost. A pause of length $x$ therefore
+  delays what is sent at its start by $x$ and what is sent later by less,
+  down to nothing at its end, and everything that it withheld arrives
+  together when it ends. A pause of the sender's host delays every receiver
+  at once: links and hosts are drawn independently, and the delays of two
+  receivers are not independent.
+\item Every audio device $x$ has a clock of its own, which advances by
+  \[
+    D_x(t) = \int_0^t e^{\gamma_x + Z_x(y)}\,dy
+  \]
+  between true time zero and true time $t$ (\lean{Draw.deviceReading}).
+  The capture device captures frame zero when the sender's clock reads
+  $\xi$, and frame $n$ when its own clock has advanced by $n/\rho$ since
+  then. The playback device of speaker $r$ lets output sample zero leave
+  when the clock of its host reads $\xi_{r'}$, where $r'$ is the speaker
+  that stands for the device, and output sample $k$ when its own clock has
+  advanced by $k/\rho$ since then. Speakers that are outputs of one device
+  therefore share its clock.
+\item Blocks hold $m$ frames or output samples. The capture device hands a
+  block over at the true time $t$ at which the block's last frame is
+  captured, and the sender's host $i$ handles the handover at
+  $t + Q_i(t)$. A playback device requests a block at the true time $t$
+  that is $\lambda$ seconds, measured on the device's clock, before the
+  block's first output sample leaves, and its host $i$ handles the request
+  at $t + Q_i(t)$. A host therefore handles the events of its audio
+  devices that occur during a pause together, when the pause ends, and a
+  request that waits longer than the request lead loses the output samples
+  that leave in the meantime.
+\item The timestamp that the device $x$ reports for a block is the reading
+  of its host's clock at the true time $t$ of the block's first frame or
+  output sample, plus the error $E_x(t)$. A constant part of such an error
+  is not modelled: no host can tell it from a delay inside the device.
+\item The target latency of every frame is $L^*$.
+\end{itemize}
+A random world belongs to a member of the family when, in every outcome, it
+is the world built from a draw, and the draw has the law above
+(\lean{GenerativeWorld.\allowbreak Holds}).
+\end{definition}
+
+The split $u_{ij}$ measures the asymmetry of a pair of hosts. One half is a
+symmetric pair, and no pair is assumed symmetric. For $\alpha = 1$ the least
+delay of one direction is uniform between zero and the round trip; as
+$\alpha$ grows, the two directions become equal. A solution is given no
+time scale, so the asymmetry of a pair is stated as a share of a quantity
+that the solution can measure, the pair's least round-trip time. The law of
+a split does not prefer a direction: one minus a split has the same law
+(\lean{betaMeasure\_map\_one\_sub}).
+
+A number belongs to the member, and is not drawn, only if a solution can
+learn it from what it observes.
+The offsets and the splits cannot be learned exactly: two hosts that
+exchange messages observe the difference of their offsets plus
+$(u_{ij} - \tfrac12)\,\tau_{ij}$, never the two terms apart, and no host
+observes true time. Around a closed loop of links the offsets cancel, so
+the sum of these terms around the loop is observed. The offsets and the
+splits are therefore drawn. If they were numbers of the member, a solution
+designed for one member would know them and play without error, and no
+solution would be optimal in the sense of Section~\ref{sec:optimality}. Two
+numbers of the member are exceptions, because they describe the laws of quantities
+that cannot be learned: the range $\theta_{\max}$ of the offsets and the
+spread $\sigma$ of the mean rates. The margin of an optimality statement
+has to carry its dependence on them.
+
+The law of the paused time that begins in a period is a probability law
+(\lean{pauseLaw\_univ}), and when no pauses begin it is zero
+(\lean{pauseLaw\_zero}). The model is not empty
+(\lean{GenerativeWorld.\allowbreak example\_\allowbreak holds}): there is a
+random world of the model with three hosts in which the splits, the offsets
+and the mean rates of the clocks of the hosts and of the audio devices are
+random. Its member has no pauses and no
+wander, $\mu_{ij} = 0$, $\mu_i = 0$ and $\nu_i = 0$. The paused time of a
+link or of a host, as the model asks for it, is constructed in Lean for any
+rate of pauses and any law of their lengths (\lean{pausedPath} in
+\path{lean/Unisono/Spec/Models/PauseProcess.lean}). It never decreases and
+counts each pause from the instant at which it begins, and the paused time
+that begins in periods that do not overlap is independent, with the law
+\lean{pauseLaw}
+(\lean{hasIndepIncrements\_\allowbreak pausedPath},
+\lean{hasLaw\_\allowbreak pausedPath\_\allowbreak sub}).
+
+A member has \emph{steady clocks} when the clocks of its hosts and of its
+audio devices do not wander and its audio devices report exact timestamps:
+$\nu_i = 0$, $\nu_x = 0$ and $\varsigma_x = 0$ (\lean{Member.SteadyClocks}).
+Its links and its hosts may pause, at any rates and with any laws of the
+lengths, and the mean rates of its clocks may be spread. Every member with
+steady clocks has a random world, for any hosts and speakers
+(\lean{exists\_\allowbreak holds\_\allowbreak of\_\allowbreak steadyClocks}
+in \path{lean/Unisono/Spec/Models/GenerativePauses.lean}). In it the paused
+time of each link and of each host comes from the process above, and the
+backlogs are finite in almost every outcome, because the pauses take less
+than all of the time on average
+(\lean{ae\_\allowbreak tame\_\allowbreak pausedPath}). A member has
+\emph{steady hosts} when it has steady clocks and its hosts never pause,
+$\mu_i = 0$ (\lean{Member.SteadyHosts}). In every random world of a member
+with steady hosts, almost every outcome is a world whose clocks run at
+constant rates and whose hosts handle the events of their audio devices
+when they occur (\lean{Prior.ae\_\allowbreak constantRates}).
+
+The three properties that the model asks of a paused time fix the law of its
+path. In every random world of a member, with or without steady clocks, the
+paused times of all links and hosts, as functions of true time, have one
+joint law (\lean{Prior.map\_\allowbreak paused} in
+\path{lean/Unisono/Spec/Models/GenerativePauseLaw.lean}). In almost every
+outcome of every random world, all links and all hosts are without a backlog
+together during periods of any length, again and again: for every number of
+seconds $M$ and every true time $N$ there is a later true time $a$ such
+that no link and no host has a backlog from $a$ to $a + M$
+(\lean{Prior.ae\_\allowbreak idle} in
+\path{lean/Unisono/Spec/Models/GenerativeIdle.lean}). Among messages sent
+from one host to another at equally spaced true times, the fraction that take
+longer than a given time converges, in almost every outcome of every random
+world, to a probability that depends only on the member
+(\lean{Prior.ae\_\allowbreak tendsto\_\allowbreak lateFraction} in
+\path{lean/Unisono/Spec/Models/GenerativeLate.lean}).
+
+A random world with wander, or with errors of the timestamps, needs a
+stationary Gaussian process with continuous paths, which exists by a
+standard construction that is not carried out in Lean. The model is therefore
+not yet shown to have members with wander or with errors of the timestamps.
+The generative model is not proved to belong to the classes above;
+its clocks do not have the spectrum that \lean{SecondOrderMoments} requires.
+
+A member is \emph{noiseless} when its links and its hosts never pause, the
+clocks of its hosts and of its audio devices do not wander, the mean rates
+of those clocks have no spread, and its audio devices report exact
+timestamps: $\mu_{ij} = 0$, $\mu_i = 0$, $\nu_i = 0$, $\nu_x = 0$,
+$\varsigma_x = 0$ and $\sigma = 0$
+(\lean{Member.Noiseless}). What stays random in such a member is what no
+host can learn: the offsets and the splits. Almost every outcome of a
+noiseless member is an ideal constant world whose constant delays are the
+least delays of the outcome, and it satisfies the tight bounds of that world
+(\lean{Prior.ae\_idealConstantWorld}, \lean{Prior.ae\_withinBounds} in
+\path{lean/Unisono/Spec/Models/GenerativeNoiseless.lean}). The theorems about
+ideal constant worlds and bounded worlds therefore hold in almost every
+outcome of a noiseless member.
+Every noiseless member has a random world, for any hosts and speakers
+(\lean{exists\_holds\_of\_noiseless} in
+\path{lean/Unisono/Spec/Models/GenerativeCanonical.lean}).
+
+\paragraph{Limitations.}
+The model leaves out, or simplifies, the following. Each item says what the
+simplification distorts.
+\begin{itemize}
+\item \emph{The pauses of different links are independent}, including the
+  two directions of one pair, and so are the pauses of different hosts.
+  Links that share a host do share its pauses, because a pause of a host
+  delays every message that leaves it or reaches it. Links on one switch or
+  access point also share its queue and its radio channel, which the model
+  does not have. It overstates what combining paths through one switch
+  gains.
+\item \emph{The splits of different pairs are independent.} Part of a real
+  pair's asymmetry belongs to a host, whose sending path differs from its
+  receiving path, or to a shared switch, and is common to several pairs.
+  That part cancels around every closed loop of links, so no exchange of
+  messages reveals it. The model overstates how much messages between
+  receivers reduce the error.
+\item \emph{Every pair has the same law for its split}, symmetric about one
+  half and independent of the round trip. Real asymmetry need not be
+  proportional to the round trip, and some links favour one direction.
+\item \emph{Clocks of different hosts are independent.} Hosts in one room
+  share changes of temperature. A common change of rate does not affect the
+  relative timing of the hosts.
+\item \emph{Least delays never change.} Real routes and wireless
+  transmission rates change. A solution that is optimal for the model
+  becomes ever more certain of a least delay and has no reason to notice
+  that it has changed.
+\item \emph{The numbers of a member never change.} Real traffic follows the time
+  of day. The expectation that a solution can learn them rests
+  on learning them once.
+\item \emph{Hosts never join, leave or restart.}
+\item \emph{A message finds its link idle with positive probability}, so the
+  exact least delay is observed, and often. On a real wireless link even an
+  idle channel adds a random delay. The model overstates how fast least
+  delays are learned.
+\item \emph{Pauses begin at the instants of a Poisson process.} Real pauses
+  come in clusters: one is often followed by another before the first is
+  worked off. The model understates how often a pause meets a queue that an
+  earlier pause has emptied.
+\item \emph{A capture device keeps every frame until its host handles the
+  handover.} A real device has a buffer of fixed size and loses frames when
+  a pause of its host outlasts it.
+\item \emph{A host that was paused handles everything that waited at one
+  true time.} A real host takes some time for each event.
+\item \emph{No message is lost, reordered or duplicated.}
+\item \emph{The messages of a solution are free}: they add no work to a
+  link, and nothing limits their number.
+\item \emph{The wander of a clock has one time scale and is stationary.}
+  Real oscillators also age, have noise with long memory, and shift as a
+  device warms up.
+\item \emph{The error of a device's timestamps is a stationary Gaussian
+  process with one time scale.} Real timestamps are of several kinds: some
+  are computed by a filter and err smoothly over seconds, some are rounded
+  to a fixed step such as a millisecond, and some are grossly wrong for a
+  while when the host is busy. The model has the first kind, stands for the
+  second by a short time scale, and does not have the third. A constant
+  error in the time that a device reports for its output can be observed by
+  no host, like asymmetry, and is not modelled.
+\item \emph{The clocks of the audio devices are independent of the clocks of
+  their hosts and of one another.} A device without an oscillator of its own
+  runs on a clock of its host, and devices in one room share changes of
+  temperature.
+\item \emph{No host can check the shape $\alpha$.} Every result under the
+  model depends on it and has to say how it changes when $\alpha$ is wrong.
+\end{itemize}
+
+\section{Optimality in expected cost}\label{sec:optimality}
+
+When the world is random, a solution is judged by its expected cost: the
+mean of its cost $J$ (Section~\ref{sec:objectives}) over the worlds that a
+probability measure draws (\lean{Solution.\allowbreak expectedCost}). The
+definitions are in \path{lean/Unisono/Spec/Optimality.lean}.
+
+\begin{definition}[Optimal within a margin]
+Let a model be a family of sets of random worlds, one set for each value $f$
+of an index (\lean{RandomWorlds}). For each $f$ let a class of solutions be
+given, the solutions that are \emph{compared at} $f$
+(\lean{SolutionClass}). Write $\mathbb{E}\,J(\sigma)$ for the expected cost
+of a solution $\sigma$ in a random world. A solution $\sigma$ is
+\emph{optimal within the margin} $\varepsilon$, where
+$0 \le \varepsilon(f) \le \infty$ for each $f$, if for every $f$, every
+random world of the set of $f$ and every solution $\tau$ compared at $f$,
+\[
+  \mathbb{E}\,J(\sigma) \le \mathbb{E}\,J(\tau) + \varepsilon(f),
+\]
+and $\sigma$ is itself compared at every $f$ with $\varepsilon(f) < \infty$
+(\lean{OptimalWithin}). A margin $\varepsilon(f) = \infty$ says nothing
+about $f$. With $\varepsilon = 0$, no compared solution has a lower expected
+cost in any of these random worlds.
+\end{definition}
+
+For the generative world, the index $f$ is the member: the numbers that a
+solution is not told (\lean{GenerativeWorld.\allowbreak laws}). The margin may
+depend on the member, because a cost in seconds squared cannot have one
+margin for networks of all sizes. Two solutions that are both optimal with
+no margin have the same expected cost
+(\lean{OptimalWithin.\allowbreak expectedCost\_eq}).
+
+\begin{remark}[Where a statement of optimality can be weak]
+A statement of optimality can be weak in three places. The definitions are
+arranged so that each is visible in the statement.
+\begin{itemize}
+\item \emph{The members.} A statement about the generative world is about
+  every member. A statement that covers only some members gives every other
+  member the margin $\infty$. The members about which it says nothing
+  therefore appear in the statement itself, and no statement can be made to
+  look stronger by leaving members out.
+\item \emph{The compared solutions.} The class of solutions compared at a
+  member depends on that member alone. It cannot require anything of a
+  solution in other members, which would remove solutions from the
+  comparison for no reason.
+\item \emph{The margin.} Of two statements about the same compared
+  solutions, the one whose margin is smaller at every member is the
+  stronger. A proof makes progress when it lowers the margin of some
+  members, and most of all when it lowers a margin from $\infty$.
+\end{itemize}
+In Lean, a statement about every member of the generative world is
+\lean{GenerativeWorld.\allowbreak OptimalWithin}.
+\end{remark}
+
+\begin{remark}[Means, not outcomes]
+The comparison is between means. In one world a solution with a larger
+expected cost can still cost less, as a decision that is right on average
+can still turn out badly. The definition gives no guarantee for one
+network: a network whose asymmetry lies in the tail of the law does worse
+than the mean, and no host can tell.
+\end{remark}
+
+\begin{remark}[What the solution knows]
+The weights $w$ of the cost and the lookahead $a$ of the resampler come
+first: a solution is designed for them and may depend on them, and a
+statement of optimality is about one choice of them. The solution $\sigma$
+is fixed before the member $f$ and the random world are chosen, so beyond
+the weights it uses only what the model tells every solution. The
+solution $\tau$ is chosen afterwards and may be designed for that one
+member. A solution that is optimal in this sense therefore does as well as
+one that is told the numbers of the member. This can hold only when the cost is a
+long-run average and those numbers can be learned from what a host
+observes; then the cost of learning them is a share of the average that
+vanishes. For the generative world this is an expectation that has not been
+proved. A cost that counted the time to start up would make a solution that
+is told those numbers strictly better, and optimality would then need a
+law for them as well.
+\end{remark}
+
+\begin{remark}[The class of solutions]
+The class \lean{allSolutions} compares all solutions. A statement about a
+smaller class has to name it. The expected cost is a lower integral
+(\lean{Solution.\allowbreak expectedCost}). When the cost of a solution is
+not a measurable function of the outcome, its lower integral can lie below
+its cost in almost every outcome, and such a solution can appear better than
+every solution whose cost is measurable. Optimality under the generative
+world therefore compares, at each member, the solutions whose cost in that
+member is a measurable function of what is drawn
+(\lean{GenerativeWorld.\allowbreak measurableCost}): there is a measurable
+function of the draw that equals the cost of the solution in almost every
+outcome, in every random world of the member. This is the least that makes
+the expected cost of a solution in a member one number.
+
+A second class holds the solutions whose playback in a member is a
+measurable function of what is drawn
+(\lean{GenerativeWorld.\allowbreak measurablePlays}). For every speaker and
+every output sample there are a measurable set of draws and a measurable
+function of the draw such that, in almost every outcome of every random
+world of the member, the speaker plays the source at that output sample
+exactly when the draw lies in the set, and then it plays the position that
+the function gives. A bound that reasons about what a solution has played
+before a pause begins needs what was played to be a random variable: a pause
+begins independently of the past, and that can be used only for quantities
+that have a law. The class is meant to hold every solution that can be run
+as a program. No theorem in this document uses it yet, and no solution has
+been proved to belong to it; Theorem~\ref{thm:star-optimal} is about the
+larger class without this condition.
+
+No comparison in this document limits which frames a solution plays. A
+speaker that does not play a frame adds nothing to that frame's
+synchronization, latency and tracking costs; what such a frame costs is the
+missed samples. An output sample that plays nothing counts one, and a jump
+counts the frames that it skips. Two things follow. With $w_M = 0$ a
+solution that plays nothing has cost zero, so a lower bound on the cost
+needs $w_M > 0$. And a playback that moves forward ever more slowly, and
+never reaches the next frame, plays no frame, counts no missed sample and no
+discontinuity, and has no roughness in the long run: its cost is zero for
+all weights. A lower bound on the cost therefore holds only among the
+solutions within the speed bound $u_{\max}$ of
+Section~\ref{sec:solutions}, with $u_{\max} < 1$.
+\end{remark}
+
+\subsection{The baseline among solutions through the sender}\label{sec:star-optimal}
+
+One bound of this kind is proved. It does not make the baseline optimal:
+it has a finite margin only in the noiseless members of
+the generative world, which are the members with every disturbance switched
+off, and it compares the baseline
+(\path{docs/fixed-playout-delay.tex}) with the \emph{star solutions}: the
+solutions whose hosts exchange messages only with the sender
+(\lean{Solution.IsStar}).
+
+Write $h_*$ for the sender's host and $h_r$ for the host of speaker $r$. In
+an outcome, the \emph{asymmetry} of a host $h$ is
+\[
+  \zeta_h = \bigl(u_{h_* h} - \tfrac12\bigr)\,\tau_{h_* h},
+\]
+how far the least delay from the sender to $h$ exceeds half the least
+round-trip time between the two (\lean{Draw.asymmetry}). Here
+$\tau_{ij}$ is the least round-trip time of the hosts $i$ and $j$, and the
+split $u_{ij}$ is the share of it that the direction from $i$ to $j$ takes
+(Section~\ref{sec:generative}). A round-trip
+estimate of the sender's clock at $h$ is off by $\zeta_h$, and no exchange
+with the sender reveals it. The \emph{shift cost} of numbers
+$x_1, \dots, x_R$, one for each speaker, is
+\[
+  S(x) = w_S \cdot \frac1R \sum_r (x_r - \bar x)^2
+       + w_\Theta \cdot \frac1R \sum_r x_r^2,
+  \qquad \bar x = \frac1R \sum_r x_r
+\]
+(\lean{shiftCost}). It is the weighted synchronization and tracking cost of
+a frame that every speaker $r$ plays $x_r$ later than the target latency.
+
+\begin{definition}[The compared star solutions]
+At a member, for a lookahead, weights and a speed bound $u_{\max}$, the
+compared star solutions are the star solutions with the following
+properties in that member
+(\lean{GenerativeWorld.\allowbreak StarSolutions}).
+\begin{itemize}
+\item The cost in the member is a measurable function of what is drawn
+  (\lean{measurableCost}).
+\item In almost every outcome of every random world of the member, the
+  solution keeps the speed bound: its position advances by one frame per
+  output sample within $u_{\max}$ at every step of continuous playback
+  (\lean{Solution.WithinStep}).
+\end{itemize}
+Nothing is required about which frames a solution plays, or about its run.
+\end{definition}
+
+\begin{theorem}[The baseline among star solutions]\label{thm:star-optimal}
+Consider a generative world in which no speaker is on the sender's host,
+weights with $w_\Lambda = w_V = 0$, and a speed bound $u_{\max} < 1$. Let
+the baseline play at the target latency $L^*$, send the stream to every
+speaker's host, send each message at least once, and have a slew that is
+positive and at most $u_{\max}$. Call a member \emph{covered} when it is
+noiseless, for every speaker $r$
+\[
+  L^* > \frac{a + 2(m - 1)}{\rho} + \frac{\tau_{h_* h_r}}{2} + \lambda
+\]
+(\lean{NoiselessWithMargin}), and the weight of missed samples is large
+enough against the round-trip times,
+\[
+  6\,(w_\Theta + 4\,w_S)\,\Bigl(\frac{\tau_\Sigma}{2}\Bigr)^2
+    \le w_M\,(1 - u_{\max})\,\rho
+\]
+(\lean{MissedWeightPays}). Then the expected cost of the baseline exceeds
+that of no compared star solution by more than
+\[
+  \varepsilon(f) =
+  \begin{cases}
+    (w_S + w_\Theta)\,\dfrac{\tau_\Sigma^3}{4\,\theta_{\max}}
+      & \text{if the member } f \text{ is covered,} \\[6pt]
+    \infty & \text{otherwise,}
+  \end{cases}
+  \qquad \tau_\Sigma = \sum_r \tau_{h_* h_r},
+\]
+for any number of hosts and speakers. The theorem is
+\lean{within\_\allowbreak starMargin} in
+\path{lean/Unisono/Solutions/FixedDelay/StarMargin.lean}, and the margin is
+\lean{starMargin}. Here $a$ is the resampler's lookahead in frames, $m$
+the number of frames in a block, $\rho$ the nominal rate, $\lambda$ the
+request lead, and $\theta_{\max}$ the bound of the clock offsets. The
+conditions can be met
+(\lean{within\_\allowbreak starMargin\_\allowbreak conditions}).
+\end{theorem}
+
+The proof has three parts.
+\begin{itemize}
+\item \emph{The baseline's cost.} In almost every outcome the baseline's
+  cost is $S(\zeta_{h_1}, \dots, \zeta_{h_R})$, the shift cost of the
+  asymmetries of the speakers' hosts (\lean{ae\_cost\_eq}): each speaker
+  plays every frame late by the asymmetry of its host.
+\item \emph{A lower bound.} Pair each outcome with its \emph{reflection}:
+  the outcome in which, for every receiving host $h$, the two least delays
+  between the sender and $h$ are exchanged and the offset of the clock of
+  $h$ is moved by $2\zeta_h$ (\lean{reflect}). A host that exchanges
+  messages only with the sender observes the same in the worlds of the two
+  outcomes. A star solution therefore plays the same in both, and its costs
+  in the two add up to at least twice the shift cost of the asymmetries
+  (\lean{Solution.\allowbreak cost\_shiftStar\_add\_ge\_of\_step}). A
+  speaker that plays a frame pays for its own shift, and two speakers that
+  both play it pay for the difference of their shifts. A frame that a
+  speaker never plays is paid for by missed samples: within the speed bound
+  a playback leaves at most three frames unplayed for each missed sample,
+  and the condition on $w_M$ makes these payments at least what the frame
+  would have cost. A run that has no event after some true time plays
+  nothing from then on, which costs $w_M \rho$. The
+  reflection keeps the law of the outcomes
+  (\lean{measurePreserving\_reflect}), because the law of the split is
+  symmetric and the law of the offset is uniform. The two costs therefore
+  have the same mean, and the mean cost of every compared star solution is
+  at least the mean of the shift cost
+  (\lean{StarSolutions.\allowbreak le\_expectedCost}).
+\item \emph{The margin.} The offset of a clock is uniform on
+  $[-\theta_{\max}, \theta_{\max}]$, and a reflection could move it out of
+  this range. The reflection therefore leaves a host as it is when its
+  offset would leave the range, which has probability at most
+  $\tau_{h_* h}/\theta_{\max}$. The margin bounds the cost of the
+  asymmetries in those outcomes (\lean{lintegral\_asymmetry\_le}).
+\end{itemize}
+Two facts about every noiseless member carry the comparison from one
+probability space to all. Every random world of the member agrees with one
+concrete random world in almost every outcome
+(\lean{Prior.\allowbreak ae\_eq\_canonicalWorld}), so the expected cost of a
+solution with measurable cost is the same in all of them
+(\lean{expectedCost\_eq\_canonical}).
+
+\begin{remark}[What the theorem does not say]
+The theorem compares the baseline with star solutions only. With two or more
+receiving hosts, a solution whose receiving hosts also exchange messages
+with each other can have a lower expected cost, so the baseline is not
+optimal among all solutions. The theorem covers noiseless members only:
+for members with pauses or with clock wander its margin is $\infty$. It
+covers only members in which the weight of missed samples is large enough
+against the round-trip times; for the others its margin is $\infty$ as
+well. The compared solutions are limited by the speed bound alone: nothing
+is assumed about which frames they play. The margin
+is small when the offsets of the clocks are spread over a range much larger
+than the round-trip times, as for clocks that nothing has synchronized; it
+is not small otherwise. No solution is proved optimal among all solutions,
+in any member.
+\end{remark}
+
 \section{Communication topologies and fundamental limits}\label{sec:limits}
 
 Communication topologies are classified directly on \lean{Solution}
@@ -831,10 +1477,11 @@ by $\Delta(h)$ with $\Delta(\mathrm{sender}) = 0$ (\lean{World.shiftHosts})
 adds $\Delta(j) - \Delta(i)$ to link $(i, j)$'s one-way delay while leaving
 every round-trip time unchanged
 (\lean{World.\allowbreak shiftHosts\_\allowbreak rtt\_\allowbreak eq}).
-Under non-Zeno progress and no simultaneous arrivals from distinct origins
-at the same host (\lean{Solution.\allowbreak NoCrossOriginCollision}), every
-host observes the identical local view and produces identical playback
-decisions (\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
+The shift has to leave every message reaching its host after it is sent.
+Under non-Zeno progress, every host then observes the identical local view,
+with the same stamps of the kernel, and
+produces identical playback decisions
+(\lean{Solution.\allowbreak plays\_\allowbreak shiftHosts}).
 Because a star solution never sends on receiver-to-receiver links, its run
 states and playback decisions are completely invariant to modifications of
 non-star links
@@ -852,8 +1499,7 @@ one-way delay shifts $\pm(\Delta(j) - \Delta(i))$ on star links while
 leaving all direct receiver-to-receiver links identical to $w$ (including
 arbitrarily fast, symmetric peer links). Then for every star solution
 $\sigma$ (\lean{Solution.IsStar}) that is non-Zeno in $w$, $w^+$, and
-$w^-$, satisfies \lean{Solution.\allowbreak NoCrossOriginCollision} in $w$,
-and plays every frame from some index $N$ onward on every speaker,
+$w^-$ and plays every frame from some index $N$ onward on every speaker,
 \[
   \max\bigl(w^+.\mathrm{sync}(\sigma),\, w^-.\mathrm{sync}(\sigma)\bigr)
   \ge \operatorname{Var}_r\bigl(\Delta(\mathrm{host}(r))\bigr),
@@ -869,7 +1515,7 @@ To establish tightness and strict separation inside the ideal constant model
 \lean{sepBaseWorld}: sender $0$, speaker $0$ on host $1$, speaker $1$ on
 host $2$, unit frame rate $\rho = 1$, constant star-link delay $1/2$,
 symmetric direct peer-link delay $1/10$, and staggered speaker block-request
-offsets ($0$ and $1/3$) preventing cross-origin arrival collisions. For any
+offsets ($0$ and $1/3$). For any
 asymmetry $A \in (0, 1/4)$, applying $\Delta = (0, A, -A)$ and $-\Delta$
 produces the pair
 $(w^+(A), w^-(A)) = (\text{\lean{sepWorldPlus}}, \text{\lean{sepWorldMinus}})$;
@@ -887,8 +1533,8 @@ For every $A \in (0, 1/4)$ on $(w^+(A), w^-(A))$:
     \max\bigl(w^+(A).\mathrm{sync},\; w^-(A).\mathrm{sync}\bigr) \ge A^2 .
   \]
   The forwarding-only star witness \lean{ForwardStar.solution} satisfies the
-  hypotheses via \lean{isStar}, \lean{noCrossOriginCollision}, and
-  \lean{progress} in the \lean{ForwardStar} namespace, plays every frame
+  hypotheses via \lean{isStar} and \lean{progress} in the
+  \lean{ForwardStar} namespace, plays every frame
   $n \ge 2$ on both speakers, and achieves
   $w^+(A).\mathrm{sync} = w^-(A).\mathrm{sync} = A^2$
   (\lean{ForwardStar.\allowbreak sync\_\allowbreak eq}).

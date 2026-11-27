@@ -630,7 +630,7 @@ def stepHost {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (N M K : Std.Us
               (dst, CoreMsg.audio hdr, frameSet)
             ({ m with snd := snd2 }, ⟨sends, [], fun _ => none⟩)
       else (m, ⟨[], [], fun _ => none⟩)
-  | .received _ (.audio hdr) _ =>
+  | .received _ (.audio hdr) _ _ =>
       if h = p.sender then (m, ⟨[], [], fun _ => none⟩)
       else
         let rcv' := fun r =>
@@ -639,7 +639,7 @@ def stepHost {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (N M K : Std.Us
                marked := { stored := 0#u32, duplicate := 0#u32, late := 0#u32, early := 0#u32 } },
              m.rcv r)).2
         ({ m with rcv := rcv' }, ⟨[], [], fun _ => none⟩)
-  | .received i (.report rep) _ =>
+  | .received i (.report rep) _ _ =>
       if h = p.sender ∧ rep.stream = p.stream then
         let ec : packet.Echo :=
           { stream := rep.stream
@@ -649,14 +649,14 @@ def stepHost {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (N M K : Std.Us
             departure := nowNs }
         (m, ⟨[(i, CoreMsg.echo ec, ∅)], [], fun _ => none⟩)
       else (m, ⟨[], [], fun _ => none⟩)
-  | .received _ (.echo ec) _ =>
+  | .received _ (.echo ec) _ _ =>
       if h = p.sender then (m, ⟨[], [], fun _ => none⟩)
       else
         let syn1 := (evalResult (sync.Sync.on_sender_echo m.syn ec nowNs) (false, m.syn)).2
         let (snap, syn2) := evalResult (sync.Sync.step syn1 nowNs) (sync.SyncSnapshot.EMPTY, syn1)
         let rcv' := fun r => evalResult (receiver.Receiver.apply_sync (m.rcv r) snap) (m.rcv r)
         ({ m with syn := syn2, rcv := rcv' }, ⟨[], [], fun _ => none⟩)
-  | .received i (.peerProbe probe) _ =>
+  | .received i (.peerProbe probe) _ _ =>
       if h = p.sender then (m, ⟨[], [], fun _ => none⟩)
       else
         match evalResult (sync.Sync.on_peer_probe m.syn probe nowNs nowNs) none with
@@ -665,14 +665,14 @@ def stepHost {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (N M K : Std.Us
               (m, ⟨[(i, CoreMsg.peerEcho pe, ∅)], [], fun _ => none⟩)
             else (m, ⟨[], [], fun _ => none⟩)
         | none => (m, ⟨[], [], fun _ => none⟩)
-  | .received _ (.peerEcho pe) _ =>
+  | .received _ (.peerEcho pe) _ _ =>
       if h = p.sender then (m, ⟨[], [], fun _ => none⟩)
       else
         let syn1 := (evalResult (sync.Sync.on_peer_echo m.syn pe nowNs) (false, m.syn)).2
         let (snap, syn2) := evalResult (sync.Sync.step syn1 nowNs) (sync.SyncSnapshot.EMPTY, syn1)
         let rcv' := fun r => evalResult (receiver.Receiver.apply_sync (m.rcv r) snap) (m.rcv r)
         ({ m with syn := syn2, rcv := rcv' }, ⟨[], [], fun _ => none⟩)
-  | .received _ (.peerRelay rel) _ =>
+  | .received _ (.peerRelay rel) _ _ =>
       if h = p.sender then (m, ⟨[], [], fun _ => none⟩)
       else
         let syn1 := (evalResult (sync.Sync.on_peer_relay m.syn rel nowNs) (0#usize, m.syn)).2
@@ -798,7 +798,7 @@ theorem usesGraph_of_peers {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (
         | nil => simp at hmem
         | cons _ _ => exact Or.inl hs
       · simp at hmem
-    | received origin contents fs =>
+    | received origin contents fs _ =>
       simp only [hobs] at hmem
       cases contents with
       | audio hdr => split_ifs at hmem <;> simp at hmem
@@ -906,7 +906,7 @@ private theorem core_no_timers {H : Type} {R : ℕ} [DecidableEq H] (p : Params 
       dsimp only; split_ifs
       · cases fs <;> rfl
       · rfl
-    | received i c fs =>
+    | received i c fs _ =>
       cases c with
       | audio _ => dsimp only; split_ifs <;> rfl
       | report _ => dsimp only; split_ifs <;> rfl
@@ -963,7 +963,7 @@ theorem progress {H : Type} {R : ℕ} [DecidableEq H] [Fintype H]
         (Nat.add_le_add (weight_askedReport p h _ _ _ _) (weight_askedProbe p h _ _))
         (weight_askedRelay p h _ _)) 1) ?_
       omega
-  · intro h view i c F reading
+  · intro h view i c F ks reading
     rw [solution_append]
     unfold act stepHost
     dsimp only
@@ -1122,7 +1122,7 @@ theorem sync_zero_peers_inv {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) 
       dsimp only; split_ifs
       · cases fs <;> exact ih
       · exact ih
-    | received i c fs =>
+    | received i c fs _ =>
       cases c with
       | audio hdr => dsimp only; split_ifs <;> exact ih
       | report rep => dsimp only; split_ifs <;> exact ih
@@ -1208,7 +1208,7 @@ theorem star_no_peer_messages {H : Type} {R : ℕ} [DecidableEq H] (p : Params H
           obtain ⟨_, _, _, rfl, _⟩ := hmem
           exact ⟨(fun _ hc => nomatch hc), (fun _ hc => nomatch hc), (fun _ hc => nomatch hc)⟩
       · simp at hmem
-    | received i c fs =>
+    | received i c fs _ =>
       simp only [hobs] at hmem
       cases c with
       | audio _ => split_ifs at hmem <;> simp at hmem
@@ -1713,7 +1713,7 @@ theorem rcv_modal_inv {H : Type} {R : ℕ} [DecidableEq H] (p : Params H) (N M K
       dsimp only; split_ifs
       · cases fs <;> exact ih
       · exact ih
-    | received i c fs =>
+    | received i c fs _ =>
       cases c with
       | audio hdr =>
         dsimp only; split_ifs

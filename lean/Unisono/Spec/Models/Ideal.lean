@@ -21,6 +21,8 @@ noiseless baseline:
   delay, and request playback blocks with constant lead `lead`.
 * Every directed link `(i, j)` delivers every message with a constant positive
   delay `delay i j`, zero jitter, no pauses, no outages, and no packet loss.
+  The program of the receiving host handles each message at the moment at
+  which the message reaches the host.
 * The target latency is constant (`targetLatency`).
 
 `IdealConstantWorld.Symmetric` restricts to symmetric link delays
@@ -99,6 +101,9 @@ structure Holds (m : IdealConstantWorld H R) (w : World H R) : Prop where
   speaker_reported : ∀ r : Fin R, (w.speaker r).ReportsWithin (w.clock (w.host r)) 0
   /-- Every message on link `(i, j)` arrives with exact constant delay `m.delay i j`. -/
   network : ∀ i j s q, w.network.deliver i j s q = some (s + m.delay i j)
+  /-- Every message reaches the receiving host at the moment at which the
+  host's program handles it. -/
+  reach : ∀ i j s q, w.network.reach i j s q = s + m.delay i j
   /-- Application target latency is constant. -/
   target_eq : ∀ n : ℕ, w.target n = m.targetLatency
 

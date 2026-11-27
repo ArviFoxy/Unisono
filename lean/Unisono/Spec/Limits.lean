@@ -30,7 +30,7 @@ official `Unisono.Spec` event-driven run model (`Unisono.Spec.Solution`,
      runs when non-star (receiver–receiver) links are modified.
    * `star_sync_lower_bound_with_symmetric_peers`: using host-local view
      invariance (`Solution.plays_shiftHosts`), every non-Zeno star solution
-     without simultaneous cross-origin arrivals suffers
+     that plays every frame from some frame on suffers
      `max (w⁺.sync) (w⁻.sync) ≥ ENNReal.ofReal (varFin (fun r => Δ (w.host r)))`
      on `(w⁺, w⁻) = (shiftStarKeepPeers w Δ, shiftStarKeepPeers w (-Δ))`.
    * `peer_probe_recovers_exact_offset`: NTP clock-reading identity for a
@@ -188,7 +188,8 @@ theorem exists_asked_of_plays_some (σ : Solution H R Msg) (w : World H R) (look
     have := (w.speaker r).first_strictMono.monotone hle
     omega
   obtain ⟨n, -, hnb, hnearly⟩ := σ.exists_asked_step w lookahead hb_lt
-  have hp := σ.plays_of_asked_step w lookahead hnb hnearly hk_mem
+  have hp := σ.plays_of_asked_step_of_lt w lookahead hnb hnearly hk_mem
+    (σ.asked_lt_out_of_plays w lookahead hk_mem hplay0)
   rw [hplay0] at hp
   unfold playable at hp
   cases hopt : (σ (w.host r) ((σ.states w lookahead n).views (w.host r)
@@ -224,7 +225,7 @@ theorem fixedDelay_isStar {H : Type} {R : ℕ} [DecidableEq H]
       split_ifs at hmem with hs
       · exact Or.inl hs
       · simp at hmem
-    | received i payload _ =>
+    | received i payload _ _ =>
       cases payload with
       | block _ _ => simp [hobs] at hmem
       | ask sent =>
@@ -251,7 +252,9 @@ variable {H : Type} {R : ℕ} {Msg : Type} [DecidableEq H]
 /-- **Star solutions cannot observe non-star links.** If two worlds `w₁, w₂`
 are identical except possibly on network delivery over non-star edges
 (`i ≠ sender ∧ j ≠ sender`), then every star solution (`σ.IsStar w₁.sender`)
-has the exact same run states and playback decisions in `w₁` and `w₂`. -/
+has the exact same run states and playback decisions in `w₁` and `w₂`. On
+the star edges the two networks deliver each message at the same time, after
+it reaches its host at the same time. -/
 theorem star_states_eq_of_star_links_eq (σ : Solution H R Msg) (w₁ w₂ : World H R)
     (lookahead : ℕ+) (hstar : σ.IsStar w₁.sender)
     (hsender : w₂.sender = w₁.sender)
@@ -259,7 +262,8 @@ theorem star_states_eq_of_star_links_eq (σ : Solution H R Msg) (w₁ w₂ : Wor
     (hsrc : w₂.source = w₁.source) (hspk : w₂.speaker = w₁.speaker)
     (htgt : w₂.target = w₁.target)
     (hnet : ∀ i j t q, (i = w₁.sender ∨ j = w₁.sender) →
-      w₂.network.deliver i j t q = w₁.network.deliver i j t q) :
+      w₂.network.deliver i j t q = w₁.network.deliver i j t q
+        ∧ w₂.network.reach i j t q = w₁.network.reach i j t q) :
     (∀ n, σ.states w₂ lookahead n = σ.states w₁ lookahead n)
       ∧ σ.plays w₂ lookahead = σ.plays w₁ lookahead := by
   have hsendAll : ∀ (st : State H R Msg) (h : H) (t : Time) (held : Finset ℕ)
@@ -275,27 +279,33 @@ theorem star_states_eq_of_star_links_eq (σ : Solution H R Msg) (w₁ w₂ : Wor
       have hm1 : h = w₁.sender ∨ m.1 = w₁.sender := hmem m (List.mem_cons_self ..)
       have hsend : st.send w₂ h t m.1 m.2.1 (m.2.2.filter (· ∈ held))
           = st.send w₁ h t m.1 m.2.1 (m.2.2.filter (· ∈ held)) := by
-        simp [State.send, hnet h m.1 t (st.sentCount h m.1) hm1]
+        simp [State.send, (hnet h m.1 t (st.sentCount h m.1) hm1).1,
+          (hnet h m.1 t (st.sentCount h m.1) hm1).2]
       rw [hsend]
       exact ih _ (fun s hs => hmem s (List.mem_cons_of_mem _ hs))
   have hhandle : ∀ (st : State H R Msg) (h : H) (t : Time) (obs : Observation H R Msg),
       st.handle σ w₂ lookahead h t obs = st.handle σ w₁ lookahead h t obs := by
     intro st h t obs
     dsimp only [State.handle]
-    rw [hclock]
+    rw [hclock, hspk]
     have hsat : ∀ s ∈ (σ h (st.views h ++ [⟨(w₁.clock h).read t, obs⟩])).sends,
         h = w₁.sender ∨ s.1 = w₁.sender :=
       fun s hs => hstar h _ s.1 s.2.1 s.2.2 hs
     rw [hsendAll _ h t _ _ hsat]
+  have hidx : w₂.hostIndex = w₁.hostIndex := by
+    funext h
+    unfold World.hostIndex
+    rw [hsender, hhost]
   have hkey : ∀ (st : State H R Msg), st.key w₂ = st.key w₁ := by
     intro st; funext d
-    cases d <;> simp [State.key, hsrc, hspk]
+    cases d <;> simp [State.key, hsrc, hspk, hidx]
   have hstates : ∀ n, σ.states w₂ lookahead n = σ.states w₁ lookahead n := by
     intro n
     induction n with
     | zero => rfl
     | succ n ih =>
-      simp only [Solution.states, ih, State.step, hkey, hsender, hhost, hsrc, hspk, htgt]
+      simp only [Solution.states, ih, State.step, hkey, hsender, hhost, hsrc, hspk, htgt,
+        hclock]
       cases earliest ((σ.states w₁ lookahead n).key w₁) (σ.states w₁ lookahead n).due with
       | none => rfl
       | some d =>
@@ -332,9 +342,10 @@ def dropPeerLinks (w : World H R) : World H R where
   network :=
     { deliver := fun i j t q =>
         if i = w.sender ∨ j = w.sender then w.network.deliver i j t q else none
-      after := fun i j t q a h => by
+      reach := w.network.reach
+      reach_mem := fun i j t q a h => by
         split_ifs at h
-        · exact w.network.after i j t q a h }
+        · exact w.network.reach_mem i j t q a h }
   target := w.target
 
 /-- Shift non-sender host timelines by `Δ` on star links
@@ -343,7 +354,8 @@ links identical to `w`. Crucially, the causality condition `hstar` is required
 **only on star links**, placing no minimum-delay constraint on peer links. -/
 def shiftStarKeepPeers (w : World H R) (Δ : H → ℝ)
     (hstar : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + Δ i < a + Δ j) : World H R where
+      w.network.deliver i j s q = some a →
+        s + Δ i < w.network.reach i j s q + Δ j) : World H R where
   rate := w.rate
   rate_pos := w.rate_pos
   sender := w.sender
@@ -361,8 +373,7 @@ def shiftStarKeepPeers (w : World H R) (Δ : H → ℝ)
       first_zero := (w.speaker r).first_zero
       first_strictMono := (w.speaker r).first_strictMono
       asked := fun b => (w.speaker r).asked b + Δ (w.host r)
-      asked_strictMono := fun _ _ hlt => by linarith [(w.speaker r).asked_strictMono hlt]
-      asked_before := fun b => by linarith [(w.speaker r).asked_before b]
+      asked_mono := fun _ _ hle => by linarith [(w.speaker r).asked_mono hle]
       reported := (w.speaker r).reported }
   network :=
     { deliver := fun i j t q =>
@@ -370,12 +381,18 @@ def shiftStarKeepPeers (w : World H R) (Δ : H → ℝ)
           (w.network.deliver i j (t - Δ i) q).map (· + Δ j)
         else
           w.network.deliver i j t q
-      after := fun i j t q a h => by
-        split_ifs at h with hs
-        · rcases Option.map_eq_some_iff.mp h with ⟨a₀, hdel, rfl⟩
-          have := hstar i j (t - Δ i) q a₀ hs hdel
-          linarith
-        · exact w.network.after i j t q a h }
+      reach := fun i j t q =>
+        if i = w.sender ∨ j = w.sender then w.network.reach i j (t - Δ i) q + Δ j
+        else w.network.reach i j t q
+      reach_mem := fun i j t q a h => by
+        by_cases hs : i = w.sender ∨ j = w.sender
+        · simp only [ite_eq_left hs] at h ⊢
+          rcases Option.map_eq_some_iff.mp h with ⟨a₀, hdel, rfl⟩
+          have h1 := hstar i j (t - Δ i) q a₀ hs hdel
+          have h2 := (w.network.reach_mem i j (t - Δ i) q a₀ hdel).2
+          exact ⟨by linarith, by linarith⟩
+        · simp only [ite_eq_right hs] at h ⊢
+          exact w.network.reach_mem i j t q a h }
   target := w.target
 
 /-- **Star lower bound in worlds with arbitrary (including fast, symmetric)
@@ -383,20 +400,18 @@ peer links — no `horder` and no peer-link delay bound.**
 On `(w⁺, w⁻) = (shiftStarKeepPeers w Δ, shiftStarKeepPeers w (-Δ))`, where
 star links carry opposite one-way asymmetries `±Δ` (`Δ w.sender = 0`) and
 direct peer links remain unmodified (of arbitrarily small delay), every
-non-Zeno star solution `σ` without simultaneous cross-origin arrivals in `w`
-that plays all frames from `N` onward must suffer
+non-Zeno star solution `σ` that plays all frames from `N` onward must suffer
 `max (w⁺.sync) (w⁻.sync) ≥ ENNReal.ofReal (varFin (fun r => Δ (w.host r)))`. -/
 theorem star_sync_lower_bound_with_symmetric_peers (σ : Solution H R Msg)
     (w : World H R) (lookahead : ℕ+) (hstar : σ.IsStar w.sender)
     (Δ : H → ℝ) (hΔs : Δ w.sender = 0)
     (hstar₁ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+      w.network.deliver i j s q = some a → s + Δ i < w.network.reach i j s q + Δ j)
     (hstar₂ : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j))
+      w.network.deliver i j s q = some a → s + (-Δ i) < w.network.reach i j s q + (-Δ j))
     (hprog : ∀ T : Time, ∃ n, T < σ.eventTime w lookahead n)
     (hprog₁ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w Δ hstar₁) lookahead n)
     (hprog₂ : ∀ T : Time, ∃ n, T < σ.eventTime (shiftStarKeepPeers w (-Δ) hstar₂) lookahead n)
-    (harr : σ.NoCrossOriginCollision w lookahead)
     (hR : 0 < R) (N : ℕ)
     (hplay : ∀ n, N ≤ n → ∀ r, (w.playTime (σ.plays w lookahead) r n).isSome)
     (hunb : ∀ T : Time, ∃ n, T ≤ w.source.capture n) :
@@ -406,12 +421,14 @@ theorem star_sync_lower_bound_with_symmetric_peers (σ : Solution H R Msg)
       ≤ max (wPlus.sync (σ.plays wPlus lookahead)) (wMinus.sync (σ.plays wMinus lookahead)) := by
   intro wPlus wMinus
   set wAux := dropPeerLinks w
-  have hnet₁ : ∀ i j s q a, wAux.network.deliver i j s q = some a → s + Δ i < a + Δ j := by
+  have hnet₁ : ∀ i j s q a, wAux.network.deliver i j s q = some a →
+    s + Δ i < wAux.network.reach i j s q + Δ j := by
     intro i j s q a h
     dsimp only [wAux, dropPeerLinks] at h
     split_ifs at h with hs
     · exact hstar₁ i j s q a hs h
-  have hnet₂ : ∀ i j s q a, wAux.network.deliver i j s q = some a → s + (-Δ i) < a + (-Δ j) := by
+  have hnet₂ : ∀ i j s q a, wAux.network.deliver i j s q = some a →
+    s + (-Δ i) < wAux.network.reach i j s q + (-Δ j) := by
     intro i j s q a h
     dsimp only [wAux, dropPeerLinks] at h
     split_ifs at h with hs
@@ -427,27 +444,23 @@ theorem star_sync_lower_bound_with_symmetric_peers (σ : Solution H R Msg)
       change i = w.sender ∨ j = w.sender at hs
       simp [wMinus, shiftStarKeepPeers, wAux, dropPeerLinks, World.shiftHosts, hs])
   have hevEq : ∀ (w₁ w₂ : World H R),
-      w₂.source = w₁.source → w₂.speaker = w₁.speaker →
+      w₂.source = w₁.source → w₂.speaker = w₁.speaker → w₂.hostIndex = w₁.hostIndex →
       (∀ n, σ.states w₂ lookahead n = σ.states w₁ lookahead n) →
       ∀ n, σ.eventTime w₂ lookahead n = σ.eventTime w₁ lookahead n := by
-    intro w₁ w₂ hsrc hspk hst n
+    intro w₁ w₂ hsrc hspk hidx hst n
     unfold Solution.eventTime
     have hkey : (σ.states w₂ lookahead n).key w₂ = (σ.states w₁ lookahead n).key w₁ := by
-      funext d; rw [hst n]; cases d <;> simp [State.key, hsrc, hspk]
+      funext d; rw [hst n]; cases d <;> simp [State.key, hsrc, hspk, hidx]
     rw [hkey, hst n]
   have hprogAux : ∀ T, ∃ n, T < σ.eventTime wAux lookahead n := fun T => by
     obtain ⟨n, hn⟩ := hprog T
-    exact ⟨n, by rw [hevEq w wAux rfl rfl heqW.1 n]; exact hn⟩
+    exact ⟨n, by rw [hevEq w wAux rfl rfl rfl heqW.1 n]; exact hn⟩
   have hprogAux₁ : ∀ T, ∃ n, T < σ.eventTime (wAux.shiftHosts Δ hnet₁) lookahead n := fun T => by
     obtain ⟨n, hn⟩ := hprog₁ T
-    exact ⟨n, by rw [← hevEq (wAux.shiftHosts Δ hnet₁) wPlus rfl rfl heqPlus.1 n]; exact hn⟩
+    exact ⟨n, by rw [← hevEq (wAux.shiftHosts Δ hnet₁) wPlus rfl rfl rfl heqPlus.1 n]; exact hn⟩
   have hprogAux₂ : ∀ T, ∃ n, T < σ.eventTime (wAux.shiftHosts (-Δ) hnet₂) lookahead n := fun T => by
     obtain ⟨n, hn⟩ := hprog₂ T
-    exact ⟨n, by rw [← hevEq (wAux.shiftHosts (-Δ) hnet₂) wMinus rfl rfl heqMinus.1 n]; exact hn⟩
-  have harrAux : σ.NoCrossOriginCollision wAux lookahead := by
-    intro n m₁ m₂ hm₁ hm₂ hd ha
-    rw [heqW.1 n] at hm₁ hm₂
-    exact harr n m₁ m₂ hm₁ hm₂ hd ha
+    exact ⟨n, by rw [← hevEq (wAux.shiftHosts (-Δ) hnet₂) wMinus rfl rfl rfl heqMinus.1 n]; exact hn⟩
   have hplayAux : ∀ n, N ≤ n → ∀ r, (wAux.playTime (σ.plays wAux lookahead) r n).isSome := by
     intro n hn r
     rw [heqW.2]; exact hplay n hn r
@@ -459,7 +472,7 @@ theorem star_sync_lower_bound_with_symmetric_peers (σ : Solution H R Msg)
     rw [heqMinus.2]; rfl
   rw [hsyncPlus, hsyncMinus]
   exact σ.sync_shiftHosts_lower_bound wAux lookahead Δ hΔs hnet₁ hnet₂
-    hprogAux hprogAux₁ hprogAux₂ harrAux hR N hplayAux hunb
+    hprogAux hprogAux₁ hprogAux₂ hR N hplayAux hunb
 
 /-- **NTP clock-reading identity on a symmetric peer link.**
 In `w' = shiftStarKeepPeers w Δ hstar` where the base world `w` has unit-rate
@@ -469,7 +482,7 @@ NTP estimator `t₂ - (t₁ + t₄) / 2` on a query-reply exchange `(h₁ → h�
 yields `(c₂ - Δ h₂) - (c₁ - Δ h₁)`. -/
 theorem peer_probe_recovers_exact_offset (w : World H R) (Δ : H → ℝ)
     (hstar : ∀ i j s q a, (i = w.sender ∨ j = w.sender) →
-      w.network.deliver i j s q = some a → s + Δ i < a + Δ j)
+      w.network.deliver i j s q = some a → s + Δ i < w.network.reach i j s q + Δ j)
     {h₁ h₂ : H} (h1s : h₁ ≠ w.sender) (h2s : h₂ ≠ w.sender)
     {c₁ c₂ d s : ℝ} {q₁ q₂ : ℕ}
     (hc₁ : ∀ t, (w.clock h₁).read t = t + c₁)
@@ -493,10 +506,7 @@ theorem peer_probe_recovers_exact_offset (w : World H R) (Δ : H → ℝ)
 /-! ## 5. Separation Worlds, Protocol Qualification, Tight Star Witness, and Peer Witness -/
 
 /-- Staggered request/output phase offset on `sepBaseWorld`: speaker `0` acts at
-integer offsets (`0`), speaker `1` at `+ 1/3`. Staggering prevents exact arrival
-ties at sender `0` when both speakers send queries on their own block requests,
-so `FixedDelay.solution` satisfies
-`Solution.NoCrossOriginCollision` on `sepBaseWorld`. -/
+integer offsets (`0`), speaker `1` at `+ 1/3`. -/
 def sepSpeakerOffset (r : Fin 2) : ℝ := if r = 0 then 0 else 1 / 3
 
 /-- Base 3-host world (`Fin 3`: sender `0`, speaker `0` on host `1`, speaker
@@ -524,7 +534,7 @@ def sepBaseWorld : World (Fin 3) 2 where
       first_zero := rfl
       first_strictMono := strictMono_id
       handed := fun b => (b : ℝ)
-      handed_strictMono := Nat.strictMono_cast
+      handed_mono := Nat.mono_cast
       handed_after := fun b => by simp
       reported := fun b => (b : ℝ) }
   speaker := fun r =>
@@ -535,273 +545,20 @@ def sepBaseWorld : World (Fin 3) 2 where
       first_zero := rfl
       first_strictMono := strictMono_id
       asked := fun b => (b : ℝ) + 1 + sepSpeakerOffset r
-      asked_strictMono := fun _ _ hlt => by
+      asked_mono := StrictMono.monotone fun _ _ hlt => by
         have : (_ : ℝ) < _ := Nat.cast_lt.mpr hlt; linarith
-      asked_before := fun b => by dsimp; linarith
       reported := fun b => (b : ℝ) + 2 + sepSpeakerOffset r }
   network :=
     { deliver := fun i j s _ =>
         if i = 0 ∨ j = 0 then some (s + 1 / 2) else some (s + 1 / 10)
-      after := fun i j s _ a h => by
-        split_ifs at h <;> (injection h with h; linarith) }
+      reach := fun i j s _ => if i = 0 ∨ j = 0 then s + 1 / 2 else s + 1 / 10
+      reach_mem := fun i j s _ a h => by
+        by_cases hs : i = 0 ∨ j = 0
+        · simp only [ite_eq_left hs, Option.some.injEq] at h ⊢
+          exact ⟨by linarith, h.le⟩
+        · simp only [ite_eq_right hs, Option.some.injEq] at h ⊢
+          exact ⟨by linarith, h.le⟩ }
   target := fun _ => 2
-
-/-- **General collision-freedom lemma on `sepBaseWorld`.** Any star solution
-`σ` on `Fin 3` in which host `0` never sends to itself and non-sender hosts
-`1, 2` only send when handling `.asked` observations satisfies
-`Solution.NoCrossOriginCollision sepBaseWorld lookahead`. -/
-theorem noCrossOriginCollision_sepBaseWorld_of_star_request_senders {Msg : Type}
-    (σ : Solution (Fin 3) 2 Msg) (lookahead : ℕ+)
-    (hstar : σ.IsStar 0)
-    (hnoSelf0 : ∀ view dst c F, (dst, c, F) ∈ (σ 0 view).sends → dst ≠ 0)
-    (hreqOnly : ∀ (h : Fin 3), h ≠ 0 → ∀ view e dst c F,
-      view.getLast? = some e →
-      (dst, c, F) ∈ (σ h view).sends →
-      ∃ r outs rep, e.observation = .asked r outs rep) :
-    σ.NoCrossOriginCollision sepBaseWorld lookahead := by
-  have hinv : ∀ n (m : InFlight (Fin 3) Msg),
-      m ∈ (σ.states sepBaseWorld lookahead n).inFlight →
-      (m.origin = 0 → m.destination ≠ 0) ∧
-      (m.origin = 1 → m.destination = 0 ∧ ∃ b : ℕ, m.arrival = (b : ℝ) + 3 / 2) ∧
-      (m.origin = 2 → m.destination = 0 ∧ ∃ b : ℕ, m.arrival = (b : ℝ) + 11 / 6) := by
-    intro n
-    induction n with
-    | zero => intro m hm; simp [Solution.states, State.start] at hm
-    | succ n ih =>
-      intro m hm
-      rcases σ.mem_inFlight_succ sepBaseWorld lookahead n hm with
-        hm_prev | ⟨h, t, obs, hhand, s_send, hmem_sends, hm_orig, hm_dst, _, _, _, hdel⟩
-      · exact ih m hm_prev
-      · refine ⟨?_, ?_, ?_⟩
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          rw [hm_dst]
-          exact hnoSelf0 _ _ _ _ hmem_sends
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          have hdst0 : s_send.1 = 0 := by
-            rcases hstar 1 _ s_send.1 s_send.2.1 s_send.2.2 hmem_sends with h1 | h0
-            · exact absurd h1 (by decide)
-            · exact h0
-          obtain ⟨r, outs, rep, hobs⟩ := hreqOnly 1 (by decide) _ _ _ _ _
-            (List.getLast?_concat ..) hmem_sends
-          dsimp only at hobs
-          rw [hobs] at hhand
-          have hearly := σ.handled_asked sepBaseWorld lookahead hhand
-          have hha := σ.handled_of_asked sepBaseWorld lookahead hearly
-          rw [hhand] at hha
-          simp only [Option.some.injEq, Prod.mk.injEq, Observation.asked.injEq] at hha
-          obtain ⟨hhost, ht_eq, _, _, _⟩ := hha
-          have hr0 : r = 0 := by
-            fin_cases r
-            · rfl
-            · exfalso; simp [sepBaseWorld] at hhost
-          subst hr0
-          have harr : m.arrival = ((σ.states sepBaseWorld lookahead n).askedNext 0 : ℝ) + 3 / 2 := by
-            simp only [sepBaseWorld, hdst0, or_true, ↓reduceIte, Option.some.injEq] at hdel
-            rw [← hdel, ht_eq]
-            simp [sepBaseWorld, sepSpeakerOffset]
-            ring
-          exact ⟨hm_dst.trans hdst0, _, harr⟩
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          have hdst0 : s_send.1 = 0 := by
-            rcases hstar 2 _ s_send.1 s_send.2.1 s_send.2.2 hmem_sends with h2 | h0
-            · exact absurd h2 (by decide)
-            · exact h0
-          obtain ⟨r, outs, rep, hobs⟩ := hreqOnly 2 (by decide) _ _ _ _ _
-            (List.getLast?_concat ..) hmem_sends
-          dsimp only at hobs
-          rw [hobs] at hhand
-          have hearly := σ.handled_asked sepBaseWorld lookahead hhand
-          have hha := σ.handled_of_asked sepBaseWorld lookahead hearly
-          rw [hhand] at hha
-          simp only [Option.some.injEq, Prod.mk.injEq, Observation.asked.injEq] at hha
-          obtain ⟨hhost, ht_eq, _, _, _⟩ := hha
-          have hr1 : r = 1 := by
-            fin_cases r
-            · exfalso; simp [sepBaseWorld] at hhost
-            · rfl
-          subst hr1
-          have harr : m.arrival = ((σ.states sepBaseWorld lookahead n).askedNext 1 : ℝ) + 11 / 6 := by
-            simp only [sepBaseWorld, hdst0, or_true, ↓reduceIte, Option.some.injEq] at hdel
-            rw [← hdel, ht_eq]
-            simp [sepBaseWorld, sepSpeakerOffset]
-            ring
-          exact ⟨hm_dst.trans hdst0, _, harr⟩
-  intro n m₁ m₂ hm₁ hm₂ hdst harr
-  have h1 := hinv n m₁ hm₁
-  have h2 := hinv n m₂ hm₂
-  have hno_eq : ∀ (b₁ b₂ : ℕ), (b₁ : ℝ) + 3 / 2 ≠ (b₂ : ℝ) + 11 / 6 := by
-    intro b₁ b₂ heq
-    have hint : (3 : ℝ) * ((b₁ : ℝ) - (b₂ : ℝ)) = 1 := by linarith
-    have hintZ : ((3 * ((b₁ : ℤ) - (b₂ : ℤ)) : ℤ) : ℝ) = ((1 : ℤ) : ℝ) := by
-      push_cast; linarith
-    have hz : (3 : ℤ) * ((b₁ : ℤ) - (b₂ : ℤ)) = 1 := Int.cast_injective hintZ
-    omega
-  match ho1 : m₁.origin, ho2 : m₂.origin with
-  | 0, 0 => rfl
-  | 1, 1 => rfl
-  | 2, 2 => rfl
-  | 0, 1 =>
-    exfalso; exact (h1.1 ho1) (hdst.trans (h2.2.1 ho2).1)
-  | 0, 2 =>
-    exfalso; exact (h1.1 ho1) (hdst.trans (h2.2.2 ho2).1)
-  | 1, 0 =>
-    exfalso; exact (h2.1 ho2) (hdst.symm.trans (h1.2.1 ho1).1)
-  | 2, 0 =>
-    exfalso; exact (h2.1 ho2) (hdst.symm.trans (h1.2.2 ho1).1)
-  | 1, 2 =>
-    exfalso
-    obtain ⟨_, b₁, hb₁⟩ := h1.2.1 ho1
-    obtain ⟨_, b₂, hb₂⟩ := h2.2.2 ho2
-    exact hno_eq b₁ b₂ (by linarith)
-  | 2, 1 =>
-    exfalso
-    obtain ⟨_, b₁, hb₁⟩ := h2.2.1 ho2
-    obtain ⟨_, b₂, hb₂⟩ := h1.2.2 ho1
-    exact hno_eq b₁ b₂ (by linarith)
-
-/-- `FixedDelay.solution` satisfies `NoCrossOriginCollision` on `sepBaseWorld`
-when `p.sender = 0`. This discharges the collision-freedom hypothesis of
-`peer_beats_star_asymmetry_bound`; progress in all three worlds and playing
-every frame from some `N₀` onward are separate hypotheses not proved here. -/
-theorem FixedDelay.noCrossOriginCollision_sepBaseWorld
-    (p : FixedDelay.Params (Fin 3)) (hs : p.sender = 0) (lookahead : ℕ+) :
-    (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).NoCrossOriginCollision
-      sepBaseWorld lookahead := by
-  have hnoAsk0 : ∀ n (m : InFlight (Fin 3) FixedDelay.Payload),
-      m ∈ ((FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).states
-        sepBaseWorld lookahead n).inFlight →
-      (m.origin = 0 → m.destination ≠ 0) ∧
-      (m.origin = 1 → m.destination = 0 ∧ ∃ b : ℕ, m.arrival = (b : ℝ) + 3 / 2) ∧
-      (m.origin = 2 → m.destination = 0 ∧ ∃ b : ℕ, m.arrival = (b : ℝ) + 11 / 6) := by
-    intro n
-    induction n with
-    | zero => intro m hm; simp [Solution.states, State.start] at hm
-    | succ n ih =>
-      intro m hm
-      rcases (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).mem_inFlight_succ
-          sepBaseWorld lookahead n hm with
-        hm_prev | ⟨h, t, obs, hhand, ⟨sdst, sc, sF⟩, hmem_sends, hm_orig, hm_dst, _, _, _, hdel⟩
-      · exact ih m hm_prev
-      · unfold FixedDelay.solution at hmem_sends
-        simp only [List.getLast?_concat, FixedDelay.act] at hmem_sends
-        refine ⟨?_, ?_, ?_⟩
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          rw [hm_dst]
-          cases obs with
-          | handed fs _ =>
-            simp only [hs, ↓reduceIte] at hmem_sends
-            cases hhd : fs.head? with
-            | none => simp [hhd] at hmem_sends
-            | some f =>
-              simp only [hhd, List.mem_flatMap, List.mem_filter, List.mem_replicate,
-                ne_eq, Prod.mk.injEq] at hmem_sends
-              obtain ⟨j, ⟨_, hj0⟩, _, h1, _, _⟩ := hmem_sends
-              rw [h1]; exact of_decide_eq_true hj0
-          | received i c _ =>
-            cases c with
-            | ask sent =>
-              simp only [hs, true_and] at hmem_sends
-              split_ifs at hmem_sends with hans
-              · simp only [List.mem_replicate, Prod.mk.injEq] at hmem_sends
-                obtain ⟨_, h1, _, _⟩ := hmem_sends
-                obtain ⟨m₀, hm₀, hm₀_dst, _, hm₀_orig, _, _⟩ :=
-                  (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).handled_received
-                    sepBaseWorld lookahead hhand
-                dsimp only
-                rw [h1]
-                intro hi0
-                exact (ih m₀ hm₀).1 (hm₀_orig.trans hi0) hm₀_dst
-              · simp at hmem_sends
-            | _ => simp at hmem_sends
-          | asked _ _ _ =>
-            simp only [FixedDelay.asks, hs, bne_self_eq_false, Bool.false_and,
-              Bool.false_eq_true, ↓reduceIte, List.not_mem_nil] at hmem_sends
-          | _ => simp at hmem_sends
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          cases obs with
-          | asked r outs rep =>
-            have hearly := (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).handled_asked
-              sepBaseWorld lookahead hhand
-            have hha := (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).handled_of_asked
-              sepBaseWorld lookahead hearly
-            rw [hhand] at hha
-            simp only [Option.some.injEq, Prod.mk.injEq, Observation.asked.injEq] at hha
-            obtain ⟨hhost, ht_eq, _, _, _⟩ := hha
-            have hr0 : r = 0 := by
-              fin_cases r
-              · rfl
-              · simp [sepBaseWorld] at hhost
-            subst hr0
-            dsimp only at hmem_sends hm_dst hdel
-            simp at hmem_sends
-            obtain ⟨_, _, hdst0, _, _⟩ := hmem_sends
-            rw [hs] at hdst0
-            have harr : m.arrival =
-                (((FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).states
-                  sepBaseWorld lookahead n).askedNext 0 : ℝ) + 3 / 2 := by
-              simp only [sepBaseWorld, hdst0, or_true, ↓reduceIte, Option.some.injEq] at hdel
-              rw [← hdel, ht_eq]; simp [sepBaseWorld, sepSpeakerOffset]; ring
-            exact ⟨hm_dst.trans hdst0, _, harr⟩
-          | handed _ _ => simp [hs] at hmem_sends
-          | received _ c _ => cases c <;> simp [hs] at hmem_sends
-          | _ => simp at hmem_sends
-        · intro ho
-          rw [hm_orig] at ho; subst ho
-          cases obs with
-          | asked r outs rep =>
-            have hearly := (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).handled_asked
-              sepBaseWorld lookahead hhand
-            have hha := (FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).handled_of_asked
-              sepBaseWorld lookahead hearly
-            rw [hhand] at hha
-            simp only [Option.some.injEq, Prod.mk.injEq, Observation.asked.injEq] at hha
-            obtain ⟨hhost, ht_eq, _, _, _⟩ := hha
-            have hr1 : r = 1 := by
-              fin_cases r
-              · simp [sepBaseWorld] at hhost
-              · rfl
-            subst hr1
-            dsimp only at hmem_sends hm_dst hdel
-            simp at hmem_sends
-            obtain ⟨_, _, hdst0, _, _⟩ := hmem_sends
-            rw [hs] at hdst0
-            have harr : m.arrival =
-                (((FixedDelay.solution p : Solution (Fin 3) 2 FixedDelay.Payload).states
-                  sepBaseWorld lookahead n).askedNext 1 : ℝ) + 11 / 6 := by
-              simp only [sepBaseWorld, hdst0, or_true, ↓reduceIte, Option.some.injEq] at hdel
-              rw [← hdel, ht_eq]; simp [sepBaseWorld, sepSpeakerOffset]; ring
-            exact ⟨hm_dst.trans hdst0, _, harr⟩
-          | handed _ _ => simp [hs] at hmem_sends
-          | received _ c _ => cases c <;> simp [hs] at hmem_sends
-          | _ => simp at hmem_sends
-  intro n m₁ m₂ hm₁ hm₂ hdst harr
-  have h1 := hnoAsk0 n m₁ hm₁
-  have h2 := hnoAsk0 n m₂ hm₂
-  have hno_eq : ∀ (b₁ b₂ : ℕ), (b₁ : ℝ) + 3 / 2 ≠ (b₂ : ℝ) + 11 / 6 := by
-    intro b₁ b₂ heq
-    have hintZ : ((3 * ((b₁ : ℤ) - (b₂ : ℤ)) : ℤ) : ℝ) = ((1 : ℤ) : ℝ) := by
-      push_cast; linarith
-    have hz : (3 : ℤ) * ((b₁ : ℤ) - (b₂ : ℤ)) = 1 := Int.cast_injective hintZ
-    omega
-  match ho1 : m₁.origin, ho2 : m₂.origin with
-  | 0, 0 => rfl
-  | 1, 1 => rfl
-  | 2, 2 => rfl
-  | 0, 1 => exfalso; exact (h1.1 ho1) (hdst.trans (h2.2.1 ho2).1)
-  | 0, 2 => exfalso; exact (h1.1 ho1) (hdst.trans (h2.2.2 ho2).1)
-  | 1, 0 => exfalso; exact (h2.1 ho2) (hdst.symm.trans (h1.2.1 ho1).1)
-  | 2, 0 => exfalso; exact (h2.1 ho2) (hdst.symm.trans (h1.2.2 ho1).1)
-  | 1, 2 =>
-    exfalso; obtain ⟨_, b₁, hb₁⟩ := h1.2.1 ho1; obtain ⟨_, b₂, hb₂⟩ := h2.2.2 ho2
-    exact hno_eq b₁ b₂ (by linarith)
-  | 2, 1 =>
-    exfalso; obtain ⟨_, b₁, hb₁⟩ := h2.2.1 ho2; obtain ⟨_, b₂, hb₂⟩ := h1.2.2 ho1
-    exact hno_eq b₁ b₂ (by linarith)
 
 /- Minimal forwarding-only star witness on `sepBaseWorld` / `sepWorldPlus` /
 `sepWorldMinus`: sender `0` forwards each frame `f` to hosts `1` and `2`,
@@ -853,34 +610,10 @@ theorem isStar : solution.IsStar 0 := by
         simp only [hobs] at hmem; match r with | 0 => simp at hmem | 1 => simp at hmem
       | _ => simp [hobs] at hmem
 
-theorem noCrossOriginCollision : solution.NoCrossOriginCollision sepBaseWorld 1 := by
-  have horig : ∀ n (m : InFlight (Fin 3) ℕ),
-      m ∈ (solution.states sepBaseWorld 1 n).inFlight → m.origin = 0 := by
-    intro n
-    induction n with
-    | zero => intro m hm; simp [Solution.states, State.start] at hm
-    | succ n ih =>
-      intro m hm
-      rcases solution.mem_inFlight_succ sepBaseWorld 1 n hm with
-        hm_prev | ⟨h, _, obs, _, _, hmem_sends, hm_orig, _, _, _, _, _⟩
-      · exact ih m hm_prev
-      · simp only [solution, List.getLast?_concat] at hmem_sends
-        match h with
-        | 0 => exact hm_orig
-        | 1 =>
-          cases obs with
-          | asked r _ _ => match r with | 0 => simp at hmem_sends | 1 => simp at hmem_sends
-          | _ => simp at hmem_sends
-        | 2 =>
-          cases obs with
-          | asked r _ _ => match r with | 0 => simp at hmem_sends | 1 => simp at hmem_sends
-          | _ => simp at hmem_sends
-  intro n m₁ m₂ hm₁ hm₂ _ _
-  rw [horig n m₁ hm₁, horig n m₂ hm₂]
-
 theorem progress (Δ : Fin 3 → ℝ)
     (hstar : ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + Δ i < a + Δ j) (T : Time) :
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + Δ i < sepBaseWorld.network.reach i j s q + Δ j) (T : Time) :
     ∃ n, T < solution.eventTime (shiftStarKeepPeers sepBaseWorld Δ hstar) 1 n := by
   set w' := shiftStarKeepPeers sepBaseWorld Δ hstar
   refine Solution.progress w' solution 1 (fun _ => 1) 3 3 ?_ ?_ ?_ ?_ ?_ ?_ T
@@ -927,7 +660,8 @@ on speaker `0` and `n + 4 + Δ 2` on speaker `1`, achieving
 theorem sync_eq (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     (hΔ1 : |Δ 1| < 1 / 4) (hΔ2 : |Δ 2| < 1 / 4)
     (hstar : ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + Δ i < a + Δ j) :
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + Δ i < sepBaseWorld.network.reach i j s q + Δ j) :
     let w' := shiftStarKeepPeers sepBaseWorld Δ hstar
     (∀ n, 2 ≤ n → (w'.playTime (solution.plays w' 1) 0 n).isSome ∧
         (w'.playTime (solution.plays w' 1) 1 n).isSome)
@@ -991,7 +725,11 @@ theorem sync_eq (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker r).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker r).asked k < (w'.speaker r).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset r + Δ (sepBaseWorld.host r)
+        < (k : ℝ) + 2 + sepSpeakerOffset r + Δ (sepBaseWorld.host r)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hact : (solution (w'.host r) ((solution.states w' 1 n).views (w'.host r) ++
         [⟨(w'.clock (w'.host r)).read ((w'.speaker r).asked k),
           .asked r ((w'.speaker r).block k) ((w'.speaker r).reported k)⟩])).plays k
@@ -1223,11 +961,14 @@ def sepShift (A : ℝ) : Fin 3 → ℝ := ![0, A, -A]
 
 theorem sepShift_star_net {A : ℝ} (hA : |A| < 1 / 4) :
     ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + sepShift A i < a + sepShift A j := by
-  intro i j s q a hs hdel
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + sepShift A i < sepBaseWorld.network.reach i j s q + sepShift A j := by
+  intro i j s q a hs _
   have habs := abs_lt.mp hA
   change i = 0 ∨ j = 0 at hs
-  simp only [sepBaseWorld, hs, ↓reduceIte, Option.some.injEq] at hdel
+  have hreach : sepBaseWorld.network.reach i j s q = s + 1 / 2 := by
+    simp only [sepBaseWorld, hs, ↓reduceIte]
+  rw [hreach]
   fin_cases i <;> fin_cases j <;> simp [sepShift] at hs ⊢ <;> linarith
 
 /-- Shifted world `w⁺(A)` with star-link asymmetry `+A` on host `1`, `-A` on
@@ -1238,7 +979,7 @@ def sepWorldPlus {A : ℝ} (hA : |A| < 1 / 4) : World (Fin 3) 2 :=
 theorem sepShift_neg_star_net {A : ℝ} (hA : |A| < 1 / 4) :
     ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
       sepBaseWorld.network.deliver i j s q = some a →
-        s + (-(sepShift A)) i < a + (-(sepShift A)) j := by
+        s + (-(sepShift A)) i < sepBaseWorld.network.reach i j s q + (-(sepShift A)) j := by
   intro i j s q a hs hdel
   have hneg : |-A| < 1 / 4 := by rwa [abs_neg]
   have h := sepShift_star_net hneg i j s q a hs hdel
@@ -1256,7 +997,8 @@ def sepWorldMinus {A : ℝ} (hA : |A| < 1 / 4) : World (Fin 3) 2 :=
 belongs to the named `IdealConstantWorld` model class. -/
 theorem shiftStarKeepPeers_sepBaseWorld_ideal (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     (hnet : ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + Δ i < a + Δ j) :
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + Δ i < sepBaseWorld.network.reach i j s q + Δ j) :
     ∃ m : IdealConstantWorld (Fin 3) 2,
       m.Holds (shiftStarKeepPeers sepBaseWorld Δ hnet)
       ∧ ∀ i j, m.delay i j = if i = 0 ∨ j = 0 then 1 / 2 + Δ j - Δ i else 1 / 10 := by
@@ -1266,6 +1008,9 @@ theorem shiftStarKeepPeers_sepBaseWorld_ideal (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 
     dsimp only [d]
     split_ifs with hs
     · have h := hnet i j 0 0 (1 / 2) hs (by simp [sepBaseWorld, hs])
+      have hreach : sepBaseWorld.network.reach i j 0 0 = 0 + 1 / 2 := by
+        simp only [sepBaseWorld, hs, ↓reduceIte]
+      rw [hreach] at h
       linarith
     · norm_num
   refine ⟨
@@ -1306,6 +1051,11 @@ theorem shiftStarKeepPeers_sepBaseWorld_ideal (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 
         dsimp only [shiftStarKeepPeers, sepBaseWorld, d]
         split_ifs with hs
         · simp only [Option.map_some, Option.some.injEq]; ring
+        · rfl
+      reach := fun i j s q => by
+        dsimp only [shiftStarKeepPeers, sepBaseWorld, d]
+        split_ifs with hs
+        · ring
         · rfl
       target_eq := fun _ => rfl }
 
@@ -1358,7 +1108,7 @@ def peerOffsetFromView : List (Event (Fin 3) 2 Payload) → Option ℝ
       | some θ => some θ
       | none =>
           match e.observation with
-          | .received 1 (.answer sent received) _ => some (received - (sent + e.reading) / 2)
+          | .received 1 (.answer sent received) _ _ => some (received - (sent + e.reading) / 2)
           | _ => none
 
 /-- Idealized-world peer `Solution` witnessing zero synchronization error on
@@ -1375,7 +1125,7 @@ def solution : Solution (Fin 3) 2 Payload := fun h view =>
                 timers := []
                 plays := fun _ => none }
           | none => ⟨[], [], fun _ => none⟩
-      | 1, .received 2 (.ask sent) _ =>
+      | 1, .received 2 (.ask sent) _ _ =>
           { sends := [(2, .answer sent e.reading, ∅)]
             timers := []
             plays := fun _ => none }
@@ -1414,7 +1164,7 @@ theorem usesGraph :
       | _ => simp [hobs] at hmem
     · change (dst, msg, frames) ∈ _ at hmem
       cases hobs : e.observation with
-      | received i c _ =>
+      | received i c _ _ =>
         simp only [hobs] at hmem
         fin_cases i
         · simp at hmem
@@ -1452,7 +1202,8 @@ def msgWeight : Payload → ℕ
 `shiftStarKeepPeers sepBaseWorld Δ hstar`. -/
 theorem progress (Δ : Fin 3 → ℝ)
     (hstar : ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + Δ i < a + Δ j) (T : Time) :
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + Δ i < sepBaseWorld.network.reach i j s q + Δ j) (T : Time) :
     ∃ n, T < solution.eventTime (shiftStarKeepPeers sepBaseWorld Δ hstar) 1 n := by
   set w' := shiftStarKeepPeers sepBaseWorld Δ hstar
   refine Solution.progress w' solution 1 msgWeight 3 3 ?_ ?_ ?_ ?_ ?_ ?_ T
@@ -1470,7 +1221,7 @@ theorem progress (Δ : Fin 3 → ℝ)
         | _ => rfl
       | 1 =>
         cases obs with
-        | received i c _ =>
+        | received i c _ _ =>
           match i with
           | 0 => rfl
           | 1 => rfl
@@ -1517,8 +1268,8 @@ theorem progress (Δ : Fin 3 → ℝ)
     exact ⟨n, by change T' < (n : ℝ) + 1 + sepSpeakerOffset r + Δ (sepBaseWorld.host r); linarith⟩
 
 private theorem peerOffsetFromView_append_other (l₁ l₂ : List (Event (Fin 3) 2 Payload))
-    (hno : ∀ e ∈ l₂, ∀ s r, e.observation ≠ .received 1 (.answer s r) ∅)
-    (hnoF : ∀ e ∈ l₂, ∀ s r F, e.observation ≠ .received 1 (.answer s r) F) :
+    (hno : ∀ e ∈ l₂, ∀ s r ks, e.observation ≠ .received 1 (.answer s r) ∅ ks)
+    (hnoF : ∀ e ∈ l₂, ∀ s r F ks, e.observation ≠ .received 1 (.answer s r) F ks) :
     peerOffsetFromView (l₁ ++ l₂) = peerOffsetFromView l₁ := by
   have hnil : peerOffsetFromView l₂ = none := by
     induction l₂ with
@@ -1527,11 +1278,11 @@ private theorem peerOffsetFromView_append_other (l₁ l₂ : List (Event (Fin 3)
       simp only [peerOffsetFromView, ih (fun x hx => hno x (List.mem_cons_of_mem _ hx))
         (fun x hx => hnoF x (List.mem_cons_of_mem _ hx))]
       cases hobs : e.observation with
-      | received i c F =>
+      | received i c F _ =>
         fin_cases i
         · rfl
         · cases c with
-          | answer s r => exact absurd hobs (hnoF e (List.mem_cons_self ..) s r F)
+          | answer s r => exact absurd hobs (hnoF e (List.mem_cons_self ..) s r F _)
           | _ => rfl
         · rfl
       | _ => rfl
@@ -1541,9 +1292,9 @@ private theorem peerOffsetFromView_append_other (l₁ l₂ : List (Event (Fin 3)
     simp only [List.cons_append, peerOffsetFromView, ih]
 
 private theorem peerOffsetFromView_cons_answer (l₁ l₂ : List (Event (Fin 3) 2 Payload))
-    (t₄ sent rec : ℝ) (F : Finset ℕ)
-    (hnoF : ∀ e ∈ l₂, ∀ s r F', e.observation ≠ .received 1 (.answer s r) F') :
-    peerOffsetFromView (l₁ ++ ⟨t₄, .received 1 (.answer sent rec) F⟩ :: l₂)
+    (t₄ sent rec : ℝ) (F : Finset ℕ) (ks : ℝ)
+    (hnoF : ∀ e ∈ l₂, ∀ s r F' ks, e.observation ≠ .received 1 (.answer s r) F' ks) :
+    peerOffsetFromView (l₁ ++ ⟨t₄, .received 1 (.answer sent rec) F ks⟩ :: l₂)
       = some (rec - (sent + t₄) / 2) := by
   have hnil : peerOffsetFromView l₂ = none := by
     induction l₂ with
@@ -1551,11 +1302,11 @@ private theorem peerOffsetFromView_cons_answer (l₁ l₂ : List (Event (Fin 3) 
     | cons e rest ih =>
       simp only [peerOffsetFromView, ih (fun x hx => hnoF x (List.mem_cons_of_mem _ hx))]
       cases hobs : e.observation with
-      | received i c F' =>
+      | received i c F' _ =>
         fin_cases i
         · rfl
         · cases c with
-          | answer s r => exact absurd hobs (hnoF e (List.mem_cons_self ..) s r F')
+          | answer s r => exact absurd hobs (hnoF e (List.mem_cons_self ..) s r F' _)
           | _ => rfl
         · rfl
       | _ => rfl
@@ -1571,7 +1322,8 @@ with `Δ 0 = 0`, `|Δ 1| < 1/4`, `|Δ 2| < 1/4`:
 theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     (hΔ1 : |Δ 1| < 1 / 4) (hΔ2 : |Δ 2| < 1 / 4)
     (hstar : ∀ i j s q a, (i = sepBaseWorld.sender ∨ j = sepBaseWorld.sender) →
-      sepBaseWorld.network.deliver i j s q = some a → s + Δ i < a + Δ j) :
+      sepBaseWorld.network.deliver i j s q = some a →
+        s + Δ i < sepBaseWorld.network.reach i j s q + Δ j) :
     let w' := shiftStarKeepPeers sepBaseWorld Δ hstar
     (∀ n, 2 ≤ n → (w'.playTime (solution.plays w' 1) 0 n).isSome ∧
         (w'.playTime (solution.plays w' 1) 1 n).isSome)
@@ -1644,7 +1396,8 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     | succ n' ih =>
       intro hm
       have hstep := solution.mem_inFlight_succ w' 1 n' hm
-      rcases hstep with hm_prev | ⟨h, t, obs, hhand, s_send, hmem_sends, hm_orig, hm_dst, hm_con, _, q, hdel⟩
+      rcases hstep with
+        hm_prev | ⟨h, t, obs, hhand, s_send, hmem_sends, hm_orig, hm_dst, hm_con, _, q, hdel, _⟩
       · exact ih m hm_prev
       · simp only [solution, List.getLast?_concat] at hmem_sends
         match h with
@@ -1661,7 +1414,7 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
           | _ => simp at hmem_sends
         | 1 =>
           cases obs with
-          | received i c F =>
+          | received i c F _ =>
             match i with
             | 0 => simp at hmem_sends
             | 1 => simp at hmem_sends
@@ -1749,11 +1502,13 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
           .asked 1 ((w'.speaker 1).block 0) ((w'.speaker 1).reported 0)⟩])).sends
         = [(1, Payload.ask (4 / 3), ∅)] := by
       simp [solution, hblk0, hclk0]
-    have mask_in : (⟨4 / 3 + Δ 2 + 1 / 10, 2, 1, Payload.ask (4 / 3), ∅⟩ : InFlight (Fin 3) Payload)
-        ∈ (solution.states w' 1 (na0 + 1)).inFlight := by
+    obtain ⟨rask, mask_in⟩ : ∃ rask,
+        (⟨4 / 3 + Δ 2 + 1 / 10, rask, 2, 1, Payload.ask (4 / 3), ∅⟩ : InFlight (Fin 3) Payload)
+          ∈ (solution.states w' 1 (na0 + 1)).inFlight := by
       have hsent := solution.sent_inFlight (w := w') 1 hhand0 hS0 (i := 0) (by simp)
         (arr := 4 / 3 + Δ 2 + 1 / 10) (by simp [w', shiftStarKeepPeers, sepBaseWorld, sepSpeakerOffset]; ring)
-      simpa using hsent
+      generalize w'.network.reach _ _ _ _ = rask at hsent
+      exact ⟨rask, by simpa using hsent⟩
     -- The `.ask` is handled before step `n` (since `eventTime n ≥ asked 2 = 10/3 + Δ 2 > 4/3 + Δ 2 + 1/10`).
     have hn_gt_ask : 4 / 3 + Δ 2 + 1 / 10 < solution.eventTime w' 1 n := by
       obtain ⟨na2, hna2_lt, _, hna2_early⟩ :=
@@ -1766,17 +1521,21 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n_ask, _, hn_ask_lt, hhand_ask⟩ :=
       solution.handled_before w' 1 mask_in (Nat.succ_le_of_lt hna0_lt) hn_gt_ask
     -- At step `n_ask`, host `1` sends `.answer (4/3) (4/3 + Δ 2 + 1/10 - Δ 1)` arriving at `4/3 + Δ 2 + 2/10`.
-    have mans_in : (⟨4 / 3 + Δ 2 + 2 / 10, 1, 2, Payload.answer (4 / 3) (4 / 3 + Δ 2 + 1 / 10 - Δ 1), ∅⟩ :
-        InFlight (Fin 3) Payload) ∈ (solution.states w' 1 (n_ask + 1)).inFlight := by
+    obtain ⟨rans, mans_in⟩ : ∃ rans,
+        (⟨4 / 3 + Δ 2 + 2 / 10, rans, 1, 2,
+            Payload.answer (4 / 3) (4 / 3 + Δ 2 + 1 / 10 - Δ 1), ∅⟩ :
+          InFlight (Fin 3) Payload) ∈ (solution.states w' 1 (n_ask + 1)).inFlight := by
       have hclk1 : (w'.clock 1).read (4 / 3 + Δ 2 + 1 / 10) = 4 / 3 + Δ 2 + 1 / 10 - Δ 1 := by
         simp [w', shiftStarKeepPeers, sepBaseWorld]
       have hS1 : (solution 1 ((solution.states w' 1 n_ask).views 1 ++
-          [⟨(w'.clock 1).read (4 / 3 + Δ 2 + 1 / 10), .received 2 (.ask (4 / 3)) ∅⟩])).sends
+          [⟨(w'.clock 1).read (4 / 3 + Δ 2 + 1 / 10),
+            .received 2 (.ask (4 / 3)) ∅ ((w'.clock 1).read rask)⟩])).sends
           = [(2, Payload.answer (4 / 3) (4 / 3 + Δ 2 + 1 / 10 - Δ 1), ∅)] := by
         simp only [solution, List.getLast?_concat, hclk1]
       have hsent := solution.sent_inFlight (w := w') 1 hhand_ask hS1 (i := 0) (by simp)
         (arr := 4 / 3 + Δ 2 + 2 / 10) (by simp [w', shiftStarKeepPeers, sepBaseWorld]; ring)
-      simpa using hsent
+      generalize w'.network.reach _ _ _ _ = rans at hsent
+      exact ⟨rans, by simpa using hsent⟩
     -- That `.answer` arrives and is handled before step `n`!
     have hn_gt_ans : 4 / 3 + Δ 2 + 2 / 10 < solution.eventTime w' 1 n := by
       obtain ⟨na2, hna2_lt, _, hna2_early⟩ :=
@@ -1792,10 +1551,10 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     -- event in `(solution.states w' 1 n).views 2` has the exact same `(sent, rec, t₄)`.
     have hmem_ans := solution.mem_views_of_handled w' 1 hhand_ans hn_ans_lt
     -- Any event in `views 2` that is `.received 1 (.answer s r) F` yields `Δ 2 - Δ 1`.
-    have hall_ans : ∀ e ∈ (solution.states w' 1 n).views 2, ∀ s r F,
-        e.observation = .received 1 (.answer s r) F →
+    have hall_ans : ∀ e ∈ (solution.states w' 1 n).views 2, ∀ s r F ks,
+        e.observation = .received 1 (.answer s r) F ks →
         r - (s + e.reading) / 2 = Δ 2 - Δ 1 := by
-      intro e he s r F hobs
+      intro e he s r F ks hobs
       obtain ⟨i, _, t, obs, hhi, heq⟩ := solution.handled_of_mem_views w' 1 he
       rcases e with ⟨e_read, e_obs⟩
       simp only [Event.mk.injEq] at heq
@@ -1811,8 +1570,8 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
       ring
     -- Induct on any list containing an `.answer` whose every `.answer` evaluates to `Δ 2 - Δ 1`.
     have hlist : ∀ l : List (Event (Fin 3) 2 Payload),
-        (∃ e ∈ l, ∃ s r F, e.observation = .received 1 (.answer s r) F) →
-        (∀ e ∈ l, ∀ s r F, e.observation = .received 1 (.answer s r) F →
+        (∃ e ∈ l, ∃ s r F ks, e.observation = .received 1 (.answer s r) F ks) →
+        (∀ e ∈ l, ∀ s r F ks, e.observation = .received 1 (.answer s r) F ks →
           r - (s + e.reading) / 2 = Δ 2 - Δ 1) →
         peerOffsetFromView l = some (Δ 2 - Δ 1) := by
       intro l
@@ -1820,33 +1579,33 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
       | nil => intro hex _; obtain ⟨_, h, _⟩ := hex; simp at h
       | cons e rest ih =>
         intro hex hall
-        by_cases hrest : ∃ e' ∈ rest, ∃ s r F, e'.observation = .received 1 (.answer s r) F
+        by_cases hrest : ∃ e' ∈ rest, ∃ s r F ks, e'.observation = .received 1 (.answer s r) F ks
         · rw [peerOffsetFromView, ih hrest (fun x hx => hall x (List.mem_cons_of_mem _ hx))]
         · have hnone : peerOffsetFromView rest = none := by
             clear ih hex hall
             induction rest with
             | nil => rfl
             | cons e' r' ih' =>
-              have hne' : ¬ ∃ x ∈ r', ∃ s r F, x.observation = .received 1 (.answer s r) F :=
+              have hne' : ¬ ∃ x ∈ r', ∃ s r F ks, x.observation = .received 1 (.answer s r) F ks :=
                 fun ⟨x, hx, h⟩ => hrest ⟨x, List.mem_cons_of_mem _ hx, h⟩
               simp only [peerOffsetFromView, ih' hne']
               cases hobs : e'.observation with
-              | received i c F =>
+              | received i c F _ =>
                 match i with
                 | 0 => rfl
                 | 1 =>
                   cases c with
                   | answer s r =>
-                    exact absurd ⟨e', List.mem_cons_self .., s, r, F, hobs⟩ hrest
+                    exact absurd ⟨e', List.mem_cons_self .., s, r, F, _, hobs⟩ hrest
                   | _ => rfl
                 | 2 => rfl
               | _ => rfl
-          obtain ⟨e₀, he₀, s, r, F, hobs⟩ := hex
+          obtain ⟨e₀, he₀, s, r, F, ks, hobs⟩ := hex
           rcases List.mem_cons.mp he₀ with rfl | hmem_r
           · simp only [peerOffsetFromView, hnone, hobs]
-            exact congrArg some (hall e₀ (List.mem_cons_self ..) s r F hobs)
-          · exact absurd ⟨e₀, hmem_r, s, r, F, hobs⟩ hrest
-    exact hlist _ ⟨_, hmem_ans, 4 / 3, 4 / 3 + Δ 2 + 1 / 10 - Δ 1, ∅, rfl⟩ hall_ans
+            exact congrArg some (hall e₀ (List.mem_cons_self ..) s r F ks hobs)
+          · exact absurd ⟨e₀, hmem_r, s, r, F, ks, hobs⟩ hrest
+    exact hlist _ ⟨_, hmem_ans, 4 / 3, 4 / 3 + Δ 2 + 1 / 10 - Δ 1, ∅, _, rfl⟩ hall_ans
   -- Compute `solution.plays w' 1 r k` for `r = 0, 1` and `k ≥ 3`.
   have hplays0 : ∀ k, 3 ≤ k → solution.plays w' 1 0 k = some ((k : ℝ) - 2) := by
     intro k hk3
@@ -1854,7 +1613,11 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker 0).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker 0).asked k < (w'.speaker 0).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset 0 + Δ (sepBaseWorld.host 0)
+        < (k : ℝ) + 2 + sepSpeakerOffset 0 + Δ (sepBaseWorld.host 0)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hact : (solution (w'.host 0) ((solution.states w' 1 n).views (w'.host 0) ++
         [⟨(w'.clock (w'.host 0)).read ((w'.speaker 0).asked k),
           .asked 0 ((w'.speaker 0).block k) ((w'.speaker 0).reported k)⟩])).plays k
@@ -1881,7 +1644,11 @@ theorem sync_eq_zero (Δ : Fin 3 → ℝ) (hΔ0 : Δ 0 = 0)
     obtain ⟨n, -, hnk, hne⟩ := solution.exists_asked_step w' 1 (solution.lt_askedNext w' 1 hm)
     have hmem_k : k ∈ (w'.speaker 1).block k := by
       simp [w', shiftStarKeepPeers, sepBaseWorld, PlaybackDevice.block]
-    rw [solution.plays_of_asked_step w' 1 hnk hne hmem_k]
+    have hlt_k : (w'.speaker 1).asked k < (w'.speaker 1).out k := by
+      show (k : ℝ) + 1 + sepSpeakerOffset 1 + Δ (sepBaseWorld.host 1)
+        < (k : ℝ) + 2 + sepSpeakerOffset 1 + Δ (sepBaseWorld.host 1)
+      linarith
+    rw [solution.plays_of_asked_step_of_lt w' 1 hnk hne hmem_k hlt_k]
     have hoff := hreply_in_view n (by omega)
     have hhost1 : w'.host 1 = 2 := rfl
     have hact : (solution (w'.host 1) ((solution.states w' 1 n).views (w'.host 1) ++
@@ -2022,8 +1789,7 @@ symmetric peer link delay `1/10` is strictly smaller than `2 A`), consider the
 exact same pair of 3-host worlds `(w⁺, w⁻) = (sepWorldPlus A, sepWorldMinus A)`:
 
 1. **Star lower bound:** Every non-Zeno star solution `σ` (`σ.IsStar 0`)
-   without simultaneous cross-origin arrivals in `sepBaseWorld` that plays all
-   frames from some `N` onward must suffer
+   that plays all frames from some `N` onward must suffer
    `ENNReal.ofReal (A ^ 2) ≤ max (w⁺.sync) (w⁻.sync)`.
 2. **Concrete peer upper bound:** `PeerSync.solution` uses only star links and
    the symmetric peer link `1 ↔ 2`, is non-Zeno, plays every frame `n ≥ 2` on
@@ -2037,7 +1803,6 @@ theorem peer_beats_star_asymmetry_bound {A : ℝ} (hA0 : 0 < A) (hA4 : A < 1 / 4
       (∀ T : Time, ∃ n, T < σ.eventTime sepBaseWorld 1 n) →
       (∀ T : Time, ∃ n, T < σ.eventTime wPlus 1 n) →
       (∀ T : Time, ∃ n, T < σ.eventTime wMinus 1 n) →
-      σ.NoCrossOriginCollision sepBaseWorld 1 →
       ∀ N : ℕ, (∀ n, N ≤ n → ∀ r, (sepBaseWorld.playTime (σ.plays sepBaseWorld 1) r n).isSome) →
       ENNReal.ofReal (A ^ 2)
         ≤ max (wPlus.sync (σ.plays wPlus 1)) (wMinus.sync (σ.plays wMinus 1)))
@@ -2052,7 +1817,7 @@ theorem peer_beats_star_asymmetry_bound {A : ℝ} (hA0 : 0 < A) (hA4 : A < 1 / 4
         ∧ wMinus.sync (PeerSync.solution.plays wMinus 1) = 0) := by
   intro hA wPlus wMinus
   refine ⟨?_, ?_⟩
-  · intro Msg σ hstar hprog hprog₁ hprog₂ harr N hplay
+  · intro Msg σ hstar hprog hprog₁ hprog₂ N hplay
     have hvar : varFin (fun r : Fin 2 => sepShift A (sepBaseWorld.host r)) = A ^ 2 := by
       unfold varFin meanFin
       simp only [Fin.sum_univ_two, sepBaseWorld, sepShift, Matrix.cons_val_zero, Matrix.cons_val_one,
@@ -2063,7 +1828,7 @@ theorem peer_beats_star_asymmetry_bound {A : ℝ} (hA0 : 0 < A) (hA4 : A < 1 / 4
       exact ⟨n, hn⟩
     have hlb := star_sync_lower_bound_with_symmetric_peers σ sepBaseWorld 1 hstar (sepShift A) rfl
       (sepShift_star_net hA) (sepShift_neg_star_net hA)
-      hprog hprog₁ hprog₂ harr (by norm_num) N hplay hunb
+      hprog hprog₁ hprog₂ (by norm_num) N hplay hunb
     rw [hvar] at hlb
     exact hlb
   · have hplus := PeerSync.sync_eq_zero (sepShift A) rfl hA (by simpa [sepShift] using hA)

@@ -61,7 +61,7 @@ estimation in both communication topologies:
      `∑ e, f e * α e`. Zero bias for arbitrary unknown sender-link asymmetries
      holds only for estimators that assign zero flow to those biased edges,
      not in general for the minimum-variance graph BLUE.
-   * **Thomson's Principle (`thomson_blue_optimal`).** The algebraic quadratic
+   * **Thomson's Principle (`thomson_blue_least_variance`).** The algebraic quadratic
      form `flowVariance G f = ∑ e, G.var e * f e ^ 2` (which equals estimation
      variance when edge measurement errors are zero-mean and mutually
      uncorrelated with variances `G.var e`; links sharing one wireless medium
@@ -370,7 +370,7 @@ vertex potential `ψ : V → ℝ` (Ohm's law with resistance `R_e = var e`). -/
 def electricalFlow (G : EdgeGraph V E) (ψ : V → ℝ) (e : E) : ℝ :=
   (ψ (G.dst e) - ψ (G.src e)) / G.var e
 
-/-- **Thomson's Principle (algebraic Graph-Laplacian BLUE optimality).**
+/-- **Thomson's Principle (the graph-Laplacian estimator has the least variance).**
 Suppose vertex potential `ψ : V → ℝ` solves the weighted graph Laplacian for
 unit injection from `s` to `t`, i.e., `IsUnitFlow G s t (electricalFlow G ψ)`.
 Then:
@@ -380,7 +380,7 @@ Then:
    resistance between `s` and `t`).
 3. Every unit `s → t` flow has `flowVariance` at least `ψ t - ψ s`, with
    equality if and only if `f = electricalFlow G ψ`. -/
-theorem thomson_blue_optimal (G : EdgeGraph V E) {s t : V} {ψ : V → ℝ}
+theorem thomson_blue_least_variance (G : EdgeGraph V E) {s t : V} {ψ : V → ℝ}
     (hψ : IsUnitFlow G s t (electricalFlow G ψ)) :
     let fStar := electricalFlow G ψ
     (flowVariance G fStar = ψ t - ψ s)
@@ -494,7 +494,7 @@ theorem star_effective_resistance {R : ℕ} (v : Fin R → ℝ) (hv : ∀ r, 0 <
     refine Fin.cases ?_ (fun r => ?_) u
     · simp [Fin.succ_ne_zero, h20.symm, h10.symm]
     · simp [Fin.succ_inj, (Fin.succ_ne_zero r).symm]
-  have hth := thomson_blue_optimal G hunit
+  have hth := thomson_blue_least_variance G hunit
   have hdiff : ψ r₂.succ - ψ r₁.succ = v r₁ + v r₂ := by
     simp only [ψ, ↓reduceIte, h12]
     ring
@@ -600,7 +600,7 @@ theorem complete_graph_effective_resistance {N : ℕ} (hN : 2 ≤ N) {v : ℝ} (
       Fintype.card_fin, nsmul_eq_mul, ← Finset.sum_div, hsum_ψ, zero_div, sub_zero]
     simp only [ψ]
     field_simp
-  have hth := thomson_blue_optimal G hunit
+  have hth := thomson_blue_least_variance G hunit
   have hdiff : ψ t - ψ s = 2 * v / N := by
     simp only [ψ, ↓reduceIte, hne, hne.symm]
     ring
@@ -663,7 +663,7 @@ theorem wifi_sender_wired_peers_resistance {vW vP : ℝ} (hvW : 0 < vW) (hvP : 0
       norm_num
       field_simp
       ring
-  have hth := thomson_blue_optimal G hunit
+  have hth := thomson_blue_least_variance G hunit
   have hdiff : ψ 2 - ψ 1 = reff := by
     simp only [ψ, Matrix.cons_val]
     ring

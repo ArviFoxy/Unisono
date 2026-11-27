@@ -14,9 +14,12 @@ What a solution can do, and what happens when it runs.
 A host acts at **events**: the capture device hands over a block (at the
 sender), a playback device requests a block, a message arrives, or a timer
 that the host set fires. At each event the host decides from its **view**:
-the events it has observed so far, each with the reading of its own clock.
-True time is not in the view, and neither is anything that happens at
-another host unless a message reports it.
+the events it has observed so far, each with the reading of its own clock
+when its program handles the event. A message that arrives also comes with
+the kernel's stamp: the reading of the host's clock when the message reached
+the host, which is when the program handles the message or earlier. True
+time is not in the view, and neither is anything that happens at another
+host unless a message reports it.
 
 At an event a host sends messages to any hosts, sets timers at readings of
 its clock, and, when a speaker's device requests a block, chooses what each
@@ -25,11 +28,18 @@ does, given its view.
 
 **The run** of a solution in a world is what happens when the events are
 processed in chronological order (`Solution.states`). The world determines
-when each device event occurs and when each message arrives; the solution
-determines what each host does. Every solution has exactly one run in every
-world. Simultaneous events are processed in a fixed order: capture events
-first, then speaker requests in speaker index order, then message arrivals
-and timers in the order in which they were sent or set.
+when each device event is handled and when each message arrives; the
+solution determines what each host does. Every solution has exactly one run
+in every world. Simultaneous events are processed in a fixed order: capture
+events first, then speaker requests in speaker index order, then message
+arrivals, then timers in the order in which they were set. Handovers at the
+same true time are handled in the order of their blocks, and so are the
+requests of one speaker. Messages that arrive at the
+same true time are handled in the order of a fixed numbering of the hosts
+that sent them (`World.hostIndex`: the sender's host first, then the hosts
+of the speakers in speaker order), and messages from one host in the order
+in which that host sent them. The order therefore does not depend on which
+of two hosts sent first in true time, which no host can observe.
 
 Two constraints hold for every solution.
 
@@ -40,13 +50,14 @@ Two constraints hold for every solution.
   resampler computes the sound at `x` from the frames less than `a` frames
   away from `x`, where `a` is the resampler's lookahead: one frame for
   linear interpolation, about half the filter length for a longer filter.
-  The output sample plays the original sound only if its host holds all of
-  those frames when the device requests the block; otherwise it is a missed
-  sample (`playable`).
+  The output sample plays the original sound only if its host handles the
+  request of the block before the output sample leaves the device, and
+  holds all of those frames when it does; otherwise it is a missed sample
+  (`State.handle`, `playable`).
 
 The lookahead is a parameter of the run. Two more constraints are parameters
 that statements assume: the network's capacity (`Solution.WithinBudget`) and the
-speed bound (`Solution.WithinSpeed`, with the objectives).
+speed bound (`Solution.WithinStep`, with the objectives).
 
 A solution that schedules infinitely many events before some finite time (a
 Zeno solution) never advances past that time: the run never reaches the devices' later
@@ -69,9 +80,11 @@ inductive Observation (H : Type) (R : ℕ) (Msg : Type) where
   /-- Speaker `r`'s device requests a block: its output samples, and the
   timestamp that the device reports for the block. -/
   | asked (r : Fin R) (outputs : List ℕ) (reported : ℝ)
-  /-- A message arrives from host `i`: its payload, and the frames of the
-  source whose data it carries. -/
-  | received (i : H) (contents : Msg) (frames : Finset ℕ)
+  /-- A message arrives from host `i`: its payload, the frames of the source
+  whose data it carries, and the kernel's stamp, which is the reading of the
+  host's clock when the message reached the host. The reading of the event
+  is the reading when the host's program handles the message. -/
+  | received (i : H) (contents : Msg) (frames : Finset ℕ) (stamp : ℝ)
   /-- A timer that the host set fires. -/
   | timer
 
@@ -79,7 +92,7 @@ inductive Observation (H : Type) (R : ℕ) (Msg : Type) where
 device hands over, or those a message carries. -/
 def Observation.frames : Observation H R Msg → Finset ℕ
   | .handed frames _ => (frames.map Prod.fst).toFinset
-  | .received _ _ frames => frames
+  | .received _ _ frames _ => frames
   | _ => ∅
 
 /-- An event as a host sees it: the reading of its own clock, and what it
@@ -133,10 +146,12 @@ def playable (lookahead : ℕ+) (held : Finset ℕ) : Option ℝ → Option ℝ
         else none
   | none => none
 
-/-- A message in transit: when it arrives, from which host, to which host,
-its payload, and the frames of the source it carries. -/
+/-- A message in transit: when the program of its destination handles it,
+when it reaches its destination, from which host, to which host, its
+payload, and the frames of the source it carries. -/
 structure InFlight (H : Type) (Msg : Type) where
   arrival : Time
+  reached : Time
   origin : H
   destination : H
   contents : Msg
@@ -209,6 +224,14 @@ def earliest {α : Type} (key : α → Time × ℕ) : List α → Option α
           if (key a).1 < (key b).1 ∨ ((key a).1 = (key b).1 ∧ (key a).2 ≤ (key b).2)
           then some a else some b
 
+/-- The number of a host: zero for the sender's host, and for any other host
+one more than the least speaker that it drives. Different hosts have
+different numbers. The run uses the numbers to order messages that arrive at
+the same true time. -/
+def World.hostIndex [DecidableEq H] (w : World H R) (h : H) : ℕ :=
+  if h = w.sender then 0
+  else ((List.finRange R).find? fun r => decide (w.host r = h)).elim (R + 1) fun r => 1 + r
+
 namespace State
 
 variable [DecidableEq H] (σ : Solution H R Msg) (w : World H R) (lookahead : ℕ+)
@@ -221,12 +244,18 @@ def due : List (Due R) :=
     ++ (List.range st.inFlight.length).map Due.arrival
     ++ (List.range st.timers.length).map Due.timer
 
-/-- When a pending event occurs, and its rank among simultaneous events. -/
+/-- When a pending event occurs, and its rank among simultaneous events. The
+rank of an arrival is the number of the host that sent the message, so that
+simultaneous arrivals from different hosts are handled in the order of those
+numbers. Simultaneous arrivals from one host have the same rank and are
+handled in the order in which the host sent them, which is their order among
+the messages in transit. -/
 def key : Due R → Time × ℕ
   | .handed b => (w.source.handed b, 0)
   | .asked r b => ((w.speaker r).asked b, 1 + r)
-  | .arrival p => ((st.inFlight[p]?.map InFlight.arrival).getD 0, 1 + R + p)
-  | .timer p => ((st.timers[p]?.map Timer.time).getD 0, 1 + R + st.inFlight.length + p)
+  | .arrival p => ((st.inFlight[p]?.map InFlight.arrival).getD 0,
+      1 + R + (st.inFlight[p]?.map fun m => w.hostIndex m.origin).getD 0)
+  | .timer p => ((st.timers[p]?.map Timer.time).getD 0, 1 + R + (R + 2) + p)
 
 /-- Host `h` sends, at true time `t`, a message to host `j` with payload
 `contents` and the data of the frames `frames`. The network delivers it or
@@ -236,7 +265,8 @@ def send (h : H) (t : Time) (j : H) (contents : Msg) (frames : Finset ℕ) : Sta
     sentCount := Function.update st.sentCount h
       (Function.update (st.sentCount h) j (st.sentCount h j + 1))
     inFlight := match w.network.deliver h j t (st.sentCount h j) with
-      | some a => st.inFlight ++ [⟨a, h, j, contents, frames⟩]
+      | some a => st.inFlight
+          ++ [⟨a, w.network.reach h j t (st.sentCount h j), h, j, contents, frames⟩]
       | none => st.inFlight
     sent := st.sent ++ [⟨t, h, j, frames.card⟩] }
 
@@ -250,7 +280,9 @@ def sendAll (h : H) (t : Time) (held : Finset ℕ) (sends : List (H × Msg × Fi
 it adds the event to its view, holds the frames the event brings, sends the
 messages the solution chooses (each with only the frames that the host
 holds), sets its timers, and, when a speaker's device requests a block,
-decides what each output sample of the block plays. -/
+decides what each output sample of the block plays. An output sample that
+left the device at `t` or earlier plays nothing of the source: the host
+handled the request too late for it. -/
 def handle (h : H) (t : Time) (obs : Observation H R Msg) : State H R Msg :=
   let view := st.views h ++ [⟨(w.clock h).read t, obs⟩]
   let act := σ h view
@@ -263,7 +295,8 @@ def handle (h : H) (t : Time) (obs : Observation H R Msg) : State H R Msg :=
       if (w.clock h).read t < c then ((w.clock h).timeAt c).map fun u => ⟨u, h⟩ else none
     plays := match obs with
       | .asked r outputs _ => fun r' k =>
-          if r' = r ∧ k ∈ outputs then playable lookahead held (act.plays k)
+          if r' = r ∧ k ∈ outputs then
+            if t < (w.speaker r).out k then playable lookahead held (act.plays k) else none
           else afterSends.plays r' k
       | _ => afterSends.plays }
 
@@ -282,7 +315,8 @@ def step : State H R Msg :=
   | some (.arrival p) =>
       match st.inFlight[p]? with
       | some m => ({ st with inFlight := st.inFlight.eraseIdx p }).handle σ w lookahead
-          m.destination m.arrival (.received m.origin m.contents m.frames)
+          m.destination m.arrival
+          (.received m.origin m.contents m.frames ((w.clock m.destination).read m.reached))
       | none => st
   | some (.timer p) =>
       match st.timers[p]? with

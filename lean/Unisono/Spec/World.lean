@@ -17,13 +17,23 @@ sees the world only through what its hosts observe (`Unisono.Spec.Solution`).
 
 * **True time** is a real number of seconds. No device can read it.
 * **The capture device** of the sender captures frame `n` of the source at
-  true time `capture n` and hands the frames to its host in blocks.
+  true time `capture n` and hands the frames to its host in blocks. The
+  host handles the handover of block `b` at true time `handed b`, when the
+  block's last frame is captured or later: a host that is busy handles its
+  events late.
 * **Speaker `r`** is a playback device. Its output sample `k` leaves the
   device at true time `out k`. The device requests its output samples from
-  its host in blocks, before they leave.
+  its host in blocks. The host handles the request of block `b` at true
+  time `asked b`. A host that is busy may handle a request after output
+  samples of the block left the device; those output samples play nothing
+  of the source.
 * **Every host** has a clock that runs at its own rate.
-* **The network** carries messages between any two hosts. A message arrives
-  some time after it is sent, or is lost.
+* **The network** carries messages between any two hosts. A message reaches
+  the receiving host some time after it is sent, or is lost. The kernel of
+  the receiving host stamps the message with the reading of the host's clock
+  at the moment at which the message reaches the host. The host's program
+  handles the message at that moment or later: a host that is busy handles
+  its events late.
 * **The application** sets a target latency for each frame, for lip-sync
   mode.
 
@@ -60,10 +70,13 @@ structure CaptureDevice where
   first : ℕ → ℕ
   first_zero : first 0 = 0
   first_strictMono : StrictMono first
-  /-- When block `b` is handed to the sender's host. -/
+  /-- When the sender's host handles the handover of block `b`. -/
   handed : ℕ → Time
-  handed_strictMono : StrictMono handed
-  /-- A block is handed over once its last frame is captured. -/
+  /-- The host handles the handovers in the order of the blocks. A host
+  that was busy may handle several of them at the same true time. -/
+  handed_mono : Monotone handed
+  /-- The host handles the handover of a block when the block's last frame
+  is captured, or later. -/
   handed_after : ∀ b, capture (first (b + 1) - 1) ≤ handed b
   /-- The timestamp that the device reports for block `b`, as a reading of
   its host's clock: when the block's first frame was captured. It need not
@@ -82,11 +95,13 @@ structure PlaybackDevice where
   first : ℕ → ℕ
   first_zero : first 0 = 0
   first_strictMono : StrictMono first
-  /-- When the device requests block `b`. -/
+  /-- When the speaker's host handles the device's request of block `b`. It
+  may be after output samples of the block left the device; such an output
+  sample plays nothing of the source (`State.handle`). -/
   asked : ℕ → Time
-  asked_strictMono : StrictMono asked
-  /-- A block is requested before its first output sample leaves. -/
-  asked_before : ∀ b, asked b < out (first b)
+  /-- The host handles the requests in the order of the blocks. A host that
+  was busy may handle several of them at the same true time. -/
+  asked_mono : Monotone asked
   /-- The timestamp that the device reports for block `b`, as a reading of
   its host's clock: when the block's first output sample will leave. It
   need not be exact. -/
@@ -96,11 +111,23 @@ structure PlaybackDevice where
 when, may depend on when it is sent and on how many messages the same host
 sent to the same host before it; it does not depend on the payload. -/
 structure Network (H : Type) where
-  /-- When the `q`-th message (counted from zero) that host `i` sends to host
-  `j`, sent at true time `s`, arrives; `none` if the network drops it. -/
+  /-- When the program of host `j` handles the `q`-th message (counted from
+  zero) that host `i` sends to host `j`, sent at true time `s`; `none` if the
+  network drops it. -/
   deliver : H → H → Time → ℕ → Option Time
-  /-- A message arrives after it is sent. -/
-  after : ∀ i j s q a, deliver i j s q = some a → s < a
+  /-- When that message reaches host `j`. The kernel of the host stamps the
+  message with the reading of the host's clock at that moment. It has a
+  meaning only for a message that is not dropped. -/
+  reach : H → H → Time → ℕ → Time
+  /-- A message reaches the host after it is sent, and the host's program
+  handles it then or later. -/
+  reach_mem : ∀ i j s q a, deliver i j s q = some a → s < reach i j s q ∧ reach i j s q ≤ a
+
+/-- The program of the receiving host handles a message after the message
+is sent. -/
+theorem Network.after {H : Type} (net : Network H) (i j : H) (s : Time) (q : ℕ) (a : Time)
+    (h : net.deliver i j s q = some a) : s < a :=
+  lt_of_lt_of_le (net.reach_mem i j s q a h).1 (net.reach_mem i j s q a h).2
 
 /-- The world, for hosts of type `H` and `R` speakers. The hosts are the
 sender and the hosts of the speakers; one host may drive several speakers,

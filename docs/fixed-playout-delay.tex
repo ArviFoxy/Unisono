@@ -346,6 +346,83 @@ source of error:
 \end{enumerate}
 The parts are combined for each speaker (\lean{speaker\_at\_latency}).
 
+\subsection{The baseline in an ideal constant world}
+
+In an ideal constant world the cost of the baseline is known, for any
+number of receiving hosts. The ideal constant world of the specification
+has exact clocks and devices, a constant request lead $\lambda$, blocks of
+$m_B$ frames, a constant target latency $L^*$ and a constant delay
+$d_{ij} > 0$ on the link from host $i$ to host $j$. Write $s$ for the
+sender's host and $h(r)$ for the host of speaker $r$. The \emph{asymmetry}
+of a host $h$ is
+\[
+  \alpha_h = \frac{d_{sh} - d_{hs}}{2},
+\]
+half the difference between the delay from the sender to $h$ and the delay
+back (\lean{IdealConstantWorld.\allowbreak asymmetry}).
+
+\begin{theorem}[The baseline's cost in an ideal constant world]\label{thm:exact}
+Consider an ideal constant world in which no speaker is on the sender's
+host. Let the baseline play at the latency $L = L^*$, send each message at
+least once, and use a slew $w$ with $0 < w < 1$. Suppose that for every
+speaker $r$
+\[
+  L^* > \frac{a + 2(m_B - 1)}{\rho} + \frac{d_{s h(r)} + d_{h(r) s}}{2}
+    + \lambda,
+\]
+where $a$ is the resampler's lookahead in frames. When the weights of
+latency and of roughness in the specification's cost are zero, the cost of
+the baseline is at most
+\[
+  w_S\,\frac{1}{R^2}\sum_{r < r'}
+      \bigl(\alpha_{h(r)} - \alpha_{h(r')}\bigr)^2
+    \;+\; w_\Theta\,\frac{1}{R}\sum_r \alpha_{h(r)}^2,
+\]
+where $R$ is the number of speakers, $w_S$ the weight of synchronization
+and $w_\Theta$ the weight of tracking (\lean{cost\_le\_of\_ideal} in
+\path{lean/Unisono/Solutions/FixedDelay/Exact.lean}).
+\end{theorem}
+
+The baseline estimates the sender's clock at a host $h$ by the midpoint of
+a round trip, which is off by $\alpha_h$. The proof shifts the timeline of
+every receiving host $h$ by $\alpha_h$ along the links to and from the
+sender. In the shifted world the two delays between the sender and each
+host are equal, so each speaker plays at latency $L$ with $E = 0$
+(\lean{speaker\_at\_latency}). The baseline is a star solution and plays
+the same in both worlds (\lean{Solution.plays\_shiftStarKeepPeers}). In
+the given world, every output sample of speaker $r$ therefore plays the
+sound captured exactly $L + \alpha_{h(r)}$ before the sample leaves
+(\lean{World.PlaysAtLatencies}), and the cost follows
+(\path{lean/Unisono/Spec/ExactLatency.lean}). Messages that arrive at a
+host at the same time are handled in the order of the hosts that sent them,
+which the shift does not change.
+
+The bound of Theorem~\ref{thm:exact} is attained: under the same conditions
+the cost of the baseline equals it (\lean{cost\_eq\_of\_ideal}). From some
+frame on, every speaker $r$ plays every frame exactly $L + \alpha_{h(r)}$
+after its capture (\lean{playTime\_of\_ideal}).
+
+\subsection{The baseline under the generative world}
+
+The generative world of the specification draws at random the offset of each
+clock and how the least round-trip time of each pair of hosts divides
+between its two directions. In its noiseless members, almost every outcome
+is an ideal constant world. The conditions of Theorem~\ref{thm:exact}
+therefore hold in almost every outcome, and the baseline's expected cost is
+the mean of that cost over the outcomes.
+
+Among the solutions whose hosts exchange messages only with the sender, no
+compared solution has an expected cost that is lower by more than a known
+margin (\lean{within\_starMargin} in
+\path{lean/Unisono/Solutions/FixedDelay/StarMargin.lean}). The compared
+solutions are those within a speed bound below one; the baseline is one of
+them when its slew is at most that bound, because its position advances by
+one frame per output sample within the slew (\lean{step\_le\_slew} in
+\path{lean/Unisono/Solutions/FixedDelay/Speed.lean}). The specification
+states the theorem, its conditions and what it does not cover. In
+particular, a solution whose receiving hosts also exchange messages with
+each other can do better than the baseline.
+
 The offset estimate $\hat\theta$ can err by up to half the largest asymmetry
 between the query and answer delays. When every link's delays lie within
 the same interval $[d_{\min}, d_{\max}]$, that is $(d_{\max} - d_{\min})/2$,

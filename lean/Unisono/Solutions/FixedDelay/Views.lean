@@ -45,7 +45,9 @@ variable {H : Type} {R : ℕ} {Msg : Type} [DecidableEq H]
 bounds. Suppose the host of step `n` sends `c` copies of a message to host
 `j` as consecutive messages on the link, and `c` exceeds the number of
 consecutive messages that a link can lose. Then one copy is in transit after
-the step, and it arrives within the link's shortest and longest delays. -/
+the step, and it arrives within the link's shortest and longest delays; it
+reaches the host at some true time `reached`, which the bounds do not
+limit. -/
 theorem Solution.copy_inFlight (σ : Solution H R Msg) (w : World H R) (B : Bounds H)
     (hw : w.WithinBounds B) (lookahead : ℕ+) {n : ℕ} {h : H} {t : Time}
     {obs : Observation H R Msg} (hn : σ.handled w lookahead n = some (h, t, obs))
@@ -54,8 +56,9 @@ theorem Solution.copy_inFlight (σ : Solution H R Msg) (w : World H R) (B : Boun
     {j : H} {msg : Msg} {F : Finset ℕ} {i0 c : ℕ} (hc : B.lossRun < c)
     (hcopies : ∀ k < c, ∃ hk : i0 + k < S.length, S[i0 + k] = (j, msg, F)
       ∧ (S.take (i0 + k)).countP (fun s => s.1 = j) = k) :
-    ∃ arr, t + B.delayLeast h j ≤ arr ∧ arr ≤ t + B.delayMost h j
-      ∧ (⟨arr, h, j, msg, F.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames)⟩
+    ∃ arr reached, t + B.delayLeast h j ≤ arr ∧ arr ≤ t + B.delayMost h j
+      ∧ (⟨arr, reached, h, j, msg,
+          F.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames)⟩
         : InFlight H Msg) ∈ (σ.states w lookahead (n + 1)).inFlight := by
   obtain ⟨-, -, -, -, -, -, -, -, -, hdelays, hlosses⟩ := hw
   obtain ⟨k, hk, hsome⟩ := hlosses h j ((σ.states w lookahead n).sentCount h j) (fun _ => t)
@@ -65,7 +68,7 @@ theorem Solution.copy_inFlight (σ : Solution H R Msg) (w : World H R) (B : Boun
   have hin := σ.sent_inFlight w lookahead hn hS hidx (arr := arr)
     (by rw [hget]; simp only; rw [hcount]; exact harr)
   rw [hget] at hin
-  exact ⟨arr, by linarith [hdel.1], by linarith [hdel.2], hin⟩
+  exact ⟨arr, _, by linarith [hdel.1], by linarith [hdel.2], hin⟩
 
 end Unisono.Spec
 
@@ -198,10 +201,11 @@ theorem block_arrives (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
     refine Finset.filter_true_of_mem fun m hm => Finset.mem_union_right _ ?_
     simpa [hobs, Observation.frames, List.map_map, Function.comp_def, hx, hFdef] using hm
   rw [hF] at hdel
-  have hin : (⟨arr, w.sender, j, (x j).1, F⟩ : InFlight H Payload)
-      ∈ (σ.states w lookahead (n + 1)).inFlight := by
+  obtain ⟨reached, hin⟩ : ∃ reached,
+      (⟨arr, reached, w.sender, j, (x j).1, F⟩ : InFlight H Payload)
+        ∈ (σ.states w lookahead (n + 1)).inFlight := by
     rw [hstep]
-    exact hdel
+    exact ⟨_, hdel⟩
   -- It is handled before the event of step `k`.
   exact σ.frames_arrive w lookahead hin hnk (by simp only; linarith)
 
@@ -216,9 +220,10 @@ theorem block_handled (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
     {j : H} (hj : j ∈ p.speakers) (hjs : j ≠ w.sender) {b k : ℕ}
     (hk : w.source.handed b + B.delayMost w.sender j
       < (solution p : Solution H R Payload).eventTime w lookahead k) :
-    ∃ i < k, ∃ arr F, arr ≤ w.source.handed b + B.delayMost w.sender j ∧
+    ∃ i < k, ∃ arr F ks, arr ≤ w.source.handed b + B.delayMost w.sender j ∧
       (solution p : Solution H R Payload).handled w lookahead i
-        = some (j, arr, .received w.sender (.block (w.source.first b) (w.source.reported b)) F) := by
+        = some (j, arr,
+          .received w.sender (.block (w.source.first b) (w.source.reported b)) F ks) := by
   set σ : Solution H R Payload := solution p with hσ
   have hdpos := B.delayLeast_pos w.sender j
   have hdle := B.delayLeast_le w.sender j
@@ -237,11 +242,12 @@ theorem block_handled (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (lo
   obtain ⟨i0, hi0⟩ := replicate_entries p.copies x _ (hnodup.filter _) hjf
   have hS := solution_handed_sends p w hsender ((σ.states w lookahead n).views w.sender)
     ((w.clock w.sender).read (w.source.handed b)) b
-  obtain ⟨arr, -, harr, hin⟩ := Solution.copy_inFlight σ w B hw lookahead hn hS hcopies hi0
+  obtain ⟨arr, reached, -, harr, hin⟩ :=
+    Solution.copy_inFlight σ w B hw lookahead hn hS hcopies hi0
   have h1 : n + 1 ≤ k := by omega
   have h2 : arr < σ.eventTime w lookahead k := by linarith
   obtain ⟨i, -, hik, hhi⟩ := Solution.handled_before w σ lookahead hin h1 h2
-  exact ⟨i, hik, arr, _, harr, hhi⟩
+  exact ⟨i, hik, arr, _, _, harr, hhi⟩
 
 /-- What the baseline sends, by the event it acts on: the sender sends the
 stream at a handoff and answers clock queries; any other host sends clock
@@ -251,7 +257,7 @@ theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
     (∃ frames stamp f t', e.observation = .handed frames stamp ∧ h = p.sender ∧
         frames.head? = some (f, t') ∧ s.1 ∈ p.speakers ∧ s.2.1 = .block f stamp ∧
         s.2.2 = (frames.map Prod.fst).toFinset)
-      ∨ (∃ i sent F, e.observation = .received i (.ask sent) F ∧ h = p.sender ∧
+      ∨ (∃ i sent F ks, e.observation = .received i (.ask sent) F ks ∧ h = p.sender ∧
         s = (i, .answer sent e.reading, ∅))
       ∨ (∃ r outputs stamp, e.observation = .asked r outputs stamp ∧ h ≠ p.sender ∧
         s = (p.sender, .ask e.reading, ∅)) := by
@@ -267,10 +273,10 @@ theorem sends_cases (h : H) (l : List (Event H R Payload)) (e : Event H R Payloa
         exact Or.inl ⟨frames, stamp, f, t', hobs, hh, hhead, (List.mem_filter.mp hj).1, rfl, rfl⟩
       · simp at hs
     · simp at hs
-  · rename_i i sent F hobs
+  · rename_i i sent F ks hobs
     split_ifs at hs with hh
     · simp only [List.mem_replicate] at hs
-      exact Or.inr (Or.inl ⟨i, sent, F, hobs, hh.1, hs.2⟩)
+      exact Or.inr (Or.inl ⟨i, sent, F, ks, hobs, hh.1, hs.2⟩)
     · simp at hs
   · rename_i r outputs stamp hobs
     split_ifs at hs with hask
@@ -324,10 +330,11 @@ theorem origin_inFlight (w : World H R) (lookahead : ℕ+) (hsender : p.sender =
   | zero => intro m hm; simp [Solution.states, State.start] at hm
   | succ n ih =>
     intro m hm
-    rcases σ.mem_inFlight_succ w lookahead n hm with hold | ⟨h, t, obs, hn, s, hs, ho, hd, hc, hf, q, hq⟩
+    rcases σ.mem_inFlight_succ w lookahead n hm with
+      hold | ⟨h, t, obs, hn, s, hs, ho, hd, hc, hf, q, hq, -⟩
     · exact ih m hold
     · rcases sends_cases p h _ _ hs with
-        ⟨frames, stamp, f, t', hobs, hh, hhead, -, hs1, hs2⟩ | ⟨i, sent, F, hobs, hh, rfl⟩ |
+        ⟨frames, stamp, f, t', hobs, hh, hhead, -, hs1, hs2⟩ | ⟨i, sent, F, ks, hobs, hh, rfl⟩ |
           ⟨r, outputs, stamp, hobs, hh, rfl⟩
       · simp only at hobs
         subst hobs
@@ -385,11 +392,12 @@ theorem block_memory (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (loo
         = some (w.source.first b', w.source.reported b')
       ∧ b'' ≤ b' ∧ w.source.handed b' < (solution p : Solution H R Payload).eventTime w lookahead k := by
   set σ : Solution H R Payload := solution p with hσ
-  obtain ⟨i, hik, arr, F, -, hhi⟩ := block_handled p w B hw lookahead hsender hnodup hcopies hh hhs hb''
+  obtain ⟨i, hik, arr, F, ks, -, hhi⟩ :=
+    block_handled p w B hw lookahead hsender hnodup hcopies hh hhs hb''
   have hmem := Solution.mem_views_of_handled w σ lookahead hhi hik
   have hns : h ≠ p.sender := hsender ▸ hhs
   obtain ⟨f', c', hblock, hle⟩ := block_latest p h hns _ hmem rfl
-  obtain ⟨e, he, i', F', heo⟩ := block_received p h hns _ hblock
+  obtain ⟨e, he, i', F', ks', heo⟩ := block_received p h hns _ hblock
   obtain ⟨j, hj, t, obs, hhj, rfl⟩ := Solution.handled_of_mem_views w σ lookahead he
   simp only at heo
   subst heo

@@ -112,7 +112,7 @@ To keep the boundary between formal proofs and modeling approximations clear:
 
 Formal proofs reside in \path{Spec/Topologies.lean}, \path{Spec/Limits.lean},
 \path{Solutions/Core.lean}, and the \path{Analysis/} directory under
-\path{lean/Unisono/}, checked in \path{lean/Unisono/Audit.lean} (455 theorems)
+\path{lean/Unisono/}, checked in \path{lean/Unisono/Audit.lean} (1847 theorems)
 using only the standard Lean axioms. The second-order noise model is in
 \path{lean/Unisono/Spec/Models/SecondOrder.lean} (no theorem currently takes it
 as a hypothesis). All numerical tables are reproduced by running
@@ -382,7 +382,7 @@ quadratic value-to-go of \path{Unisono.Model.Regulation}.
 \begin{theorem}[Single-mode separation and uniqueness]
 \label{thm:single-sep}
 In \path{Analysis/ModalControl.lean} (\lean{single\_cost\_split},
-\lean{single\_law\_optimal}, \lean{single\_law\_unique\_ae}), assume:
+\lean{single\_law\_minimizes}, \lean{single\_law\_unique\_ae}), assume:
 \begin{itemize}
 \item $(\mathcal{F}_k)$ is a filtration on a probability space $(\Omega, \Prob)$,
 \item $S_k \in L^2(\Prob)$ satisfies
@@ -420,7 +420,7 @@ decentralized star or peer policy using less information.
 
 \begin{theorem}[Centralized two-gain lip-sync benchmark and long-run bounds]
 \label{thm:lipsync-opt}
-In \path{ModalControl.lean} (\lean{multi\_lipsync\_optimal},
+In \path{ModalControl.lean} (\lean{multi\_lipsync\_minimizes},
 \lean{multi\_lipsync\_unique\_ae}, \lean{multi\_lipsync\_cost\_rate},
 \lean{multi\_lipsync\_law\_cost\_le}), assume:
 \begin{itemize}
@@ -458,7 +458,7 @@ Then:
 
 \begin{theorem}[Centralized benchmark with unpriced latency ($\tilde c_\Theta = 0$)]
 \label{thm:lowlat-opt}
-In \path{ModalControl.lean} (\lean{multi\_lowlatency\_optimal},
+In \path{ModalControl.lean} (\lean{multi\_lowlatency\_minimizes},
 \lean{multi\_lowlatency\_unique\_ae}), under the same shared-filtration
 hypotheses with $\tilde c_\Theta = 0$ and $\tilde c_S = \mathrm{weight}(g_{\mathrm{diff}})$,
 $g_{\mathrm{diff}} \in (0, 1)$, the fixed-mean-pace controller
@@ -513,7 +513,7 @@ $r$ chooses $u_{r,k}$ using only its local filtration $(\mathcal{F}_{r,k})$.
 \begin{theorem}[Decentralized star minimizer under uncorrelated errors]
 \label{thm:star-weight}
 In \path{ModalControl.lean} (\lean{decentralized\_star\_cost\_eq} and
-\lean{decentralized\_star\_uncorrelated\_optimal}), assume:
+\lean{decentralized\_star\_uncorrelated\_minimizes}), assume:
 \begin{itemize}
 \item $R > 0$, and $g_{\mathrm{indep}} \in (0, 1)$ satisfies
   $\mathrm{weight}(g_{\mathrm{indep}}) = \frac{R-1}{R}\tilde c_S + \tilde c_\Theta$,
@@ -679,12 +679,11 @@ from $i$ to $j$ changes by $\Delta(j) - \Delta(i)$, and round-trip times do not
 change (\lean{World.shiftHosts\_rtt\_eq}).
 
 \lean{Solution.plays\_shiftHosts} shows that shifting host timelines changes no
-playback decision. It assumes that shifted delays stay positive, that event
-times are unbounded in both worlds, and that no two messages from different
-origins reach one host at the same true time
-(\lean{Solution.NoCrossOriginCollision}, needed because the run model breaks
-simultaneous arrival ties by global send order). It assumes nothing about the
-order of events at different hosts. This yields general lower bounds for
+playback decision. It assumes that shifted delays stay positive and that
+event times are unbounded in both worlds. It assumes nothing about the order
+of events at different hosts: the run handles messages that arrive at one
+host at the same true time in a fixed order of the hosts that sent them,
+which a shift does not change. This yields general lower bounds for
 \emph{every} topology—both star and peer—when all links are shifted
 (\lean{sync\_shiftHosts\_lower\_bound} and
 \lean{tracking\_shiftHosts\_lower\_bound}). Any synchronization advantage of
@@ -712,11 +711,11 @@ In \path{lean/Unisono/Spec/Limits.lean}:
   Assume:
   \begin{itemize}
   \item on every star link ($i = \mathrm{src} \lor j = \mathrm{src}$), every
-    delivered message in $w$ has delay strictly greater than
-    $|\Delta(j) - \Delta(i)|$ (no delay bound is imposed on peer links),
+    delivered message in $w$ reaches its host more than
+    $|\Delta(j) - \Delta(i)|$ after it is sent (no delay bound is imposed on
+    peer links),
   \item $\pi$ is a star solution (\lean{IsStar}) with unbounded event times
-    (non-Zeno progress) in $w$, $w^+$, and $w^-$, and satisfies
-    \lean{NoCrossOriginCollision} in $w$,
+    (non-Zeno progress) in $w$, $w^+$, and $w^-$,
   \item capture times in $w$ are unbounded, and there exists $N_0 \in \mathbb{N}$
     such that every speaker plays every frame $n \ge N_0$ in $w$ (note: this
     hypothesis excludes worlds that permanently drop audio frames).
@@ -739,19 +738,15 @@ In \path{lean/Unisono/Spec/Limits.lean}:
   $w^- = \mathrm{sepWorldMinus}\;A$ be the pair of 3-host worlds with ideal
   rate-1 clocks, constant star-link delay $1/2$, constant symmetric peer-link
   delay $1/10$ (allowing $1/10 < 2A$, e.g.\ $A = 1/5$), speaker~1's request
-  grid staggered by $1/3\,\text{s}$ from speaker~0's so star clock queries
-  never collide at the sender, and shifts $\Delta = (0, A, -A)$
+  grid staggered by $1/3\,\text{s}$ from speaker~0's, and shifts
+  $\Delta = (0, A, -A)$
   (\lean{peer\_beats\_star\_asymmetry\_bound}). Then:
   \begin{itemize}
   \item every qualifying star solution $\pi$ (meeting part~2) incurs
-    $\max\bigl(w^+.\mathrm{sync}(\pi), w^-.\mathrm{sync}(\pi)\bigr) \ge A^2$.
-    Because of the $1/3\,\text{s}$ stagger, \lean{FixedDelay.solution} and
-    \lean{ForwardStar.solution} avoid cross-origin collisions on
-    \lean{sepBaseWorld} (proved via \lean{noCrossOriginCollision\_sepBaseWorld}
-    and \lean{ForwardStar.\allowbreak noCrossOriginCollision});
+    $\max\bigl(w^+.\mathrm{sync}(\pi), w^-.\mathrm{sync}(\pi)\bigr) \ge A^2$;
   \item the bound is tight: the forwarding-only star witness
-    \lean{ForwardStar.solution} satisfies \lean{IsStar},
-    \lean{NoCrossOriginCollision}, and progress, plays every frame $n \ge 2$,
+    \lean{ForwardStar.solution} satisfies \lean{IsStar} and progress, plays
+    every frame $n \ge 2$,
     and attains $w^+.\mathrm{sync} = A^2$ and $w^-.\mathrm{sync} = A^2$
     (\lean{ForwardStar.sync\_eq});
   \item the idealized-world peer witness \lean{PeerSync.solution} uses only
@@ -794,7 +789,7 @@ In \path{Estimation.lean}, for any two vertices $i, j \in V$:
   $a \in E$, $\hat\theta_f = \sum_{a \in E} f_a y_a$ recovers
   $\phi(j) - \phi(i)$ for all clock vectors $\phi$ if and only if $f$ is a unit
   $i \to j$ flow: $\operatorname{div}_G(f) = \mathbf{1}_j - \mathbf{1}_i$.
-\item (\lean{thomson\_blue\_optimal}, \cite{doyle1984,barooah2007,giridhar2006})
+\item (\lean{thomson\_blue\_least\_variance}, \cite{doyle1984,barooah2007,giridhar2006})
   Let $\psi : V \to \R$ solve $L_G \psi = \mathbf{1}_j - \mathbf{1}_i$ where
   $B$ is the edge-vertex incidence matrix,
   $W = \operatorname{diag}(\sigma_a^{-2})$, and $L_G = B^\top W B$, and set
@@ -1677,7 +1672,7 @@ implementation:
   window, closeness of the fixed-point Kalman recursion to real-valued
   filtering, or finite-precision error bounds comparing integer
   $\mathrm{LDL}^\top$ against real-valued
-  \lean{Analysis.\allowbreak Estimation.\allowbreak thomson\_blue\_optimal} on
+  \lean{Analysis.\allowbreak Estimation.\allowbreak thomson\_blue\_least\_variance} on
   multi-peer graphs.
 \item \emph{Nonzero clock noise in \lean{SecondOrderMoments}.} The witness
   \lean{SecondOrderMoments.\allowbreak example\_holds} currently gives zero

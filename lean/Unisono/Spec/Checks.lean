@@ -7,10 +7,15 @@ module
 public import Unisono.Spec.Objectives
 public import Unisono.Spec.Models.Bounded
 public import Unisono.Spec.Models.Delays
+public import Unisono.Spec.Models.GenerativeCanonical
+public import Unisono.Spec.Models.GenerativeWorld
 public import Unisono.Spec.Models.Ideal
 public import Unisono.Spec.Models.SecondOrder
 public import Unisono.Spec.Models.StochasticWorld
+public import Mathlib.MeasureTheory.Constructions.Pi
 public import Mathlib.MeasureTheory.Measure.Dirac.Basic
+public import Mathlib.Probability.ConditionalProbability
+public import Mathlib.Probability.Distributions.Gaussian.Basic
 public import Mathlib.MeasureTheory.Integral.Lebesgue.Countable
 public import Mathlib.Algebra.BigOperators.Ring.Finset
 public import Mathlib.Tactic.FieldSimp
@@ -52,7 +57,10 @@ build.
 * No model of the world is empty (`Bounds.example_within`,
   `IdealConstantWorld.example_holds`,
   `StationaryNetworkDisturbances.example_holds`,
-  `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`).
+  `SecondOrderMoments.example_holds`, `StochasticWorld.example_holds`,
+  `GenerativeWorld.example_holds`). The example of the generative model has
+  no pauses and no wander; members with pauses have random worlds by
+  `GenerativeWorld.exists_holds_of_steadyClocks`.
 -/
 
 @[expose] public noncomputable section
@@ -320,6 +328,84 @@ theorem earliest_exists {α : Type} (key : α → Time × ℕ) {l : List α} (hl
   | nil => exact absurd rfl hl
   | cons c l => exact Option.ne_none_iff_exists'.mp (earliest_ne_none key c l)
 
+/-- **Among the earliest elements of least rank, `earliest` selects the first
+of the list.** Every element before the selected one has a strictly larger
+key: a later time, or the same time and a higher rank. -/
+theorem earliest_spec_first {α : Type} (key : α → Time × ℕ) :
+    ∀ (l : List α) (a : α), earliest key l = some a →
+      ∃ l₁ l₂, l = l₁ ++ a :: l₂ ∧ ∀ b ∈ l₁,
+        (key a).1 < (key b).1 ∨ ((key a).1 = (key b).1 ∧ (key a).2 < (key b).2)
+  | [], a, h => by simp [earliest] at h
+  | c :: l, a, h => by
+      simp only [earliest] at h
+      cases hl : earliest key l with
+      | none =>
+          simp only [hl, Option.some.injEq] at h
+          subst h
+          exact ⟨[], l, rfl, by simp⟩
+      | some b =>
+          simp only [hl] at h
+          split_ifs at h with hc
+          · simp only [Option.some.injEq] at h
+            subst h
+            exact ⟨[], l, rfl, by simp⟩
+          · simp only [Option.some.injEq] at h
+            subst h
+            obtain ⟨l₁, l₂, hsplit, hbefore⟩ := earliest_spec_first key l b hl
+            refine ⟨c :: l₁, l₂, by rw [hsplit]; rfl, fun x hx => ?_⟩
+            rcases List.mem_cons.mp hx with rfl | hx
+            · rw [not_or, not_lt, not_and, not_le] at hc
+              rcases hc.1.lt_or_eq with hlt | heq
+              · exact Or.inl hlt
+              · exact Or.inr ⟨heq, hc.2 heq.symm⟩
+            · exact hbefore x hx
+
+/-- The number of a host is at most one more than the number of speakers. -/
+theorem World.hostIndex_le [DecidableEq H] (w : World H R) (h : H) : w.hostIndex h ≤ R + 1 := by
+  unfold World.hostIndex
+  split_ifs
+  · exact Nat.zero_le _
+  · cases hf : (List.finRange R).find? fun r => decide (w.host r = h) with
+    | none => simp
+    | some r =>
+      simp only [Option.elim]
+      have := r.isLt
+      omega
+
+/-- **Different hosts have different numbers.** -/
+theorem World.hostIndex_injective [DecidableEq H] (w : World H R) :
+    Function.Injective w.hostIndex := by
+  intro a b hab
+  have hfind : ∀ h, h ≠ w.sender →
+      ∃ r, (List.finRange R).find? (fun r => decide (w.host r = h)) = some r ∧ w.host r = h := by
+    intro h hs
+    rcases w.hosts h with rfl | ⟨r₀, hr₀⟩
+    · exact absurd rfl hs
+    · cases hf : (List.finRange R).find? (fun r => decide (w.host r = h)) with
+      | none =>
+        have hnone := List.find?_eq_none.mp hf r₀ (List.mem_finRange r₀)
+        simp [hr₀] at hnone
+      | some r =>
+        have hsome := List.find?_some hf
+        exact ⟨r, rfl, by simpa using hsome⟩
+  unfold World.hostIndex at hab
+  by_cases ha : a = w.sender <;> by_cases hb : b = w.sender
+  · rw [ha, hb]
+  · obtain ⟨r, hr, -⟩ := hfind b hb
+    rw [ite_eq_left ha, ite_eq_right hb, hr] at hab
+    simp only [Option.elim] at hab
+    omega
+  · obtain ⟨r, hr, -⟩ := hfind a ha
+    rw [ite_eq_right ha, ite_eq_left hb, hr] at hab
+    simp only [Option.elim] at hab
+    omega
+  · obtain ⟨ra, hra, ha'⟩ := hfind a ha
+    obtain ⟨rb, hrb, hb'⟩ := hfind b hb
+    rw [ite_eq_right ha, ite_eq_right hb, hra, hrb] at hab
+    simp only [Option.elim] at hab
+    have hr : ra = rb := Fin.ext (by omega)
+    rw [← ha', ← hb', hr]
+
 theorem Clock.read_timeAt {clock : Clock} {c : ℝ} {u : Time} (h : clock.timeAt c = some u) :
     clock.read u = c := by
   unfold Clock.timeAt at h
@@ -357,12 +443,76 @@ theorem mem_due {e : Due R} (he : e ∈ st.due) :
   · exact Or.inr (Or.inr (Or.inl ⟨p, hp, rfl⟩))
   · exact Or.inr (Or.inr (Or.inr ⟨p, hp, rfl⟩))
 
+/-- The index of a pending arrival among the messages in transit. -/
+def arrivalIndex : Due R → Option ℕ
+  | .arrival p => some p
+  | _ => none
+
+/-- The pending arrivals are listed in the order of the messages in
+transit. -/
+theorem due_filterMap_arrivalIndex :
+    st.due.filterMap arrivalIndex = List.range st.inFlight.length := by
+  have h1 : ((List.finRange R).map fun r => Due.asked r (st.askedNext r)).filterMap
+      arrivalIndex = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro d hd
+    obtain ⟨r, -, rfl⟩ := List.mem_map.mp hd
+    rfl
+  have h2 : ((List.range st.inFlight.length).map Due.arrival).filterMap (arrivalIndex (R := R))
+      = List.range st.inFlight.length := by
+    rw [List.filterMap_map]
+    exact List.filterMap_some
+  have h3 : ((List.range st.timers.length).map Due.timer).filterMap (arrivalIndex (R := R))
+      = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro d hd
+    obtain ⟨x, -, rfl⟩ := List.mem_map.mp hd
+    rfl
+  unfold due
+  rw [List.filterMap_append, List.filterMap_append, List.filterMap_cons, h2, h3]
+  simp only [arrivalIndex, h1, List.append_nil, List.nil_append]
+
+/-- In the list of pending events, an arrival of a lower index comes before
+an arrival of a higher index. -/
+theorem arrival_mem_of_lt {l₁ l₂ : List (Due R)} {p q : ℕ}
+    (hsplit : st.due = l₁ ++ Due.arrival p :: l₂) (hqp : q < p) : Due.arrival q ∈ l₁ := by
+  have hrange := st.due_filterMap_arrivalIndex
+  rw [hsplit, List.filterMap_append, List.filterMap_cons] at hrange
+  simp only [arrivalIndex] at hrange
+  have hpw : List.Pairwise (· < ·)
+      (l₁.filterMap arrivalIndex ++ p :: l₂.filterMap arrivalIndex) := by
+    rw [hrange]
+    exact List.pairwise_lt_range
+  have hp_mem : p ∈ List.range st.inFlight.length := by
+    rw [← hrange]
+    simp
+  have hq_mem : q ∈ l₁.filterMap arrivalIndex ++ p :: l₂.filterMap arrivalIndex := by
+    rw [hrange, List.mem_range]
+    exact lt_trans hqp (List.mem_range.mp hp_mem)
+  rw [List.pairwise_append] at hpw
+  obtain ⟨-, hpw₂, -⟩ := hpw
+  rcases List.mem_append.mp hq_mem with h | h
+  · obtain ⟨d, hd, hdq⟩ := List.mem_filterMap.mp h
+    cases d with
+    | arrival x =>
+      simp only [arrivalIndex, Option.some.injEq] at hdq
+      subst hdq
+      exact hd
+    | handed b => simp [arrivalIndex] at hdq
+    | asked r b => simp [arrivalIndex] at hdq
+    | timer x => simp [arrivalIndex] at hdq
+  · rcases List.mem_cons.mp h with rfl | h
+    · exact absurd hqp (lt_irrefl _)
+    · have hlt := (List.pairwise_cons.mp hpw₂).1 q h
+      omega
+
 /-- Every pending event of a state occurs at true time `t` or later. -/
 def DueFrom (t : Time) : Prop :=
   t ≤ w.source.handed st.handedNext ∧ (∀ r, t ≤ (w.speaker r).asked (st.askedNext r))
     ∧ (∀ m ∈ st.inFlight, t ≤ m.arrival) ∧ (∀ u ∈ st.timers, t ≤ u.time)
 
-theorem DueFrom.le_key {st : State H R Msg} {t : Time} (h : st.DueFrom w t) {e : Due R}
+theorem DueFrom.le_key [DecidableEq H] {st : State H R Msg} {t : Time} (h : st.DueFrom w t)
+    {e : Due R}
     (he : e ∈ st.due) : t ≤ (st.key w e).1 := by
   rcases st.mem_due he with rfl | ⟨r, rfl⟩ | ⟨p, hp, rfl⟩ | ⟨p, hp, rfl⟩
   · exact h.1
@@ -372,7 +522,7 @@ theorem DueFrom.le_key {st : State H R Msg} {t : Time} (h : st.DueFrom w t) {e :
   · simp only [key, List.getElem?_eq_getElem hp, Option.map_some, Option.getD_some]
     exact h.2.2.2 _ (List.getElem_mem hp)
 
-theorem dueFrom_of_le_key {t : Time} (h : ∀ e ∈ st.due, t ≤ (st.key w e).1) :
+theorem dueFrom_of_le_key [DecidableEq H] {t : Time} (h : ∀ e ∈ st.due, t ≤ (st.key w e).1) :
     st.DueFrom w t := by
   refine ⟨h _ st.handed_mem_due, fun r => h _ (st.asked_mem_due r), ?_, ?_⟩
   · intro m hm
@@ -461,7 +611,7 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
   · have hm := st.handle_dueFrom w σ lookahead (h := w.sender)
       (obs := .handed ((w.source.block st.handedNext).map fun n => (n, w.target n))
         (w.source.reported st.handedNext)) hst
-    exact ⟨(w.source.handed_strictMono (Nat.lt_succ_self _)).le, hm.2.1, hm.2.2.1, hm.2.2.2⟩
+    exact ⟨w.source.handed_mono (Nat.le_succ _), hm.2.1, hm.2.2.1, hm.2.2.2⟩
   · have hm := st.handle_dueFrom w σ lookahead (h := w.host r)
       (obs := .asked r ((w.speaker r).block (st.askedNext r))
         ((w.speaker r).reported (st.askedNext r))) hst
@@ -469,7 +619,7 @@ theorem step_dueFrom (σ : Solution H R Msg) (lookahead : ℕ+) {e : Due R}
     by_cases hr : r' = r
     · subst hr
       simp only [Function.update_self]
-      exact ((w.speaker r').asked_strictMono (Nat.lt_succ_self _)).le
+      exact (w.speaker r').asked_mono (Nat.le_succ _)
     · simp only [Function.update_of_ne hr]
       exact hst.2.1 r'
   · simp only [List.getElem?_eq_getElem hp]
@@ -528,7 +678,7 @@ theorem Solution.lt_askedNext (σ : Solution H R Msg) (w : World H R) (lookahead
     {n : ℕ} {r : Fin R} {b : ℕ} (h : (w.speaker r).asked b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).askedNext r := by
   by_contra hle
-  have h1 := (w.speaker r).asked_strictMono.monotone (not_lt.mp hle)
+  have h1 := (w.speaker r).asked_mono (not_lt.mp hle)
   have h2 := σ.eventTime_le_asked w lookahead n r
   linarith
 
@@ -723,7 +873,7 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -733,11 +883,10 @@ theorem Bounds.example_within : ∃ (w : World Unit 1) (B : Bounds Unit), w.With
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
-      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
-        simp only [Option.some.injEq] at h; linarith⟩
+      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ => s + 1, fun _ _ s _ a h => by
+        simp only [Option.some.injEq] at h; exact ⟨by linarith, h.le⟩⟩
       target := fun _ => 0 },
     { clockRate := 0
       clockRate_nonneg := le_rfl
@@ -810,7 +959,7 @@ theorem IdealConstantWorld.example_holds :
             first_zero := rfl
             first_strictMono := strictMono_id
             handed := fun b => b
-            handed_strictMono := Nat.strictMono_cast
+            handed_mono := Nat.mono_cast
             handed_after := fun b => by simp
             reported := fun b => b }
         speaker := fun _ =>
@@ -820,11 +969,11 @@ theorem IdealConstantWorld.example_holds :
             first_zero := rfl
             first_strictMono := strictMono_id
             asked := fun b => b + 1 / 2
-            asked_strictMono := fun a b h => by simpa using h
-            asked_before := fun b => by norm_num
+            asked_mono := StrictMono.monotone fun a b h => by simpa using h
             reported := fun b => (b + 1 : ℝ) + 1 }
-        network := ⟨fun i j s _ => some (s + d i j), fun i j s _ a h => by
-          simp only [Option.some.injEq] at h; linarith [hd i j]⟩
+        network := ⟨fun i j s _ => some (s + d i j), fun i j s _ => s + d i j,
+          fun i j s _ a h => by
+            simp only [Option.some.injEq] at h; exact ⟨by linarith [hd i j], h.le⟩⟩
         target := fun _ => 1 }
   have mkHolds : ∀ (d : Fin 2 → Fin 2 → ℝ) (hd : ∀ i j, 0 < d i j),
       IdealConstantWorld.Holds
@@ -847,6 +996,7 @@ theorem IdealConstantWorld.example_holds :
         speaker_asked := fun _ b => by simp [mkWorld]; ring
         speaker_reported := fun _ b => by simp [mkWorld]
         network := fun _ _ _ _ => rfl
+        reach := fun _ _ _ _ => rfl
         target_eq := fun _ => rfl }
   constructor
   · refine ⟨_, mkWorld (fun _ _ => 1) (fun _ _ => one_pos),
@@ -1002,7 +1152,7 @@ theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -1012,11 +1162,14 @@ theorem SecondOrderMoments.example_holds : ∃ (m : SecondOrderMoments (Fin 3) 2
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d ω i j).deliver s q,
-        fun i j _ _ _ h => Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h⟩
+        fun i j s q => ((d ω i j).deliver s q).getD s,
+        fun i j s q a h => by
+          simp only [h, Option.getD_some]
+          exact ⟨Link.deliver_after (d ω i j) (fun _ => one_pos) (hown_nonneg ω i j) h,
+            le_rfl⟩⟩
       target := fun _ => 0 }
   let ownJ : Fin 3 → Fin 3 → PacketJitterNoise := fun i j =>
     if i = 0 ∧ j = 1 then ⟨1, fun _ _ => 1⟩
@@ -1169,7 +1322,7 @@ theorem StochasticWorld.example_holds :
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -1179,11 +1332,14 @@ theorem StochasticWorld.example_holds :
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
       network := ⟨fun i j s q => (d₀ () i j).deliver s q,
-        fun i j _ _ _ h => Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h⟩
+        fun i j s q => ((d₀ () i j).deliver s q).getD s,
+        fun i j s q a h => by
+          simp only [h, Option.getD_some]
+          exact ⟨Link.deliver_after (d₀ () i j) (fun _ => one_pos) (fun _ _ => le_rfl) h,
+            le_rfl⟩⟩
       target := fun _ => 0 }
   let P₀ : Measure Unit := Measure.dirac ()
   have hmem : ∀ f : Unit → ℝ, MemLp f 2 P₀ := fun f =>
@@ -1317,5 +1473,469 @@ theorem StochasticWorld.example_holds :
         playback_device_playback_timestamps_uncorrelated := fun r r' k j b => by simp [hdev_spk] }
 
 end Further
+
+/-! ## The generative model is not empty -/
+
+section Example
+
+open GenerativeWorld MeasureTheory ProbabilityTheory
+
+/-- The example's model: three hosts, the sender and two speakers on their
+own hosts, devices at one frame per second in blocks of one frame, a request
+lead of half a second, a target latency of one second, and shape two. -/
+private def exampleModel : GenerativeWorld (Fin 3) 2 where
+  rate := 1
+  rate_pos := one_pos
+  sender := 0
+  host := ![1, 2]
+  device := id
+  device_idem := fun _ => rfl
+  device_host := fun _ => rfl
+  shape := 2
+  shape_pos := two_pos
+  blockSize := 1
+  blockSize_pos := one_pos
+  lead := 1 / 2
+  lead_pos := by norm_num
+  targetLatency := 1
+  targetLatency_nonneg := zero_le_one
+
+/-- The example's member: round trips of one second, no pauses and no
+wander. -/
+private def exampleMember : Member (Fin 3) 2 where
+  roundTrip := fun _ _ => 1
+  roundTrip_pos := fun _ _ => one_pos
+  roundTrip_symm := fun _ _ => rfl
+  linkPauseRate := fun _ _ => 0
+  linkPauseRate_nonneg := fun _ _ => le_rfl
+  linkPauseLength := fun _ _ => Measure.dirac 1
+  linkPauseLength_prob := fun _ _ => inferInstance
+  linkPauseLength_pos := fun _ _ => by simp
+  linkPauseLength_mean := fun _ _ => integrable_dirac eNorm_lt_top
+  linkLoad_lt_one := fun _ _ => by simp
+  hostPauseRate := fun _ => 0
+  hostPauseRate_nonneg := fun _ => le_rfl
+  hostPauseLength := fun _ => Measure.dirac 1
+  hostPauseLength_prob := fun _ => inferInstance
+  hostPauseLength_pos := fun _ => by simp
+  hostPauseLength_mean := fun _ => integrable_dirac eNorm_lt_top
+  hostLoad_lt_one := fun _ => by simp
+  rateSpread := 1
+  rateSpread_nonneg := zero_le_one
+  wanderSize := fun _ => 0
+  wanderSize_nonneg := fun _ => le_rfl
+  wanderTime := fun _ => 1
+  wanderTime_pos := fun _ => one_pos
+  deviceWanderSize := fun _ => 0
+  deviceWanderSize_nonneg := fun _ => le_rfl
+  deviceWanderTime := fun _ => 1
+  deviceWanderTime_pos := fun _ => one_pos
+  reportSize := fun _ => 0
+  reportSize_nonneg := fun _ => le_rfl
+  reportTime := fun _ => 1
+  reportTime_pos := fun _ => one_pos
+  offsetRange := 1
+  offsetRange_pos := one_pos
+  captureStart := 0
+  speakerStart := fun _ => 1
+
+/-- The law of each coordinate of the example's probability space. -/
+private def exampleLaw : Component (Fin 3) 2 → Measure ℝ
+  | .split _ => betaMeasure 2 2
+  | .offset _ => ProbabilityTheory.cond volume (Set.Icc (-1 : ℝ) 1)
+  | .logRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
+  | .wander _ => Measure.dirac 0
+  | .linkPaused _ _ => Measure.dirac 0
+  | .hostPaused _ => Measure.dirac 0
+  | .deviceLogRate _ => gaussianReal 0 (Real.toNNReal ((1 : ℝ) ^ 2))
+  | .deviceWander _ => Measure.dirac 0
+  | .reportError _ => Measure.dirac 0
+
+private instance (p : Component (Fin 3) 2) : IsProbabilityMeasure (exampleLaw p) := by
+  cases p
+  · exact isProbabilityMeasureBeta two_pos two_pos
+  · exact cond_isProbabilityMeasure_of_finite (by rw [Real.volume_Icc]; norm_num)
+      (by rw [Real.volume_Icc]; exact ENNReal.ofReal_ne_top)
+  · exact inferInstanceAs (IsProbabilityMeasure (gaussianReal 0 _))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (gaussianReal 0 _))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+  · exact inferInstanceAs (IsProbabilityMeasure (Measure.dirac (0 : ℝ)))
+
+/-- The pair of two distinct hosts. -/
+private def examplePair (i j : Fin 3) (h : i ≠ j) : {z : Sym2 (Fin 3) // ¬ z.IsDiag} :=
+  ⟨s(i, j), by simpa using h⟩
+
+/-- The example's draw: the split of a pair, in the order of the hosts'
+numbers, the offsets and the mean rates of the clocks of the hosts and of the
+audio devices are coordinates of the probability space; there is no wander,
+no pause and no error of a report. -/
+private def exampleDraw (ω : Component (Fin 3) 2 → ℝ) : Draw (Fin 3) 2 where
+  split := fun i j =>
+    if h : i = j then 1 / 2
+    else if i < j then splitOf (ω (.split (examplePair i j h)))
+    else 1 - splitOf (ω (.split (examplePair i j h)))
+  offset := fun h => ω (.offset h)
+  logRate := fun h => ω (.logRate h)
+  wander := fun _ _ => 0
+  linkPaused := fun _ _ _ => 0
+  hostPaused := fun _ _ => 0
+  deviceLogRate := fun x => ω (.deviceLogRate x)
+  deviceWander := fun _ _ => 0
+  reportError := fun _ _ => 0
+
+private theorem examplePair_swap {i j : Fin 3} (h : i ≠ j) :
+    examplePair j i h.symm = examplePair i j h :=
+  Subtype.ext Sym2.eq_swap
+
+private theorem exampleDraw_split_mem (ω : Component (Fin 3) 2 → ℝ) (i j : Fin 3) :
+    (exampleDraw ω).split i j ∈ Set.Ioo (0 : ℝ) 1 := by
+  simp only [exampleDraw]
+  split_ifs with h h'
+  · constructor <;> norm_num
+  · exact splitOf_mem _
+  · have := splitOf_mem (ω (.split (examplePair i j h)))
+    exact ⟨by linarith [this.2], by linarith [this.1]⟩
+
+private theorem exampleDraw_split_swap (ω : Component (Fin 3) 2 → ℝ) (i j : Fin 3) :
+    (exampleDraw ω).split i j + (exampleDraw ω).split j i = 1 := by
+  rcases lt_trichotomy i j with hlt | heq | hgt
+  · have hne : i ≠ j := hlt.ne
+    simp only [exampleDraw, dite_eq_right hne, dite_eq_right hne.symm, ite_eq_left hlt,
+      ite_eq_right hlt.not_gt, examplePair_swap hne]
+    ring
+  · subst heq
+    simp only [exampleDraw]
+    norm_num
+  · have hne : i ≠ j := hgt.ne'
+    simp only [exampleDraw, dite_eq_right hne, dite_eq_right hne.symm, ite_eq_left hgt,
+      ite_eq_right hgt.not_gt, examplePair_swap hne]
+    ring
+
+private theorem exampleDraw_split_law {i j : Fin 3} (hij : i ≠ j) :
+    HasLaw (fun ω => (exampleDraw ω).split i j) (betaMeasure 2 2) (Measure.pi exampleLaw) := by
+  have hcoord : HasLaw (fun ω : Component (Fin 3) 2 → ℝ => ω (.split (examplePair i j hij)))
+      (betaMeasure 2 2) (Measure.pi exampleLaw) :=
+    (measurePreserving_eval exampleLaw (.split (examplePair i j hij))).hasLaw
+  have hto : HasLaw splitOf (betaMeasure 2 2) (betaMeasure 2 2) :=
+    HasLaw.id.congr (splitOf_ae_eq 2 2)
+  rcases lt_or_gt_of_ne hij with hlt | hgt
+  · have heq : (fun ω => (exampleDraw ω).split i j)
+        = fun ω => splitOf (ω (.split (examplePair i j hij))) := by
+      funext ω
+      simp only [exampleDraw, dite_eq_right hij, ite_eq_left hlt]
+    rw [heq]
+    exact hto.fun_comp hcoord
+  · have heq : (fun ω => (exampleDraw ω).split i j)
+        = fun ω => 1 - splitOf (ω (.split (examplePair i j hij))) := by
+      funext ω
+      simp only [exampleDraw, dite_eq_right hij, ite_eq_right hgt.not_gt]
+    rw [heq]
+    have hsub : HasLaw (fun x : ℝ => 1 - x) (betaMeasure 2 2) (betaMeasure 2 2) :=
+      ⟨by fun_prop, betaMeasure_map_one_sub 2⟩
+    exact hsub.fun_comp (hto.fun_comp hcoord)
+
+/-- How each component of the example's draw depends on its coordinate. -/
+private def exampleComponentMap (o : Orientation (Fin 3)) : (p : Component (Fin 3) 2) → ℝ → p.Val
+  | .split z => fun u => if (o z).1.1 < (o z).1.2 then splitOf u else 1 - splitOf u
+  | .offset _ => fun u => u
+  | .logRate _ => fun u => u
+  | .wander _ => fun _ _ => 0
+  | .linkPaused _ _ => fun _ _ => 0
+  | .hostPaused _ => fun _ _ => 0
+  | .deviceLogRate _ => fun u => u
+  | .deviceWander _ => fun _ _ => 0
+  | .reportError _ => fun _ _ => 0
+
+private theorem measurable_exampleComponentMap (o : Orientation (Fin 3)) (p : Component (Fin 3) 2) :
+    Measurable (exampleComponentMap o p) := by
+  cases p with
+  | split z =>
+    exact Measurable.ite (MeasurableSet.const _) measurable_splitOf (measurable_splitOf.const_sub 1)
+  | offset h => exact measurable_id
+  | logRate h => exact measurable_id
+  | wander h => exact measurable_const
+  | linkPaused i j => exact measurable_const
+  | hostPaused h => exact measurable_const
+  | deviceLogRate x => exact measurable_id
+  | deviceWander x => exact measurable_const
+  | reportError x => exact measurable_const
+
+private theorem exampleDraw_component (o : Orientation (Fin 3)) (p : Component (Fin 3) 2)
+    (ω : Component (Fin 3) 2 → ℝ) :
+    (exampleDraw ω).component o p = exampleComponentMap o p (ω p) := by
+  cases p with
+  | split z =>
+    have hz : s((o z).1.1, (o z).1.2) = z.1 := (o z).2
+    have hne : (o z).1.1 ≠ (o z).1.2 := by
+      intro h
+      apply z.2
+      rw [← hz]
+      exact Sym2.mk_isDiag_iff.mpr h
+    have hpair : examplePair (o z).1.1 (o z).1.2 hne = z := Subtype.ext hz
+    simp only [Draw.component, exampleComponentMap, exampleDraw, dite_eq_right hne, hpair]
+    rfl
+  | offset h => rfl
+  | logRate h => rfl
+  | wander h => rfl
+  | linkPaused i j => rfl
+  | hostPaused h => rfl
+  | deviceLogRate x => rfl
+  | deviceWander x => rfl
+  | reportError x => rfl
+
+/-- The example's world: the one built from the example's draw. Each device
+starts when the clock of its host reads the member's start and then runs at
+the rate of its own clock. -/
+private def exampleWorld (ω : Component (Fin 3) 2 → ℝ) : World (Fin 3) 2 where
+  rate := 1
+  rate_pos := one_pos
+  sender := 0
+  host := ![1, 2]
+  hosts := fun h => by
+    fin_cases h
+    · exact Or.inl rfl
+    · exact Or.inr ⟨0, rfl⟩
+    · exact Or.inr ⟨1, rfl⟩
+  clock := fun h =>
+    { read := fun t => ω (.offset h) + Real.exp (ω (.logRate h)) * t
+      strictMono := fun a b hab => by
+        have := mul_lt_mul_of_pos_left hab (Real.exp_pos (ω (.logRate h)))
+        linarith
+      continuous := by fun_prop }
+  source :=
+    { capture := fun n =>
+        -ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + (n : ℝ) * Real.exp (-ω (.deviceLogRate none))
+      capture_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate none)))
+        linarith
+      first := id
+      first_zero := rfl
+      first_strictMono := strictMono_id
+      handed := fun b =>
+        -ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + (b : ℝ) * Real.exp (-ω (.deviceLogRate none))
+      handed_mono := StrictMono.monotone fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate none)))
+        linarith
+      handed_after := fun b => by simp
+      reported := fun b =>
+        (b : ℝ) * Real.exp (ω (.logRate 0)) * Real.exp (-ω (.deviceLogRate none)) }
+  speaker := fun r =>
+    { out := fun k =>
+        (1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + (k : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))
+      out_strictMono := fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate (some r))))
+        linarith
+      first := id
+      first_zero := rfl
+      first_strictMono := strictMono_id
+      asked := fun b =>
+        (1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + ((b : ℝ) - 1 / 2) * Real.exp (-ω (.deviceLogRate (some r)))
+      asked_mono := StrictMono.monotone fun a b hab => by
+        have hab' : (a : ℝ) < b := Nat.cast_lt.mpr hab
+        have := mul_lt_mul_of_pos_right hab' (Real.exp_pos (-ω (.deviceLogRate (some r))))
+        linarith
+      reported := fun b =>
+        1 + (b : ℝ) * Real.exp (ω (.logRate (![1, 2] r)))
+          * Real.exp (-ω (.deviceLogRate (some r))) }
+  network :=
+    { deliver := fun i j s _ => some (s + (exampleDraw ω).split i j * 1 + 0)
+      reach := fun i j s _ => s + (exampleDraw ω).split i j * 1 + 0
+      reach_mem := fun i j s _ a h => by
+        simp only [Option.some.injEq] at h
+        have := (exampleDraw_split_mem ω i j).1
+        exact ⟨by linarith, h.le⟩ }
+  target := fun _ => 1
+
+private theorem exp_mul_exp_neg (c : ℝ) : Real.exp c * Real.exp (-c) = 1 := by
+  rw [← Real.exp_add, add_neg_cancel, Real.exp_zero]
+
+/-- In the example, the clock of an audio device advances at a constant
+rate. -/
+private theorem exampleDeviceReading (ω : Component (Fin 3) 2 → ℝ) (x : Option (Fin 2))
+    (t : Time) :
+    (exampleDraw ω).deviceReading x t = Real.exp (ω (.deviceLogRate x)) * t := by
+  simp only [Draw.deviceReading, exampleDraw, add_zero, intervalIntegral.integral_const,
+    sub_zero, smul_eq_mul]
+  ring
+
+private theorem exampleWorld_builds (ω : Component (Fin 3) 2 → ℝ) :
+    exampleModel.Builds exampleMember (exampleDraw ω) (exampleWorld ω) where
+  rate_eq := rfl
+  sender_eq := rfl
+  host_eq := rfl
+  clock := fun h t => by
+    simp only [exampleWorld, Draw.reading, exampleDraw, add_zero, intervalIntegral.integral_const,
+      sub_zero, smul_eq_mul]
+    ring
+  network := fun i j s q => by
+    have hzero : ∀ t : Time, IsBacklog (fun _ : Time => (0 : ℝ)) t 0 := fun t =>
+      isBacklog_zero_of_const (fun _ _ => rfl) t
+    refine ⟨0, 0, 0, hzero _, hzero _, hzero _, ?_, ?_⟩
+    · change some (s + (exampleDraw ω).split i j * 1 + 0)
+        = some (s + 0 + (exampleDraw ω).split i j * 1 + 0 + 0)
+      congr 1
+      ring
+    · change s + (exampleDraw ω).split i j * 1 + 0 = s + 0 + (exampleDraw ω).split i j * 1 + 0
+      ring
+  deviceClock := fun x =>
+    ⟨{ read := fun t => Real.exp (ω (.deviceLogRate x)) * t
+       strictMono := fun a b hab => mul_lt_mul_of_pos_left hab (Real.exp_pos _)
+       continuous := by fun_prop }, fun t => (exampleDeviceReading ω x t).symm⟩
+  capture_start := by
+    have h := exp_mul_exp_neg (ω (.logRate 0))
+    change ω (.offset 0) + Real.exp (ω (.logRate 0))
+        * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+          + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate none))) = 0
+    push_cast
+    linear_combination (-ω (.offset 0)) * h
+  capture := fun n => by
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate none))
+    rw [exampleDeviceReading, exampleDeviceReading]
+    change Real.exp (ω (.deviceLogRate none))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + (n : ℝ) * Real.exp (-ω (.deviceLogRate none)))
+        - Real.exp (ω (.deviceLogRate none))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate none)))
+      = (n : ℝ) / 1
+    push_cast
+    linear_combination (n : ℝ) * hg
+  capture_first := fun b => by simp [exampleWorld, exampleModel]
+  capture_handed := fun b =>
+    ⟨0, isBacklog_zero_of_const (fun _ _ => rfl) _, by simp [exampleWorld]⟩
+  capture_reported := fun b => by
+    have h := exp_mul_exp_neg (ω (.logRate 0))
+    change (b : ℝ) * Real.exp (ω (.logRate 0)) * Real.exp (-ω (.deviceLogRate none))
+      = ω (.offset 0) + Real.exp (ω (.logRate 0))
+          * (-ω (.offset 0) * Real.exp (-ω (.logRate 0))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate none))) + 0
+    linear_combination (ω (.offset 0)) * h
+  speaker_start := fun r => by
+    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
+    change ω (.offset (![1, 2] r)) + Real.exp (ω (.logRate (![1, 2] r)))
+        * ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+          + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))) = 1
+    push_cast
+    linear_combination (1 - ω (.offset (![1, 2] r))) * h
+  speaker_out := fun r k => by
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate (some r)))
+    change (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (k : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+        - (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + ((0 : ℕ) : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+      = (k : ℝ) / 1
+    rw [exampleDeviceReading, exampleDeviceReading]
+    push_cast
+    linear_combination (k : ℝ) * hg
+  speaker_first := fun r b => by simp [exampleWorld, exampleModel]
+  speaker_asked := fun r b => by
+    refine ⟨_, 0, ?_, isBacklog_zero_of_const (fun _ _ => rfl) _, (add_zero _).symm⟩
+    have hg := exp_mul_exp_neg (ω (.deviceLogRate (some r)))
+    change (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate (some r))))
+        - (exampleDraw ω).deviceReading (some r)
+          ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + ((b : ℝ) - 1 / 2) * Real.exp (-ω (.deviceLogRate (some r))))
+      = 1 / 2
+    rw [exampleDeviceReading, exampleDeviceReading]
+    linear_combination (1 / 2 : ℝ) * hg
+  speaker_reported := fun r b => by
+    have h := exp_mul_exp_neg (ω (.logRate (![1, 2] r)))
+    change 1 + (b : ℝ) * Real.exp (ω (.logRate (![1, 2] r)))
+          * Real.exp (-ω (.deviceLogRate (some r)))
+      = ω (.offset (![1, 2] r)) + Real.exp (ω (.logRate (![1, 2] r)))
+          * ((1 - ω (.offset (![1, 2] r))) * Real.exp (-ω (.logRate (![1, 2] r)))
+            + (b : ℝ) * Real.exp (-ω (.deviceLogRate (some r)))) + 0
+    linear_combination (-(1 - ω (.offset (![1, 2] r)))) * h
+  target_eq := fun _ => rfl
+
+private theorem exampleDraw_prior :
+    exampleModel.Prior exampleMember (Measure.pi exampleLaw) exampleDraw where
+  prob := inferInstance
+  split_swap := exampleDraw_split_swap
+  split_mem := exampleDraw_split_mem
+  split_law := fun i j hij => exampleDraw_split_law hij
+  offset_law := fun h => (measurePreserving_eval exampleLaw (.offset h)).hasLaw
+  logRate_law := fun h => (measurePreserving_eval exampleLaw (.logRate h)).hasLaw
+  wander_gaussian := fun _ => isGaussianProcess_zero _
+  wander_mean := fun _ _ => by simp [exampleDraw]
+  wander_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  wander_continuous := fun _ _ => continuous_const
+  deviceLogRate_law := fun x =>
+    (measurePreserving_eval exampleLaw (.deviceLogRate x)).hasLaw
+  deviceWander_gaussian := fun _ => isGaussianProcess_zero _
+  deviceWander_mean := fun _ _ => by simp [exampleDraw]
+  deviceWander_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  deviceWander_continuous := fun _ _ => continuous_const
+  reportError_gaussian := fun _ => isGaussianProcess_zero _
+  reportError_mean := fun _ _ => by simp [exampleDraw]
+  reportError_covariance := fun _ _ _ => by
+    simp only [exampleDraw, exampleMember]
+    rw [covariance_const_left]
+    simp
+  reportError_continuous := fun _ _ => continuous_const
+  linkPaused_monotone := fun _ _ _ => monotone_const
+  linkPaused_zero := fun _ _ _ => rfl
+  linkPaused_rightContinuous := fun _ _ _ _ => continuousWithinAt_const
+  linkPaused_increments := fun _ _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  linkPaused_law := fun i j s t _ => by
+    have h0 : Real.toNNReal (exampleMember.linkPauseRate i j * (t - s)) = 0 := by
+      simp [exampleMember]
+    rw [h0, pauseLaw_zero]
+    change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
+    exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
+  hostPaused_monotone := fun _ _ => monotone_const
+  hostPaused_zero := fun _ _ => rfl
+  hostPaused_rightContinuous := fun _ _ _ => continuousWithinAt_const
+  hostPaused_increments := fun _ _ _ _ => iIndepFun_of_const _ fun _ => (0 : ℝ) - 0
+  hostPaused_law := fun h s t _ => by
+    have h0 : Real.toNNReal (exampleMember.hostPauseRate h * (t - s)) = 0 := by
+      simp [exampleMember]
+    rw [h0, pauseLaw_zero]
+    change HasLaw (fun _ => (0 : ℝ) - 0) (Measure.dirac 0) _
+    exact ⟨aemeasurable_const, by simp [Measure.map_const]⟩
+  independent := fun o => by
+    have h : (fun p ω => (exampleDraw ω).component o p)
+        = fun p (ω : Component (Fin 3) 2 → ℝ) => exampleComponentMap o p (ω p) := by
+      funext p ω
+      exact exampleDraw_component o p ω
+    rw [h]
+    exact iIndepFun_pi fun p => (measurable_exampleComponentMap o p).aemeasurable
+
+/-- **The generative model is not empty.** There is a random world of the
+model with three hosts and two speakers. In it the splits, the clock offsets
+and the clocks' mean rates are random; its member has no pauses and no
+wander. Members with pauses have random worlds by
+`GenerativeWorld.exists_holds_of_steadyClocks`; no member with wander is
+shown to have one. -/
+theorem GenerativeWorld.example_holds :
+    ∃ (m : GenerativeWorld (Fin 3) 2) (f : GenerativeWorld.Member (Fin 3) 2) (Ω : Type)
+      (_ : MeasurableSpace Ω) (P : Measure Ω) (world : Ω → World (Fin 3) 2),
+      m.Holds f P world ∧ (∀ i j, f.linkPauseRate i j = 0) ∧ (∀ h, f.hostPauseRate h = 0)
+        ∧ ∀ h, f.wanderSize h = 0 :=
+  ⟨exampleModel, exampleMember, Component (Fin 3) 2 → ℝ, inferInstance, Measure.pi exampleLaw,
+    exampleWorld, ⟨exampleDraw, exampleDraw_prior, exampleWorld_builds⟩,
+    fun _ _ => rfl, fun _ => rfl, fun _ => rfl⟩
+
+end Example
 
 end Unisono.Spec

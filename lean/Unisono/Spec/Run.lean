@@ -32,7 +32,8 @@ solution achieves.
   by the host that handled the step's event and delivered by the network
   (`Solution.mem_inFlight_succ`).
 * A handled handoff is the handoff of a block, and a handled arrival is the
-  arrival of a message in transit (`Solution.handled_handed`,
+  arrival of a message in transit, with the kernel's stamp of the moment at
+  which the message reached its destination (`Solution.handled_handed`,
   `Solution.handled_received`).
 * A message in transit that arrives before the event of a later step is
   handled at a step between them (`Solution.handled_before`), and a host's
@@ -198,29 +199,30 @@ theorem send_sentCount (st : State H R Msg) (h : H) (t : Time) (j : H) (c : Msg)
 `i`-th entry of `sends` go to host `j`. Its number on the link from the host
 to `j` is `st.sentCount h j` plus the number of earlier entries to `j`. If
 the network delivers the message, it is in transit after the event,
-carrying those of its frames that the host holds. -/
+carrying those of its frames that the host holds, with the true time at
+which the network says it reaches `j`. -/
 theorem sendAll_delivered {h : H} {t : Time} {held : Finset ℕ} :
     ∀ (sends : List (H × Msg × Finset ℕ)) (st : State H R Msg) (i : ℕ) (hi : i < sends.length)
-      {arr : Time},
-      w.network.deliver h sends[i].1 t
-          (st.sentCount h sends[i].1 + (sends.take i).countP (fun s => s.1 = sends[i].1))
-        = some arr →
-      (⟨arr, h, sends[i].1, sends[i].2.1, sends[i].2.2.filter (· ∈ held)⟩ : InFlight H Msg)
+      {arr : Time} {q : ℕ},
+      q = st.sentCount h sends[i].1 + (sends.take i).countP (fun s => s.1 = sends[i].1) →
+      w.network.deliver h sends[i].1 t q = some arr →
+      (⟨arr, w.network.reach h sends[i].1 t q, h, sends[i].1, sends[i].2.1,
+          sends[i].2.2.filter (· ∈ held)⟩ : InFlight H Msg)
         ∈ (st.sendAll w h t held sends).inFlight
-  | [], _, i, hi, _, _ => absurd hi (Nat.not_lt_zero i)
-  | s :: l, st, 0, _, arr, hdel => by
-      simp only [List.getElem_cons_zero, List.take_zero, List.countP_nil, add_zero] at hdel
+  | [], _, i, hi, _, _, _, _ => absurd hi (Nat.not_lt_zero i)
+  | s :: l, st, 0, _, arr, q, hq, hdel => by
+      simp only [List.getElem_cons_zero, List.take_zero, List.countP_nil, add_zero] at hq hdel
+      subst hq
       show _ ∈ ((st.send w h t s.1 s.2.1 (s.2.2.filter (· ∈ held))).sendAll w h t held l).inFlight
       apply sendAll_inFlight_mem
       simp only [send, hdel]
       exact List.mem_append_right _ (List.mem_singleton_self _)
-  | s :: l, st, i + 1, hi, arr, hdel => by
+  | s :: l, st, i + 1, hi, arr, q, hq, hdel => by
       have hi' : i < l.length := by simpa using hi
-      simp only [List.getElem_cons_succ, List.take_succ_cons, List.countP_cons] at hdel ⊢
+      simp only [List.getElem_cons_succ, List.take_succ_cons, List.countP_cons] at hq hdel ⊢
       show _ ∈ ((st.send w h t s.1 s.2.1 (s.2.2.filter (· ∈ held))).sendAll w h t held l).inFlight
-      refine sendAll_delivered l _ i hi' ?_
-      rw [send_sentCount]
-      convert hdel using 2
+      refine sendAll_delivered l _ i hi' ?_ hdel
+      rw [send_sentCount, hq]
       by_cases hs : l[i].1 = s.1
       · simp only [hs, ite_true, decide_true]
         omega
@@ -273,7 +275,7 @@ theorem Solution.lt_handedNext (σ : Solution H R Msg) (lookahead : ℕ+) {n b :
     (h : w.source.handed b < σ.eventTime w lookahead n) :
     b < (σ.states w lookahead n).handedNext := by
   by_contra hle
-  have h1 := w.source.handed_strictMono.monotone (not_lt.mp hle)
+  have h1 := w.source.handed_mono (not_lt.mp hle)
   have h2 := (σ.eventTime_dueFrom w lookahead n).1
   linarith
 
@@ -298,7 +300,8 @@ theorem Solution.exists_handed_step (σ : Solution H R Msg) (lookahead : ℕ+) {
         exact ⟨m, Nat.lt_succ_self m, hb, hb ▸ hearly⟩
 
 /-- A message that a host's action sends while it handles an event, and that
-the network delivers, is in transit after the event. -/
+the network delivers, is in transit after the event, with the true time at
+which the network says it reaches its destination. -/
 theorem State.handle_delivered {Msg : Type} (w : World H R) (σ : Solution H R Msg) (lookahead : ℕ+)
     (st : State H R Msg) (h : H) (t : Time) (obs : Observation H R Msg) (i : ℕ)
     (hi : i < (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.length) {arr : Time}
@@ -307,13 +310,17 @@ theorem State.handle_delivered {Msg : Type} (w : World H R) (σ : Solution H R M
         + ((σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.take i).countP
           (fun s => s.1 = (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1))
       = some arr) :
-    (⟨arr, h, (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1,
+    (⟨arr, w.network.reach h (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1 t
+        (st.sentCount h (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1
+          + ((σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends.take i).countP
+            (fun s => s.1 = (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1)),
+      h, (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].1,
       (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].2.1,
       (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends[i].2.2.filter
         (· ∈ st.held h ∪ obs.frames)⟩ : InFlight H Msg)
       ∈ (st.handle σ w lookahead h t obs).inFlight := by
   simp only [State.handle]
-  exact State.sendAll_delivered w _ _ i hi hdel
+  exact State.sendAll_delivered w _ _ i hi rfl hdel
 
 /-- The event that the run handles at its step `n`: the host, the true time,
 and what the host observes; `none` when there is nothing to handle. -/
@@ -325,7 +332,8 @@ noncomputable def Solution.handled (σ : Solution H R Msg) (w : World H R) (look
   | some (.asked r b) => some (w.host r, (w.speaker r).asked b,
       .asked r ((w.speaker r).block b) ((w.speaker r).reported b))
   | some (.arrival p) => (σ.states w lookahead n).inFlight[p]?.map fun m =>
-      (m.destination, m.arrival, .received m.origin m.contents m.frames)
+      (m.destination, m.arrival,
+        .received m.origin m.contents m.frames ((w.clock m.destination).read m.reached))
   | some (.timer p) => (σ.states w lookahead n).timers[p]?.map fun u => (u.host, u.time, .timer)
   | none => none
 
@@ -392,12 +400,15 @@ variable (w : World H R)
 namespace State
 
 /-- A message in transit after a host sends at an event was in transit
-before, or is one of the host's sends that the network delivered. -/
+before, or is one of the host's sends that the network delivered, and it
+reaches its destination when the network says. -/
 theorem mem_sendAll_inFlight {h : H} {t : Time} {held : Finset ℕ} :
     ∀ (sends : List (H × Msg × Finset ℕ)) (st : State H R Msg) {m : InFlight H Msg},
       m ∈ (st.sendAll w h t held sends).inFlight →
       m ∈ st.inFlight ∨ ∃ s ∈ sends, m.origin = h ∧ m.destination = s.1 ∧ m.contents = s.2.1 ∧
-        m.frames = s.2.2.filter (· ∈ held) ∧ ∃ q, w.network.deliver h s.1 t q = some m.arrival
+        m.frames = s.2.2.filter (· ∈ held) ∧
+        ∃ q, w.network.deliver h s.1 t q = some m.arrival
+          ∧ m.reached = w.network.reach h s.1 t q
   | [], _, _, hm => Or.inl hm
   | s :: l, st, m, hm => by
       rcases mem_sendAll_inFlight l (st.send w h t s.1 s.2.1 (s.2.2.filter (· ∈ held))) hm with
@@ -410,20 +421,21 @@ theorem mem_sendAll_inFlight {h : H} {t : Time} {held : Finset ℕ} :
           · right
             rw [List.mem_singleton] at hnew
             subst hnew
-            exact ⟨s, List.mem_cons_self .., rfl, rfl, rfl, rfl, _, harr⟩
+            exact ⟨s, List.mem_cons_self .., rfl, rfl, rfl, rfl, _, harr, rfl⟩
         · exact Or.inl hm'
       · exact Or.inr ⟨s', List.mem_cons_of_mem _ hs', h1, h2, h3, h4, h5⟩
 
 /-- A message in transit after a host handles an event was in transit
 before, or is one of the sends of the host's action that the network
-delivered. -/
+delivered, and it reaches its destination when the network says. -/
 theorem mem_handle_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) (st : State H R Msg)
     (h : H) (t : Time) (obs : Observation H R Msg) {m : InFlight H Msg}
     (hm : m ∈ (st.handle σ w lookahead h t obs).inFlight) :
     m ∈ st.inFlight ∨ ∃ s ∈ (σ h (st.views h ++ [⟨(w.clock h).read t, obs⟩])).sends,
       m.origin = h ∧ m.destination = s.1 ∧ m.contents = s.2.1 ∧
       m.frames = s.2.2.filter (· ∈ st.held h ∪ obs.frames) ∧
-      ∃ q, w.network.deliver h s.1 t q = some m.arrival := by
+      ∃ q, w.network.deliver h s.1 t q = some m.arrival
+        ∧ m.reached = w.network.reach h s.1 t q := by
   simp only [handle] at hm
   have := mem_sendAll_inFlight w _ _ hm
   exact this
@@ -433,7 +445,7 @@ end State
 /-- **Where a message in transit comes from.** A message in transit after a
 step of the run was in transit before it, or was sent by the host that
 handled the step's event, as one of the sends of its action, and delivered
-by the network. -/
+by the network; it reaches its destination when the network says. -/
 theorem Solution.mem_inFlight_succ (σ : Solution H R Msg) (lookahead : ℕ+) (n : ℕ)
     {m : InFlight H Msg} (hm : m ∈ (σ.states w lookahead (n + 1)).inFlight) :
     m ∈ (σ.states w lookahead n).inFlight ∨
@@ -441,7 +453,8 @@ theorem Solution.mem_inFlight_succ (σ : Solution H R Msg) (lookahead : ℕ+) (n
         ∃ s ∈ (σ h ((σ.states w lookahead n).views h ++ [⟨(w.clock h).read t, obs⟩])).sends,
           m.origin = h ∧ m.destination = s.1 ∧ m.contents = s.2.1 ∧
           m.frames = s.2.2.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames) ∧
-          ∃ q, w.network.deliver h s.1 t q = some m.arrival := by
+          ∃ q, w.network.deliver h s.1 t q = some m.arrival
+            ∧ m.reached = w.network.reach h s.1 t q := by
   change m ∈ ((σ.states w lookahead n).step σ w lookahead).inFlight at hm
   unfold State.step at hm
   unfold Solution.handled
@@ -502,20 +515,22 @@ theorem Solution.handled_handed (σ : Solution H R Msg) (lookahead : ℕ+) {n : 
   · simp at hn
 
 /-- An event in which a message arrives is the arrival of a message in
-transit, at its destination and at its arrival time. -/
+transit, at its destination and at its arrival time, with the stamp of the
+moment at which the message reached its destination. -/
 theorem Solution.handled_received (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {h : H} {t : Time}
-    {i : H} {c : Msg} {F : Finset ℕ}
-    (hn : σ.handled w lookahead n = some (h, t, .received i c F)) :
+    {i : H} {c : Msg} {F : Finset ℕ} {stamp : ℝ}
+    (hn : σ.handled w lookahead n = some (h, t, .received i c F stamp)) :
     ∃ m ∈ (σ.states w lookahead n).inFlight, m.destination = h ∧ m.arrival = t ∧
-      m.origin = i ∧ m.contents = c ∧ m.frames = F := by
+      m.origin = i ∧ m.contents = c ∧ m.frames = F
+      ∧ (w.clock m.destination).read m.reached = stamp := by
   unfold Solution.handled at hn
   split at hn
   · simp at hn
   · simp at hn
   · obtain ⟨m, hm, heq⟩ := Option.map_eq_some_iff.mp hn
     simp only [Prod.mk.injEq, Observation.received.injEq] at heq
-    obtain ⟨h1, h2, h3, h4, h5⟩ := heq
-    exact ⟨m, List.mem_of_getElem? hm, h1, h2, h3, h4, h5⟩
+    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := heq
+    exact ⟨m, List.mem_of_getElem? hm, h1, h2, h3, h4, h5, h6⟩
   · obtain ⟨u, -, heq⟩ := Option.map_eq_some_iff.mp hn
     simp at heq
   · simp at hn
@@ -565,10 +580,12 @@ theorem Solution.handled_before (σ : Solution H R Msg) (lookahead : ℕ+) {n k 
     {m : InFlight H Msg} (hm : m ∈ (σ.states w lookahead n).inFlight) (hnk : n ≤ k)
     (harr : m.arrival < σ.eventTime w lookahead k) :
     ∃ i, n ≤ i ∧ i < k ∧
-      σ.handled w lookahead i = some (m.destination, m.arrival, .received m.origin m.contents m.frames) := by
+      σ.handled w lookahead i = some (m.destination, m.arrival,
+        .received m.origin m.contents m.frames ((w.clock m.destination).read m.reached)) := by
   have hinv : ∀ j, n ≤ j → m ∈ (σ.states w lookahead j).inFlight ∨
       ∃ i, n ≤ i ∧ i < j ∧ σ.handled w lookahead i
-        = some (m.destination, m.arrival, .received m.origin m.contents m.frames) := by
+        = some (m.destination, m.arrival,
+          .received m.origin m.contents m.frames ((w.clock m.destination).read m.reached)) := by
     intro j hj
     induction hj with
     | refl => exact Or.inl hm
@@ -701,7 +718,8 @@ it.** Let step `n` handle an event of host `h` at true time `t`, and let the
 `i`-th message that `h` sends go to host `j`. Its number on the link from
 `h` to `j` is the number of messages sent on that link before it. If the
 network delivers the message, it is in transit after the step, carrying
-those of its frames that `h` holds. -/
+those of its frames that `h` holds, with the true time at which the network
+says it reaches `j`. -/
 theorem Solution.sent_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ}
     {h : H} {t : Time} {obs : Observation H R Msg}
     (hn : σ.handled w lookahead n = some (h, t, obs)) {S : List (H × Msg × Finset ℕ)}
@@ -710,7 +728,10 @@ theorem Solution.sent_inFlight (σ : Solution H R Msg) (lookahead : ℕ+) {n : �
     (hdel : w.network.deliver h S[i].1 t
       ((σ.states w lookahead n).sentCount h S[i].1 + (S.take i).countP (fun s => s.1 = S[i].1))
       = some arr) :
-    (⟨arr, h, S[i].1, S[i].2.1,
+    (⟨arr, w.network.reach h S[i].1 t
+        ((σ.states w lookahead n).sentCount h S[i].1
+          + (S.take i).countP (fun s => s.1 = S[i].1)),
+      h, S[i].1, S[i].2.1,
       S[i].2.2.filter (· ∈ (σ.states w lookahead n).held h ∪ obs.frames)⟩ : InFlight H Msg)
       ∈ (σ.states w lookahead (n + 1)).inFlight := by
   subst hS
@@ -840,18 +861,22 @@ theorem Solution.exists_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {m
         exact ⟨m, Nat.lt_succ_self m, hb, hb ▸ hearly⟩
 
 /-- **A speaker plays what its host decided at the request.** When step `n`
-handles request `b` of speaker `r`, every output sample of the block plays
-what the speaker's host decided then, if the host holds the frames it
-needs. -/
+handles request `b` of speaker `r`, every output sample of the block that
+has not left the device yet plays what the speaker's host decided then, if
+the host holds the frames it needs. An output sample that left before the
+request was handled plays nothing of the source. -/
 theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
     {b : ℕ} (hb : (σ.states w lookahead n).askedNext r = b)
     (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
       = some (.asked r b))
     {k : ℕ} (hk : k ∈ (w.speaker r).block b) :
-    σ.plays w lookahead r k = playable lookahead ((σ.states w lookahead n).held (w.host r))
-      ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
-        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
-          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k) := by
+    σ.plays w lookahead r k
+      = if (w.speaker r).asked b < (w.speaker r).out k then
+          playable lookahead ((σ.states w lookahead n).held (w.host r))
+            ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
+              ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+                .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k)
+        else none := by
   have hkb : (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
     unfold PlaybackDevice.block at hk
     rw [List.mem_range'_1] at hk
@@ -886,6 +911,51 @@ theorem Solution.plays_of_asked_step (σ : Solution H R Msg) (lookahead : ℕ+) 
   unfold State.step
   rw [hearly]
   simp only [State.handle, Observation.frames, Finset.union_empty, hk, and_self, ite_true]
+
+/-- When step `n` handles request `b` of speaker `r` before output sample
+`k` of the block leaves, the output sample plays what the speaker's host
+decided then, if the host holds the frames it needs. -/
+theorem Solution.plays_of_asked_step_of_lt (σ : Solution H R Msg) (lookahead : ℕ+) {n : ℕ}
+    {r : Fin R} {b : ℕ} (hb : (σ.states w lookahead n).askedNext r = b)
+    (hearly : earliest ((σ.states w lookahead n).key w) (σ.states w lookahead n).due
+      = some (.asked r b))
+    {k : ℕ} (hk : k ∈ (w.speaker r).block b)
+    (hlt : (w.speaker r).asked b < (w.speaker r).out k) :
+    σ.plays w lookahead r k = playable lookahead ((σ.states w lookahead n).held (w.host r))
+      ((σ (w.host r) ((σ.states w lookahead n).views (w.host r)
+        ++ [⟨(w.clock (w.host r)).read ((w.speaker r).asked b),
+          .asked r ((w.speaker r).block b) ((w.speaker r).reported b)⟩])).plays k) := by
+  rw [σ.plays_of_asked_step w lookahead hb hearly hk, ite_eq_left hlt]
+
+/-- **An output sample that left before its request was handled plays
+nothing of the source.** -/
+theorem Solution.plays_eq_none_of_out_le (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
+    {b k : ℕ} (hk : k ∈ (w.speaker r).block b)
+    (hle : (w.speaker r).out k ≤ (w.speaker r).asked b) :
+    σ.plays w lookahead r k = none := by
+  by_cases hex : ∃ m, b < (σ.states w lookahead m).askedNext r
+  · obtain ⟨m, hm⟩ := hex
+    obtain ⟨n, -, hb, hearly⟩ := σ.exists_asked_step w lookahead hm
+    rw [σ.plays_of_asked_step w lookahead hb hearly hk, ite_eq_right (not_lt.mpr hle)]
+  · unfold Solution.plays
+    rw [dite_eq_right]
+    rintro ⟨n', hn'⟩
+    refine hex ⟨n', ?_⟩
+    unfold PlaybackDevice.block at hk
+    rw [List.mem_range'_1] at hk
+    by_contra hnot
+    have := (w.speaker r).first_strictMono.monotone (not_lt.mp hnot)
+    omega
+
+/-- **A speaker plays the source only at output samples whose request was
+handled before they left.** -/
+theorem Solution.asked_lt_out_of_plays (σ : Solution H R Msg) (lookahead : ℕ+) {r : Fin R}
+    {b k : ℕ} {x : ℝ} (hk : k ∈ (w.speaker r).block b)
+    (hp : σ.plays w lookahead r k = some x) :
+    (w.speaker r).asked b < (w.speaker r).out k := by
+  by_contra hnot
+  rw [σ.plays_eq_none_of_out_le w lookahead hk (not_lt.mp hnot)] at hp
+  exact absurd hp (by simp)
 
 /-- The event handled at a step whose earliest pending event is request `b`
 of speaker `r`: that request, at the speaker's host and at the request's
@@ -1065,8 +1135,9 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
       ((σ h (view ++ [⟨reading, .handed frames rep⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ cH)
     (hasked : ∀ h view r outs rep reading,
       ((σ h (view ++ [⟨reading, .asked r outs rep⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ cQ)
-    (hreceived : ∀ h view i c F reading,
-      ((σ h (view ++ [⟨reading, .received i c F⟩])).sends.map fun s => wt s.2.1).sum + 1 ≤ wt c)
+    (hreceived : ∀ h view i c F stamp reading,
+      ((σ h (view ++ [⟨reading, .received i c F stamp⟩])).sends.map fun s => wt s.2.1).sum + 1
+        ≤ wt c)
     (hhand : ∀ T, ∃ b, T < w.source.handed b) (hask : ∀ r T, ∃ b, T < (w.speaker r).asked b)
     (T : Time) : ∃ n, T < σ.eventTime w lookahead n := by
   obtain ⟨NH, hNH⟩ := hhand T
@@ -1114,7 +1185,7 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
     · -- A handoff, which happens by `T`.
       have hb : st.handedNext < NH := by
         by_contra hge
-        have := w.source.handed_strictMono.monotone (not_lt.mp hge)
+        have := w.source.handed_mono (not_lt.mp hge)
         simp only [State.key] at htime
         linarith
       have hw := State.handle_weight w σ lookahead wt T st w.sender (w.source.handed st.handedNext)
@@ -1131,7 +1202,7 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
     · -- A request, which happens by `T`.
       have hb : st.askedNext r < NQ r := by
         by_contra hge
-        have := (w.speaker r).asked_strictMono.monotone (not_lt.mp hge)
+        have := (w.speaker r).asked_mono (not_lt.mp hge)
         have h2 := hNQ r
         simp only [State.key] at htime
         linarith
@@ -1163,9 +1234,11 @@ theorem Solution.progress (σ : Solution H R Msg) (lookahead : ℕ+) (wt : Msg �
       simp only [List.getElem?_eq_getElem hp]
       have hw := State.handle_weight w σ lookahead wt T { st with inFlight := st.inFlight.eraseIdx p }
         st.inFlight[p].destination st.inFlight[p].arrival
-        (.received st.inFlight[p].origin st.inFlight[p].contents st.inFlight[p].frames)
+        (.received st.inFlight[p].origin st.inFlight[p].contents st.inFlight[p].frames
+          ((w.clock st.inFlight[p].destination).read st.inFlight[p].reached))
       have hs := hreceived st.inFlight[p].destination (st.views st.inFlight[p].destination)
         st.inFlight[p].origin st.inFlight[p].contents st.inFlight[p].frames
+        ((w.clock st.inFlight[p].destination).read st.inFlight[p].reached)
         ((w.clock st.inFlight[p].destination).read st.inFlight[p].arrival)
       have he := weightBy_eraseIdx wt T st.inFlight hp
       simp only [harr, ite_true] at he

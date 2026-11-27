@@ -148,13 +148,15 @@ theorem exists_block_of_sample (d : PlaybackDevice) (k : ℕ) :
     exact this
 
 /-- **What a speaker plays is the position its host chose.** When step `n`
-handles request `b` of speaker `r`, output sample `k` of the block plays the
-position chosen for it, if the host holds the frames it needs. -/
+handles request `b` of speaker `r` before output sample `k` of the block
+leaves, the output sample plays the position chosen for it, if the host
+holds the frames it needs. -/
 theorem plays_eq_chosen (w : World H R) (lookahead : ℕ+) {n : ℕ} {r : Fin R} {b : ℕ}
     (hb : ((solution p : Solution H R Payload).states w lookahead n).askedNext r = b)
     (he : earliest (((solution p : Solution H R Payload).states w lookahead n).key w)
       ((solution p : Solution H R Payload).states w lookahead n).due = some (.asked r b))
-    {k : ℕ} (hk : k ∈ (w.speaker r).block b) :
+    {k : ℕ} (hk : k ∈ (w.speaker r).block b)
+    (hlt : (w.speaker r).asked b < (w.speaker r).out k) :
     (solution p : Solution H R Payload).plays w lookahead r k
       = playable lookahead (((solution p : Solution H R Payload).states w lookahead n).held (w.host r))
         (chosen p (memoryOf p (w.host r)
@@ -163,7 +165,7 @@ theorem plays_eq_chosen (w : World H R) (lookahead : ℕ+) {n : ℕ} {r : Fin R}
           ((memoryOf p (w.host r)
             (((solution p : Solution H R Payload).states w lookahead n).views (w.host r))).last r)
           ((w.speaker r).first b) (k - (w.speaker r).first b)) := by
-  rw [Solution.plays_of_asked_step w (solution p) lookahead hb he hk, solution_append]
+  rw [Solution.plays_of_asked_step_of_lt w (solution p) lookahead hb he hk hlt, solution_append]
   congr 1
   have hkb : (w.speaker r).first b ≤ k ∧ k < (w.speaker r).first (b + 1) := by
     unfold PlaybackDevice.block at hk
@@ -262,7 +264,7 @@ theorem late_targets (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (loo
   obtain ⟨bmin, hbmin⟩ := PlaybackDevice.asked_unbounded hρ (hspk r) hεD1 (hlead r)
     (max ((w.speaker r).asked 0 + RTT) (w.source.handed 0 + B.delayMost w.sender (w.host r)))
   refine ⟨bmin, fun b hb n hnb hne k hk => ?_⟩
-  have hmono := (w.speaker r).asked_strictMono.monotone hb
+  have hmono := (w.speaker r).asked_mono hb
   have hl₁ : (w.speaker r).asked 0 + RTT < (w.speaker r).asked b := by
     have := le_max_left ((w.speaker r).asked 0 + RTT) (w.source.handed 0 + B.delayMost w.sender (w.host r))
     linarith
@@ -523,7 +525,12 @@ theorem speaker_at_latency (w : World H R) (B : Bounds H) (hw : w.WithinBounds B
   have hplays : ∀ k, K ≤ k → (solution p : Solution H R Payload).plays w lookahead r k = some (X k) := by
     intro k hk
     have hk₀ : K₀ ≤ k := le_trans hK₁ (le_trans (le_max_left _ _) hk)
-    rw [plays_eq_chosen p w lookahead (hstepb (blk k)) (hstepe (blk k)) (hmemblk k)]
+    have hlt : (w.speaker r).asked (blk k) < (w.speaker r).out k := by
+      have hmem := hmemblk k
+      unfold PlaybackDevice.block at hmem
+      rw [List.mem_range'_1] at hmem
+      exact hw.asked_lt_of_le hmem.1
+    rw [plays_eq_chosen p w lookahead (hstepb (blk k)) (hstepe (blk k)) (hmemblk k) hlt]
     have hck : chosen p (M (blk k)) ((w.speaker r).first (blk k)) ((w.speaker r).reported (blk k))
         ((M (blk k)).last r) ((w.speaker r).first (blk k)) (k - (w.speaker r).first (blk k))
         = some (X k) := hchk k hk₀
@@ -670,7 +677,7 @@ theorem plays_at_latency_example :
           first_zero := rfl
           first_strictMono := strictMono_id
           handed := fun b => b
-          handed_strictMono := Nat.strictMono_cast
+          handed_mono := Nat.mono_cast
           handed_after := fun b => by simp
           reported := fun b => b }
       speaker := fun _ =>
@@ -680,11 +687,10 @@ theorem plays_at_latency_example :
           first_zero := rfl
           first_strictMono := strictMono_id
           asked := fun b => b + 1 / 2
-          asked_strictMono := fun a b h => by simpa using h
-          asked_before := fun b => by norm_num
+          asked_mono := StrictMono.monotone fun a b h => by simpa using h
           reported := fun b => b + 1 }
-      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ a h => by
-        simp only [Option.some.injEq] at h; linarith⟩
+      network := ⟨fun _ _ s _ => some (s + 1), fun _ _ s _ => s + 1, fun _ _ s _ a h => by
+        simp only [Option.some.injEq] at h; exact ⟨by linarith, h.le⟩⟩
       target := fun _ => 0 }
   let B : Bounds Bool :=
     { clockRate := 0

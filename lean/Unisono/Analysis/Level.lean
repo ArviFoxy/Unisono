@@ -53,7 +53,7 @@ discontinuities per second.
 * **Missed-fraction quantile rule (`margin_best_missed`).** When `wΘ = 0` and
   `wD = 0`, any margin `m` satisfying `wM · ν {h > m} ≤ wΛ ≤ wM · ν {h ≥ m}`
   globally minimizes `wΛ · m + wM · ∫ (h - m)⁺ dν`.
-* **Tracking + missed-fraction optimum (`margin_best_tracking`).** With
+* **Tracking + missed-fraction minimum (`margin_best_tracking`).** With
   quadratic tracking penalty `wΘ ≥ 0` around target margin `m₀` and `wD = 0`,
   any margin `m` satisfying
   `wM · ν {h > m} ≤ wΛ + 2 wΘ (m - m₀) ≤ wM · ν {h ≥ m}` globally minimizes
@@ -64,7 +64,7 @@ discontinuities per second.
   the single-measure cost under `ν̄ = (1 / R) ∑ r, ν r`. (This is an integral
   linearity identity for the Campbell model, not a theorem about
   `World.missed`.)
-* **Closed-form exponential optimum with discontinuities in low-latency mode
+* **Closed-form exponential minimum with discontinuities in low-latency mode
   (`margin_best_exponential_with_clicks`).** When `wΘ = 0`, `wΛ > 0`, and
   pauses arrive at rate `λ > 0` with a single shared exponential duration
   distribution of mean `hBar > 0`, pricing discontinuities (`wD ≥ 0`) preserves
@@ -85,7 +85,7 @@ namespace Unisono.Analysis
 
 open MeasureTheory Finset
 
-/-- **Missed-fraction quantile optimality.** For a finite pause measure `ν`
+/-- **The quantile minimizes the missed-fraction cost.** For a finite pause measure `ν`
 with finite first moment, `wM ≥ 0`, and any `m` satisfying the quantile bracket
 `wM · ν {h > m} ≤ wΛ ≤ wM · ν {h ≥ m}`, `m` globally minimizes
 `x ↦ wΛ · x + wM · ∫ max (h - x) 0 dν` over `x : ℝ`. -/
@@ -139,7 +139,7 @@ theorem margin_best_missed (ν : Measure ℝ) [IsFiniteMeasure ν]
     nlinarith [mul_le_mul_of_nonneg_left hmono hwM,
       mul_nonneg (sub_nonneg.2 hxm) (sub_nonneg.2 hhigh)]
 
-/-- **Tracking + missed-fraction optimality.** With latency weight `wΛ`,
+/-- **The minimizer with tracking and missed fraction.** With latency weight `wΛ`,
 quadratic tracking penalty `wΘ ≥ 0` around target margin `m₀`, missed-audio
 weight `wM ≥ 0`, and `wD = 0`, any margin `m` satisfying the subgradient bracket
 `wM · ν {h > m} ≤ wΛ + 2 wΘ (m - m₀) ≤ wM · ν {h ≥ m}` globally minimizes
@@ -182,7 +182,7 @@ theorem fleet_average_missed_cost {R : ℕ} (hR : 0 < R) (ν : Fin R → Measure
     nsmul_eq_mul, ← Finset.mul_sum]
   field_simp
 
-/-- **Closed-form exponential pause optimum with discontinuities (low-latency
+/-- **Closed-form exponential pause minimum with discontinuities (low-latency
 mode, `wΘ = 0`).** Suppose pauses arrive at rate `lam > 0` with a single shared
 exponential duration distribution of mean `hBar > 0`, so at margin `x ≥ 0`:
 * expected missed time per second is `lam * hBar * exp (-x / hBar)`,

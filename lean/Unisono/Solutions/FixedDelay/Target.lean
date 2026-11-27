@@ -277,7 +277,7 @@ theorem target_band (w : World H R) (B : Bounds H) (hw : w.WithinBounds B) (look
   have hεD1 := B.deviceRate_lt_one
   have hεC1 := B.clockRate_lt_one
   have hleadb := hlead r b
-  have hbefore := (w.speaker r).asked_before b
+  have hbefore := hw.asked_lt_out r b
   -- The age of the estimate's query at the request.
   have hspan₁ : |og - s₂| ≤ B.leadMost + ((w.speaker r).asked b - (w.speaker r).asked b₀)
       + p.period / (1 - B.clockRate) := by
